@@ -3,7 +3,7 @@
  * Plugin Name:       FFL Funnels Addons
  * Plugin URI:        https://github.com/aaruca/ffl-funnels-addons
  * Description:       Modular WooCommerce toolkit — WooBooster, Wishlist, and Doofinder Sync in a single unified plugin.
- * Version:           1.0.1
+ * Version:           1.0.2
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Ale Aruca
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants.
-define('FFLA_VERSION', '1.0.1');
+define('FFLA_VERSION', '1.0.2');
 define('FFLA_DB_VERSION', '1.0.0');
 define('FFLA_FILE', __FILE__);
 define('FFLA_PATH', plugin_dir_path(__FILE__));
@@ -201,6 +201,10 @@ final class FFL_Funnels_Addons
 
             update_option('ffla_active_modules', $auto_active);
         }
+
+        // Ensure backward compatibility constants are defined for newly activated modules.
+        // This handles cases where activation happens after __construct (where define_compat_constants runs).
+        $this->define_compat_constants();
 
         // Run activation for any pre-activated modules.
         $registry = FFLA_Module_Registry::instance();
