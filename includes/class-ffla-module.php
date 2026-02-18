@@ -35,11 +35,6 @@ abstract class FFLA_Module
     abstract public function get_icon_svg(): string;
 
     /**
-     * Module version string.
-     */
-    abstract public function get_version(): string;
-
-    /**
      * Boot the module — register hooks, load classes.
      * Only called when the module is active.
      */

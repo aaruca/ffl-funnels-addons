@@ -77,7 +77,6 @@ class WooBooster_Cron
      */
     public function run_copurchase()
     {
-        require_once WOOBOOSTER_PATH . 'includes/class-woobooster-copurchase.php';
         $builder = new WooBooster_Copurchase();
         return $builder->build();
     }
@@ -89,7 +88,6 @@ class WooBooster_Cron
      */
     public function run_trending()
     {
-        require_once WOOBOOSTER_PATH . 'includes/class-woobooster-trending.php';
         $builder = new WooBooster_Trending();
         return $builder->build();
     }
@@ -104,18 +102,28 @@ class WooBooster_Cron
         global $wpdb;
 
         // Delete co-purchase postmeta.
-        $copurchase_deleted = $wpdb->query(
-            "DELETE FROM {$wpdb->postmeta} WHERE meta_key = '_woobooster_copurchased'"
+        $copurchase_deleted = $wpdb->delete(
+            $wpdb->postmeta,
+            array('meta_key' => '_woobooster_copurchased'),
+            array('%s')
         );
 
         // Delete trending transients.
         $trending_deleted = $wpdb->query(
-            "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_wb_trending_%' OR option_name LIKE '_transient_timeout_wb_trending_%'"
+            $wpdb->prepare(
+                "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+                '_transient_wb_trending_%',
+                '_transient_timeout_wb_trending_%'
+            )
         );
 
         // Delete similar transients.
         $similar_deleted = $wpdb->query(
-            "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_wb_similar_%' OR option_name LIKE '_transient_timeout_wb_similar_%'"
+            $wpdb->prepare(
+                "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+                '_transient_wb_similar_%',
+                '_transient_timeout_wb_similar_%'
+            )
         );
 
         // Clear build stats.

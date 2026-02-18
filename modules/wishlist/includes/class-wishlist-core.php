@@ -17,6 +17,19 @@ class Alg_Wishlist_Core
     /**
      * Initialize user session (Guest or Logged in)
      */
+    /**
+     * Allowed DB field names for owner queries.
+     */
+    private static $allowed_owner_fields = ['user_id', 'session_id'];
+
+    /**
+     * Validate owner field against whitelist.
+     */
+    private static function safe_owner_field(string $field): string
+    {
+        return in_array($field, self::$allowed_owner_fields, true) ? $field : 'user_id';
+    }
+
     public static function init_session()
     {
         if (is_user_logged_in()) {
@@ -26,7 +39,14 @@ class Alg_Wishlist_Core
             // Ensure guest has a session ID cookie
             if (!isset($_COOKIE[self::$session_cookie_name])) {
                 $session_id = wp_generate_password(32, false);
-                setcookie(self::$session_cookie_name, $session_id, time() + 30 * DAY_IN_SECONDS, COOKIEPATH, COOKIE_DOMAIN);
+                setcookie(self::$session_cookie_name, $session_id, [
+                    'expires' => time() + 30 * DAY_IN_SECONDS,
+                    'path' => COOKIEPATH,
+                    'domain' => COOKIE_DOMAIN,
+                    'secure' => is_ssl(),
+                    'httponly' => true,
+                    'samesite' => 'Lax',
+                ]);
                 $_COOKIE[self::$session_cookie_name] = $session_id; // Set for immediate use
             }
         }
@@ -57,7 +77,9 @@ class Alg_Wishlist_Core
             return false;
 
         $table = $wpdb->prefix . 'alg_wishlists';
-        $sql = $wpdb->prepare("SELECT id FROM $table WHERE {$owner['field']} = %s AND is_default = 1", $owner['value']);
+        $field = self::safe_owner_field($owner['field']);
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $sql = $wpdb->prepare("SELECT id FROM {$table} WHERE {$field} = %s AND is_default = 1", $owner['value']);
         $id = $wpdb->get_var($sql);
 
         if (!$id) {
@@ -80,10 +102,11 @@ class Alg_Wishlist_Core
             return false;
 
         $table = $wpdb->prefix . 'alg_wishlists';
+        $field = self::safe_owner_field($owner['field']);
         $wpdb->insert(
             $table,
             array(
-                $owner['field'] => $owner['value'],
+                $field => $owner['value'],
                 'wishlist_name' => sanitize_text_field($name),
                 'wishlist_slug' => sanitize_title($name),
                 'is_default' => $is_default ? 1 : 0,
@@ -231,7 +254,14 @@ class Alg_Wishlist_Core
             }
 
             // Clear cookie
-            setcookie(self::$session_cookie_name, '', time() - 3600, COOKIEPATH, COOKIE_DOMAIN);
+            setcookie(self::$session_cookie_name, '', [
+                'expires' => time() - 3600,
+                'path' => COOKIEPATH,
+                'domain' => COOKIE_DOMAIN,
+                'secure' => is_ssl(),
+                'httponly' => true,
+                'samesite' => 'Lax',
+            ]);
         }
     }
 

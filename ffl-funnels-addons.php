@@ -3,7 +3,7 @@
  * Plugin Name:       FFL Funnels Addons
  * Plugin URI:        https://github.com/aaruca/ffl-funnels-addons
  * Description:       Modular WooCommerce toolkit — WooBooster, Wishlist, and Doofinder Sync in a single unified plugin.
- * Version:           1.0.0
+ * Version:           1.0.1
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Ale Aruca
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants.
-define('FFLA_VERSION', '1.0.0');
+define('FFLA_VERSION', '1.0.1');
 define('FFLA_DB_VERSION', '1.0.0');
 define('FFLA_FILE', __FILE__);
 define('FFLA_PATH', plugin_dir_path(__FILE__));
@@ -100,7 +100,7 @@ final class FFL_Funnels_Addons
         if ($this->registry->is_active('woobooster')) {
             $wb_module = $this->registry->get('woobooster');
             if (!defined('WOOBOOSTER_VERSION')) {
-                define('WOOBOOSTER_VERSION', $wb_module->get_version());
+                define('WOOBOOSTER_VERSION', FFLA_VERSION);
             }
             if (!defined('WOOBOOSTER_DB_VERSION')) {
                 define('WOOBOOSTER_DB_VERSION', '1.4.0');
@@ -123,7 +123,7 @@ final class FFL_Funnels_Addons
         if ($this->registry->is_active('wishlist')) {
             $wl_module = $this->registry->get('wishlist');
             if (!defined('ALG_WISHLIST_VERSION')) {
-                define('ALG_WISHLIST_VERSION', $wl_module->get_version());
+                define('ALG_WISHLIST_VERSION', FFLA_VERSION);
             }
             if (!defined('ALG_WISHLIST_FILE')) {
                 define('ALG_WISHLIST_FILE', FFLA_FILE);

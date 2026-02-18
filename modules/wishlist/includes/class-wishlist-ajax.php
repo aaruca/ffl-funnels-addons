@@ -14,17 +14,15 @@ class Alg_Wishlist_Ajax
 
     public function add_to_wishlist()
     {
-        // Verify Nonce
-        if (!check_ajax_referer('alg_wishlist_nonce', 'nonce', false)) {
-            wp_send_json_error(array('message' => 'Invalid Nonce'));
-        }
+        // Verify Nonce — dies automatically on failure.
+        check_ajax_referer('alg_wishlist_nonce', 'nonce');
 
-        $product_id = isset($_POST['product_id']) ? intval($_POST['product_id']) : 0;
-        $variation_id = isset($_POST['variation_id']) ? intval($_POST['variation_id']) : 0;
-        $action = isset($_POST['todo']) ? sanitize_text_field($_POST['todo']) : 'toggle';
+        $product_id = isset($_POST['product_id']) ? absint($_POST['product_id']) : 0;
+        $variation_id = isset($_POST['variation_id']) ? absint($_POST['variation_id']) : 0;
+        $action = isset($_POST['todo']) ? sanitize_text_field(wp_unslash($_POST['todo'])) : 'toggle';
 
         if (!$product_id) {
-            wp_send_json_error(array('message' => 'Invalid Product ID'));
+            wp_send_json_error(array('message' => __('Invalid Product ID', 'ffl-funnels-addons')));
         }
 
         $status = '';

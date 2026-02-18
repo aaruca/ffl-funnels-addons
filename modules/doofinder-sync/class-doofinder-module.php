@@ -27,17 +27,12 @@ class Doofinder_Module extends FFLA_Module
 
     public function get_description(): string
     {
-        return 'Dynamically injects product meta (categories, brands, discounts) for Doofinder search indexing.';
+        return __('Dynamically injects product meta (categories, brands, discounts) for Doofinder search indexing.', 'ffl-funnels-addons');
     }
 
     public function get_icon_svg(): string
     {
         return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
-    }
-
-    public function get_version(): string
-    {
-        return '2.4.1';
     }
 
     /* ── Boot ──────────────────────────────────────────────────────── */
@@ -75,8 +70,9 @@ class Doofinder_Module extends FFLA_Module
     {
         return [
             [
-                'slug'  => 'ffla-doofinder-debug',
-                'title' => 'Doofinder Debug',
+                'slug' => 'ffla-doofinder-debug',
+                'title' => __('Doofinder Debug', 'ffl-funnels-addons'),
+                'icon' => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
             ],
         ];
     }

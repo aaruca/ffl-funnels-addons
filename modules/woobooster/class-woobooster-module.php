@@ -13,6 +13,8 @@ if (!defined('ABSPATH')) {
 
 class WooBooster_Module extends FFLA_Module
 {
+    private $admin;
+
     public function get_id(): string
     {
         return 'woobooster';
@@ -31,11 +33,6 @@ class WooBooster_Module extends FFLA_Module
     public function get_icon_svg(): string
     {
         return '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>';
-    }
-
-    public function get_version(): string
-    {
-        return '2.1.0';
     }
 
     public function boot(): void
@@ -60,8 +57,8 @@ class WooBooster_Module extends FFLA_Module
             require_once $path . 'admin/class-woobooster-rule-list.php';
             require_once $path . 'admin/class-woobooster-rule-tester.php';
 
-            $admin = new WooBooster_Admin();
-            $admin->init();
+            $this->admin = new WooBooster_Admin();
+            $this->admin->init();
 
             $ajax = new WooBooster_Ajax();
             $ajax->init();
@@ -74,7 +71,9 @@ class WooBooster_Module extends FFLA_Module
         $frontend = new WooBooster_Frontend();
         $frontend->init();
 
-        // Cron schedules.
+        // Cron — register event handlers and schedules.
+        $cron = new WooBooster_Cron();
+        $cron->init();
         WooBooster_Cron::schedule();
 
         // Shortcode.
@@ -96,56 +95,57 @@ class WooBooster_Module extends FFLA_Module
 
     public function deactivate(): void
     {
-        // Unschedule cron events.
-        wp_clear_scheduled_hook('woobooster_copurchase_build');
-        wp_clear_scheduled_hook('woobooster_trending_build');
+        WooBooster_Cron::unschedule();
     }
 
     public function get_admin_pages(): array
     {
         return [
             [
-                'slug'  => 'ffla-woobooster',
+                'slug' => 'ffla-woobooster',
                 'title' => __('WB Settings', 'ffl-funnels-addons'),
-                'icon'  => WooBooster_Icons::get('settings'),
+                'icon' => WooBooster_Icons::get('settings'),
             ],
             [
-                'slug'  => 'ffla-woobooster-rules',
+                'slug' => 'ffla-woobooster-rules',
                 'title' => __('WB Rules', 'ffl-funnels-addons'),
-                'icon'  => WooBooster_Icons::get('rules'),
+                'icon' => WooBooster_Icons::get('rules'),
             ],
             [
-                'slug'  => 'ffla-woobooster-diagnostics',
+                'slug' => 'ffla-woobooster-diagnostics',
                 'title' => __('WB Diagnostics', 'ffl-funnels-addons'),
-                'icon'  => WooBooster_Icons::get('search'),
+                'icon' => WooBooster_Icons::get('search'),
             ],
             [
-                'slug'  => 'ffla-woobooster-docs',
+                'slug' => 'ffla-woobooster-docs',
                 'title' => __('WB Docs', 'ffl-funnels-addons'),
-                'icon'  => WooBooster_Icons::get('docs'),
+                'icon' => WooBooster_Icons::get('docs'),
             ],
         ];
     }
 
     public function render_admin_page(string $page_slug): void
     {
-        $admin = new WooBooster_Admin();
+        if (!$this->admin) {
+            FFLA_Admin::render_notice('warning', __('WooBooster admin could not be loaded. Please deactivate and reactivate the module.', 'ffl-funnels-addons'));
+            return;
+        }
 
         switch ($page_slug) {
             case 'ffla-woobooster':
-                $admin->render_settings_content();
+                $this->admin->render_settings_content();
                 break;
 
             case 'ffla-woobooster-rules':
-                $admin->render_rules_content();
+                $this->admin->render_rules_content();
                 break;
 
             case 'ffla-woobooster-diagnostics':
-                $admin->render_diagnostics_content();
+                $this->admin->render_diagnostics_content();
                 break;
 
             case 'ffla-woobooster-docs':
-                $admin->render_documentation_content();
+                $this->admin->render_documentation_content();
                 break;
         }
     }

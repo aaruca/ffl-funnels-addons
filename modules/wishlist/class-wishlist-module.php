@@ -27,17 +27,12 @@ class Wishlist_Module extends FFLA_Module
 
     public function get_description(): string
     {
-        return 'High-performance Wishlist with guest support, Bricks Builder integration and Doofinder compatibility.';
+        return __('High-performance Wishlist with guest support, Bricks Builder integration and Doofinder compatibility.', 'ffl-funnels-addons');
     }
 
     public function get_icon_svg(): string
     {
         return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
-    }
-
-    public function get_version(): string
-    {
-        return '1.0.11';
     }
 
     /* ── Boot ──────────────────────────────────────────────────────── */
@@ -78,8 +73,8 @@ class Wishlist_Module extends FFLA_Module
             add_action('admin_init', [$this, 'verify_database_tables']);
         }
 
-        // Integrations (after plugins_loaded).
-        add_action('plugins_loaded', [$this, 'load_integrations'], 20);
+        // Integrations (Bricks, Doofinder).
+        $this->load_integrations();
     }
 
     /**
@@ -129,8 +124,9 @@ class Wishlist_Module extends FFLA_Module
     {
         return [
             [
-                'slug'  => 'ffla-wishlist',
-                'title' => 'Wishlist Settings',
+                'slug' => 'ffla-wishlist',
+                'title' => __('Wishlist Settings', 'ffl-funnels-addons'),
+                'icon' => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>',
             ],
         ];
     }

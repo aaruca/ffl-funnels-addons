@@ -58,16 +58,6 @@ class FFLA_Admin
             [$this, 'render_page']
         );
 
-        // Settings sub-page.
-        add_submenu_page(
-            'ffl-funnels-addons',
-            __('Settings', 'ffl-funnels-addons'),
-            __('Settings', 'ffl-funnels-addons'),
-            'manage_woocommerce',
-            'ffla-settings',
-            [$this, 'render_page']
-        );
-
         // Register admin pages for each active module.
         foreach ($this->registry->get_active() as $module) {
             foreach ($module->get_admin_pages() as $page) {
@@ -132,7 +122,7 @@ class FFLA_Admin
                         $module->get_id() . '-module',
                         $module->get_url() . 'admin/css/' . $module->get_id() . '-module.css',
                         ['ffla-admin'],
-                        $module->get_version()
+                        FFLA_VERSION
                     );
                 }
 
@@ -143,7 +133,7 @@ class FFLA_Admin
                         $module->get_id() . '-module',
                         $module->get_url() . 'admin/js/' . $module->get_id() . '-module.js',
                         ['ffla-admin'],
-                        $module->get_version(),
+                        FFLA_VERSION,
                         true
                     );
                 }
@@ -199,10 +189,6 @@ class FFLA_Admin
                 $dashboard->render();
                 break;
 
-            case 'ffla-settings':
-                $this->render_settings_page();
-                break;
-
             default:
                 // Delegate to the appropriate module.
                 $this->render_module_page($page);
@@ -238,11 +224,6 @@ class FFLA_Admin
             'ffl-funnels-addons' => [
                 'label' => __('Dashboard', 'ffl-funnels-addons'),
                 'icon'  => '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2 2h5v5H2V2zM9 2h5v5H9V2zM2 9h5v5H2V9zM9 9h5v5H9V9z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>',
-                'group' => null,
-            ],
-            'ffla-settings' => [
-                'label' => __('Settings', 'ffl-funnels-addons'),
-                'icon'  => '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M8 10a2 2 0 100-4 2 2 0 000 4z" stroke="currentColor" stroke-width="1.5"/><path d="M6.69 1.33a1 1 0 011.62 0l.58.83a1 1 0 00.77.42l1 .06a1 1 0 01.81 1.4l-.42.92a1 1 0 000 .88l.42.92a1 1 0 01-.81 1.4l-1 .06a1 1 0 00-.77.42l-.58.83a1 1 0 01-1.62 0l-.58-.83a1 1 0 00-.77-.42l-1-.06a1 1 0 01-.81-1.4l.42-.92a1 1 0 000-.88l-.42-.92a1 1 0 01.81-1.4l1-.06a1 1 0 00.77-.42l.58-.83z" stroke="currentColor" stroke-width="1.2"/></svg>',
                 'group' => null,
             ],
         ];
@@ -295,59 +276,6 @@ class FFLA_Admin
         echo '<span class="wb-footer__sep">&middot;</span>';
         echo '<span>' . esc_html__('Modular WooCommerce Toolkit', 'ffl-funnels-addons') . '</span>';
         echo '</footer>';
-    }
-
-    /**
-     * Render the global Settings page (Updates + global config).
-     */
-    private function render_settings_page(): void
-    {
-        echo '<div class="wb-card">';
-        echo '<div class="wb-card__header"><h2>' . esc_html__('Plugin Updates', 'ffl-funnels-addons') . '</h2></div>';
-        echo '<div class="wb-card__body">';
-        echo '<p>' . esc_html__('Current version:', 'ffl-funnels-addons') . ' <strong>v' . esc_html(FFLA_VERSION) . '</strong></p>';
-        echo '<p class="wb-field__desc">' . esc_html__('Click below to check GitHub for new releases. WordPress checks automatically every 12 hours.', 'ffl-funnels-addons') . '</p>';
-        echo '<div style="margin-top:12px;">';
-        echo '<button type="button" id="ffla-check-update" class="wb-btn wb-btn--subtle">' . esc_html__('Check for Updates Now', 'ffl-funnels-addons') . '</button>';
-        echo '<span id="ffla-update-result" style="margin-left:12px;"></span>';
-        echo '</div>';
-        echo '</div></div>';
-
-        // Active Modules summary.
-        $active = $this->registry->get_active();
-        echo '<div class="wb-card" style="margin-top:24px;">';
-        echo '<div class="wb-card__header"><h2>' . esc_html__('Active Modules', 'ffl-funnels-addons') . '</h2></div>';
-        echo '<div class="wb-card__body">';
-        if (empty($active)) {
-            echo '<p class="wb-field__desc">' . esc_html__('No modules are currently active. Go to the Dashboard to activate modules.', 'ffl-funnels-addons') . '</p>';
-        } else {
-            echo '<table class="wb-table">';
-            echo '<thead><tr><th>' . esc_html__('Module', 'ffl-funnels-addons') . '</th><th>' . esc_html__('Version', 'ffl-funnels-addons') . '</th><th>' . esc_html__('Status', 'ffl-funnels-addons') . '</th></tr></thead>';
-            echo '<tbody>';
-            foreach ($active as $module) {
-                echo '<tr>';
-                echo '<td><strong>' . esc_html($module->get_name()) . '</strong></td>';
-                echo '<td>v' . esc_html($module->get_version()) . '</td>';
-                echo '<td><span class="wb-status wb-status--active">' . esc_html__('Active', 'ffl-funnels-addons') . '</span></td>';
-                echo '</tr>';
-            }
-            echo '</tbody></table>';
-        }
-        echo '</div></div>';
-
-        // GitHub token info.
-        echo '<div class="wb-card" style="margin-top:24px;">';
-        echo '<div class="wb-card__header"><h2>' . esc_html__('Private Repository', 'ffl-funnels-addons') . '</h2></div>';
-        echo '<div class="wb-card__body">';
-        echo '<p class="wb-field__desc">' . esc_html__('If the plugin repository is private, add the following to your wp-config.php:', 'ffl-funnels-addons') . '</p>';
-        echo '<code class="wb-code">define(\'FFLA_GITHUB_TOKEN\', \'ghp_your_token_here\');</code>';
-        $token_defined = defined('FFLA_GITHUB_TOKEN') && FFLA_GITHUB_TOKEN;
-        if ($token_defined) {
-            echo '<p style="margin-top:8px;"><span class="wb-status wb-status--active">' . esc_html__('Token configured', 'ffl-funnels-addons') . '</span></p>';
-        } else {
-            echo '<p style="margin-top:8px;"><span class="wb-status wb-status--inactive">' . esc_html__('No token configured', 'ffl-funnels-addons') . '</span></p>';
-        }
-        echo '</div></div>';
     }
 
     /**

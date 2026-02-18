@@ -41,7 +41,35 @@ class FFLA_Dashboard
         }
 
         echo '</div>'; // .ffla-modules-grid
+
+        // Plugin Updates card.
+        $this->render_updates_card();
+
         echo '</div>'; // .ffla-dashboard
+    }
+
+    /**
+     * Render the Plugin Updates card.
+     */
+    private function render_updates_card(): void
+    {
+        echo '<div class="wb-card" style="margin-top:var(--wb-spacing-xl);">';
+        echo '<div class="wb-card__header"><h2>' . esc_html__('Plugin Updates', 'ffl-funnels-addons') . '</h2></div>';
+        echo '<div class="wb-card__body">';
+        echo '<p>' . esc_html__('Current version:', 'ffl-funnels-addons') . ' <strong>v' . esc_html(FFLA_VERSION) . '</strong></p>';
+        echo '<p class="wb-field__desc">' . esc_html__('Click below to check GitHub for new releases. WordPress checks automatically every 12 hours.', 'ffl-funnels-addons') . '</p>';
+        echo '<div style="margin-top:12px;display:flex;align-items:center;gap:12px;">';
+        echo '<button type="button" id="ffla-check-update" class="wb-btn wb-btn--subtle">' . esc_html__('Check for Updates Now', 'ffl-funnels-addons') . '</button>';
+        echo '<span id="ffla-update-result"></span>';
+        echo '</div>';
+
+        // GitHub token status.
+        $token_defined = defined('FFLA_GITHUB_TOKEN') && FFLA_GITHUB_TOKEN;
+        if ($token_defined) {
+            echo '<p style="margin-top:12px;"><span class="wb-status wb-status--active">' . esc_html__('GitHub token configured', 'ffl-funnels-addons') . '</span></p>';
+        }
+
+        echo '</div></div>';
     }
 
     /**
@@ -74,9 +102,9 @@ class FFLA_Dashboard
         // Description.
         echo '<p class="ffla-module-card__desc">' . esc_html($module->get_description()) . '</p>';
 
-        // Footer: version + settings link.
+        // Footer: settings link.
         echo '<div class="ffla-module-card__footer">';
-        echo '<span class="ffla-module-card__version">v' . esc_html($module->get_version()) . '</span>';
+        echo '<span></span>';
 
         if ($is_active) {
             $pages = $module->get_admin_pages();

@@ -25,7 +25,8 @@ class WooBooster_Bricks
      */
     public function init()
     {
-        // NOTE: bricks/setup/control_options is registered at file-load time.
+        // Register the custom query type in Bricks' dropdown.
+        add_filter('bricks/setup/control_options', array($this, 'register_query_type'));
 
         // Register controls on common elements (Container, Block, Div) so they appear
         // in a dedicated group outside the Query Loop tab.

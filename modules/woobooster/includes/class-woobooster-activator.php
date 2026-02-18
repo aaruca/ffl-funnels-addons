@@ -120,7 +120,10 @@ class WooBooster_Activator
             $actions_table = $wpdb->prefix . 'woobooster_rule_actions';
 
             // 1. Ensure `include_children` column exists in rules table (legacy support).
-            $row = $wpdb->get_results("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = '$rules_table' AND column_name = 'include_children'");
+            $row = $wpdb->get_results($wpdb->prepare(
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = %s AND column_name = 'include_children'",
+                $rules_table
+            ));
             if (empty($row)) {
                 $wpdb->query("ALTER TABLE $rules_table ADD include_children tinyint(1) NOT NULL DEFAULT 0");
             }
@@ -128,7 +131,10 @@ class WooBooster_Activator
             // 2. Migrate legacy v1.1 single conditions to v1.2 table.
             $count = $wpdb->get_var("SELECT COUNT(*) FROM $conditions_table");
             if (0 == $count) {
-                $attr_col = $wpdb->get_results("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = '$rules_table' AND column_name = 'condition_attribute'");
+                $attr_col = $wpdb->get_results($wpdb->prepare(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = %s AND column_name = 'condition_attribute'",
+                    $rules_table
+                ));
 
                 if (!empty($attr_col)) {
                     $legacy_rules = $wpdb->get_results("SELECT id, condition_attribute, condition_value, include_children FROM $rules_table WHERE condition_attribute != ''");
@@ -151,7 +157,10 @@ class WooBooster_Activator
             // 3. Migrate legacy v1.2 single actions to v1.3 table.
             $action_count = $wpdb->get_var("SELECT COUNT(*) FROM $actions_table");
             if (0 == $action_count) {
-                $action_cols = $wpdb->get_results("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = '$rules_table' AND column_name = 'action_source'");
+                $action_cols = $wpdb->get_results($wpdb->prepare(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = %s AND column_name = 'action_source'",
+                    $rules_table
+                ));
                 if (!empty($action_cols)) {
                     $legacy_actions = $wpdb->get_results("SELECT id, action_source, action_value, action_limit, action_orderby FROM $rules_table");
                     foreach ($legacy_actions as $rule) {
@@ -170,10 +179,16 @@ class WooBooster_Activator
             }
 
             // 4. Add `include_children` column to actions table if missing.
-            $row_action_children = $wpdb->get_results("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = '$actions_table' AND column_name = 'include_children'");
+            $row_action_children = $wpdb->get_results($wpdb->prepare(
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = %s AND column_name = 'include_children'",
+                $actions_table
+            ));
             if (empty($row_action_children)) {
                 $wpdb->query("ALTER TABLE $actions_table ADD include_children tinyint(1) NOT NULL DEFAULT 0");
             }
+
+            // Mark migration as complete.
+            update_option('woobooster_db_version', WOOBOOSTER_DB_VERSION);
 
         }
     }
