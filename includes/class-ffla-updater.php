@@ -346,7 +346,7 @@ class FFLA_Updater
      * to hang indefinitely. WordPress re-enables active plugins automatically once the
      * Upgrader finishes and the plugin basename matches.
      */
-    public function post_install(bool $response, array $hook_extra, array $result): array
+    public function post_install(mixed $response, array $hook_extra, array $result): array
     {
         if (!isset($hook_extra['plugin']) || $hook_extra['plugin'] !== $this->plugin_basename) {
             return $result;
