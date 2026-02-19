@@ -175,9 +175,14 @@ final class FFL_Funnels_Addons
 
     /**
      * Plugin activation.
+     *
+     * Wrapped in output buffering to prevent any accidental output from
+     * triggering WordPress's "unexpected output during activation" warning.
      */
     public function activate(): void
     {
+        ob_start();
+
         // Create the active modules option if it doesn't exist.
         if (false === get_option('ffla_active_modules')) {
             // Auto-detect existing plugin data to pre-activate modules.
@@ -211,7 +216,10 @@ final class FFL_Funnels_Addons
         foreach ($registry->get_active() as $module) {
             $module->activate();
         }
+
+        ob_end_clean();
     }
+
 
     /**
      * Plugin deactivation.
