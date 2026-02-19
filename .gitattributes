@@ -1,0 +1,11 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Exclude from GitHub release archives (git archive / zipball)
+/.gitattributes    export-ignore
+/.gitignore        export-ignore
+/.github/          export-ignore
+/build/            export-ignore
+/generate_rules.py export-ignore
+/woobooster-rules-import.json export-ignore
+*.zip              export-ignore

@@ -1,12 +1,14 @@
 <?php
+if (!defined('ABSPATH')) {
+    exit;
+}
 
 /**
  * AJAX Handler
- * 
+ *
  * Processes frontend requests for adding/removing items.
  *
- * @package    Algenib_Wishlist
- * @subpackage Algenib_Wishlist/includes
+ * @package FFL_Funnels_Addons
  */
 
 class Alg_Wishlist_Ajax

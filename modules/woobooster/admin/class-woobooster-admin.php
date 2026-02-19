@@ -643,22 +643,17 @@ class WooBooster_Admin
         }
 
         global $wpdb;
-        $rules_table = $wpdb->prefix . 'woobooster_rules';
-        $conditions_table = $wpdb->prefix . 'woobooster_conditions'; // Wait, checking table names in Rule Model...
-        // Rule model has: woobooster_rules, woobooster_rule_index, woobooster_rule_conditions, woobooster_rule_actions
-        // My previous code had woobooster_conditions which was wrong.
-        // Let's correct table names based on WooBooster_Rule class.
-
-        $rules_table = $wpdb->prefix . 'woobooster_rules';
-        $index_table = $wpdb->prefix . 'woobooster_rule_index';
+        $rules_table      = $wpdb->prefix . 'woobooster_rules';
+        $index_table      = $wpdb->prefix . 'woobooster_rule_index';
         $conditions_table = $wpdb->prefix . 'woobooster_rule_conditions';
-        $actions_table = $wpdb->prefix . 'woobooster_rule_actions';
+        $actions_table    = $wpdb->prefix . 'woobooster_rule_actions';
 
-        // Truncate all tables.
+        // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared -- TRUNCATE does not support placeholders; table names are hardcoded.
         $wpdb->query("TRUNCATE TABLE {$conditions_table}");
         $wpdb->query("TRUNCATE TABLE {$actions_table}");
         $wpdb->query("TRUNCATE TABLE {$index_table}");
         $wpdb->query("TRUNCATE TABLE {$rules_table}");
+        // phpcs:enable
 
         wp_send_json_success(array('message' => __('All rules deleted successfully.', 'ffl-funnels-addons')));
     }
