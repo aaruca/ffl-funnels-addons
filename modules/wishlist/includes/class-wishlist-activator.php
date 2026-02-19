@@ -1,10 +1,12 @@
 <?php
+if (!defined('ABSPATH')) {
+    exit;
+}
 
 /**
  * Fired during plugin activation
  *
- * @package    Algenib_Wishlist
- * @subpackage Algenib_Wishlist/includes
+ * @package FFL_Funnels_Addons
  */
 
 class Alg_Wishlist_Activator

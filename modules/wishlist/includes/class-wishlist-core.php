@@ -1,12 +1,14 @@
 <?php
+if (!defined('ABSPATH')) {
+    exit;
+}
 
 /**
  * Core Logic for Wishlist Management
  *
  * Handles database operations, session management, and wishlist actions.
  *
- * @package    Algenib_Wishlist
- * @subpackage Algenib_Wishlist/includes
+ * @package FFL_Funnels_Addons
  */
 
 class Alg_Wishlist_Core

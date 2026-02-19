@@ -1,12 +1,14 @@
 <?php
+if (!defined('ABSPATH')) {
+    exit;
+}
 
 /**
  * Shortcodes Handler
- * 
+ *
  * Registers [alg_wishlist_button] and [alg_wishlist_count].
  *
- * @package    Algenib_Wishlist
- * @subpackage Algenib_Wishlist/includes/shortcodes
+ * @package FFL_Funnels_Addons
  */
 
 class Alg_Wishlist_Shortcodes
@@ -88,13 +90,16 @@ class Alg_Wishlist_Shortcodes
         $icon_html = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>';
 
         if (!empty($atts['icon'])) {
-            // Allow basic sanitization but keep SVG structure if passed directly
-            // For security, usually, we'd limit this, but let's assume admin trust or simple class name
-            // If it's a known icon set class, use <i>, else if it looks like SVG, output it?
-            // Safer: Just assume it's replacement SVG content provided correctly.
-            // For now, let's keep the default heart if empty, or render the passed content if it contains <svg
             if (strpos($atts['icon'], '<svg') !== false) {
-                $icon_html = $atts['icon']; // Trust admin shortcode input
+                $icon_html = wp_kses($atts['icon'], array(
+                    'svg'  => array('xmlns' => true, 'viewBox' => true, 'width' => true, 'height' => true, 'fill' => true, 'stroke' => true, 'stroke-width' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'class' => true),
+                    'path' => array('d' => true, 'fill' => true, 'stroke' => true),
+                    'circle' => array('cx' => true, 'cy' => true, 'r' => true, 'fill' => true, 'stroke' => true),
+                    'rect' => array('x' => true, 'y' => true, 'width' => true, 'height' => true, 'rx' => true, 'ry' => true, 'fill' => true, 'stroke' => true),
+                    'line' => array('x1' => true, 'y1' => true, 'x2' => true, 'y2' => true, 'stroke' => true),
+                    'polyline' => array('points' => true, 'fill' => true, 'stroke' => true),
+                    'polygon' => array('points' => true, 'fill' => true, 'stroke' => true),
+                ));
             }
         }
 
@@ -179,7 +184,7 @@ class Alg_Wishlist_Shortcodes
                     <div class="alg-wishlist-card" data-product-id="<?php echo esc_attr($product_id); ?>">
                         <div class="alg-card-image">
                             <a href="<?php echo esc_url($product->get_permalink()); ?>">
-                                <?php echo $product->get_image('woocommerce_thumbnail'); ?>
+                                <?php echo wp_kses_post($product->get_image('woocommerce_thumbnail')); ?>
                             </a>
                             <button type="button" class="alg-remove-btn" data-product-id="<?php echo esc_attr($product_id); ?>"
                                 aria-label="<?php esc_attr_e('Remove', 'algenib-wishlist'); ?>">
@@ -188,7 +193,7 @@ class Alg_Wishlist_Shortcodes
                         </div>
                         <div class="alg-card-details">
                             <h3 class="alg-card-title">
-                                <a href="<?php echo esc_url($product->get_permalink()); ?>"><?php echo $product->get_name(); ?></a>
+                                <a href="<?php echo esc_url($product->get_permalink()); ?>"><?php echo esc_html($product->get_name()); ?></a>
                             </h3>
                             <div class="alg-card-price">
                                 <?php echo $product->get_price_html(); ?>

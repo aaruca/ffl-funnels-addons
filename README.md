@@ -2,12 +2,12 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.0.3-blue.svg)
+![Version](https://img.shields.io/badge/version-1.0.21-blue.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.0+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
 
-## 🚀 Features
+## Features
 
 This plugin is a modular suite of tools designed to enhance FFL Funnels stores. It includes:
 
@@ -23,12 +23,13 @@ A lightweight wishlist implementation optimized for performance.
 *   Item toggling via AJAX.
 *   Bricks Builder integration.
 *   Guest wishlist support.
+*   Doofinder shadow DOM integration.
 
 ### 3. Doofinder Sync
 *   Automatically injects product metadata for Doofinder search indexing.
 *   Ensures your search engine always has the latest product data.
 
-## 🛠️ Installation
+## Installation
 
 1.  Download the `ffl-funnels-addons.zip` file from the [Releases](https://github.com/aaruca/ffl-funnels-addons/releases) page.
 2.  Go to **WordPress Admin > Plugins > Add New**.
@@ -36,7 +37,16 @@ A lightweight wishlist implementation optimized for performance.
 4.  Activate the plugin.
 5.  Go to **FFL Addons** in the admin menu to configure modules.
 
-## ⚙️ Configuration
+## Auto-Updates
+
+The plugin supports automatic updates via GitHub Releases. When a new version is published, WordPress will detect it and offer the update in the Plugins page.
+
+For private repositories, add this to `wp-config.php`:
+```php
+define('FFLA_GITHUB_TOKEN', 'ghp_your_token_here');
+```
+
+## Configuration
 
 ### Activating Modules
 The plugin is modular. You can enable or disable features to keep your site lightweight.
@@ -51,14 +61,34 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 4.  **Actions:** Define *what* to show (e.g., "Show products from Category: Ammo" OR "Show Related Products from Attribute: Caliber").
 5.  **Priority:** Rules are processed top-to-bottom. The first matching rule wins.
 
-## 📦 Requirements
+## Requirements
 
 *   WordPress 6.0 or higher
 *   WooCommerce 8.0 or higher
 *   PHP 7.4 or higher
 *   (Optional) Bricks Builder for visual layout customization
 
-## 📝 Changelog
+## Changelog
+
+### v1.0.21
+*   Security audit: fix CSS injection in wishlist color settings (validate with `sanitize_hex_color` pattern).
+*   Security audit: fix XSS in wishlist shortcode `icon` attribute (sanitize SVG with `wp_kses`).
+*   Security audit: escape `$product->get_name()` in wishlist page shortcode.
+*   Add ABSPATH guards to all wishlist include files.
+*   Clean up dead code in WooBooster `ajax_delete_all_rules`.
+*   Add `.gitattributes` for clean GitHub release zips (exclude dev files).
+*   Add GitHub Actions workflow for automated release builds.
+*   Remove stale `build/` directory from git tracking.
+
+### v1.0.20
+*   Switched to `upgrader_source_selection` to fix plugin folder rename during updates.
+
+### v1.0.17
+*   Added `[alg_wishlist_button_aws]` shortcode with text toggles.
+
+### v1.0.15
+*   Wishlist JS sync for Doofinder shadow DOM layers.
+*   Toast notification improvements.
 
 ### v1.0.3
 *   Removed global category rules to prevent redundancy.
@@ -72,7 +102,7 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 *   Added Doofinder Sync module.
 *   Implemented modular architecture and GitHub Updater.
 
-## 👤 Author
+## Author
 
 **Ale Aruca**
 

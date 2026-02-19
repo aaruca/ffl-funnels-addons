@@ -1,12 +1,14 @@
 <?php
+if (!defined('ABSPATH')) {
+    exit;
+}
 
 /**
  * Assets Handler
- * 
+ *
  * Enqueues Frontend JS and CSS.
  *
- * @package    Algenib_Wishlist
- * @subpackage Algenib_Wishlist/includes
+ * @package FFL_Funnels_Addons
  */
 
 class Alg_Wishlist_Assets
@@ -36,17 +38,17 @@ class Alg_Wishlist_Assets
         ));
 
         $options = get_option('alg_wishlist_settings');
-        $primary = isset($options['alg_wishlist_color_primary']) ? $options['alg_wishlist_color_primary'] : '#ff4b4b';
-        $hover = isset($options['alg_wishlist_color_hover']) ? $options['alg_wishlist_color_hover'] : '#ff0000';
-        $active = isset($options['alg_wishlist_color_active']) ? $options['alg_wishlist_color_active'] : '#cc0000';
-        $custom = isset($options['alg_wishlist_custom_css']) ? $options['alg_wishlist_custom_css'] : '';
+        $primary = $this->sanitize_css_color(isset($options['alg_wishlist_color_primary']) ? $options['alg_wishlist_color_primary'] : '#ff4b4b');
+        $hover   = $this->sanitize_css_color(isset($options['alg_wishlist_color_hover']) ? $options['alg_wishlist_color_hover'] : '#ff0000');
+        $active  = $this->sanitize_css_color(isset($options['alg_wishlist_color_active']) ? $options['alg_wishlist_color_active'] : '#cc0000');
+        $custom  = isset($options['alg_wishlist_custom_css']) ? wp_strip_all_tags($options['alg_wishlist_custom_css']) : '';
 
         $custom_css = "
             :root {
                 --alg-btn-color: {$primary};
                 --alg-btn-hover-color: {$hover};
                 --alg-btn-active-color: {$active};
-                
+
                 --alg-wishlist-primary: {$primary};
                 --alg-wishlist-active: {$active};
             }
@@ -174,5 +176,30 @@ class Alg_Wishlist_Assets
         ";
 
         wp_add_inline_style('alg-wishlist-css', $custom_css);
+    }
+
+    /**
+     * Sanitize a CSS color value. Allows hex, rgb(), rgba(), hsl(), hsla(), and named colors.
+     */
+    private function sanitize_css_color(string $color): string
+    {
+        $color = trim($color);
+
+        // Allow hex colors.
+        if (preg_match('/^#([0-9a-fA-F]{3}){1,2}$/', $color)) {
+            return $color;
+        }
+
+        // Allow rgb/rgba/hsl/hsla with safe characters only.
+        if (preg_match('/^(rgb|rgba|hsl|hsla)\(\s*[\d\s%,.\\/]+\)$/i', $color)) {
+            return $color;
+        }
+
+        // Allow CSS named colors (single word, letters only).
+        if (preg_match('/^[a-zA-Z]+$/', $color)) {
+            return $color;
+        }
+
+        return '#ff4b4b'; // Safe fallback.
     }
 }
