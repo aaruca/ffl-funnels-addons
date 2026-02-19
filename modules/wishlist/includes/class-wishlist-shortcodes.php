@@ -15,8 +15,47 @@ class Alg_Wishlist_Shortcodes
     public function register_shortcodes()
     {
         add_shortcode('alg_wishlist_button', array($this, 'render_button'));
+        add_shortcode('alg_wishlist_button_aws', array($this, 'render_aws_button'));
         add_shortcode('alg_wishlist_count', array($this, 'render_count'));
         add_shortcode('alg_wishlist_page', array($this, 'render_page'));
+    }
+
+    public function render_aws_button($atts)
+    {
+        $atts = shortcode_atts(array(
+            'product_id' => get_the_ID()
+        ), $atts);
+
+        $id = intval($atts['product_id']);
+        if (!$id)
+            return '';
+
+        // Check active state
+        $items = Alg_Wishlist_Core::get_wishlist_items();
+        $is_active = in_array($id, $items);
+        $class = 'aws-wishlist--trigger single';
+        $type = 'ADD';
+        $text = __('Add to wishlist', 'algenib-wishlist');
+
+        if ($is_active) {
+            $class .= ' active';
+            $type = 'REMOVE';
+            $text = __('Remove from wishlist', 'algenib-wishlist');
+        }
+
+        ob_start();
+        ?>
+        <a href="#" class="<?php echo esc_attr($class); ?>" data-product-id="<?php echo esc_attr($id); ?>"
+            data-type="<?php echo esc_attr($type); ?>" data-is-initialized="YES">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+                <path
+                    d="M47.6 300.4L228.3 469.1c7.5 7 17.4 10.9 27.7 10.9s20.2-3.9 27.7-10.9L464.4 300.4c30.4-28.3 47.6-68 47.6-109.5v-5.8c0-69.9-50.5-129.5-119.4-141C347 36.5 300.6 51.4 268 84L256 96 244 84c-32.6-32.6-79-47.5-124.6-39.9C50.5 55.6 0 115.2 0 185.1v5.8c0 41.5 17.2 81.2 47.6 109.5z">
+                </path>
+            </svg>
+            <span><?php echo esc_html($text); ?></span>
+        </a>
+        <?php
+        return ob_get_clean();
     }
 
     public function render_button($atts)
