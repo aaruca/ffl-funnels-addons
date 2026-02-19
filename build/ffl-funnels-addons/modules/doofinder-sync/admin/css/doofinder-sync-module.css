@@ -1,0 +1,8 @@
+/* Doofinder Sync Module — Minimal admin CSS */
+/* Most styling comes from the shared FFLA design system. */
+
+/* Ensure the inspect form aligns nicely */
+.ffla-admin .wb-field--inline input[type="number"]#dsync_pid {
+  width: 100px;
+  flex-shrink: 0;
+}

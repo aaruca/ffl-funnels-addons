@@ -1,0 +1,234 @@
+/* WooBooster Module — Specific Styles */
+/* Condition groups, action repeater, autocomplete, diagnostic tester */
+
+/* ═══════════════════════════════════════════════════════════════════
+   1. AUTOCOMPLETE DROPDOWN
+   ═══════════════════════════════════════════════════════════════════ */
+.wb-autocomplete {
+  position: relative;
+  max-width: 100%;
+}
+
+.wb-autocomplete__dropdown {
+  display: none;
+  position: absolute;
+  z-index: 100;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--wb-color-neutral-background-1);
+  border: 1px solid var(--wb-color-neutral-stroke-1);
+  border-radius: var(--wb-radius-md);
+  box-shadow: var(--wb-shadow-4);
+  padding: 4px;
+}
+
+.wb-autocomplete__item {
+  padding: 8px 12px;
+  border-radius: var(--wb-radius-sm);
+  cursor: pointer;
+  font-size: var(--wb-font-size-base);
+  transition: background var(--wb-duration-fast);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wb-autocomplete__item:hover {
+  background: var(--wb-color-neutral-background-3);
+}
+
+.wb-autocomplete__more {
+  padding: 8px;
+  cursor: default;
+  text-align: center;
+  color: var(--wb-color-neutral-foreground-3);
+  font-size: var(--wb-font-size-sm);
+  font-style: italic;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   2. CONDITION REPEATER
+   ═══════════════════════════════════════════════════════════════════ */
+.wb-condition-group {
+  background: var(--wb-color-neutral-background-1);
+  border: 1px solid var(--wb-color-neutral-stroke-2);
+  border-radius: var(--wb-radius-md);
+  padding: var(--wb-spacing-lg);
+  margin-bottom: var(--wb-spacing-lg);
+  box-shadow: var(--wb-shadow-1);
+  transition: all var(--wb-duration-fast);
+}
+
+.wb-condition-group:hover {
+  box-shadow: var(--wb-shadow-2);
+  border-color: var(--wb-color-neutral-stroke-1);
+}
+
+.wb-condition-group__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--wb-spacing-md);
+  padding-bottom: var(--wb-spacing-sm);
+  border-bottom: 2px solid var(--wb-color-neutral-background-2);
+}
+
+.wb-condition-group__label {
+  font-weight: var(--wb-font-weight-bold);
+  font-size: 12px;
+  color: var(--wb-color-neutral-foreground-2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--wb-color-neutral-background-2);
+  padding: 4px 8px;
+  border-radius: var(--wb-radius-sm);
+}
+
+.wb-condition-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wb-spacing-md);
+  margin-bottom: var(--wb-spacing-sm);
+  padding: var(--wb-spacing-sm);
+  background: var(--wb-color-neutral-background-2);
+  border-radius: var(--wb-radius-sm);
+  border: 1px solid transparent;
+}
+
+.wb-condition-row:hover {
+  border-color: var(--wb-color-neutral-stroke-1);
+  background: #fff;
+  box-shadow: var(--wb-shadow-1);
+}
+
+.wb-condition-row:last-of-type {
+  margin-bottom: var(--wb-spacing-md);
+}
+
+.wb-or-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: var(--wb-spacing-lg) 0;
+  font-weight: var(--wb-font-weight-bold);
+  color: var(--wb-color-neutral-foreground-3);
+  font-size: var(--wb-font-size-sm);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.wb-or-divider::before,
+.wb-or-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--wb-color-neutral-stroke-2);
+  margin: 0 var(--wb-spacing-md);
+}
+
+.wb-condition-value-wrap {
+  flex: 1;
+  min-width: 200px;
+}
+
+.wb-condition-children-label {
+  white-space: nowrap;
+  font-size: var(--wb-font-size-sm);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   3. ACTION REPEATER
+   ═══════════════════════════════════════════════════════════════════ */
+.wb-action-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wb-spacing-md);
+  margin-bottom: var(--wb-spacing-sm);
+  padding: var(--wb-spacing-sm);
+  background: var(--wb-color-neutral-background-2);
+  border-radius: var(--wb-radius-sm);
+  border: 1px solid transparent;
+  flex-wrap: wrap;
+}
+
+.wb-action-row:hover {
+  border-color: var(--wb-color-neutral-stroke-1);
+  background: #fff;
+  box-shadow: var(--wb-shadow-1);
+}
+
+.wb-action-row:last-of-type {
+  margin-bottom: var(--wb-spacing-md);
+}
+
+.wb-action-source {
+  min-width: 140px;
+}
+
+.wb-action-value-wrap {
+  flex-grow: 1;
+}
+
+/* Compact inputs in repeater rows */
+.wb-action-row .wb-input,
+.wb-action-row .wb-select,
+.wb-condition-row .wb-input,
+.wb-condition-row .wb-select {
+  margin-bottom: 0;
+  font-size: 13px;
+  padding: 8px 12px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   4. DIAGNOSTIC TESTER
+   ═══════════════════════════════════════════════════════════════════ */
+.wb-test-results {
+  margin-top: var(--wb-spacing-xl);
+  border-top: 1px solid var(--wb-color-neutral-stroke-2);
+  padding-top: var(--wb-spacing-xl);
+}
+
+.wb-test-grid {
+  display: grid;
+  gap: var(--wb-spacing-xl);
+}
+
+.wb-test-section {
+  padding: var(--wb-spacing-xl);
+  background: var(--wb-color-neutral-background-2);
+  border-radius: var(--wb-radius-md);
+  border: 1px solid var(--wb-color-neutral-stroke-2);
+}
+
+.wb-test-section h4 {
+  font-size: var(--wb-font-size-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--wb-color-neutral-foreground-2);
+  margin-bottom: var(--wb-spacing-md);
+  border-bottom: 2px solid var(--wb-color-neutral-stroke-2);
+  padding-bottom: 8px;
+  display: inline-block;
+}
+
+.wb-mini-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--wb-font-size-sm);
+}
+
+.wb-mini-table th,
+.wb-mini-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--wb-color-neutral-stroke-2);
+}
+
+.wb-mini-table th {
+  font-weight: var(--wb-font-weight-semibold);
+  color: var(--wb-color-neutral-foreground-2);
+  background: rgba(0, 0, 0, 0.02);
+}
