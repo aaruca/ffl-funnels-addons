@@ -28,7 +28,7 @@ class Wishlist_Admin
     public function render_settings_content(): void
     {
         $options = get_option('alg_wishlist_settings', []);
-        $saved   = isset($_GET['settings-updated']) && $_GET['settings-updated'] === '1';
+        $saved = isset($_GET['settings-updated']) && $_GET['settings-updated'] === '1';
 
         if ($saved) {
             FFLA_Admin::render_notice('success', __('Settings saved.', 'ffl-funnels-addons'));
@@ -84,12 +84,12 @@ class Wishlist_Admin
         echo '<label class="wb-field__label" for="alg_wishlist_page_id">' . esc_html__('Wishlist Page', 'ffl-funnels-addons') . '</label>';
         echo '<div class="wb-field__control">';
         wp_dropdown_pages([
-            'name'              => 'alg_wishlist_page_id',
-            'id'                => 'alg_wishlist_page_id',
-            'selected'          => $selected_page,
-            'show_option_none'  => __('-- Select Page --', 'ffl-funnels-addons'),
+            'name' => 'alg_wishlist_page_id',
+            'id' => 'alg_wishlist_page_id',
+            'selected' => $selected_page,
+            'show_option_none' => __('-- Select Page --', 'ffl-funnels-addons'),
             'option_none_value' => '0',
-            'class'             => 'wb-select',
+            'class' => 'wb-select',
         ]);
         echo '<p class="wb-field__desc">' . esc_html__('Select the page where you placed the [alg_wishlist_page] shortcode.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
@@ -137,15 +137,21 @@ class Wishlist_Admin
         echo '<hr class="wb-hr">';
 
         echo '<h4>' . esc_html__('Doofinder Integration', 'ffl-funnels-addons') . '</h4>';
-        echo '<p>' . esc_html__('Add this HTML to your Doofinder Layer Template (Product Card) to show a wishlist button in search results:', 'ffl-funnels-addons') . '</p>';
-        echo '<div class="wb-code-block"><code>';
-        echo esc_html('<button type="button" class="wbw-doofinder-btn" data-product-id="<%= @item["id"] %>" title="Add to Wishlist">');
-        echo '<br>';
-        echo esc_html('  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>');
-        echo '<br>';
-        echo esc_html('</button>');
-        echo '</code></div>';
-        echo '<p class="wb-field__desc">' . esc_html__('The plugin JS will automatically detect this button and handle wishlist logic.', 'ffl-funnels-addons') . '</p>';
+        echo '<p>' . esc_html__('Add this HTML to your Doofinder Layer Template (Product Card) to show a wishlist button in search results. The plugin JS will automatically detect this button and handle wishlist logic.', 'ffl-funnels-addons') . '</p>';
+
+        $df_snippet = '<button type="button" class="wbw-doofinder-btn" data-product-id="<%= @item[&quot;id&quot;] %>" title="Add to Wishlist">' . "\n"
+            . '  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' . "\n"
+            . '    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>' . "\n"
+            . '  </svg>' . "\n"
+            . '</button>';
+
+        echo '<div id="wbw-df-snippet-wrap" style="position:relative;background:#1e1e1e;border-radius:6px;padding:16px 48px 16px 16px;margin-top:12px;">';
+        echo '<button type="button" id="wbw-df-copy-btn" title="' . esc_attr__('Copy to clipboard', 'ffl-funnels-addons') . '" '
+            . 'style="position:absolute;top:10px;right:10px;background:none;border:1px solid #555;border-radius:4px;cursor:pointer;color:#ccc;padding:4px 8px;font-size:12px;line-height:1;" '
+            . 'onclick="(function(btn){var code=document.getElementById(\'wbw-df-snippet-code\').textContent;navigator.clipboard.writeText(code).then(function(){btn.textContent=\'✓ Copied\';btn.style.color=\'#4ade80\';setTimeout(function(){btn.textContent=\'Copy\';btn.style.color=\'#ccc\';},1800)});})(this)">'
+            . esc_html__('Copy', 'ffl-funnels-addons') . '</button>';
+        echo '<pre id="wbw-df-snippet-code" style="margin:0;white-space:pre;overflow-x:auto;color:#d4d4d4;font-size:13px;font-family:monospace;line-height:1.5;">' . esc_html($df_snippet) . '</pre>';
+        echo '</div>';
 
         echo '</div></div>'; // end docs card
     }
