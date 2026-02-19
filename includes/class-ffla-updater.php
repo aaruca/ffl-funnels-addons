@@ -48,7 +48,7 @@ class FFLA_Updater
     {
         add_filter('pre_set_site_transient_update_plugins', [$this, 'check_update']);
         add_filter('plugins_api', [$this, 'plugin_info'], 10, 3);
-        add_filter('upgrader_post_install', [$this, 'post_install'], 10, 3);
+        add_filter('upgrader_source_selection', [$this, 'source_selection'], 10, 4);
 
         add_filter('plugin_action_links_' . $this->plugin_basename, [$this, 'add_check_update_link']);
         add_action('after_plugin_row_' . $this->plugin_basename, [$this, 'show_update_notice'], 10, 2);
@@ -346,37 +346,44 @@ class FFLA_Updater
      * to hang indefinitely. WordPress re-enables active plugins automatically once the
      * Upgrader finishes and the plugin basename matches.
      */
-    public function post_install(mixed $response, array $hook_extra, array $result): array
+    /**
+     * Fix directory name in the temp extracting directory BEFORE WP moves it.
+     *
+     * WordPress extracts the zip into a temporary folder. GitHub zipballs 
+     * often have a root folder like "aaruca-ffl-funnels-addons-{sha}/".
+     * We need to rename that root folder to "ffl-funnels-addons/" within the 
+     * temp directory so that when WP moves it to WP_PLUGIN_DIR, it overwrites
+     * the exact original plugin folder without changing the basename.
+     */
+    public function source_selection(string $source, string $remote_source, object $upgrader, array $hook_extra = []): string
     {
+        // Only trigger this for our plugin update
         if (!isset($hook_extra['plugin']) || $hook_extra['plugin'] !== $this->plugin_basename) {
-            return $result;
+            return $source;
         }
 
         global $wp_filesystem;
 
-        $proper_destination = WP_PLUGIN_DIR . '/' . $this->plugin_slug;
+        // The path where WP has extracted the files (e.g. /wp-content/upgrade/...)
+        $upgrader_temp_dir = trailingslashit($remote_source);
 
-        $current_destination = untrailingslashit($result['destination']);
-        $target_destination = untrailingslashit($proper_destination);
+        // The expected folder name inside the temp directory
+        $proper_folder_name = trailingslashit($this->plugin_slug);
+        $proper_destination = $upgrader_temp_dir . $proper_folder_name;
 
-        // If the extracted folder is already named exactly correctly, do nothing!
-        // This prevents the updater from deleting its own newly extracted files.
-        if ($current_destination === $target_destination) {
-            return $result;
+        // If it's already extracted to the perfect folder name, we do nothing.
+        // This is important because our custom CI-built zips are already structured correctly.
+        if (trailingslashit($source) === $proper_destination) {
+            return $source;
         }
 
-        // Remove stale directory if it exists (avoids move failure).
-        if ($wp_filesystem->is_dir($target_destination)) {
-            $wp_filesystem->delete($target_destination, true);
+        // Rename the extracted folder to our expected plugin slug
+        if ($wp_filesystem->move($source, $proper_destination, true)) {
+            return $proper_destination;
         }
 
-        $wp_filesystem->move($result['destination'], $proper_destination, true);
-
-        $result['destination'] = $proper_destination;
-        $result['destination_name'] = $this->plugin_slug;
-        $result['remote_destination'] = $proper_destination;
-
-        return $result;
+        // Fallback to original source if move fails
+        return $source;
     }
 
     /**
