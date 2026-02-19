@@ -139,7 +139,7 @@ class Wishlist_Admin
         echo '<h4>' . esc_html__('Doofinder Integration', 'ffl-funnels-addons') . '</h4>';
         echo '<p>' . esc_html__('Add this HTML to your Doofinder Layer Template (Product Card) to show a wishlist button in search results. The plugin JS will automatically detect this button and handle wishlist logic.', 'ffl-funnels-addons') . '</p>';
 
-        $df_snippet = '<button type="button" class="wbw-doofinder-btn" data-product-id="<%= @item["id"] %>" title="Add to Wishlist">' . "\n"
+        $df_snippet = '<button type="button" class="wbw-doofinder-btn" data-product-id="<%= @item["id"] %>" onclick="window.AlgWishlist.toggle(this)" title="Add to Wishlist">' . "\n"
             . '  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' . "\n"
             . '    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>' . "\n"
             . '  </svg>' . "\n"
