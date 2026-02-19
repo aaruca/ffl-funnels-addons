@@ -639,6 +639,38 @@
     var importBtn = document.getElementById('wb-import-rules-btn');
     var fileInput = document.getElementById('wb-import-file');
 
+    var deleteAllBtn = document.getElementById('wb-delete-all-rules');
+    if (deleteAllBtn) {
+      deleteAllBtn.addEventListener('click', function () {
+        if (!confirm('Are you sure you want to DELETE ALL RULES? This action cannot be undone.')) return;
+
+        deleteAllBtn.disabled = true;
+        deleteAllBtn.textContent = 'Deleting…';
+
+        var fd = new FormData();
+        fd.append('action', 'woobooster_delete_all_rules');
+        fd.append('nonce', cfg.nonce);
+
+        fetch(cfg.ajaxUrl, { method: 'POST', body: fd })
+          .then(function (r) { return r.json(); })
+          .then(function (res) {
+            if (res.success) {
+              alert(res.data.message);
+              window.location.reload();
+            } else {
+              deleteAllBtn.disabled = false;
+              deleteAllBtn.textContent = 'Delete All';
+              alert(res.data.message || 'Error deleting rules.');
+            }
+          })
+          .catch(function () {
+            deleteAllBtn.disabled = false;
+            deleteAllBtn.textContent = 'Delete All';
+            alert('Network error.');
+          });
+      });
+    }
+
     if (exportBtn) {
       exportBtn.addEventListener('click', function () {
         window.location.href = cfg.ajaxUrl + '?action=woobooster_export_rules&nonce=' + cfg.nonce;

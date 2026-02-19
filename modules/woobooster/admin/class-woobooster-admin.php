@@ -27,6 +27,7 @@ class WooBooster_Admin
         add_action('wp_ajax_woobooster_import_rules', array($this, 'ajax_import_rules'));
         add_action('wp_ajax_woobooster_rebuild_index', array($this, 'ajax_rebuild_index'));
         add_action('wp_ajax_woobooster_purge_index', array($this, 'ajax_purge_index'));
+        add_action('wp_ajax_woobooster_delete_all_rules', array($this, 'ajax_delete_all_rules'));
     }
 
     /**
@@ -160,7 +161,9 @@ class WooBooster_Admin
                                 <input type="checkbox" name="woobooster_smart_copurchase" value="1" <?php checked(!empty($options['smart_copurchase']), true); ?>>
                                 <span class="wb-toggle__slider"></span>
                             </label>
-                            <p class="wb-field__desc"><?php esc_html_e('Analyze orders to find products frequently purchased together. Runs nightly via WP-Cron.', 'ffl-funnels-addons'); ?></p>
+                            <p class="wb-field__desc">
+                                <?php esc_html_e('Analyze orders to find products frequently purchased together. Runs nightly via WP-Cron.', 'ffl-funnels-addons'); ?>
+                            </p>
                         </div>
                     </div>
 
@@ -171,7 +174,9 @@ class WooBooster_Admin
                                 <input type="checkbox" name="woobooster_smart_trending" value="1" <?php checked(!empty($options['smart_trending']), true); ?>>
                                 <span class="wb-toggle__slider"></span>
                             </label>
-                            <p class="wb-field__desc"><?php esc_html_e('Track bestselling products per category. Updates every 6 hours via WP-Cron.', 'ffl-funnels-addons'); ?></p>
+                            <p class="wb-field__desc">
+                                <?php esc_html_e('Track bestselling products per category. Updates every 6 hours via WP-Cron.', 'ffl-funnels-addons'); ?>
+                            </p>
                         </div>
                     </div>
 
@@ -182,7 +187,9 @@ class WooBooster_Admin
                                 <input type="checkbox" name="woobooster_smart_recently_viewed" value="1" <?php checked(!empty($options['smart_recently_viewed']), true); ?>>
                                 <span class="wb-toggle__slider"></span>
                             </label>
-                            <p class="wb-field__desc"><?php esc_html_e('Show products the visitor recently viewed. Uses a browser cookie.', 'ffl-funnels-addons'); ?></p>
+                            <p class="wb-field__desc">
+                                <?php esc_html_e('Show products the visitor recently viewed. Uses a browser cookie.', 'ffl-funnels-addons'); ?>
+                            </p>
                         </div>
                     </div>
 
@@ -193,7 +200,9 @@ class WooBooster_Admin
                                 <input type="checkbox" name="woobooster_smart_similar" value="1" <?php checked(!empty($options['smart_similar']), true); ?>>
                                 <span class="wb-toggle__slider"></span>
                             </label>
-                            <p class="wb-field__desc"><?php esc_html_e('Find products with similar price range and category, ordered by sales.', 'ffl-funnels-addons'); ?></p>
+                            <p class="wb-field__desc">
+                                <?php esc_html_e('Find products with similar price range and category, ordered by sales.', 'ffl-funnels-addons'); ?>
+                            </p>
                         </div>
                     </div>
 
@@ -204,23 +213,34 @@ class WooBooster_Admin
                     $smart_max = isset($options['smart_max_relations']) ? $options['smart_max_relations'] : '20';
                     ?>
                     <div class="wb-field">
-                        <label class="wb-field__label" for="wb-smart-days"><?php esc_html_e('Days to Analyze', 'ffl-funnels-addons'); ?></label>
+                        <label class="wb-field__label"
+                            for="wb-smart-days"><?php esc_html_e('Days to Analyze', 'ffl-funnels-addons'); ?></label>
                         <div class="wb-field__control">
-                            <input type="number" id="wb-smart-days" name="woobooster_smart_days" value="<?php echo esc_attr($smart_days); ?>" min="7" max="365" class="wb-input wb-input--sm" style="width:100px;">
-                            <p class="wb-field__desc"><?php esc_html_e('How many days of order history to scan for co-purchase and trending data.', 'ffl-funnels-addons'); ?></p>
+                            <input type="number" id="wb-smart-days" name="woobooster_smart_days"
+                                value="<?php echo esc_attr($smart_days); ?>" min="7" max="365" class="wb-input wb-input--sm"
+                                style="width:100px;">
+                            <p class="wb-field__desc">
+                                <?php esc_html_e('How many days of order history to scan for co-purchase and trending data.', 'ffl-funnels-addons'); ?>
+                            </p>
                         </div>
                     </div>
 
                     <div class="wb-field">
-                        <label class="wb-field__label" for="wb-smart-max"><?php esc_html_e('Max Relations Per Product', 'ffl-funnels-addons'); ?></label>
+                        <label class="wb-field__label"
+                            for="wb-smart-max"><?php esc_html_e('Max Relations Per Product', 'ffl-funnels-addons'); ?></label>
                         <div class="wb-field__control">
-                            <input type="number" id="wb-smart-max" name="woobooster_smart_max_relations" value="<?php echo esc_attr($smart_max); ?>" min="5" max="50" class="wb-input wb-input--sm" style="width:100px;">
-                            <p class="wb-field__desc"><?php esc_html_e('Maximum number of related products to store per product in co-purchase index.', 'ffl-funnels-addons'); ?></p>
+                            <input type="number" id="wb-smart-max" name="woobooster_smart_max_relations"
+                                value="<?php echo esc_attr($smart_max); ?>" min="5" max="50" class="wb-input wb-input--sm"
+                                style="width:100px;">
+                            <p class="wb-field__desc">
+                                <?php esc_html_e('Maximum number of related products to store per product in co-purchase index.', 'ffl-funnels-addons'); ?>
+                            </p>
                         </div>
                     </div>
 
                     <div class="wb-actions-bar" style="margin-top:16px;">
-                        <button type="submit" class="wb-btn wb-btn--primary"><?php esc_html_e('Save Smart Settings', 'ffl-funnels-addons'); ?></button>
+                        <button type="submit"
+                            class="wb-btn wb-btn--primary"><?php esc_html_e('Save Smart Settings', 'ffl-funnels-addons'); ?></button>
                     </div>
                 </form>
 
@@ -234,32 +254,32 @@ class WooBooster_Admin
                         <?php esc_html_e('Clear All Data', 'ffl-funnels-addons'); ?>
                     </button>
                     <span id="wb-smart-status" style="color: var(--wb-color-neutral-foreground-2); font-size:13px;">
-                    <?php
-                    if (!empty($last_build)) {
-                        $parts = array();
-                        if (!empty($last_build['copurchase'])) {
-                            $cp = $last_build['copurchase'];
-                            $parts[] = sprintf(
-                                __('Co-purchase: %1$d products in %2$ss (%3$s)', 'ffl-funnels-addons'),
-                                $cp['products'],
-                                $cp['time'],
-                                $cp['date']
-                            );
+                        <?php
+                        if (!empty($last_build)) {
+                            $parts = array();
+                            if (!empty($last_build['copurchase'])) {
+                                $cp = $last_build['copurchase'];
+                                $parts[] = sprintf(
+                                    __('Co-purchase: %1$d products in %2$ss (%3$s)', 'ffl-funnels-addons'),
+                                    $cp['products'],
+                                    $cp['time'],
+                                    $cp['date']
+                                );
+                            }
+                            if (!empty($last_build['trending'])) {
+                                $tr = $last_build['trending'];
+                                $parts[] = sprintf(
+                                    __('Trending: %1$d categories in %2$ss (%3$s)', 'ffl-funnels-addons'),
+                                    $tr['categories'],
+                                    $tr['time'],
+                                    $tr['date']
+                                );
+                            }
+                            if (!empty($parts)) {
+                                echo esc_html(implode(' · ', $parts));
+                            }
                         }
-                        if (!empty($last_build['trending'])) {
-                            $tr = $last_build['trending'];
-                            $parts[] = sprintf(
-                                __('Trending: %1$d categories in %2$ss (%3$s)', 'ffl-funnels-addons'),
-                                $tr['categories'],
-                                $tr['time'],
-                                $tr['date']
-                            );
-                        }
-                        if (!empty($parts)) {
-                            echo esc_html(implode(' · ', $parts));
-                        }
-                    }
-                    ?>
+                        ?>
                     </span>
                 </div>
             </div>
@@ -292,6 +312,7 @@ class WooBooster_Admin
                 echo '<div class="wb-card__actions">';
                 echo '<button type="button" id="wb-export-rules" class="wb-btn wb-btn--subtle wb-btn--sm" style="margin-right: 8px;">' . esc_html__('Export', 'ffl-funnels-addons') . '</button>';
                 echo '<button type="button" id="wb-import-rules-btn" class="wb-btn wb-btn--subtle wb-btn--sm" style="margin-right: 8px;">' . esc_html__('Import', 'ffl-funnels-addons') . '</button>';
+                echo '<button type="button" id="wb-delete-all-rules" class="wb-btn wb-btn--subtle wb-btn--sm wb-btn--danger" style="margin-right: 8px;">' . esc_html__('Delete All', 'ffl-funnels-addons') . '</button>';
                 echo '<input type="file" id="wb-import-file" style="display:none;" accept=".json">';
                 echo '<a href="' . esc_url($add_url) . '" class="wb-btn wb-btn--primary wb-btn--sm">';
                 echo WooBooster_Icons::get('plus'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
@@ -327,16 +348,22 @@ class WooBooster_Admin
             </div>
             <div class="wb-card__body">
                 <h3><?php esc_html_e('Getting Started', 'ffl-funnels-addons'); ?></h3>
-                <p><?php esc_html_e('WooBooster automatically displays recommended products based on your rules. By default, it replaces the standard WooCommerce "Related Products" section.', 'ffl-funnels-addons'); ?></p>
+                <p><?php esc_html_e('WooBooster automatically displays recommended products based on your rules. By default, it replaces the standard WooCommerce "Related Products" section.', 'ffl-funnels-addons'); ?>
+                </p>
 
                 <hr class="wb-hr">
 
                 <h3><?php esc_html_e('Shortcode Usage', 'ffl-funnels-addons'); ?></h3>
-                <p><?php esc_html_e('Use the shortcode to display recommendations anywhere on your site:', 'ffl-funnels-addons'); ?></p>
+                <p><?php esc_html_e('Use the shortcode to display recommendations anywhere on your site:', 'ffl-funnels-addons'); ?>
+                </p>
                 <code class="wb-code">[woobooster product_id="123" limit="4"]</code>
                 <ul class="wb-list">
-                    <li><strong>product_id</strong>: <?php esc_html_e('(Optional) ID of the product to base recommendations on. Defaults to current product.', 'ffl-funnels-addons'); ?></li>
-                    <li><strong>limit</strong>: <?php esc_html_e('(Optional) Number of products to show. Default: 4.', 'ffl-funnels-addons'); ?></li>
+                    <li><strong>product_id</strong>:
+                        <?php esc_html_e('(Optional) ID of the product to base recommendations on. Defaults to current product.', 'ffl-funnels-addons'); ?>
+                    </li>
+                    <li><strong>limit</strong>:
+                        <?php esc_html_e('(Optional) Number of products to show. Default: 4.', 'ffl-funnels-addons'); ?>
+                    </li>
                 </ul>
 
                 <hr class="wb-hr">
@@ -352,17 +379,27 @@ class WooBooster_Admin
                 <hr class="wb-hr">
 
                 <h3><?php esc_html_e('Rules Engine', 'ffl-funnels-addons'); ?></h3>
-                <p><?php esc_html_e('Rules are processed in order from top to bottom. The first rule that matches the current product will be used to generate recommendations.', 'ffl-funnels-addons'); ?></p>
+                <p><?php esc_html_e('Rules are processed in order from top to bottom. The first rule that matches the current product will be used to generate recommendations.', 'ffl-funnels-addons'); ?>
+                </p>
 
                 <hr class="wb-hr">
 
                 <h3><?php esc_html_e('Smart Recommendations', 'ffl-funnels-addons'); ?></h3>
-                <p><?php esc_html_e('WooBooster includes four intelligent recommendation strategies that go beyond simple taxonomy matching. Enable them in WB Settings.', 'ffl-funnels-addons'); ?></p>
+                <p><?php esc_html_e('WooBooster includes four intelligent recommendation strategies that go beyond simple taxonomy matching. Enable them in WB Settings.', 'ffl-funnels-addons'); ?>
+                </p>
                 <ul class="wb-list">
-                    <li><strong><?php esc_html_e('Bought Together', 'ffl-funnels-addons'); ?></strong>: <?php esc_html_e('Analyzes completed orders to find products frequently purchased together.', 'ffl-funnels-addons'); ?></li>
-                    <li><strong><?php esc_html_e('Trending', 'ffl-funnels-addons'); ?></strong>: <?php esc_html_e('Tracks bestselling products per category based on recent sales data.', 'ffl-funnels-addons'); ?></li>
-                    <li><strong><?php esc_html_e('Recently Viewed', 'ffl-funnels-addons'); ?></strong>: <?php esc_html_e('Shows products the visitor has recently browsed via browser cookie.', 'ffl-funnels-addons'); ?></li>
-                    <li><strong><?php esc_html_e('Similar Products', 'ffl-funnels-addons'); ?></strong>: <?php esc_html_e('Finds products with similar price in the same category.', 'ffl-funnels-addons'); ?></li>
+                    <li><strong><?php esc_html_e('Bought Together', 'ffl-funnels-addons'); ?></strong>:
+                        <?php esc_html_e('Analyzes completed orders to find products frequently purchased together.', 'ffl-funnels-addons'); ?>
+                    </li>
+                    <li><strong><?php esc_html_e('Trending', 'ffl-funnels-addons'); ?></strong>:
+                        <?php esc_html_e('Tracks bestselling products per category based on recent sales data.', 'ffl-funnels-addons'); ?>
+                    </li>
+                    <li><strong><?php esc_html_e('Recently Viewed', 'ffl-funnels-addons'); ?></strong>:
+                        <?php esc_html_e('Shows products the visitor has recently browsed via browser cookie.', 'ffl-funnels-addons'); ?>
+                    </li>
+                    <li><strong><?php esc_html_e('Similar Products', 'ffl-funnels-addons'); ?></strong>:
+                        <?php esc_html_e('Finds products with similar price in the same category.', 'ffl-funnels-addons'); ?>
+                    </li>
                 </ul>
             </div>
         </div>
@@ -592,5 +629,37 @@ class WooBooster_Admin
             'message' => sprintf(__('Cleared %d items.', 'ffl-funnels-addons'), $total),
             'counts' => $counts,
         ));
+    }
+
+    /**
+     * AJAX: Delete ALL rules.
+     */
+    public function ajax_delete_all_rules()
+    {
+        check_ajax_referer('woobooster_admin', 'nonce');
+
+        if (!current_user_can('manage_woocommerce')) {
+            wp_send_json_error(array('message' => __('Permission denied.', 'ffl-funnels-addons')));
+        }
+
+        global $wpdb;
+        $rules_table = $wpdb->prefix . 'woobooster_rules';
+        $conditions_table = $wpdb->prefix . 'woobooster_conditions'; // Wait, checking table names in Rule Model...
+        // Rule model has: woobooster_rules, woobooster_rule_index, woobooster_rule_conditions, woobooster_rule_actions
+        // My previous code had woobooster_conditions which was wrong.
+        // Let's correct table names based on WooBooster_Rule class.
+
+        $rules_table = $wpdb->prefix . 'woobooster_rules';
+        $index_table = $wpdb->prefix . 'woobooster_rule_index';
+        $conditions_table = $wpdb->prefix . 'woobooster_rule_conditions';
+        $actions_table = $wpdb->prefix . 'woobooster_rule_actions';
+
+        // Truncate all tables.
+        $wpdb->query("TRUNCATE TABLE {$conditions_table}");
+        $wpdb->query("TRUNCATE TABLE {$actions_table}");
+        $wpdb->query("TRUNCATE TABLE {$index_table}");
+        $wpdb->query("TRUNCATE TABLE {$rules_table}");
+
+        wp_send_json_success(array('message' => __('All rules deleted successfully.', 'ffl-funnels-addons')));
     }
 }
