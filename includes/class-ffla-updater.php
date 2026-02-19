@@ -336,16 +336,15 @@ class FFLA_Updater
     }
 
     /**
-     * Fix directory name after update and reactivate the plugin.
+     * Fix directory name after update.
      *
      * GitHub's auto-generated zipball extracts to "aaruca-ffl-funnels-addons-{sha}/"
-     * instead of "ffl-funnels-addons/", which causes WordPress to hang after the update
-     * because it can't find the plugin at the expected path.
+     * instead of "ffl-funnels-addons/". This hook renames it to the correct path.
      *
-     * This method:
-     *  1. Moves the extracted folder to the correct destination.
-     *  2. Reactivates the plugin so WordPress registers it properly.
-     *  3. Returns the corrected result so the Upgrader cleans up correctly.
+     * IMPORTANT: Do NOT call activate_plugin() here. The WP Upgrader is still active
+     * (maintenance mode is ON), so loading the plugin at this point causes the update
+     * to hang indefinitely. WordPress re-enables active plugins automatically once the
+     * Upgrader finishes and the plugin basename matches.
      */
     public function post_install(bool $response, array $hook_extra, array $result): array
     {
@@ -367,9 +366,6 @@ class FFLA_Updater
         $result['destination'] = $proper_destination;
         $result['destination_name'] = $this->plugin_slug;
         $result['remote_destination'] = $proper_destination;
-
-        // Reactivate so WP picks up the plugin at the correct path.
-        activate_plugin($this->plugin_basename);
 
         return $result;
     }
