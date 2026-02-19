@@ -52,7 +52,15 @@
     top: 10px;
     right: 10px;
     z-index: 10;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    padding: 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     color: #666;
+    transition: all 0.2s ease;
 }
 
 .wbw-doofinder-btn:hover {
@@ -63,9 +71,17 @@
     color: #ff4d4d;
 }
 
+.wbw-doofinder-btn.active svg {
+    fill: currentColor;
+}
+
 .wbw-doofinder-btn svg {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
     width: 20px;
     height: 20px;
+    transition: all 0.2s ease;
 }
 
 /* Counter Badge */
