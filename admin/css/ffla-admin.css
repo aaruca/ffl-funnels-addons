@@ -213,7 +213,7 @@
   height: 100%;
 }
 
-/* Sidebar group separators for module sections */
+/* Sidebar flat group label (kept for legacy, unused now) */
 .wb-sidebar__group {
   margin-top: var(--wb-spacing-lg);
   margin-bottom: var(--wb-spacing-xs);
@@ -225,6 +225,70 @@
   color: var(--wb-color-neutral-foreground-3);
   list-style: none;
 }
+
+/* Collapsible module dropdown */
+.wb-sidebar__group-dropdown {
+  list-style: none;
+  margin-top: var(--wb-spacing-sm);
+}
+
+.wb-sidebar__group-dropdown details {
+  border-radius: var(--wb-radius-md);
+  overflow: hidden;
+}
+
+.wb-sidebar__group-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--wb-spacing-sm) var(--wb-spacing-lg);
+  cursor: pointer;
+  border-radius: var(--wb-radius-md);
+  user-select: none;
+  list-style: none;
+  transition: background var(--wb-duration-fast) var(--wb-easing-standard);
+}
+
+.wb-sidebar__group-summary::-webkit-details-marker { display: none; }
+.wb-sidebar__group-summary::marker { display: none; }
+
+.wb-sidebar__group-summary:hover {
+  background: var(--wb-color-neutral-background-3);
+}
+
+.wb-sidebar__group-label {
+  font-size: var(--wb-font-size-xs);
+  font-weight: var(--wb-font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--wb-color-neutral-foreground-3);
+}
+
+.wb-sidebar__chevron {
+  display: flex;
+  color: var(--wb-color-neutral-foreground-3);
+  transition: transform var(--wb-duration-fast) var(--wb-easing-standard);
+}
+
+details[open] > .wb-sidebar__group-summary .wb-sidebar__chevron {
+  transform: rotate(180deg);
+}
+
+.wb-sidebar__sub-nav {
+  list-style: none;
+  margin: var(--wb-spacing-xs) 0 0 0;
+  padding: 0 0 var(--wb-spacing-xs) 0;
+}
+
+.wb-sidebar__item--sub {
+  margin-bottom: 2px;
+}
+
+.wb-sidebar__item--sub a {
+  padding-left: calc(var(--wb-spacing-lg) + 12px);
+  font-size: var(--wb-font-size-sm);
+}
+
 
 /* ═══════════════════════════════════════════════════════════════════
    5. CARDS

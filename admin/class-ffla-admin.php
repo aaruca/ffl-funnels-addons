@@ -102,11 +102,11 @@ class FFLA_Admin
 
         wp_localize_script('ffla-admin', 'fflaAdmin', [
             'ajaxUrl' => admin_url('admin-ajax.php'),
-            'nonce'   => wp_create_nonce('ffla_admin_nonce'),
-            'i18n'    => [
-                'activating'   => __('Activating...', 'ffl-funnels-addons'),
+            'nonce' => wp_create_nonce('ffla_admin_nonce'),
+            'i18n' => [
+                'activating' => __('Activating...', 'ffl-funnels-addons'),
                 'deactivating' => __('Deactivating...', 'ffl-funnels-addons'),
-                'checking'     => __('Checking...', 'ffl-funnels-addons'),
+                'checking' => __('Checking...', 'ffl-funnels-addons'),
             ],
         ]);
 
@@ -215,53 +215,62 @@ class FFLA_Admin
     }
 
     /**
-     * Render the sidebar with dynamic module pages.
+     * Render the sidebar with collapsible module dropdowns.
      */
     private function render_sidebar(string $current_page): void
     {
-        // Core nav items.
-        $nav_items = [
-            'ffl-funnels-addons' => [
-                'label' => __('Dashboard', 'ffl-funnels-addons'),
-                'icon'  => '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2 2h5v5H2V2zM9 2h5v5H9V2zM2 9h5v5H2V9zM9 9h5v5H9V9z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>',
-                'group' => null,
-            ],
-        ];
+        echo '<nav class="wb-sidebar">';
+        echo '<ul class="wb-sidebar__nav">';
 
-        // Add active module pages grouped by module.
+        // ── Dashboard (always top-level link) ─────────────────────────
+        $dash_active = ($current_page === 'ffl-funnels-addons') ? ' wb-sidebar__item--active' : '';
+        $dash_icon = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2 2h5v5H2V2zM9 2h5v5H9V2zM2 9h5v5H2V9zM9 9h5v5H9V9z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+        echo '<li class="wb-sidebar__item' . esc_attr($dash_active) . '">';
+        echo '<a href="' . esc_url(admin_url('admin.php?page=ffl-funnels-addons')) . '">';
+        echo '<span class="wb-sidebar__icon">' . $dash_icon . '</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+        echo '<span class="wb-sidebar__label">' . esc_html__('Dashboard', 'ffl-funnels-addons') . '</span>';
+        echo '</a></li>';
+
+        // ── Module groups as collapsible dropdowns ────────────────────
         foreach ($this->registry->get_active() as $module) {
             $pages = $module->get_admin_pages();
             if (empty($pages)) {
                 continue;
             }
 
-            foreach ($pages as $i => $page) {
-                $nav_items[$page['slug']] = [
-                    'label' => $page['title'],
-                    'icon'  => $page['icon'] ?? '',
-                    'group' => ($i === 0) ? $module->get_name() : null,
-                ];
+            // Auto-open if any sub-page is the current page.
+            $module_slugs = array_column($pages, 'slug');
+            $is_open = in_array($current_page, $module_slugs, true);
+            $open_attr = $is_open ? ' open' : '';
+
+            echo '<li class="wb-sidebar__group-dropdown">';
+            echo '<details' . $open_attr . '>';
+            echo '<summary class="wb-sidebar__group-summary">';
+            echo '<span class="wb-sidebar__group-label">' . esc_html($module->get_name()) . '</span>';
+            echo '<span class="wb-sidebar__chevron">'
+                . '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">'
+                . '<path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>'
+                . '</svg></span>';
+            echo '</summary>';
+
+            echo '<ul class="wb-sidebar__sub-nav">';
+            foreach ($pages as $page) {
+                $sub_active = ($page['slug'] === $current_page) ? ' wb-sidebar__item--active' : '';
+                $url = admin_url('admin.php?page=' . $page['slug']);
+
+                echo '<li class="wb-sidebar__item wb-sidebar__item--sub' . esc_attr($sub_active) . '">';
+                echo '<a href="' . esc_url($url) . '">';
+                if (!empty($page['icon'])) {
+                    echo '<span class="wb-sidebar__icon">' . $page['icon'] . '</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                }
+                echo '<span class="wb-sidebar__label">' . esc_html($page['title']) . '</span>';
+                echo '</a></li>';
             }
+            echo '</ul>';
+            echo '</details>';
+            echo '</li>';
         }
 
-        echo '<nav class="wb-sidebar">';
-        echo '<ul class="wb-sidebar__nav">';
-        foreach ($nav_items as $slug => $item) {
-            // Render group separator if this is the first page of a module.
-            if (!empty($item['group'])) {
-                echo '<li class="wb-sidebar__group">' . esc_html($item['group']) . '</li>';
-            }
-
-            $active = ($slug === $current_page) ? ' wb-sidebar__item--active' : '';
-            $url = admin_url('admin.php?page=' . $slug);
-            echo '<li class="wb-sidebar__item' . esc_attr($active) . '">';
-            echo '<a href="' . esc_url($url) . '">';
-            if (!empty($item['icon'])) {
-                echo '<span class="wb-sidebar__icon">' . $item['icon'] . '</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-            }
-            echo '<span class="wb-sidebar__label">' . esc_html($item['label']) . '</span>';
-            echo '</a></li>';
-        }
         echo '</ul>';
         echo '</nav>';
     }
@@ -309,7 +318,7 @@ class FFLA_Admin
         }
 
         $module_id = isset($_POST['module_id']) ? sanitize_key($_POST['module_id']) : '';
-        $activate  = isset($_POST['active']) ? (bool) $_POST['active'] : false;
+        $activate = isset($_POST['active']) ? (bool) $_POST['active'] : false;
 
         if (empty($module_id)) {
             wp_send_json_error(['message' => __('Invalid module.', 'ffl-funnels-addons')]);
@@ -417,8 +426,8 @@ class FFLA_Admin
         <div class="wb-field">
             <label class="wb-field__label" for="<?php echo esc_attr($name); ?>"><?php echo esc_html($label); ?></label>
             <div class="wb-field__control">
-                <textarea id="<?php echo esc_attr($name); ?>" name="<?php echo esc_attr($name); ?>"
-                    class="wb-input" rows="4"><?php echo esc_textarea($value); ?></textarea>
+                <textarea id="<?php echo esc_attr($name); ?>" name="<?php echo esc_attr($name); ?>" class="wb-input"
+                    rows="4"><?php echo esc_textarea($value); ?></textarea>
                 <p class="wb-field__desc"><?php echo esc_html($desc); ?></p>
             </div>
         </div>
@@ -433,8 +442,8 @@ class FFLA_Admin
         $icon_map = [
             'success' => '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2.5 7.5l3 3 6-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
             'warning' => '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 1l6 11H1L7 1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M7 5v3M7 10v.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
-            'danger'  => '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
-            'info'    => '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.2"/><path d="M7 6v4M7 4.5v.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+            'danger' => '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+            'info' => '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.2"/><path d="M7 6v4M7 4.5v.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
         ];
         $icon = $icon_map[$type] ?? '';
 
