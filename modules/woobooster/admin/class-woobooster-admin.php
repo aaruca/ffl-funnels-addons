@@ -20,7 +20,7 @@ class WooBooster_Admin
     public function init()
     {
         add_action('admin_init', array($this, 'handle_settings_save'));
-        add_action('admin_enqueue_scripts', array($this, 'localize_scripts'));
+        add_action('admin_enqueue_scripts', array($this, 'localize_scripts'), 20);
 
         // AJAX handlers (keep original action names for backward compatibility).
         add_action('wp_ajax_woobooster_export_rules', array($this, 'ajax_export_rules'));
