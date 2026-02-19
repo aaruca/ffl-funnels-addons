@@ -16,6 +16,13 @@ window.AlgWishlist = {
                 this.toggle(btn);
             }
         });
+
+        // Sync Doofinder Shadow DOMs whenever they render asynchronous layers
+        document.addEventListener('df:layer:render', (e) => {
+            setTimeout(() => {
+                this.updateShadowRoots();
+            }, 100);
+        });
     },
 
     /**
@@ -41,8 +48,7 @@ window.AlgWishlist = {
 
     toggleItem: function (productId, btn) {
         const self = this;
-        // Optimistic UI Update - we don't have this.items tracked easily in global without complex sync, 
-        // so we just rely on visual class for optimistic, then correct on server response.
+        // Optimistic UI Update
         const isCurrentlyActive = btn.classList.contains('active');
 
         if (isCurrentlyActive) {
@@ -120,18 +126,49 @@ window.AlgWishlist = {
         }
     },
 
+    updateShadowRoots: function () {
+        if (typeof AlgWishlistSettings === 'undefined' || !Array.isArray(AlgWishlistSettings.initial_items)) {
+            return;
+        }
+
+        // Loop over potential custom elements that might hold shadow DOMs
+        const tags = document.querySelectorAll('*');
+        tags.forEach(node => {
+            if (node.shadowRoot) {
+                AlgWishlistSettings.initial_items.forEach(id => {
+                    const buttons = node.shadowRoot.querySelectorAll(`[data-product-id="${id}"]`);
+                    this._updateButtonsState(buttons, true);
+                });
+            }
+        });
+    },
+
     markAsActive: function (productId) {
         // Update ALL buttons for this product (standard + Doofinder if outside shadow DOM)
         const buttons = document.querySelectorAll(`[data-product-id="${productId}"]`);
         this._updateButtonsState(buttons, true);
 
-        // For elements inside Shadow DOM that triggered this, their state is updated
-        // via the 'btn' object reference passed to toggleItem().
+        // Also sweep through any open Shadow DOMs just in case
+        const tags = document.querySelectorAll('*');
+        tags.forEach(node => {
+            if (node.shadowRoot) {
+                const shadowBtns = node.shadowRoot.querySelectorAll(`[data-product-id="${productId}"]`);
+                this._updateButtonsState(shadowBtns, true);
+            }
+        });
     },
 
     markAsInactive: function (productId) {
         const buttons = document.querySelectorAll(`[data-product-id="${productId}"]`);
         this._updateButtonsState(buttons, false);
+
+        const tags = document.querySelectorAll('*');
+        tags.forEach(node => {
+            if (node.shadowRoot) {
+                const shadowBtns = node.shadowRoot.querySelectorAll(`[data-product-id="${productId}"]`);
+                this._updateButtonsState(shadowBtns, false);
+            }
+        });
     },
 
     _updateButtonsState: function (nodes, isActive) {
@@ -163,16 +200,39 @@ window.AlgWishlist = {
         if (!toast) {
             toast = document.createElement('div');
             toast.id = 'alg-wishlist-toast';
-            toast.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#333;color:#fff;padding:12px 24px;border-radius:4px;z-index:999999;font-family:sans-serif;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,0.15);transition:opacity 0.3s ease;opacity:0;pointer-events:none;';
+            toast.style.cssText = `
+                position: fixed;
+                top: 40px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: #ff4343;
+                color: #ffffff;
+                padding: 16px 32px;
+                border-radius: 8px;
+                z-index: 9999999;
+                font-family: inherit;
+                font-size: 16px;
+                font-weight: 600;
+                box-shadow: 0 10px 30px rgba(255, 67, 67, 0.4);
+                transition: opacity 0.4s ease, top 0.4s ease;
+                opacity: 0;
+                pointer-events: none;
+                text-align: center;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 250px;
+            `;
             document.body.appendChild(toast);
         }
 
         toast.textContent = message;
-        toast.style.display = 'block';
+        toast.style.display = 'flex';
 
         // Trigger reflow for animation
         toast.offsetHeight;
         toast.style.opacity = '1';
+        toast.style.top = '60px'; // slide down effect
 
         if (this.toastTimeout) {
             clearTimeout(this.toastTimeout);
@@ -180,10 +240,11 @@ window.AlgWishlist = {
 
         this.toastTimeout = setTimeout(() => {
             toast.style.opacity = '0';
+            toast.style.top = '40px';
             setTimeout(() => {
                 toast.style.display = 'none';
-            }, 300);
-        }, 3000);
+            }, 400); // Wait for transition duration
+        }, 3500);
     },
 
     updateCount: function (count) {

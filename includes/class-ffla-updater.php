@@ -356,9 +356,18 @@ class FFLA_Updater
 
         $proper_destination = WP_PLUGIN_DIR . '/' . $this->plugin_slug;
 
+        $current_destination = untrailingslashit($result['destination']);
+        $target_destination = untrailingslashit($proper_destination);
+
+        // If the extracted folder is already named exactly correctly, do nothing!
+        // This prevents the updater from deleting its own newly extracted files.
+        if ($current_destination === $target_destination) {
+            return $result;
+        }
+
         // Remove stale directory if it exists (avoids move failure).
-        if ($wp_filesystem->is_dir($proper_destination)) {
-            $wp_filesystem->delete($proper_destination, true);
+        if ($wp_filesystem->is_dir($target_destination)) {
+            $wp_filesystem->delete($target_destination, true);
         }
 
         $wp_filesystem->move($result['destination'], $proper_destination, true);
