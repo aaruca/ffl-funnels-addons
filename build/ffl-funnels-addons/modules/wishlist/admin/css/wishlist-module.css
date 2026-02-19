@@ -1,0 +1,23 @@
+/* Wishlist Module — Minimal admin CSS */
+/* Most styling comes from the shared FFLA design system. */
+
+/* Ensure wp_dropdown_pages uses the design system style */
+.ffla-admin select#alg_wishlist_page_id {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  font-family: var(--wb-font-family);
+  font-size: var(--wb-font-size-base);
+  color: var(--wb-color-neutral-foreground-1);
+  background: var(--wb-color-neutral-background-1);
+  border: 1px solid var(--wb-color-neutral-stroke-1);
+  border-radius: var(--wb-radius-md);
+  outline: none;
+  transition: all var(--wb-duration-fast) var(--wb-easing-standard);
+  box-shadow: var(--wb-shadow-1);
+}
+
+.ffla-admin select#alg_wishlist_page_id:focus {
+  border-color: var(--wb-color-brand-background);
+  box-shadow: 0 0 0 3px rgba(15, 108, 189, 0.15);
+}
