@@ -50,7 +50,7 @@ class Doofinder_Core
             '_tag_slugs' => ['tax' => 'product_tag', 'hier' => true],
             '_caliber_gauge_slugs' => ['tax' => 'pa_caliber-gauge', 'hier' => false],
             '_manufacturer_slugs' => ['cb' => [__CLASS__, 'get_manufacturer_slugs']],
-            '_discount_codes' => ['cb' => [__CLASS__, 'get_discount_price']],
+            '_discount_price' => ['cb' => [__CLASS__, 'get_discount_price']],
             '_pewc_has_extra_fields' => ['cb' => 'pewc_has_extra_fields'],
             '_product_class' => ['cb' => [__CLASS__, 'get_product_class']],
         ];
@@ -70,7 +70,7 @@ class Doofinder_Core
             $response->data[$meta_key] = self::get_dynamic_meta_value($product_id, $opts);
         }
 
-        if (!empty($response->data['_discount_codes'])) {
+        if (!empty($response->data['_discount_price'])) {
             $response->data['on_sale'] = true;
         }
 
@@ -298,7 +298,7 @@ class Doofinder_Core
             return $on_sale;
         }
 
-        $discount_price = get_post_meta($product->get_id(), '_discount_codes', true);
+        $discount_price = get_post_meta($product->get_id(), '_discount_price', true);
         return !empty($discount_price) ? true : $on_sale;
     }
 

@@ -30,7 +30,7 @@ class Doofinder_Admin
             ['_caliber_gauge_slugs', 'caliber_gauge_slugs'],
             ['_manufacturer_slugs', 'manufacturer_slugs'],
             ['_brand_slugs', 'brand_slugs'],
-            ['_discount_codes', 'discount_price'],
+            ['_discount_price', 'discount_price'],
             ['_pewc_has_extra_fields', 'pewc_has_extra_fields'],
             ['_product_class', 'product_class'],
         ];
