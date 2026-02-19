@@ -13,11 +13,14 @@ document.addEventListener('DOMContentLoaded', function () {
             // Render initial state
             this.updateUI();
 
-            // Bind Events
+            // Single delegated click listener on body — handles both
+            // .alg-add-to-wishlist and .wbw-doofinder-btn, present or future.
             document.body.addEventListener('click', this.handleClick.bind(this));
 
-            // Listen for Doofinder Render Events
-            document.addEventListener('df:layer:render', this.handleDoofinderRender.bind(this));
+            // Watch for Doofinder dynamically injecting buttons into the DOM.
+            // Using MutationObserver instead of df:layer:render because Doofinder
+            // injects buttons asynchronously and the event name varies by version.
+            this.observeDoofinder();
         },
 
         handleClick: function (e) {
@@ -32,6 +35,40 @@ document.addEventListener('DOMContentLoaded', function () {
                 const productId = btn.getAttribute('data-product-id');
                 this.toggleItem(productId, btn);
             }
+        },
+
+        /**
+         * Watch for .wbw-doofinder-btn nodes added anywhere in the document.
+         * When Doofinder renders results it injects HTML into its layer;
+         * the observer detects those new nodes and syncs wishlist state on them.
+         */
+        observeDoofinder: function () {
+            const self = this;
+            const observer = new MutationObserver(function (mutations) {
+                let hasNewButtons = false;
+                for (const mutation of mutations) {
+                    for (const node of mutation.addedNodes) {
+                        if (node.nodeType !== 1) continue; // elements only
+                        // Check the node itself or any descendant
+                        if (
+                            node.matches('.wbw-doofinder-btn') ||
+                            node.querySelector('.wbw-doofinder-btn')
+                        ) {
+                            hasNewButtons = true;
+                            break;
+                        }
+                    }
+                    if (hasNewButtons) break;
+                }
+                if (hasNewButtons) {
+                    self.updateUI();
+                }
+            });
+
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
         },
 
         toggleItem: function (productId, btn) {
@@ -71,9 +108,8 @@ document.addEventListener('DOMContentLoaded', function () {
                         if (!isAdded && !serverHasItem) {
                             // We tried to add, but server didn't save it -> Revert
                             console.warn('Server failed to save item');
-                            // Force UI update to remove it
-                            const btn = document.querySelector(`.alg-add-to-wishlist[data-product-id="${productId}"]`);
-                            if (btn) btn.classList.remove('active');
+                            const failedBtn = document.querySelector(`.alg-add-to-wishlist[data-product-id="${productId}"]`);
+                            if (failedBtn) failedBtn.classList.remove('active');
                         } else {
                             // Success! Show Feedback
                             const msg = !isAdded ? AlgWishlistSettings.i18n.added : AlgWishlistSettings.i18n.removed;
@@ -136,12 +172,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 toast.classList.remove('show');
             }, 3000);
         },
-
-        handleDoofinderRender: function (e) {
-            // When Doofinder renders loaded results, we need to re-scan
-            // and apply 'active' class to hearts that are in wishlist.
-            this.updateUI();
-        }
     };
 
     Wishlist.init();

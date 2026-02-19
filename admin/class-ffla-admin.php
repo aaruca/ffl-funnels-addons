@@ -29,7 +29,34 @@ class FFLA_Admin
     {
         add_action('admin_menu', [$this, 'add_menu']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
+        add_action('admin_head', [$this, 'hide_wp_submenu']);
         add_action('wp_ajax_ffla_toggle_module', [$this, 'ajax_toggle_module']);
+    }
+
+    /**
+     * Hide module submenu items from the native WP admin left sidebar.
+     * All navigation happens through the plugin's custom sidebar instead.
+     * The top-level "FFL Funnels" menu item is kept visible.
+     */
+    public function hide_wp_submenu(): void
+    {
+        // Collect all module page slugs.
+        $slugs = [];
+        foreach ($this->registry->get_active() as $module) {
+            foreach ($module->get_admin_pages() as $page) {
+                $slugs[] = esc_attr($page['slug']);
+            }
+        }
+
+        if (empty($slugs)) {
+            return;
+        }
+
+        $selectors = array_map(function ($slug) {
+            return '#adminmenu a[href="admin.php?page=' . $slug . '"]';
+        }, $slugs);
+
+        echo '<style>' . implode(',', $selectors) . '{display:none!important;}</style>';
     }
 
     /**
