@@ -10,7 +10,7 @@ window.AlgWishlist = {
     bindEvents: function () {
         // Event Delegation for standard DOM buttons (WooCommerce loops, product pages)
         document.body.addEventListener('click', (e) => {
-            const btn = e.target.closest('.alg-add-to-wishlist');
+            const btn = e.target.closest('.alg-add-to-wishlist, .aws-wishlist--trigger');
             if (btn) {
                 e.preventDefault();
                 this.toggle(btn);
@@ -173,24 +173,61 @@ window.AlgWishlist = {
 
     _updateButtonsState: function (nodes, isActive) {
         nodes.forEach(btn => {
+            const hasAwsClass = btn.classList.contains('aws-wishlist--trigger');
+
             if (isActive) {
                 btn.classList.add('active');
+
+                if (hasAwsClass && btn.hasAttribute('data-type')) {
+                    btn.setAttribute('data-type', 'REMOVE');
+                }
+
+                const span = btn.querySelector('span');
+                if (span) {
+                    if (typeof AlgWishlistSettings !== 'undefined' && AlgWishlistSettings.i18n && AlgWishlistSettings.i18n.text_remove) {
+                        span.textContent = AlgWishlistSettings.i18n.text_remove;
+                    } else {
+                        span.textContent = 'Remove from wishlist';
+                    }
+                }
+
                 if (typeof AlgWishlistSettings !== 'undefined' && AlgWishlistSettings.i18n && AlgWishlistSettings.i18n.removed) {
                     btn.setAttribute('title', AlgWishlistSettings.i18n.removed);
                 } else {
                     btn.setAttribute('title', 'Remove from Wishlist');
                 }
+
                 const path = btn.querySelector('path');
-                if (path) path.setAttribute('fill', 'currentColor');
+                if (path && !hasAwsClass) {
+                    path.setAttribute('fill', 'currentColor');
+                }
+
             } else {
                 btn.classList.remove('active');
+
+                if (hasAwsClass && btn.hasAttribute('data-type')) {
+                    btn.setAttribute('data-type', 'ADD');
+                }
+
+                const span = btn.querySelector('span');
+                if (span) {
+                    if (typeof AlgWishlistSettings !== 'undefined' && AlgWishlistSettings.i18n && AlgWishlistSettings.i18n.text_add) {
+                        span.textContent = AlgWishlistSettings.i18n.text_add;
+                    } else {
+                        span.textContent = 'Add to wishlist';
+                    }
+                }
+
                 if (typeof AlgWishlistSettings !== 'undefined' && AlgWishlistSettings.i18n && AlgWishlistSettings.i18n.added) {
                     btn.setAttribute('title', AlgWishlistSettings.i18n.added);
                 } else {
                     btn.setAttribute('title', 'Add to Wishlist');
                 }
+
                 const path = btn.querySelector('path');
-                if (path) path.setAttribute('fill', 'none');
+                if (path && !hasAwsClass) {
+                    path.setAttribute('fill', 'none');
+                }
             }
         });
     },

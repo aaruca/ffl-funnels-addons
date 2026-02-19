@@ -29,7 +29,9 @@ class Alg_Wishlist_Assets
             'initial_items' => $items, // Pass PHP state to JS on load
             'i18n' => array(
                 'added' => __('Added to Wishlist', 'algenib-wishlist'),
-                'removed' => __('Removed from Wishlist', 'algenib-wishlist')
+                'removed' => __('Removed from Wishlist', 'algenib-wishlist'),
+                'text_add' => __('Add to wishlist', 'algenib-wishlist'),
+                'text_remove' => __('Remove from wishlist', 'algenib-wishlist')
             )
         ));
 
