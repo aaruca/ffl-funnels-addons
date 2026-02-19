@@ -63,7 +63,7 @@ window.AlgWishlist = {
         btn.style.opacity = '0.7';
 
         const data = new FormData();
-        data.append('action', 'alg_toggle_wishlist');
+        data.append('action', 'alg_add_to_wishlist');
         data.append('product_id', productId);
         data.append('nonce', AlgWishlistSettings.nonce);
 
@@ -113,26 +113,12 @@ window.AlgWishlist = {
     },
 
     updateUI: function () {
-        // Fetch current user wishlist array on load
-        // If we want to strictly sync UI on load (good for cached pages):
-        const data = new FormData();
-        data.append('action', 'alg_get_wishlist');
-        data.append('nonce', AlgWishlistSettings.nonce);
-        const ajaxUrl = AlgWishlistSettings.ajax_url;
-
-        fetch(ajaxUrl, {
-            method: 'POST',
-            body: data
-        })
-            .then(response => response.json())
-            .then(response => {
-                if (response.success && Array.isArray(response.data)) {
-                    response.data.forEach(id => {
-                        this.markAsActive(id);
-                    });
-                }
-            })
-            .catch(e => console.error(e));
+        // Use localized items from PHP to set initial UI state without extra AJAX calls
+        if (typeof AlgWishlistSettings !== 'undefined' && Array.isArray(AlgWishlistSettings.initial_items)) {
+            AlgWishlistSettings.initial_items.forEach(id => {
+                this.markAsActive(id);
+            });
+        }
     },
 
     markAsActive: function (productId) {
