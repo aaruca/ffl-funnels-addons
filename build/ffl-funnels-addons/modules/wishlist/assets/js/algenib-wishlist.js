@@ -81,8 +81,14 @@ window.AlgWishlist = {
                 if (response.success) {
                     if (response.data.status === 'added') {
                         self.markAsActive(productId);
+                        if (typeof AlgWishlistSettings !== 'undefined' && AlgWishlistSettings.i18n && AlgWishlistSettings.i18n.added) {
+                            self.showToast(AlgWishlistSettings.i18n.added);
+                        }
                     } else {
                         self.markAsInactive(productId);
+                        if (typeof AlgWishlistSettings !== 'undefined' && AlgWishlistSettings.i18n && AlgWishlistSettings.i18n.removed) {
+                            self.showToast(AlgWishlistSettings.i18n.removed);
+                        }
                     }
 
                     // Update badge count header if exists
@@ -139,16 +145,52 @@ window.AlgWishlist = {
         nodes.forEach(btn => {
             if (isActive) {
                 btn.classList.add('active');
-                btn.setAttribute('title', 'Remove from Wishlist');
+                if (typeof AlgWishlistSettings !== 'undefined' && AlgWishlistSettings.i18n && AlgWishlistSettings.i18n.removed) {
+                    btn.setAttribute('title', AlgWishlistSettings.i18n.removed);
+                } else {
+                    btn.setAttribute('title', 'Remove from Wishlist');
+                }
                 const path = btn.querySelector('path');
                 if (path) path.setAttribute('fill', 'currentColor');
             } else {
                 btn.classList.remove('active');
-                btn.setAttribute('title', 'Add to Wishlist');
+                if (typeof AlgWishlistSettings !== 'undefined' && AlgWishlistSettings.i18n && AlgWishlistSettings.i18n.added) {
+                    btn.setAttribute('title', AlgWishlistSettings.i18n.added);
+                } else {
+                    btn.setAttribute('title', 'Add to Wishlist');
+                }
                 const path = btn.querySelector('path');
                 if (path) path.setAttribute('fill', 'none');
             }
         });
+    },
+
+    showToast: function (message) {
+        let toast = document.getElementById('alg-wishlist-toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'alg-wishlist-toast';
+            toast.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#333;color:#fff;padding:12px 24px;border-radius:4px;z-index:999999;font-family:sans-serif;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,0.15);transition:opacity 0.3s ease;opacity:0;pointer-events:none;';
+            document.body.appendChild(toast);
+        }
+
+        toast.textContent = message;
+        toast.style.display = 'block';
+
+        // Trigger reflow for animation
+        toast.offsetHeight;
+        toast.style.opacity = '1';
+
+        if (this.toastTimeout) {
+            clearTimeout(this.toastTimeout);
+        }
+
+        this.toastTimeout = setTimeout(() => {
+            toast.style.opacity = '0';
+            setTimeout(() => {
+                toast.style.display = 'none';
+            }, 300);
+        }, 3000);
     },
 
     updateCount: function (count) {

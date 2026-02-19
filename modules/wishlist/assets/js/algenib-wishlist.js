@@ -19,7 +19,7 @@ window.AlgWishlist = {
 
         // Listen for custom event from isolated components (like Doofinder)
         document.addEventListener('alg_wishlist_toggle', (e) => {
-            const btn = e.target;
+            const btn = e.detail;
             // Ensure button visually updates optimistically as well if it's the target
             this.toggle(btn);
         });
