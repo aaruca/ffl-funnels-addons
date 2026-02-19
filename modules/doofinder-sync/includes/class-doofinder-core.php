@@ -45,13 +45,14 @@ class Doofinder_Core
     public static function dynamic_meta_config(): array
     {
         return [
-            '_category_slugs'        => ['tax' => 'product_cat',   'hier' => true],
-            '_brand_slugs'           => ['tax' => 'product_brand', 'hier' => true],
-            '_tag_slugs'             => ['tax' => 'product_tag',   'hier' => true],
-            '_manufacturer_slugs'    => ['cb' => [__CLASS__, 'get_manufacturer_slugs']],
-            '_discount_codes'        => ['cb' => [__CLASS__, 'get_discount_price']],
+            '_category_slugs' => ['tax' => 'product_cat', 'hier' => true],
+            '_brand_slugs' => ['tax' => 'product_brand', 'hier' => true],
+            '_tag_slugs' => ['tax' => 'product_tag', 'hier' => true],
+            '_caliber_gauge_slugs' => ['tax' => 'pa_caliber-gauge', 'hier' => false],
+            '_manufacturer_slugs' => ['cb' => [__CLASS__, 'get_manufacturer_slugs']],
+            '_discount_codes' => ['cb' => [__CLASS__, 'get_discount_price']],
             '_pewc_has_extra_fields' => ['cb' => 'pewc_has_extra_fields'],
-            '_product_class'         => ['cb' => [__CLASS__, 'get_product_class']],
+            '_product_class' => ['cb' => [__CLASS__, 'get_product_class']],
         ];
     }
 
@@ -254,7 +255,7 @@ class Doofinder_Core
 
             if ($details && isset($details['discounted_price'], $details['initial_price'])) {
                 $discounted = floatval($details['discounted_price']);
-                $initial    = floatval($details['initial_price']);
+                $initial = floatval($details['initial_price']);
 
                 if ($discounted < $initial) {
                     $regular = floatval($p->get_regular_price());
@@ -268,7 +269,7 @@ class Doofinder_Core
 
         // Fallback to standard WooCommerce sale price.
         if ($final === '') {
-            $sale    = floatval($p->get_sale_price());
+            $sale = floatval($p->get_sale_price());
             $regular = floatval($p->get_regular_price());
             if ($sale > 0 && $sale < $regular) {
                 $rounded = round($sale, wc_get_price_decimals());
@@ -308,8 +309,8 @@ class Doofinder_Core
     {
         ?>
         <script>
-            jQuery(document).ready(function($) {
-                $('.price').each(function() {
+            jQuery(document).ready(function ($) {
+                $('.price').each(function () {
                     var $price = $(this);
                     var $del = $price.find('del');
                     if ($del.find('ins').length > 0) {

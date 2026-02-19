@@ -25,13 +25,14 @@ class Doofinder_Admin
         echo '<p class="wb-section-desc">' . esc_html__('Use these field names when configuring your Doofinder plugin mapping.', 'ffl-funnels-addons') . '</p>';
 
         $mappings = [
-            ['_category_slugs',        'category_slugs'],
-            ['_tag_slugs',             'tag_slugs'],
-            ['_manufacturer_slugs',    'manufacturer_slugs'],
-            ['_brand_slugs',           'brand_slugs'],
-            ['_discount_codes',        'discount_price'],
+            ['_category_slugs', 'category_slugs'],
+            ['_tag_slugs', 'tag_slugs'],
+            ['_caliber_gauge_slugs', 'caliber_gauge_slugs'],
+            ['_manufacturer_slugs', 'manufacturer_slugs'],
+            ['_brand_slugs', 'brand_slugs'],
+            ['_discount_codes', 'discount_price'],
             ['_pewc_has_extra_fields', 'pewc_has_extra_fields'],
-            ['_product_class',         'product_class'],
+            ['_product_class', 'product_class'],
         ];
 
         echo '<table class="wp-list-table widefat fixed striped">';
