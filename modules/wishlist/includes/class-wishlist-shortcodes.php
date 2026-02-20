@@ -161,10 +161,6 @@ class Alg_Wishlist_Shortcodes
     {
         $items = Alg_Wishlist_Core::get_wishlist_items();
 
-        if (empty($items)) {
-            return '<p class="alg-wishlist-empty">' . esc_html__('Your wishlist is empty.', 'algenib-wishlist') . '</p>';
-        }
-
         ob_start();
         ?>
         <div class="alg-wishlist-grid">

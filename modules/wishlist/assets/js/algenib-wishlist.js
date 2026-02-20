@@ -191,8 +191,8 @@ window.AlgWishlist = {
                     }
                 }
 
-                if (typeof AlgWishlistSettings !== 'undefined' && AlgWishlistSettings.i18n && AlgWishlistSettings.i18n.removed) {
-                    btn.setAttribute('title', AlgWishlistSettings.i18n.removed);
+                if (typeof AlgWishlistSettings !== 'undefined' && AlgWishlistSettings.i18n && AlgWishlistSettings.i18n.text_remove) {
+                    btn.setAttribute('title', AlgWishlistSettings.i18n.text_remove);
                 } else {
                     btn.setAttribute('title', 'Remove from Wishlist');
                 }
@@ -218,8 +218,8 @@ window.AlgWishlist = {
                     }
                 }
 
-                if (typeof AlgWishlistSettings !== 'undefined' && AlgWishlistSettings.i18n && AlgWishlistSettings.i18n.added) {
-                    btn.setAttribute('title', AlgWishlistSettings.i18n.added);
+                if (typeof AlgWishlistSettings !== 'undefined' && AlgWishlistSettings.i18n && AlgWishlistSettings.i18n.text_add) {
+                    btn.setAttribute('title', AlgWishlistSettings.i18n.text_add);
                 } else {
                     btn.setAttribute('title', 'Add to Wishlist');
                 }
@@ -285,7 +285,7 @@ window.AlgWishlist = {
     },
 
     updateCount: function (count) {
-        const badges = document.querySelectorAll('.ffla-wishlist-count');
+        const badges = document.querySelectorAll('.alg-wishlist-count');
         badges.forEach(el => el.textContent = count);
     }
 };

@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.0.21-blue.svg)
+![Version](https://img.shields.io/badge/version-1.0.22-blue.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.0+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -69,6 +69,13 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.0.22
+*   Fix wishlist count badge not updating via AJAX (class mismatch `.ffla-wishlist-count` vs `.alg-wishlist-count`).
+*   Fix wishlist empty page showing plain text instead of styled "Return to Shop" block.
+*   Fix button title attributes using past-tense toast messages instead of action text.
+*   Update Doofinder documentation snippet to match working production code (`window.AlgWishlist.toggle`).
+*   Add `[alg_wishlist_button_aws]` shortcode to admin documentation.
 
 ### v1.0.21
 *   Security audit: fix CSS injection in wishlist color settings (validate with `sanitize_hex_color` pattern).
