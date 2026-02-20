@@ -25,8 +25,25 @@ class WooBooster_Analytics
         $top_rules = $this->get_top_rules($range['from'], $range['to'], 10);
         $top_products = $this->get_top_products($range['from'], $range['to'], 10);
         $conversion = $this->get_conversion_rate($range['from'], $range['to']);
+        $daily = $this->get_daily_revenue($range['from'], $range['to']);
+
+        // Enqueue Chart.js from CDN (loaded in footer).
+        wp_enqueue_script('chartjs', 'https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js', array(), '4.4.7', true);
+
+        // Enqueue our analytics chart initializer.
+        $module_url = FFLA_URL . 'modules/woobooster/';
+        wp_enqueue_script('woobooster-analytics-chart', $module_url . 'admin/js/woobooster-analytics.js', array('chartjs'), FFLA_VERSION, true);
+
+        // Pass the daily revenue data to JS.
+        wp_localize_script('woobooster-analytics-chart', 'WBAnalyticsChart', array(
+            'labels' => $daily['labels'],
+            'total' => $daily['total'],
+            'wb' => $daily['wb'],
+            'currency' => function_exists('get_woocommerce_currency_symbol') ? html_entity_decode(get_woocommerce_currency_symbol()) : '$',
+        ));
 
         $this->render_date_filter($range);
+        $this->render_chart();
         $this->render_stat_cards($stats, $conversion);
         $this->render_top_rules_table($top_rules);
         $this->render_top_products_table($top_products);
@@ -65,13 +82,17 @@ class WooBooster_Analytics
         ?>
         <div class="wb-card" style="margin-bottom: 20px;">
             <div class="wb-card__body" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-                <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0;">
+                <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>"
+                    style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0;">
                     <input type="hidden" name="page" value="ffla-woobooster-analytics">
                     <label class="wb-field__label" style="margin:0;"><?php esc_html_e('From', 'ffl-funnels-addons'); ?></label>
-                    <input type="date" name="wb_from" value="<?php echo esc_attr($range['from']); ?>" class="wb-input wb-input--sm" style="width:160px;">
+                    <input type="date" name="wb_from" value="<?php echo esc_attr($range['from']); ?>"
+                        class="wb-input wb-input--sm" style="width:160px;">
                     <label class="wb-field__label" style="margin:0;"><?php esc_html_e('To', 'ffl-funnels-addons'); ?></label>
-                    <input type="date" name="wb_to" value="<?php echo esc_attr($range['to']); ?>" class="wb-input wb-input--sm" style="width:160px;">
-                    <button type="submit" class="wb-btn wb-btn--primary wb-btn--sm"><?php esc_html_e('Filter', 'ffl-funnels-addons'); ?></button>
+                    <input type="date" name="wb_to" value="<?php echo esc_attr($range['to']); ?>" class="wb-input wb-input--sm"
+                        style="width:160px;">
+                    <button type="submit"
+                        class="wb-btn wb-btn--primary wb-btn--sm"><?php esc_html_e('Filter', 'ffl-funnels-addons'); ?></button>
                 </form>
                 <div style="margin-left:auto; display:flex; gap:8px;">
                     <?php
@@ -134,7 +155,8 @@ class WooBooster_Analytics
                 <div style="font-size:var(--wb-font-size-sm); color:var(--wb-color-neutral-foreground-3); margin-bottom:8px;">
                     <?php echo esc_html($label); ?>
                 </div>
-                <div style="font-size:var(--wb-font-size-xl); font-weight:var(--wb-font-weight-semibold); color:var(--wb-color-neutral-foreground-1);">
+                <div
+                    style="font-size:var(--wb-font-size-xl); font-weight:var(--wb-font-weight-semibold); color:var(--wb-color-neutral-foreground-1);">
                     <?php echo wp_kses_post($value); ?>
                 </div>
             </div>
@@ -224,6 +246,91 @@ class WooBooster_Analytics
             </div>
         </div>
         <?php
+    }
+
+    /**
+     * Render the revenue chart canvas.
+     */
+    private function render_chart()
+    {
+        ?>
+        <div class="wb-card" style="margin-bottom: 20px;">
+            <div class="wb-card__header">
+                <h2><?php esc_html_e('Revenue Overview', 'ffl-funnels-addons'); ?></h2>
+            </div>
+            <div class="wb-card__body">
+                <div style="position:relative; height:320px; width:100%;">
+                    <canvas id="wb-revenue-chart"></canvas>
+                </div>
+            </div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Get daily revenue breakdown: total store vs WooBooster-attributed.
+     *
+     * @param string $date_from Start date (Y-m-d).
+     * @param string $date_to   End date (Y-m-d).
+     * @return array ['labels' => [...], 'total' => [...], 'wb' => [...]]
+     */
+    public function get_daily_revenue($date_from, $date_to)
+    {
+        $result = array('labels' => array(), 'total' => array(), 'wb' => array());
+
+        // Build day buckets.
+        $start = new DateTime($date_from);
+        $end = new DateTime($date_to);
+        $end->modify('+1 day');
+        $interval = new DateInterval('P1D');
+        $period = new DatePeriod($start, $interval, $end);
+
+        $day_totals = array();
+        $day_wb = array();
+
+        foreach ($period as $dt) {
+            $key = $dt->format('Y-m-d');
+            $day_totals[$key] = 0;
+            $day_wb[$key] = 0;
+        }
+
+        // Query completed/processing orders in range.
+        $orders = wc_get_orders(array(
+            'status' => array('wc-completed', 'wc-processing'),
+            'date_created' => $date_from . '...' . $date_to . ' 23:59:59',
+            'limit' => -1,
+            'return' => 'ids',
+        ));
+
+        foreach ($orders as $order_id) {
+            $order = wc_get_order($order_id);
+            if (!$order) {
+                continue;
+            }
+
+            $day_key = $order->get_date_created()->format('Y-m-d');
+            if (!isset($day_totals[$day_key])) {
+                continue;
+            }
+
+            $day_totals[$day_key] += (float) $order->get_subtotal();
+
+            foreach ($order->get_items() as $item) {
+                if ($item->get_meta('_wb_source_rule')) {
+                    $day_wb[$day_key] += (float) $item->get_subtotal();
+                }
+            }
+        }
+
+        // Flatten into indexed arrays.
+        foreach ($day_totals as $label => $total) {
+            // Use short date format for labels (e.g. "Feb 20").
+            $result['labels'][] = gmdate('M j', strtotime($label));
+            $result['total'][] = round($total, 2);
+            $result['wb'][] = round($day_wb[$label], 2);
+        }
+
+        return $result;
     }
 
     /**

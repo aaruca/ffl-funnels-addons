@@ -160,7 +160,7 @@ class FFLA_Updater
     }
 
     /**
-     * Show admin notice if GitHub API failed.
+     * Show admin notice if GitHub API failed. Truly dismissible via AJAX.
      */
     public function maybe_show_token_notice(): void
     {
@@ -169,9 +169,34 @@ class FFLA_Updater
             return;
         }
 
-        echo '<div class="notice notice-warning is-dismissible">';
+        $dismiss_url = wp_nonce_url(
+            admin_url('admin-post.php?action=ffla_dismiss_api_notice'),
+            'ffla_dismiss_api_notice'
+        );
+
+        echo '<div class="notice notice-warning is-dismissible" id="ffla-api-notice">';
         echo '<p><strong>FFL Funnels Addons:</strong> ' . esc_html($error) . '</p>';
         echo '</div>';
+        // Delete the transient when the WP dismiss (X) button is clicked.
+        ?>
+        <script>
+            jQuery(function ($) {
+                $(document).on('click', '#ffla-api-notice .notice-dismiss', function () {
+                    $.post(ajaxurl, { action: 'ffla_dismiss_api_notice', _wpnonce: '<?php echo esc_js(wp_create_nonce('ffla_dismiss_api_notice')); ?>' });
+                });
+            });
+        </script>
+        <?php
+    }
+
+    /**
+     * AJAX handler to permanently dismiss the API notice.
+     */
+    public function handle_dismiss_api_notice(): void
+    {
+        check_ajax_referer('ffla_dismiss_api_notice', '_wpnonce');
+        delete_transient('ffla_github_api_error');
+        wp_die();
     }
 
     /**
