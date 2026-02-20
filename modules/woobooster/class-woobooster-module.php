@@ -47,6 +47,7 @@ class WooBooster_Module extends FFLA_Module
         require_once $path . 'includes/class-woobooster-shortcode.php';
         require_once $path . 'includes/class-woobooster-copurchase.php';
         require_once $path . 'includes/class-woobooster-trending.php';
+        require_once $path . 'includes/class-woobooster-coupon.php';
 
         // Admin.
         if (is_admin()) {
@@ -77,6 +78,10 @@ class WooBooster_Module extends FFLA_Module
 
         $frontend = new WooBooster_Frontend();
         $frontend->init();
+
+        // Coupon auto-apply engine.
+        $coupon = new WooBooster_Coupon();
+        $coupon->init();
 
         // Cron — register event handlers and schedules.
         $cron = new WooBooster_Cron();

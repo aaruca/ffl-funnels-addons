@@ -68,6 +68,11 @@ class WooBooster_Activator
 			condition_operator varchar(50) NOT NULL DEFAULT 'equals',
 			condition_value longtext NOT NULL,
 			include_children tinyint(1) NOT NULL DEFAULT 0,
+			min_quantity int(11) NOT NULL DEFAULT 1,
+			exclude_categories longtext DEFAULT NULL,
+			exclude_products longtext DEFAULT NULL,
+			exclude_price_min decimal(10,2) DEFAULT NULL,
+			exclude_price_max decimal(10,2) DEFAULT NULL,
 			PRIMARY KEY  (id),
 			KEY rule_id (rule_id),
 			KEY group_id (group_id)
@@ -82,6 +87,12 @@ class WooBooster_Activator
 			action_limit int(11) NOT NULL DEFAULT 4,
 			action_orderby varchar(50) NOT NULL DEFAULT 'rand',
 			include_children tinyint(1) NOT NULL DEFAULT 0,
+			action_products longtext DEFAULT NULL,
+			action_coupon_id bigint(20) DEFAULT NULL,
+			exclude_categories longtext DEFAULT NULL,
+			exclude_products longtext DEFAULT NULL,
+			exclude_price_min decimal(10,2) DEFAULT NULL,
+			exclude_price_max decimal(10,2) DEFAULT NULL,
 			PRIMARY KEY  (id),
 			KEY rule_id (rule_id)
 		) $charset_collate;";
@@ -185,6 +196,45 @@ class WooBooster_Activator
             ));
             if (empty($row_action_children)) {
                 $wpdb->query("ALTER TABLE $actions_table ADD include_children tinyint(1) NOT NULL DEFAULT 0");
+            }
+
+            // 5. Add coupon/exclusion columns to actions table (v1.5.0).
+            $new_action_cols = array(
+                'action_products' => 'longtext DEFAULT NULL',
+                'action_coupon_id' => 'bigint(20) DEFAULT NULL',
+                'exclude_categories' => 'longtext DEFAULT NULL',
+                'exclude_products' => 'longtext DEFAULT NULL',
+                'exclude_price_min' => 'decimal(10,2) DEFAULT NULL',
+                'exclude_price_max' => 'decimal(10,2) DEFAULT NULL',
+            );
+            foreach ($new_action_cols as $col_name => $col_def) {
+                $col_exists = $wpdb->get_results($wpdb->prepare(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = %s AND column_name = %s",
+                    $actions_table,
+                    $col_name
+                ));
+                if (empty($col_exists)) {
+                    $wpdb->query("ALTER TABLE {$actions_table} ADD {$col_name} {$col_def}"); // phpcs:ignore WordPress.DB.PreparedSQL
+                }
+            }
+
+            // 6. Add exclusion + min_quantity columns to conditions table (v1.5.0).
+            $new_cond_cols = array(
+                'min_quantity' => 'int(11) NOT NULL DEFAULT 1',
+                'exclude_categories' => 'longtext DEFAULT NULL',
+                'exclude_products' => 'longtext DEFAULT NULL',
+                'exclude_price_min' => 'decimal(10,2) DEFAULT NULL',
+                'exclude_price_max' => 'decimal(10,2) DEFAULT NULL',
+            );
+            foreach ($new_cond_cols as $col_name => $col_def) {
+                $col_exists = $wpdb->get_results($wpdb->prepare(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = %s AND column_name = %s",
+                    $conditions_table,
+                    $col_name
+                ));
+                if (empty($col_exists)) {
+                    $wpdb->query("ALTER TABLE {$conditions_table} ADD {$col_name} {$col_def}"); // phpcs:ignore WordPress.DB.PreparedSQL
+                }
             }
 
             // Mark migration as complete.

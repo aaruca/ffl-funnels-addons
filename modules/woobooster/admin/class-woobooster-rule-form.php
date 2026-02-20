@@ -144,10 +144,16 @@ class WooBooster_Rule_Form
                 $c_attr = is_object($cond) ? $cond->condition_attribute : '';
                 $c_val = is_object($cond) ? $cond->condition_value : '';
                 $c_inc = is_object($cond) ? (int) $cond->include_children : 0;
+                $c_min_qty = is_object($cond) && isset($cond->min_quantity) ? max(1, (int) $cond->min_quantity) : 1;
 
                 // Resolve label for existing values.
                 $c_label = '';
-                if ($c_val && $c_attr) {
+                if ('specific_product' === $c_attr && $c_val) {
+                    $product = wc_get_product(absint($c_val));
+                    if ($product) {
+                        $c_label = $product->get_name();
+                    }
+                } elseif ($c_val && $c_attr) {
                     $term = get_term_by('slug', $c_val, $c_attr);
                     if ($term && !is_wp_error($term)) {
                         $c_label = $term->name;
@@ -161,7 +167,9 @@ class WooBooster_Rule_Form
                 // Determine condition type from existing attribute.
                 $c_type = '';
                 $c_attr_taxonomy = '';
-                if ('product_cat' === $c_attr) {
+                if ('specific_product' === $c_attr) {
+                    $c_type = 'specific_product';
+                } elseif ('product_cat' === $c_attr) {
                     $c_type = 'category';
                 } elseif ('product_tag' === $c_attr) {
                     $c_type = 'tag';
@@ -176,6 +184,7 @@ class WooBooster_Rule_Form
                 echo '<option value="category"' . selected($c_type, 'category', false) . '>' . esc_html__('Category', 'woobooster') . '</option>';
                 echo '<option value="tag"' . selected($c_type, 'tag', false) . '>' . esc_html__('Tag', 'woobooster') . '</option>';
                 echo '<option value="attribute"' . selected($c_type, 'attribute', false) . '>' . esc_html__('Attribute', 'woobooster') . '</option>';
+                echo '<option value="specific_product"' . selected($c_type, 'specific_product', false) . '>' . esc_html__('Specific Product', 'woobooster') . '</option>';
                 echo '</select>';
 
                 // Attribute Taxonomy select (shown only when type = attribute).
@@ -212,12 +221,63 @@ class WooBooster_Rule_Form
                 echo esc_html__('+ Children', 'woobooster');
                 echo '</label>';
 
+                // Min quantity.
+                echo '<input type="number" name="' . esc_attr($field_prefix . '[min_quantity]') . '" value="' . esc_attr($c_min_qty) . '" min="1" class="wb-input wb-input--sm" style="width: 60px;" title="' . esc_attr__('Min Qty', 'woobooster') . '" placeholder="Qty">';
+
                 // Remove button.
                 if ($cond_index > 0 || count($conditions) > 1) {
                     echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-remove-condition" title="' . esc_attr__('Remove', 'woobooster') . '">&times;</button>';
                 }
 
                 echo '</div>'; // .wb-condition-row
+
+                // ── Condition Exclusion Panel (collapsible) ──
+                $cex_cats = is_object($cond) && isset($cond->exclude_categories) ? $cond->exclude_categories : '';
+                $cex_prods = is_object($cond) && isset($cond->exclude_products) ? $cond->exclude_products : '';
+                $cex_price_min = is_object($cond) && isset($cond->exclude_price_min) ? $cond->exclude_price_min : '';
+                $cex_price_max = is_object($cond) && isset($cond->exclude_price_max) ? $cond->exclude_price_max : '';
+                $cex_has = $cex_cats || $cex_prods || '' !== $cex_price_min || '' !== $cex_price_max;
+
+                echo '<div class="wb-cond-exclusion-panel" style="padding: 4px 0 8px 20px;">';
+                echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-cond-exclusions" style="margin-bottom: 6px;">';
+                echo ($cex_has ? '&#9660;' : '&#9654;') . ' ' . esc_html__('Exclusions', 'woobooster');
+                echo '</button>';
+
+                $cex_body_display = $cex_has ? '' : 'display:none;';
+                echo '<div class="wb-cond-exclusion-body" style="' . esc_attr($cex_body_display) . '">';
+
+                // Exclude Categories.
+                echo '<div class="wb-field" style="margin-bottom: 8px;">';
+                echo '<label class="wb-field__label">' . esc_html__('Exclude Categories', 'woobooster') . '</label>';
+                echo '<div class="wb-autocomplete wb-cond-exclude-cats-search" style="max-width: 400px;">';
+                echo '<input type="text" class="wb-input wb-cond-exclude-cats__input" placeholder="' . esc_attr__('Search categories…', 'woobooster') . '" autocomplete="off">';
+                echo '<input type="hidden" name="' . esc_attr($field_prefix . '[exclude_categories]') . '" class="wb-cond-exclude-cats__ids" value="' . esc_attr($cex_cats) . '">';
+                echo '<div class="wb-autocomplete__dropdown"></div>';
+                echo '<div class="wb-cond-exclude-cats-chips" style="margin-top: 4px;"></div>';
+                echo '</div></div>';
+
+                // Exclude Products.
+                echo '<div class="wb-field" style="margin-bottom: 8px;">';
+                echo '<label class="wb-field__label">' . esc_html__('Exclude Products', 'woobooster') . '</label>';
+                echo '<div class="wb-autocomplete wb-cond-exclude-prods-search" style="max-width: 400px;">';
+                echo '<input type="text" class="wb-input wb-cond-exclude-prods__input" placeholder="' . esc_attr__('Search products…', 'woobooster') . '" autocomplete="off">';
+                echo '<input type="hidden" name="' . esc_attr($field_prefix . '[exclude_products]') . '" class="wb-cond-exclude-prods__ids" value="' . esc_attr($cex_prods) . '">';
+                echo '<div class="wb-autocomplete__dropdown"></div>';
+                echo '<div class="wb-cond-exclude-prods-chips" style="margin-top: 4px;"></div>';
+                echo '</div></div>';
+
+                // Exclude Price Range.
+                echo '<div class="wb-field" style="margin-bottom: 8px;">';
+                echo '<label class="wb-field__label">' . esc_html__('Price Range Filter', 'woobooster') . '</label>';
+                echo '<div style="display: flex; gap: 8px; align-items: center;">';
+                echo '<input type="number" name="' . esc_attr($field_prefix . '[exclude_price_min]') . '" value="' . esc_attr($cex_price_min) . '" class="wb-input wb-input--sm" style="width: 90px;" placeholder="' . esc_attr__('Min $', 'woobooster') . '" step="0.01" min="0">';
+                echo '<span>&mdash;</span>';
+                echo '<input type="number" name="' . esc_attr($field_prefix . '[exclude_price_max]') . '" value="' . esc_attr($cex_price_max) . '" class="wb-input wb-input--sm" style="width: 90px;" placeholder="' . esc_attr__('Max $', 'woobooster') . '" step="0.01" min="0">';
+                echo '</div></div>';
+
+                echo '</div>'; // .wb-cond-exclusion-body
+                echo '</div>'; // .wb-cond-exclusion-panel
+
                 $cond_index++;
             }
 
@@ -251,6 +311,12 @@ class WooBooster_Rule_Form
                     'action_value' => '',
                     'action_orderby' => 'rand',
                     'action_limit' => 4,
+                    'action_products' => '',
+                    'action_coupon_id' => '',
+                    'exclude_categories' => '',
+                    'exclude_products' => '',
+                    'exclude_price_min' => '',
+                    'exclude_price_max' => '',
                 )
             );
         }
@@ -303,6 +369,8 @@ class WooBooster_Rule_Form
             echo '<option value="trending"' . selected($a_source, 'trending', false) . '>' . esc_html__('Trending', 'woobooster') . '</option>';
             echo '<option value="recently_viewed"' . selected($a_source, 'recently_viewed', false) . '>' . esc_html__('Recently Viewed', 'woobooster') . '</option>';
             echo '<option value="similar"' . selected($a_source, 'similar', false) . '>' . esc_html__('Similar Products', 'woobooster') . '</option>';
+            echo '<option value="specific_products"' . selected($a_source, 'specific_products', false) . '>' . esc_html__('Specific Products', 'woobooster') . '</option>';
+            echo '<option value="apply_coupon"' . selected($a_source, 'apply_coupon', false) . '>' . esc_html__('Apply Coupon', 'woobooster') . '</option>';
             echo '</select>';
 
             // Attribute Taxonomy Selector (for attribute_value source).
@@ -358,6 +426,82 @@ class WooBooster_Rule_Form
             }
 
             echo '</div>'; // .wb-action-row
+
+            // ── Specific Products Selector ──
+            $sp_display = 'specific_products' === $a_source ? '' : 'display:none;';
+            $sp_products = isset($action->action_products) ? $action->action_products : '';
+            echo '<div class="wb-action-products-panel" style="' . esc_attr($sp_display) . ' padding: 8px 0 0 20px;">';
+            echo '<label class="wb-field__label">' . esc_html__('Select Products', 'woobooster') . '</label>';
+            echo '<div class="wb-autocomplete wb-product-search" style="max-width: 500px;">';
+            echo '<input type="text" class="wb-input wb-product-search__input" placeholder="' . esc_attr__('Search products by name…', 'woobooster') . '" autocomplete="off">';
+            echo '<input type="hidden" name="' . esc_attr($prefix . '[action_products]') . '" class="wb-product-search__ids" value="' . esc_attr($sp_products) . '">';
+            echo '<div class="wb-autocomplete__dropdown"></div>';
+            echo '<div class="wb-product-chips" style="margin-top: 6px;"></div>';
+            echo '</div></div>';
+
+            // ── Coupon Selector ──
+            $cp_display = 'apply_coupon' === $a_source ? '' : 'display:none;';
+            $cp_id = isset($action->action_coupon_id) ? absint($action->action_coupon_id) : 0;
+            $cp_label = '';
+            if ($cp_id) {
+                $cp_coupon = new WC_Coupon($cp_id);
+                $cp_label = $cp_coupon->get_code();
+            }
+            echo '<div class="wb-action-coupon-panel" style="' . esc_attr($cp_display) . ' padding: 8px 0 0 20px;">';
+            echo '<label class="wb-field__label">' . esc_html__('Select Coupon', 'woobooster') . '</label>';
+            echo '<div class="wb-autocomplete wb-coupon-search" style="max-width: 400px;">';
+            echo '<input type="text" class="wb-input wb-coupon-search__input" placeholder="' . esc_attr__('Search coupons…', 'woobooster') . '" value="' . esc_attr($cp_label) . '" autocomplete="off">';
+            echo '<input type="hidden" name="' . esc_attr($prefix . '[action_coupon_id]') . '" class="wb-coupon-search__id" value="' . esc_attr($cp_id) . '">';
+            echo '<div class="wb-autocomplete__dropdown"></div>';
+            echo '</div></div>';
+
+            // ── Exclusion Panel (collapsible) ──
+            $ex_cats = isset($action->exclude_categories) ? $action->exclude_categories : '';
+            $ex_prods = isset($action->exclude_products) ? $action->exclude_products : '';
+            $ex_price_min = isset($action->exclude_price_min) ? $action->exclude_price_min : '';
+            $ex_price_max = isset($action->exclude_price_max) ? $action->exclude_price_max : '';
+            $has_exclusions = $ex_cats || $ex_prods || '' !== $ex_price_min || '' !== $ex_price_max;
+
+            echo '<div class="wb-exclusion-panel" style="padding: 8px 0 0 20px; margin-bottom: 12px;">';
+            echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-exclusions" style="margin-bottom: 8px;">';
+            echo ($has_exclusions ? '▼' : '▶') . ' ' . esc_html__('Exclusions', 'woobooster');
+            echo '</button>';
+
+            $ex_body_display = $has_exclusions ? '' : 'display:none;';
+            echo '<div class="wb-exclusion-body" style="' . esc_attr($ex_body_display) . '">';
+
+            // Exclude Categories.
+            echo '<div class="wb-field" style="margin-bottom: 10px;">';
+            echo '<label class="wb-field__label">' . esc_html__('Exclude Categories', 'woobooster') . '</label>';
+            echo '<div class="wb-autocomplete wb-exclude-cats-search" style="max-width: 500px;">';
+            echo '<input type="text" class="wb-input wb-exclude-cats__input" placeholder="' . esc_attr__('Search categories…', 'woobooster') . '" autocomplete="off">';
+            echo '<input type="hidden" name="' . esc_attr($prefix . '[exclude_categories]') . '" class="wb-exclude-cats__ids" value="' . esc_attr($ex_cats) . '">';
+            echo '<div class="wb-autocomplete__dropdown"></div>';
+            echo '<div class="wb-exclude-cats-chips" style="margin-top: 6px;"></div>';
+            echo '</div></div>';
+
+            // Exclude Products.
+            echo '<div class="wb-field" style="margin-bottom: 10px;">';
+            echo '<label class="wb-field__label">' . esc_html__('Exclude Products', 'woobooster') . '</label>';
+            echo '<div class="wb-autocomplete wb-exclude-prods-search" style="max-width: 500px;">';
+            echo '<input type="text" class="wb-input wb-exclude-prods__input" placeholder="' . esc_attr__('Search products…', 'woobooster') . '" autocomplete="off">';
+            echo '<input type="hidden" name="' . esc_attr($prefix . '[exclude_products]') . '" class="wb-exclude-prods__ids" value="' . esc_attr($ex_prods) . '">';
+            echo '<div class="wb-autocomplete__dropdown"></div>';
+            echo '<div class="wb-exclude-prods-chips" style="margin-top: 6px;"></div>';
+            echo '</div></div>';
+
+            // Exclude Price Range.
+            echo '<div class="wb-field" style="margin-bottom: 10px;">';
+            echo '<label class="wb-field__label">' . esc_html__('Price Range Filter', 'woobooster') . '</label>';
+            echo '<div style="display: flex; gap: 10px; align-items: center;">';
+            echo '<input type="number" name="' . esc_attr($prefix . '[exclude_price_min]') . '" value="' . esc_attr($ex_price_min) . '" class="wb-input wb-input--sm" style="width: 100px;" placeholder="' . esc_attr__('Min $', 'woobooster') . '" step="0.01" min="0">';
+            echo '<span>—</span>';
+            echo '<input type="number" name="' . esc_attr($prefix . '[exclude_price_max]') . '" value="' . esc_attr($ex_price_max) . '" class="wb-input wb-input--sm" style="width: 100px;" placeholder="' . esc_attr__('Max $', 'woobooster') . '" step="0.01" min="0">';
+            echo '<span class="wb-field__desc">' . esc_html__('Only include products in this price range', 'woobooster') . '</span>';
+            echo '</div></div>';
+
+            echo '</div>'; // .wb-exclusion-body
+            echo '</div>'; // .wb-exclusion-panel
         }
 
         echo '</div>'; // #wb-action-repeater
@@ -417,11 +561,17 @@ class WooBooster_Rule_Form
 
         foreach ($raw_actions as $action) {
             $clean_actions[] = array(
-                'action_source' => isset($action['action_source']) ? sanitize_key($action['action_source']) : 'category',
-                'action_value' => isset($action['action_value']) ? sanitize_text_field(wp_unslash($action['action_value'])) : '',
-                'action_limit' => isset($action['action_limit']) ? absint($action['action_limit']) : 4,
-                'action_orderby' => isset($action['action_orderby']) ? sanitize_key($action['action_orderby']) : 'rand',
-                'include_children' => isset($action['include_children']) ? absint($action['include_children']) : 0,
+                'action_source'      => isset($action['action_source']) ? sanitize_key($action['action_source']) : 'category',
+                'action_value'       => isset($action['action_value']) ? sanitize_text_field(wp_unslash($action['action_value'])) : '',
+                'action_limit'       => isset($action['action_limit']) ? absint($action['action_limit']) : 4,
+                'action_orderby'     => isset($action['action_orderby']) ? sanitize_key($action['action_orderby']) : 'rand',
+                'include_children'   => isset($action['include_children']) ? absint($action['include_children']) : 0,
+                'action_products'    => isset($action['action_products']) ? sanitize_text_field(wp_unslash($action['action_products'])) : '',
+                'action_coupon_id'   => isset($action['action_coupon_id']) && $action['action_coupon_id'] ? absint($action['action_coupon_id']) : '',
+                'exclude_categories' => isset($action['exclude_categories']) ? sanitize_text_field(wp_unslash($action['exclude_categories'])) : '',
+                'exclude_products'   => isset($action['exclude_products']) ? sanitize_text_field(wp_unslash($action['exclude_products'])) : '',
+                'exclude_price_min'  => isset($action['exclude_price_min']) && '' !== $action['exclude_price_min'] ? floatval($action['exclude_price_min']) : '',
+                'exclude_price_max'  => isset($action['exclude_price_max']) && '' !== $action['exclude_price_max'] ? floatval($action['exclude_price_max']) : '',
             );
         }
 
@@ -479,6 +629,11 @@ class WooBooster_Rule_Form
                     'condition_operator' => 'equals',
                     'condition_value' => sanitize_text_field(wp_unslash($cond['value'] ?? '')),
                     'include_children' => isset($cond['include_children']) ? 1 : 0,
+                    'min_quantity' => isset($cond['min_quantity']) ? max(1, absint($cond['min_quantity'])) : 1,
+                    'exclude_categories' => isset($cond['exclude_categories']) ? sanitize_text_field(wp_unslash($cond['exclude_categories'])) : '',
+                    'exclude_products' => isset($cond['exclude_products']) ? sanitize_text_field(wp_unslash($cond['exclude_products'])) : '',
+                    'exclude_price_min' => isset($cond['exclude_price_min']) && '' !== $cond['exclude_price_min'] ? floatval($cond['exclude_price_min']) : '',
+                    'exclude_price_max' => isset($cond['exclude_price_max']) && '' !== $cond['exclude_price_max'] ? floatval($cond['exclude_price_max']) : '',
                 );
             }
             if (!empty($group_conditions)) {

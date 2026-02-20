@@ -10,6 +10,8 @@ class WooBooster_Ajax
         add_action('wp_ajax_woobooster_search_terms', array($this, 'search_terms'));
         add_action('wp_ajax_woobooster_toggle_rule', array($this, 'toggle_rule'));
         add_action('wp_ajax_woobooster_test_rule', array($this, 'test_rule'));
+        add_action('wp_ajax_woobooster_search_products', array($this, 'search_products'));
+        add_action('wp_ajax_woobooster_search_coupons', array($this, 'search_coupons'));
     }
 
     public function search_terms()
@@ -98,5 +100,95 @@ class WooBooster_Ajax
         $matcher = new WooBooster_Matcher();
         $diagnostics = $matcher->get_diagnostics($product_id);
         wp_send_json_success($diagnostics);
+    }
+
+    /**
+     * AJAX: Search products by name.
+     */
+    public function search_products()
+    {
+        check_ajax_referer('woobooster_admin', 'nonce');
+        if (!current_user_can('manage_woocommerce')) {
+            wp_send_json_error(array('message' => 'Permission denied.'));
+        }
+
+        $search = isset($_POST['search']) ? sanitize_text_field(wp_unslash($_POST['search'])) : '';
+        $page = isset($_POST['page']) ? absint($_POST['page']) : 1;
+        $per_page = 20;
+
+        $args = array(
+            'post_type' => 'product',
+            'post_status' => 'publish',
+            'posts_per_page' => $per_page,
+            'paged' => $page,
+            's' => $search,
+            'fields' => 'ids',
+            'orderby' => 'title',
+            'order' => 'ASC',
+        );
+
+        $query = new WP_Query($args);
+        $results = array();
+
+        foreach ($query->posts as $pid) {
+            $product = wc_get_product($pid);
+            if ($product) {
+                $results[] = array(
+                    'id' => $pid,
+                    'name' => $product->get_name(),
+                    'sku' => $product->get_sku(),
+                );
+            }
+        }
+
+        wp_send_json_success(array(
+            'products' => $results,
+            'total' => $query->found_posts,
+            'page' => $page,
+            'pages' => $query->max_num_pages,
+            'has_more' => $page < $query->max_num_pages,
+        ));
+    }
+
+    /**
+     * AJAX: Search WooCommerce coupons by code.
+     */
+    public function search_coupons()
+    {
+        check_ajax_referer('woobooster_admin', 'nonce');
+        if (!current_user_can('manage_woocommerce')) {
+            wp_send_json_error(array('message' => 'Permission denied.'));
+        }
+
+        $search = isset($_POST['search']) ? sanitize_text_field(wp_unslash($_POST['search'])) : '';
+        $per_page = 20;
+
+        $args = array(
+            'post_type' => 'shop_coupon',
+            'post_status' => 'publish',
+            'posts_per_page' => $per_page,
+            's' => $search,
+            'fields' => 'ids',
+            'orderby' => 'title',
+            'order' => 'ASC',
+        );
+
+        $query = new WP_Query($args);
+        $results = array();
+
+        foreach ($query->posts as $cid) {
+            $coupon = new WC_Coupon($cid);
+            $results[] = array(
+                'id' => $cid,
+                'code' => $coupon->get_code(),
+                'type' => $coupon->get_discount_type(),
+                'amount' => $coupon->get_amount(),
+            );
+        }
+
+        wp_send_json_success(array(
+            'coupons' => $results,
+            'total' => $query->found_posts,
+        ));
     }
 }

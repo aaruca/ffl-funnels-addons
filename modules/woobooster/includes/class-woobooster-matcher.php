@@ -70,7 +70,7 @@ class WooBooster_Matcher
         }
 
         // Step 3: Find the winning rule via the lookup index.
-        $rule = $this->find_matching_rule($condition_keys, $terms);
+        $rule = $this->find_matching_rule($condition_keys, $terms, $product_id);
 
         if (!$rule) {
             $this->debug_log("No matching rule for product {$product_id}");
@@ -145,7 +145,7 @@ class WooBooster_Matcher
      * @param array $terms          Full term data [['taxonomy' => '...', 'slug' => '...', 'term_id' => ...]].
      * @return object|null The winning rule or null.
      */
-    private function find_matching_rule($condition_keys, $terms)
+    private function find_matching_rule($condition_keys, $terms, $product_id = 0)
     {
         global $wpdb;
 
@@ -180,6 +180,18 @@ class WooBooster_Matcher
         // Build a set of product keys for fast lookup.
         $product_keys_set = array_flip($condition_keys);
 
+        // Pre-fetch product data for exclusion checks.
+        $product_id = absint($product_id);
+        $product_price = null;
+        $product_cat_ids = array();
+        if ($product_id) {
+            $product_price = (float) get_post_meta($product_id, '_price', true);
+            $cat_terms = wp_get_post_terms($product_id, 'product_cat', array('fields' => 'ids'));
+            if (!is_wp_error($cat_terms)) {
+                $product_cat_ids = array_map('absint', $cat_terms);
+            }
+        }
+
         // Verify each candidate rule against the product's condition keys.
         foreach ($candidate_ids as $rule_id) {
             $rule = $wpdb->get_row(
@@ -206,6 +218,12 @@ class WooBooster_Matcher
 
                 // ALL conditions in this group must match (AND within group).
                 foreach ($conditions as $cond) {
+                    // Check condition-level exclusions first.
+                    if ($product_id && $this->is_product_excluded_by_condition($product_id, $product_price, $product_cat_ids, $cond)) {
+                        $group_satisfied = false;
+                        break;
+                    }
+
                     $cond_key = sanitize_key($cond->condition_attribute) . ':' . sanitize_text_field($cond->condition_value);
 
                     // Direct key match.
@@ -252,6 +270,52 @@ class WooBooster_Matcher
     }
 
     /**
+     * Check if a product is excluded by a condition's exclusion rules.
+     *
+     * @param int    $product_id      Product ID.
+     * @param float  $product_price   Product price.
+     * @param array  $product_cat_ids Product category term IDs.
+     * @param object $cond            Condition object.
+     * @return bool True if the product should be excluded from this condition.
+     */
+    private function is_product_excluded_by_condition($product_id, $product_price, $product_cat_ids, $cond)
+    {
+        // Exclude specific products.
+        if (!empty($cond->exclude_products)) {
+            $ex_ids = array_filter(array_map('absint', explode(',', $cond->exclude_products)));
+            if (in_array($product_id, $ex_ids, true)) {
+                return true;
+            }
+        }
+
+        // Exclude categories.
+        if (!empty($cond->exclude_categories)) {
+            $slugs = array_filter(explode(',', $cond->exclude_categories));
+            foreach ($slugs as $slug) {
+                $term = get_term_by('slug', $slug, 'product_cat');
+                if ($term && !is_wp_error($term) && in_array((int) $term->term_id, $product_cat_ids, true)) {
+                    return true;
+                }
+            }
+        }
+
+        // Exclude price range (product must be within range to pass; outside = excluded).
+        $has_min = isset($cond->exclude_price_min) && null !== $cond->exclude_price_min && '' !== $cond->exclude_price_min;
+        $has_max = isset($cond->exclude_price_max) && null !== $cond->exclude_price_max && '' !== $cond->exclude_price_max;
+
+        if (($has_min || $has_max) && null !== $product_price) {
+            if ($has_min && $product_price < (float) $cond->exclude_price_min) {
+                return true;
+            }
+            if ($has_max && $product_price > (float) $cond->exclude_price_max) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Execute the product query based on the action configuration.
      *
      * @param int    $product_id Current product ID (excluded from results).
@@ -273,6 +337,16 @@ class WooBooster_Matcher
         $smart_sources = array('copurchase', 'trending', 'recently_viewed', 'similar');
         if (in_array($action->action_source, $smart_sources, true)) {
             return $this->execute_smart_query($product_id, $action, $limit, $exclude_outofstock, $terms);
+        }
+
+        // Specific Products source — query by explicit IDs.
+        if ('specific_products' === $action->action_source) {
+            return $this->execute_specific_products_query($product_id, $action, $limit, $exclude_outofstock);
+        }
+
+        // Apply Coupon source — no product query needed, handled by WooBooster_Coupon class.
+        if ('apply_coupon' === $action->action_source) {
+            return array();
         }
 
         // Resolve taxonomy and term for the query.
@@ -311,6 +385,9 @@ class WooBooster_Matcher
                 ),
             );
         }
+
+        // Apply exclusions (categories, products, price range).
+        $query_args = $this->apply_exclusions($query_args, $action);
 
         // Order by.
         switch ($action->action_orderby) {
@@ -355,6 +432,135 @@ class WooBooster_Matcher
         $result_ids = $query->posts;
 
         return $result_ids;
+    }
+
+    /**
+     * Execute a query for "specific_products" action source.
+     *
+     * @param int    $product_id        Current product ID.
+     * @param object $action            The action object.
+     * @param int    $limit             Max products.
+     * @param bool   $exclude_outofstock Exclude out-of-stock.
+     * @return array Array of product IDs.
+     */
+    private function execute_specific_products_query($product_id, $action, $limit, $exclude_outofstock)
+    {
+        if (empty($action->action_products)) {
+            return array();
+        }
+
+        $product_ids = array_filter(array_map('absint', explode(',', $action->action_products)));
+        // Remove the current product.
+        $product_ids = array_diff($product_ids, array($product_id));
+
+        if (empty($product_ids)) {
+            return array();
+        }
+
+        $query_args = array(
+            'post_type' => 'product',
+            'post_status' => 'publish',
+            'posts_per_page' => $limit,
+            'post__in' => array_slice($product_ids, 0, $limit * 2),
+            'orderby' => 'post__in',
+            'fields' => 'ids',
+            'no_found_rows' => true,
+            'update_post_meta_cache' => false,
+            'update_post_term_cache' => false,
+        );
+
+        if ($exclude_outofstock) {
+            $query_args['meta_query'] = array(
+                array(
+                    'key' => '_stock_status',
+                    'value' => 'instock',
+                    'compare' => '=',
+                ),
+            );
+        }
+
+        // Apply exclusions.
+        $query_args = $this->apply_exclusions($query_args, $action);
+
+        $query = new WP_Query($query_args);
+        return $query->posts;
+    }
+
+    /**
+     * Apply exclusion filters to a WP_Query args array.
+     *
+     * Supports: exclude_categories, exclude_products, exclude_price_min/max.
+     *
+     * @param array  $query_args Existing WP_Query args.
+     * @param object $action     The action object.
+     * @return array Modified WP_Query args.
+     */
+    private function apply_exclusions($query_args, $action)
+    {
+        // 1. Exclude categories.
+        if (!empty($action->exclude_categories)) {
+            $cat_ids = array_filter(array_map('absint', explode(',', $action->exclude_categories)));
+            if (!empty($cat_ids)) {
+                // Get slugs from IDs for tax_query.
+                $slugs = array();
+                foreach ($cat_ids as $cat_id) {
+                    $term = get_term($cat_id, 'product_cat');
+                    if ($term && !is_wp_error($term)) {
+                        $slugs[] = $term->slug;
+                    }
+                }
+                if (!empty($slugs)) {
+                    if (!isset($query_args['tax_query'])) {
+                        $query_args['tax_query'] = array();
+                    }
+                    $query_args['tax_query'][] = array(
+                        'taxonomy' => 'product_cat',
+                        'field' => 'slug',
+                        'terms' => $slugs,
+                        'operator' => 'NOT IN',
+                    );
+                }
+            }
+        }
+
+        // 2. Exclude products.
+        if (!empty($action->exclude_products)) {
+            $exclude_ids = array_filter(array_map('absint', explode(',', $action->exclude_products)));
+            if (!empty($exclude_ids)) {
+                $existing = isset($query_args['post__not_in']) ? $query_args['post__not_in'] : array();
+                $query_args['post__not_in'] = array_unique(array_merge($existing, $exclude_ids));
+            }
+        }
+
+        // 3. Exclude by price range.
+        $has_min = isset($action->exclude_price_min) && null !== $action->exclude_price_min && '' !== $action->exclude_price_min;
+        $has_max = isset($action->exclude_price_max) && null !== $action->exclude_price_max && '' !== $action->exclude_price_max;
+
+        if ($has_min || $has_max) {
+            if (!isset($query_args['meta_query'])) {
+                $query_args['meta_query'] = array();
+            }
+
+            if ($has_min) {
+                $query_args['meta_query'][] = array(
+                    'key' => '_price',
+                    'value' => floatval($action->exclude_price_min),
+                    'compare' => '>=',
+                    'type' => 'DECIMAL',
+                );
+            }
+
+            if ($has_max) {
+                $query_args['meta_query'][] = array(
+                    'key' => '_price',
+                    'value' => floatval($action->exclude_price_max),
+                    'compare' => '<=',
+                    'type' => 'DECIMAL',
+                );
+            }
+        }
+
+        return $query_args;
     }
 
     /**
@@ -654,7 +860,7 @@ class WooBooster_Matcher
         $result['keys'] = $condition_keys;
 
         // Step 3: Find rule.
-        $rule = $this->find_matching_rule($condition_keys, $terms);
+        $rule = $this->find_matching_rule($condition_keys, $terms, $product_id);
 
         if ($rule) {
             $result['matched_rule'] = array(
