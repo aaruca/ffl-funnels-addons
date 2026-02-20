@@ -375,18 +375,44 @@ class WooBooster_Rule
             foreach ($groups as $group_id => $conditions) {
                 if (!empty($conditions)) {
                     foreach ($conditions as $condition) {
-                        $wpdb->insert(
-                            self::$conditions_table,
-                            array(
-                                'rule_id' => $rule_id,
-                                'group_id' => absint($group_id),
-                                'condition_attribute' => sanitize_key($condition['condition_attribute']),
-                                'condition_operator' => sanitize_key($condition['condition_operator'] ?? 'equals'),
-                                'condition_value' => sanitize_text_field($condition['condition_value']),
-                                'include_children' => absint($condition['include_children'] ?? 0),
-                            ),
-                            array('%d', '%d', '%s', '%s', '%s', '%d')
+                        $row = array(
+                            'rule_id' => $rule_id,
+                            'group_id' => absint($group_id),
+                            'condition_attribute' => sanitize_key($condition['condition_attribute']),
+                            'condition_operator' => sanitize_key($condition['condition_operator'] ?? 'equals'),
+                            'condition_value' => sanitize_text_field($condition['condition_value']),
+                            'include_children' => absint($condition['include_children'] ?? 0),
+                            'min_quantity' => max(1, absint($condition['min_quantity'] ?? 1)),
                         );
+
+                        // Exclusion columns.
+                        $row['exclude_categories'] = isset($condition['exclude_categories']) && '' !== $condition['exclude_categories']
+                            ? sanitize_text_field($condition['exclude_categories']) : null;
+                        $row['exclude_products'] = isset($condition['exclude_products']) && '' !== $condition['exclude_products']
+                            ? sanitize_text_field($condition['exclude_products']) : null;
+                        $row['exclude_price_min'] = isset($condition['exclude_price_min']) && '' !== $condition['exclude_price_min']
+                            ? floatval($condition['exclude_price_min']) : null;
+                        $row['exclude_price_max'] = isset($condition['exclude_price_max']) && '' !== $condition['exclude_price_max']
+                            ? floatval($condition['exclude_price_max']) : null;
+
+                        // Filter NULLs and build format array.
+                        $filtered_row = array_filter($row, function ($v) {
+                            return null !== $v;
+                        });
+                        $format_map = array(
+                            'rule_id' => '%d', 'group_id' => '%d',
+                            'condition_attribute' => '%s', 'condition_operator' => '%s',
+                            'condition_value' => '%s', 'include_children' => '%d',
+                            'min_quantity' => '%d',
+                            'exclude_categories' => '%s', 'exclude_products' => '%s',
+                            'exclude_price_min' => '%s', 'exclude_price_max' => '%s',
+                        );
+                        $filtered_format = array();
+                        foreach (array_keys($filtered_row) as $key) {
+                            $filtered_format[] = isset($format_map[$key]) ? $format_map[$key] : '%s';
+                        }
+
+                        $wpdb->insert(self::$conditions_table, $filtered_row, $filtered_format);
                     }
                 }
             }
@@ -415,18 +441,49 @@ class WooBooster_Rule
         // Insert new actions.
         if (!empty($actions)) {
             foreach ($actions as $action) {
-                $wpdb->insert(
-                    self::$actions_table,
-                    array(
-                        'rule_id' => $rule_id,
-                        'action_source' => sanitize_key($action['action_source']),
-                        'action_value' => sanitize_text_field($action['action_value']),
-                        'action_limit' => absint($action['action_limit'] ?? 4),
-                        'action_orderby' => sanitize_key($action['action_orderby'] ?? 'rand'),
-                        'include_children' => absint($action['include_children'] ?? 0),
-                    ),
-                    array('%d', '%s', '%s', '%d', '%s', '%d')
+                $row = array(
+                    'rule_id' => $rule_id,
+                    'action_source' => sanitize_key($action['action_source']),
+                    'action_value' => sanitize_text_field($action['action_value']),
+                    'action_limit' => absint($action['action_limit'] ?? 4),
+                    'action_orderby' => sanitize_key($action['action_orderby'] ?? 'rand'),
+                    'include_children' => absint($action['include_children'] ?? 0),
                 );
+
+                // New columns for v1.5.0.
+                $row['action_products'] = isset($action['action_products']) ? sanitize_text_field($action['action_products']) : null;
+                $row['action_coupon_id'] = isset($action['action_coupon_id']) && $action['action_coupon_id'] ? absint($action['action_coupon_id']) : null;
+                $row['exclude_categories'] = isset($action['exclude_categories']) ? sanitize_text_field($action['exclude_categories']) : null;
+                $row['exclude_products'] = isset($action['exclude_products']) ? sanitize_text_field($action['exclude_products']) : null;
+                $row['exclude_price_min'] = isset($action['exclude_price_min']) && '' !== $action['exclude_price_min'] ? floatval($action['exclude_price_min']) : null;
+                $row['exclude_price_max'] = isset($action['exclude_price_max']) && '' !== $action['exclude_price_max'] ? floatval($action['exclude_price_max']) : null;
+
+                $format = array('%d', '%s', '%s', '%d', '%s', '%d', '%s', '%d', '%s', '%s', '%s', '%s');
+
+                // Handle NULLs — wpdb->insert won't insert NULL correctly, so filter them.
+                $filtered_row = array_filter($row, function ($v) {
+                    return null !== $v;
+                });
+                $filtered_format = array();
+                $format_map = array(
+                    'rule_id' => '%d',
+                    'action_source' => '%s',
+                    'action_value' => '%s',
+                    'action_limit' => '%d',
+                    'action_orderby' => '%s',
+                    'include_children' => '%d',
+                    'action_products' => '%s',
+                    'action_coupon_id' => '%d',
+                    'exclude_categories' => '%s',
+                    'exclude_products' => '%s',
+                    'exclude_price_min' => '%s',
+                    'exclude_price_max' => '%s',
+                );
+                foreach (array_keys($filtered_row) as $key) {
+                    $filtered_format[] = isset($format_map[$key]) ? $format_map[$key] : '%s';
+                }
+
+                $wpdb->insert(self::$actions_table, $filtered_row, $filtered_format);
             }
         }
     }
@@ -565,7 +622,7 @@ class WooBooster_Rule
         }
 
         if (isset($data['action_source'])) {
-            $allowed_sources = array('category', 'tag', 'attribute', 'attribute_value', 'copurchase', 'trending', 'recently_viewed', 'similar');
+            $allowed_sources = array('category', 'tag', 'attribute', 'attribute_value', 'copurchase', 'trending', 'recently_viewed', 'similar', 'specific_products', 'apply_coupon');
             $sanitized['action_source'] = in_array($data['action_source'], $allowed_sources, true)
                 ? $data['action_source']
                 : 'category';

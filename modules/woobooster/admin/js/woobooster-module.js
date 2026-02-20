@@ -153,18 +153,27 @@
     if (addBtn) {
       addBtn.addEventListener('click', function () {
         var newIdx = container.querySelectorAll('.wb-action-row').length;
-        var row = createActionRow(newIdx);
-        container.appendChild(row);
-        bindActionRow(row);
+        var fragment = createActionRow(newIdx);
+        // Grab the action row element before appending (fragment empties on append).
+        var actionRow = fragment.querySelector('.wb-action-row');
+        container.appendChild(fragment);
+        bindActionRow(actionRow);
         renumberActionFields();
       });
     }
 
-    // Remove Action.
+    // Remove Action (also removes sibling panels).
     container.addEventListener('click', function (e) {
       if (e.target.classList.contains('wb-remove-action')) {
         var row = e.target.closest('.wb-action-row');
         if (container.querySelectorAll('.wb-action-row').length > 1) {
+          // Remove sibling panels that follow this action row.
+          var sibling = row.nextElementSibling;
+          while (sibling && !sibling.classList.contains('wb-action-row')) {
+            var next = sibling.nextElementSibling;
+            sibling.remove();
+            sibling = next;
+          }
           row.remove();
           renumberActionFields();
         } else {
@@ -176,6 +185,9 @@
     function bindActionRow(row) {
       initActionRowToggle(row);
       initActionRowAutocomplete(row);
+      initProductSearch(row);
+      initCouponSearch(row);
+      initExclusionPanel(row);
     }
 
     function createActionRow(idx) {
@@ -204,6 +216,8 @@
         '<option value="trending">Trending</option>' +
         '<option value="recently_viewed">Recently Viewed</option>' +
         '<option value="similar">Similar Products</option>' +
+        '<option value="specific_products">Specific Products</option>' +
+        '<option value="apply_coupon">Apply Coupon</option>' +
         '</select>' +
 
         // Attribute Taxonomy (for attribute_value source)
@@ -237,7 +251,78 @@
         // Remove
         '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-remove-action" title="Remove">&times;</button>';
 
-      return row;
+      // Specific Products panel
+      var productsPanel = document.createElement('div');
+      productsPanel.className = 'wb-action-products-panel';
+      productsPanel.style.display = 'none';
+      productsPanel.style.padding = '8px 0 0 20px';
+      productsPanel.innerHTML =
+        '<label class="wb-field__label">Select Products</label>' +
+        '<div class="wb-autocomplete wb-product-search" style="max-width: 500px;">' +
+        '<input type="text" class="wb-input wb-product-search__input" placeholder="Search products by name\u2026" autocomplete="off">' +
+        '<input type="hidden" name="' + prefix + '[action_products]" class="wb-product-search__ids" value="">' +
+        '<div class="wb-autocomplete__dropdown"></div>' +
+        '<div class="wb-product-chips" style="margin-top: 6px;"></div>' +
+        '</div>';
+
+      // Coupon panel
+      var couponPanel = document.createElement('div');
+      couponPanel.className = 'wb-action-coupon-panel';
+      couponPanel.style.display = 'none';
+      couponPanel.style.padding = '8px 0 0 20px';
+      couponPanel.innerHTML =
+        '<label class="wb-field__label">Select Coupon</label>' +
+        '<div class="wb-autocomplete wb-coupon-search" style="max-width: 400px;">' +
+        '<input type="text" class="wb-input wb-coupon-search__input" placeholder="Search coupons\u2026" autocomplete="off">' +
+        '<input type="hidden" name="' + prefix + '[action_coupon_id]" class="wb-coupon-search__id" value="">' +
+        '<div class="wb-autocomplete__dropdown"></div>' +
+        '</div>';
+
+      // Exclusion panel
+      var exclusionPanel = document.createElement('div');
+      exclusionPanel.className = 'wb-exclusion-panel';
+      exclusionPanel.style.padding = '8px 0 0 20px';
+      exclusionPanel.style.marginBottom = '12px';
+      exclusionPanel.innerHTML =
+        '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-exclusions" style="margin-bottom: 8px;">\u25b6 Exclusions</button>' +
+        '<div class="wb-exclusion-body" style="display:none;">' +
+          '<div class="wb-field" style="margin-bottom: 10px;">' +
+            '<label class="wb-field__label">Exclude Categories</label>' +
+            '<div class="wb-autocomplete wb-exclude-cats-search" style="max-width: 500px;">' +
+              '<input type="text" class="wb-input wb-exclude-cats__input" placeholder="Search categories\u2026" autocomplete="off">' +
+              '<input type="hidden" name="' + prefix + '[exclude_categories]" class="wb-exclude-cats__ids" value="">' +
+              '<div class="wb-autocomplete__dropdown"></div>' +
+              '<div class="wb-exclude-cats-chips" style="margin-top: 6px;"></div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="wb-field" style="margin-bottom: 10px;">' +
+            '<label class="wb-field__label">Exclude Products</label>' +
+            '<div class="wb-autocomplete wb-exclude-prods-search" style="max-width: 500px;">' +
+              '<input type="text" class="wb-input wb-exclude-prods__input" placeholder="Search products\u2026" autocomplete="off">' +
+              '<input type="hidden" name="' + prefix + '[exclude_products]" class="wb-exclude-prods__ids" value="">' +
+              '<div class="wb-autocomplete__dropdown"></div>' +
+              '<div class="wb-exclude-prods-chips" style="margin-top: 6px;"></div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="wb-field" style="margin-bottom: 10px;">' +
+            '<label class="wb-field__label">Price Range Filter</label>' +
+            '<div style="display: flex; gap: 10px; align-items: center;">' +
+              '<input type="number" name="' + prefix + '[exclude_price_min]" class="wb-input wb-input--sm" style="width: 100px;" placeholder="Min $" step="0.01" min="0">' +
+              '<span>\u2014</span>' +
+              '<input type="number" name="' + prefix + '[exclude_price_max]" class="wb-input wb-input--sm" style="width: 100px;" placeholder="Max $" step="0.01" min="0">' +
+              '<span class="wb-field__desc">Only include products in this price range</span>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+
+      // Append panels after the action row (as siblings in the container)
+      var fragment = document.createDocumentFragment();
+      fragment.appendChild(row);
+      fragment.appendChild(productsPanel);
+      fragment.appendChild(couponPanel);
+      fragment.appendChild(exclusionPanel);
+
+      return fragment;
     }
 
     function renumberActionFields() {
@@ -247,12 +332,24 @@
         if (num) num.textContent = i + 1;
 
         var prefix = 'actions[' + i + ']';
+        // Renumber the action row itself.
         row.querySelectorAll('[name]').forEach(function (el) {
           var name = el.getAttribute('name');
           if (name) {
             el.setAttribute('name', name.replace(/actions\[\d+\]/, prefix));
           }
         });
+        // Renumber sibling panels (products, coupon, exclusion) that follow this row.
+        var sibling = row.nextElementSibling;
+        while (sibling && !sibling.classList.contains('wb-action-row')) {
+          sibling.querySelectorAll('[name]').forEach(function (el) {
+            var name = el.getAttribute('name');
+            if (name) {
+              el.setAttribute('name', name.replace(/actions\[\d+\]/, prefix));
+            }
+          });
+          sibling = sibling.nextElementSibling;
+        }
       });
     }
 
@@ -261,7 +358,18 @@
       var valWrap = row.querySelector('.wb-action-value-wrap');
       var childLabel = row.querySelector('.wb-action-children-label');
       var attrTaxSelect = row.querySelector('.wb-action-attr-taxonomy');
-      var noValueSources = ['attribute', 'copurchase', 'trending', 'recently_viewed', 'similar'];
+      var productsPanel = row.parentElement && row.nextElementSibling && row.nextElementSibling.classList.contains('wb-action-products-panel') ? row.nextElementSibling : null;
+      var couponPanel = null;
+      var noValueSources = ['attribute', 'copurchase', 'trending', 'recently_viewed', 'similar', 'specific_products', 'apply_coupon'];
+
+      // Find sibling panels by traversing siblings of the action row.
+      var sibling = row.nextElementSibling;
+      while (sibling) {
+        if (sibling.classList.contains('wb-action-products-panel')) productsPanel = sibling;
+        if (sibling.classList.contains('wb-action-coupon-panel')) couponPanel = sibling;
+        if (sibling.classList.contains('wb-exclusion-panel')) break;
+        sibling = sibling.nextElementSibling;
+      }
 
       function toggle() {
         if (valWrap) {
@@ -272,6 +380,12 @@
         }
         if (attrTaxSelect) {
           attrTaxSelect.style.display = source.value === 'attribute_value' ? '' : 'none';
+        }
+        if (productsPanel) {
+          productsPanel.style.display = source.value === 'specific_products' ? '' : 'none';
+        }
+        if (couponPanel) {
+          couponPanel.style.display = source.value === 'apply_coupon' ? '' : 'none';
         }
       }
 
@@ -367,6 +481,339 @@
         });
       }
     }
+
+    /* ── Product Search (for specific_products action) ──────────────── */
+    function initProductSearch(row) {
+      var sibling = row.nextElementSibling;
+      while (sibling && !sibling.classList.contains('wb-action-products-panel')) {
+        sibling = sibling.nextElementSibling;
+      }
+      if (!sibling) return;
+
+      var input = sibling.querySelector('.wb-product-search__input');
+      var hiddenIds = sibling.querySelector('.wb-product-search__ids');
+      var dropdown = sibling.querySelector('.wb-autocomplete__dropdown');
+      var chipsEl = sibling.querySelector('.wb-product-chips');
+      if (!input || !hiddenIds || !dropdown) return;
+
+      renderChips(hiddenIds, chipsEl, 'product');
+      var debounce = null;
+
+      input.addEventListener('input', function () {
+        clearTimeout(debounce);
+        debounce = setTimeout(function () { searchProducts(input.value, dropdown, hiddenIds, chipsEl); }, 300);
+      });
+      input.addEventListener('focus', function () {
+        if (!dropdown.children.length) searchProducts('', dropdown, hiddenIds, chipsEl);
+        else dropdown.style.display = 'block';
+      });
+      document.addEventListener('click', function (e) {
+        if (!dropdown.contains(e.target) && e.target !== input) dropdown.style.display = 'none';
+      });
+    }
+
+    /* ── Coupon Search (for apply_coupon action) ────────────────────── */
+    function initCouponSearch(row) {
+      var sibling = row.nextElementSibling;
+      while (sibling && !sibling.classList.contains('wb-action-coupon-panel')) {
+        sibling = sibling.nextElementSibling;
+      }
+      if (!sibling) return;
+
+      var input = sibling.querySelector('.wb-coupon-search__input');
+      var hiddenId = sibling.querySelector('.wb-coupon-search__id');
+      var dropdown = sibling.querySelector('.wb-autocomplete__dropdown');
+      if (!input || !hiddenId || !dropdown) return;
+
+      var debounce = null;
+      input.addEventListener('input', function () {
+        clearTimeout(debounce);
+        hiddenId.value = '';
+        debounce = setTimeout(function () {
+          var fd = new FormData();
+          fd.append('action', 'woobooster_search_coupons');
+          fd.append('nonce', cfg.nonce);
+          fd.append('search', input.value);
+
+          fetch(cfg.ajaxUrl, { method: 'POST', body: fd })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+              if (!res.success) return;
+              dropdown.innerHTML = '';
+              res.data.coupons.forEach(function (c) {
+                var item = document.createElement('div');
+                item.className = 'wb-autocomplete__item';
+                item.textContent = c.code + ' (' + c.type + ': ' + c.amount + ')';
+                item.addEventListener('click', function () {
+                  input.value = c.code;
+                  hiddenId.value = c.id;
+                  dropdown.style.display = 'none';
+                });
+                dropdown.appendChild(item);
+              });
+              dropdown.style.display = dropdown.children.length ? 'block' : 'none';
+            });
+        }, 300);
+      });
+      input.addEventListener('focus', function () {
+        if (!dropdown.children.length && input.value.length === 0) {
+          input.dispatchEvent(new Event('input'));
+        } else if (dropdown.children.length) {
+          dropdown.style.display = 'block';
+        }
+      });
+      document.addEventListener('click', function (e) {
+        if (!dropdown.contains(e.target) && e.target !== input) dropdown.style.display = 'none';
+      });
+    }
+
+    /* ── Exclusion Panel ────────────────────────────────────────────── */
+    function initExclusionPanel(row) {
+      // Find the exclusion panel that belongs to this action row.
+      var sibling = row.nextElementSibling;
+      while (sibling && !sibling.classList.contains('wb-exclusion-panel')) {
+        sibling = sibling.nextElementSibling;
+      }
+      if (!sibling) return;
+
+      // Toggle button.
+      var toggleBtn = sibling.querySelector('.wb-toggle-exclusions');
+      var body = sibling.querySelector('.wb-exclusion-body');
+      if (toggleBtn && body) {
+        toggleBtn.addEventListener('click', function () {
+          var isOpen = body.style.display !== 'none';
+          body.style.display = isOpen ? 'none' : '';
+          toggleBtn.textContent = (isOpen ? '\u25b6' : '\u25bc') + ' Exclusions';
+        });
+      }
+
+      // Exclude categories search.
+      var catInput = sibling.querySelector('.wb-exclude-cats__input');
+      var catIds = sibling.querySelector('.wb-exclude-cats__ids');
+      var catDropdown = sibling.querySelector('.wb-exclude-cats-search .wb-autocomplete__dropdown');
+      var catChips = sibling.querySelector('.wb-exclude-cats-chips');
+      if (catInput && catIds && catDropdown) {
+        renderChips(catIds, catChips, 'cat');
+        var catDebounce = null;
+        catInput.addEventListener('input', function () {
+          clearTimeout(catDebounce);
+          catDebounce = setTimeout(function () {
+            var fd = new FormData();
+            fd.append('action', 'woobooster_search_terms');
+            fd.append('nonce', cfg.nonce);
+            fd.append('taxonomy', 'product_cat');
+            fd.append('search', catInput.value);
+            fd.append('page', 1);
+
+            fetch(cfg.ajaxUrl, { method: 'POST', body: fd })
+              .then(function (r) { return r.json(); })
+              .then(function (res) {
+                if (!res.success) return;
+                catDropdown.innerHTML = '';
+                var currentIds = (catIds.value || '').split(',').filter(Boolean);
+                res.data.terms.forEach(function (t) {
+                  if (currentIds.indexOf(t.slug) !== -1) return;
+                  var item = document.createElement('div');
+                  item.className = 'wb-autocomplete__item';
+                  item.textContent = t.name + ' (' + t.count + ')';
+                  item.addEventListener('click', function () {
+                    currentIds.push(t.slug);
+                    catIds.value = currentIds.join(',');
+                    renderChips(catIds, catChips, 'cat');
+                    catDropdown.style.display = 'none';
+                    catInput.value = '';
+                  });
+                  catDropdown.appendChild(item);
+                });
+                catDropdown.style.display = catDropdown.children.length ? 'block' : 'none';
+              });
+          }, 300);
+        });
+        catInput.addEventListener('focus', function () {
+          if (!catDropdown.children.length) catInput.dispatchEvent(new Event('input'));
+          else catDropdown.style.display = 'block';
+        });
+        document.addEventListener('click', function (e) {
+          if (!catDropdown.contains(e.target) && e.target !== catInput) catDropdown.style.display = 'none';
+        });
+      }
+
+      // Exclude products search.
+      var prodInput = sibling.querySelector('.wb-exclude-prods__input');
+      var prodIds = sibling.querySelector('.wb-exclude-prods__ids');
+      var prodDropdown = sibling.querySelector('.wb-exclude-prods-search .wb-autocomplete__dropdown');
+      var prodChips = sibling.querySelector('.wb-exclude-prods-chips');
+      if (prodInput && prodIds && prodDropdown) {
+        renderChips(prodIds, prodChips, 'product');
+        var prodDebounce = null;
+        prodInput.addEventListener('input', function () {
+          clearTimeout(prodDebounce);
+          prodDebounce = setTimeout(function () {
+            searchProducts(prodInput.value, prodDropdown, prodIds, prodChips);
+          }, 300);
+        });
+        prodInput.addEventListener('focus', function () {
+          if (!prodDropdown.children.length) prodInput.dispatchEvent(new Event('input'));
+          else prodDropdown.style.display = 'block';
+        });
+        document.addEventListener('click', function (e) {
+          if (!prodDropdown.contains(e.target) && e.target !== prodInput) prodDropdown.style.display = 'none';
+        });
+      }
+    }
+
+    /* ── Condition Exclusion Panel ──────────────────────────────────── */
+    function initCondExclusionPanel(row, panel) {
+      if (!panel) {
+        // Find the panel as next sibling of the condition row.
+        var el = row.nextElementSibling;
+        if (el && el.classList.contains('wb-cond-exclusion-panel')) {
+          panel = el;
+        }
+      }
+      if (!panel) return;
+
+      // Toggle button.
+      var toggleBtn = panel.querySelector('.wb-toggle-cond-exclusions');
+      var body = panel.querySelector('.wb-cond-exclusion-body');
+      if (toggleBtn && body) {
+        toggleBtn.addEventListener('click', function () {
+          var isOpen = body.style.display !== 'none';
+          body.style.display = isOpen ? 'none' : '';
+          toggleBtn.innerHTML = (isOpen ? '&#9654;' : '&#9660;') + ' Exclusions';
+        });
+      }
+
+      // Exclude categories search.
+      var catInput = panel.querySelector('.wb-cond-exclude-cats__input');
+      var catIds = panel.querySelector('.wb-cond-exclude-cats__ids');
+      var catDropdown = panel.querySelector('.wb-cond-exclude-cats-search .wb-autocomplete__dropdown');
+      var catChips = panel.querySelector('.wb-cond-exclude-cats-chips');
+      if (catInput && catIds && catDropdown) {
+        renderChips(catIds, catChips, 'cat');
+        var catDebounce = null;
+        catInput.addEventListener('input', function () {
+          clearTimeout(catDebounce);
+          catDebounce = setTimeout(function () {
+            var fd = new FormData();
+            fd.append('action', 'woobooster_search_terms');
+            fd.append('nonce', cfg.nonce);
+            fd.append('taxonomy', 'product_cat');
+            fd.append('search', catInput.value);
+            fd.append('page', 1);
+
+            fetch(cfg.ajaxUrl, { method: 'POST', body: fd })
+              .then(function (r) { return r.json(); })
+              .then(function (res) {
+                if (!res.success) return;
+                catDropdown.innerHTML = '';
+                var currentIds = (catIds.value || '').split(',').filter(Boolean);
+                res.data.terms.forEach(function (t) {
+                  if (currentIds.indexOf(t.slug) !== -1) return;
+                  var item = document.createElement('div');
+                  item.className = 'wb-autocomplete__item';
+                  item.textContent = t.name + ' (' + t.count + ')';
+                  item.addEventListener('click', function () {
+                    currentIds.push(t.slug);
+                    catIds.value = currentIds.join(',');
+                    renderChips(catIds, catChips, 'cat');
+                    catDropdown.style.display = 'none';
+                    catInput.value = '';
+                  });
+                  catDropdown.appendChild(item);
+                });
+                catDropdown.style.display = catDropdown.children.length ? 'block' : 'none';
+              });
+          }, 300);
+        });
+        catInput.addEventListener('focus', function () {
+          if (!catDropdown.children.length) catInput.dispatchEvent(new Event('input'));
+          else catDropdown.style.display = 'block';
+        });
+        document.addEventListener('click', function (e) {
+          if (!catDropdown.contains(e.target) && e.target !== catInput) catDropdown.style.display = 'none';
+        });
+      }
+
+      // Exclude products search.
+      var prodInput = panel.querySelector('.wb-cond-exclude-prods__input');
+      var prodIds = panel.querySelector('.wb-cond-exclude-prods__ids');
+      var prodDropdown = panel.querySelector('.wb-cond-exclude-prods-search .wb-autocomplete__dropdown');
+      var prodChips = panel.querySelector('.wb-cond-exclude-prods-chips');
+      if (prodInput && prodIds && prodDropdown) {
+        renderChips(prodIds, prodChips, 'product');
+        var prodDebounce = null;
+        prodInput.addEventListener('input', function () {
+          clearTimeout(prodDebounce);
+          prodDebounce = setTimeout(function () {
+            searchProducts(prodInput.value, prodDropdown, prodIds, prodChips);
+          }, 300);
+        });
+        prodInput.addEventListener('focus', function () {
+          if (!prodDropdown.children.length) prodInput.dispatchEvent(new Event('input'));
+          else prodDropdown.style.display = 'block';
+        });
+        document.addEventListener('click', function (e) {
+          if (!prodDropdown.contains(e.target) && e.target !== prodInput) prodDropdown.style.display = 'none';
+        });
+      }
+    }
+
+  }
+
+  /* ── Shared Helpers (used by both Action + Condition repeaters) ──── */
+
+  function searchProducts(search, dropdown, hiddenIds, chipsEl) {
+    var fd = new FormData();
+    fd.append('action', 'woobooster_search_products');
+    fd.append('nonce', cfg.nonce);
+    fd.append('search', search);
+    fd.append('page', 1);
+
+    fetch(cfg.ajaxUrl, { method: 'POST', body: fd })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.success) return;
+        dropdown.innerHTML = '';
+        var currentIds = (hiddenIds.value || '').split(',').filter(Boolean);
+        res.data.products.forEach(function (p) {
+          if (currentIds.indexOf(String(p.id)) !== -1) return;
+          var item = document.createElement('div');
+          item.className = 'wb-autocomplete__item';
+          item.textContent = p.name + (p.sku ? ' (' + p.sku + ')' : '') + ' #' + p.id;
+          item.addEventListener('click', function () {
+            currentIds.push(String(p.id));
+            hiddenIds.value = currentIds.join(',');
+            renderChips(hiddenIds, chipsEl, 'product');
+            dropdown.style.display = 'none';
+          });
+          dropdown.appendChild(item);
+        });
+        dropdown.style.display = dropdown.children.length ? 'block' : 'none';
+      });
+  }
+
+  function renderChips(hiddenInput, chipsEl, type) {
+    if (!chipsEl || !hiddenInput) return;
+    chipsEl.innerHTML = '';
+    var ids = (hiddenInput.value || '').split(',').filter(Boolean);
+    ids.forEach(function (id) {
+      var chip = document.createElement('span');
+      chip.className = 'wb-chip';
+      chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:#f0f0f0;border-radius:12px;font-size:12px;margin:2px;';
+      chip.textContent = (type === 'product' ? '#' : '') + id + ' ';
+      var removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.textContent = '\u00d7';
+      removeBtn.style.cssText = 'border:none;background:none;cursor:pointer;font-size:14px;color:#666;padding:0;line-height:1;';
+      removeBtn.addEventListener('click', function () {
+        var newIds = (hiddenInput.value || '').split(',').filter(function (v) { return v !== id; });
+        hiddenInput.value = newIds.join(',');
+        renderChips(hiddenInput, chipsEl, type);
+      });
+      chip.appendChild(removeBtn);
+      chipsEl.appendChild(chip);
+    });
   }
 
   /* ── Condition Repeater ──────────────────────────────────────────── */
@@ -380,12 +827,19 @@
     container.querySelectorAll('.wb-condition-row').forEach(function (row) {
       initConditionTypeToggle(row);
       initRowAutocomplete(row);
+      initCondExclusionPanel(row, null);
     });
 
     // Wire up existing remove buttons.
     container.addEventListener('click', function (e) {
       if (e.target.classList.contains('wb-remove-condition')) {
-        e.target.closest('.wb-condition-row').remove();
+        var condRow = e.target.closest('.wb-condition-row');
+        // Also remove the sibling exclusion panel.
+        var nextEl = condRow.nextElementSibling;
+        if (nextEl && nextEl.classList.contains('wb-cond-exclusion-panel')) {
+          nextEl.remove();
+        }
+        condRow.remove();
         renumberFields();
       }
       if (e.target.classList.contains('wb-remove-group')) {
@@ -470,6 +924,7 @@
         '<option value="category">Category</option>' +
         '<option value="tag">Tag</option>' +
         '<option value="attribute">Attribute</option>' +
+        '<option value="specific_product">Specific Product</option>' +
         '</select>' +
         // Attribute Taxonomy (hidden unless type=attribute)
         '<select class="wb-select wb-condition-attr-taxonomy" style="width: auto; flex-shrink: 0; display:none;">' + attrTaxOptions + '</select>' +
@@ -484,11 +939,52 @@
         '<label class="wb-checkbox wb-condition-children-label" style="display:none;">' +
         '<input type="checkbox" name="' + prefix + '[include_children]" value="1"> + Children' +
         '</label>' +
+        '<input type="number" name="' + prefix + '[min_quantity]" value="1" min="1" class="wb-input wb-input--sm" style="width: 60px;" title="Min Qty" placeholder="Qty">' +
         '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-remove-condition">&times;</button>';
+
+      // Condition exclusion panel.
+      var condExPanel = document.createElement('div');
+      condExPanel.className = 'wb-cond-exclusion-panel';
+      condExPanel.style.padding = '4px 0 8px 20px';
+      condExPanel.innerHTML =
+        '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-cond-exclusions" style="margin-bottom: 6px;">\u25b6 Exclusions</button>' +
+        '<div class="wb-cond-exclusion-body" style="display:none;">' +
+          '<div class="wb-field" style="margin-bottom: 8px;">' +
+            '<label class="wb-field__label">Exclude Categories</label>' +
+            '<div class="wb-autocomplete wb-cond-exclude-cats-search" style="max-width: 400px;">' +
+              '<input type="text" class="wb-input wb-cond-exclude-cats__input" placeholder="Search categories\u2026" autocomplete="off">' +
+              '<input type="hidden" name="' + prefix + '[exclude_categories]" class="wb-cond-exclude-cats__ids" value="">' +
+              '<div class="wb-autocomplete__dropdown"></div>' +
+              '<div class="wb-cond-exclude-cats-chips" style="margin-top: 4px;"></div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="wb-field" style="margin-bottom: 8px;">' +
+            '<label class="wb-field__label">Exclude Products</label>' +
+            '<div class="wb-autocomplete wb-cond-exclude-prods-search" style="max-width: 400px;">' +
+              '<input type="text" class="wb-input wb-cond-exclude-prods__input" placeholder="Search products\u2026" autocomplete="off">' +
+              '<input type="hidden" name="' + prefix + '[exclude_products]" class="wb-cond-exclude-prods__ids" value="">' +
+              '<div class="wb-autocomplete__dropdown"></div>' +
+              '<div class="wb-cond-exclude-prods-chips" style="margin-top: 4px;"></div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="wb-field" style="margin-bottom: 8px;">' +
+            '<label class="wb-field__label">Price Range Filter</label>' +
+            '<div style="display: flex; gap: 8px; align-items: center;">' +
+              '<input type="number" name="' + prefix + '[exclude_price_min]" class="wb-input wb-input--sm" style="width: 90px;" placeholder="Min $" step="0.01" min="0">' +
+              '<span>\u2014</span>' +
+              '<input type="number" name="' + prefix + '[exclude_price_max]" class="wb-input wb-input--sm" style="width: 90px;" placeholder="Max $" step="0.01" min="0">' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+
+      var fragment = document.createDocumentFragment();
+      fragment.appendChild(row);
+      fragment.appendChild(condExPanel);
 
       initConditionTypeToggle(row);
       initRowAutocomplete(row);
-      return row;
+      initCondExclusionPanel(row, condExPanel);
+      return fragment;
     }
 
     function initRowAutocomplete(row) {
@@ -500,15 +996,23 @@
 
       var debounce = null;
 
+      function doSearch(search) {
+        if (attrSelect.value === 'specific_product') {
+          searchConditionProducts(display, hidden, dropdown, search);
+        } else {
+          searchRowTerms(display, hidden, dropdown, attrSelect, search);
+        }
+      }
+
       display.addEventListener('input', function () {
         clearTimeout(debounce);
         hidden.value = '';
-        debounce = setTimeout(function () { searchRowTerms(display, hidden, dropdown, attrSelect, display.value); }, 300);
+        debounce = setTimeout(function () { doSearch(display.value); }, 300);
       });
 
       display.addEventListener('focus', function () {
         if (!dropdown.children.length) {
-          searchRowTerms(display, hidden, dropdown, attrSelect, '');
+          doSearch('');
         } else {
           dropdown.style.display = 'block';
         }
@@ -554,6 +1058,34 @@
         });
     }
 
+    function searchConditionProducts(display, hidden, dropdown, search) {
+      var fd = new FormData();
+      fd.append('action', 'woobooster_search_products');
+      fd.append('nonce', cfg.nonce);
+      fd.append('search', search);
+
+      fetch(cfg.ajaxUrl, { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          if (!res.success) return;
+          dropdown.innerHTML = '';
+
+          res.data.products.forEach(function (p) {
+            var item = document.createElement('div');
+            item.className = 'wb-autocomplete__item';
+            item.textContent = p.name + (p.sku ? ' (' + p.sku + ')' : '');
+            item.addEventListener('click', function () {
+              display.value = p.name;
+              hidden.value = String(p.id);
+              dropdown.style.display = 'none';
+            });
+            dropdown.appendChild(item);
+          });
+
+          dropdown.style.display = dropdown.children.length ? 'block' : 'none';
+        });
+    }
+
     function initConditionTypeToggle(row) {
       var typeSelect = row.querySelector('.wb-condition-type');
       var attrTaxSelect = row.querySelector('.wb-condition-attr-taxonomy');
@@ -570,6 +1102,10 @@
         if (childLabel) {
           childLabel.style.display = type === 'category' ? '' : 'none';
         }
+        var display = row.querySelector('.wb-condition-value-display');
+        if (display) {
+          display.placeholder = type === 'specific_product' ? 'Search product\u2026' : 'Value\u2026';
+        }
       }
 
       typeSelect.addEventListener('change', function () {
@@ -578,6 +1114,8 @@
           hiddenAttr.value = 'product_cat';
         } else if (type === 'tag') {
           hiddenAttr.value = 'product_tag';
+        } else if (type === 'specific_product') {
+          hiddenAttr.value = 'specific_product';
         } else if (type === 'attribute' && attrTaxSelect) {
           hiddenAttr.value = attrTaxSelect.value;
         } else {
@@ -591,7 +1129,9 @@
         if (display) display.value = '';
         if (hidden) hidden.value = '';
         if (dropdown) dropdown.innerHTML = '';
-        if (hiddenAttr.value) {
+        if (hiddenAttr.value === 'specific_product') {
+          searchConditionProducts(display, hidden, dropdown, '');
+        } else if (hiddenAttr.value) {
           searchRowTerms(display, hidden, dropdown, hiddenAttr, '');
         }
       });
@@ -627,6 +1167,14 @@
             var name = el.getAttribute('name');
             el.setAttribute('name', name.replace(/conditions\[\d+\]\[\d+\]/, prefix));
           });
+          // Renumber the sibling exclusion panel.
+          var nextEl = row.nextElementSibling;
+          if (nextEl && nextEl.classList.contains('wb-cond-exclusion-panel')) {
+            nextEl.querySelectorAll('[name]').forEach(function (el) {
+              var name = el.getAttribute('name');
+              el.setAttribute('name', name.replace(/conditions\[\d+\]\[\d+\]/, prefix));
+            });
+          }
         });
       });
     }
