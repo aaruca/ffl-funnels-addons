@@ -130,6 +130,7 @@ class Wishlist_Admin
         echo '<h4>' . esc_html__('Shortcodes', 'ffl-funnels-addons') . '</h4>';
         echo '<ul class="wb-list">';
         echo '<li><code>[alg_wishlist_button]</code> — ' . esc_html__('Displays the "Add to Wishlist" heart button.', 'ffl-funnels-addons') . '</li>';
+        echo '<li><code>[alg_wishlist_button_aws]</code> — ' . esc_html__('Displays an "Add to Wishlist" link with text toggle (Add/Remove).', 'ffl-funnels-addons') . '</li>';
         echo '<li><code>[alg_wishlist_count]</code> — ' . esc_html__('Displays the current wishlist item count.', 'ffl-funnels-addons') . '</li>';
         echo '<li><code>[alg_wishlist_page]</code> — ' . esc_html__('Displays the full wishlist grid. Place on a dedicated page.', 'ffl-funnels-addons') . '</li>';
         echo '</ul>';
@@ -139,11 +140,17 @@ class Wishlist_Admin
         echo '<h4>' . esc_html__('Doofinder Integration', 'ffl-funnels-addons') . '</h4>';
         echo '<p>' . esc_html__('Add this HTML to your Doofinder Layer Template (Product Card) to show a wishlist button in search results. The plugin JS will automatically detect this button and handle wishlist logic.', 'ffl-funnels-addons') . '</p>';
 
-        $df_snippet = '<button type="button" class="wbw-doofinder-btn" data-product-id={@item["id"]} onclick="document.dispatchEvent(new CustomEvent(\'alg_wishlist_toggle\', { detail: this, bubbles: true })); event.stopPropagation(); return false;" title="Add to Wishlist">' . "\n"
-            . '            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' . "\n"
-            . '                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />' . "\n"
-            . '            </svg>' . "\n"
-            . '        </button>';
+        $df_snippet = '<button' . "\n"
+            . '  type="button"' . "\n"
+            . '  class="wbw-doofinder-btn"' . "\n"
+            . '  data-product-id={@item["id"]}' . "\n"
+            . '  onclick="window.AlgWishlist.toggle(this); return false;"' . "\n"
+            . '  title="Add to Wishlist"' . "\n"
+            . '>' . "\n"
+            . '  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">' . "\n"
+            . '    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />' . "\n"
+            . '  </svg>' . "\n"
+            . '</button>';
 
         echo '<div id="wbw-df-snippet-wrap" style="position:relative;background:#1e1e1e;border-radius:6px;padding:16px 48px 16px 16px;margin-top:12px;">';
         echo '<button type="button" id="wbw-df-copy-btn" title="' . esc_attr__('Copy to clipboard', 'ffl-funnels-addons') . '" '

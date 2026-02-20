@@ -164,7 +164,8 @@
   margin-bottom: var(--wb-spacing-md);
 }
 
-.wb-action-source {
+.wb-action-source,
+.wb-condition-type {
   min-width: 140px;
 }
 
