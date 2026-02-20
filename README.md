@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)
+![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.0+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -69,6 +69,22 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.2.0
+*   Add Conditional Coupon System — auto-apply/remove WooCommerce coupons when rule conditions match cart contents.
+*   Add "Apply Coupon" action type with coupon search and expiry/usage guard.
+*   Add "Specific Products" action type for hand-picked product recommendations.
+*   Add "Specific Product" condition type to trigger rules for individual products.
+*   Add condition-level exclusions: exclude by category, product, or price range.
+*   Add minimum quantity threshold per condition for coupon and recommendation matching.
+*   Add custom cart notice when a coupon is auto-applied.
+*   New `WooBooster_Coupon` class with WC session-based tracking.
+
+### v1.1.1
+*   Analytics dashboard overhaul: single-pass queries, trend indicators, donut chart, funnel visualization, product thumbnails.
+*   Add expanded date range presets (today, yesterday, 7d, 30d, 90d, year, all-time).
+*   Add Revenue Chart to analytics dashboard.
+*   Fix updater API notice dismiss.
 
 ### v1.1.0
 *   Add WooBooster Analytics dashboard — track revenue, conversion, and top rules/products from recommendations.
