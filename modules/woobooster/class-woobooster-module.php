@@ -64,6 +64,13 @@ class WooBooster_Module extends FFLA_Module
             $ajax->init();
         }
 
+        // Analytics.
+        require_once $path . 'analytics/class-woobooster-tracker.php';
+        require_once $path . 'analytics/class-woobooster-analytics.php';
+
+        $tracker = new WooBooster_Tracker();
+        $tracker->init();
+
         // Frontend.
         require_once $path . 'frontend/class-woobooster-frontend.php';
         require_once $path . 'frontend/class-woobooster-bricks.php';
@@ -117,6 +124,11 @@ class WooBooster_Module extends FFLA_Module
                 'icon' => WooBooster_Icons::get('search'),
             ],
             [
+                'slug' => 'ffla-woobooster-analytics',
+                'title' => __('WB Analytics', 'ffl-funnels-addons'),
+                'icon' => WooBooster_Icons::get('chart'),
+            ],
+            [
                 'slug' => 'ffla-woobooster-docs',
                 'title' => __('WB Docs', 'ffl-funnels-addons'),
                 'icon' => WooBooster_Icons::get('docs'),
@@ -142,6 +154,11 @@ class WooBooster_Module extends FFLA_Module
 
             case 'ffla-woobooster-diagnostics':
                 $this->admin->render_diagnostics_content();
+                break;
+
+            case 'ffla-woobooster-analytics':
+                $analytics = new WooBooster_Analytics();
+                $analytics->render_dashboard();
                 break;
 
             case 'ffla-woobooster-docs':

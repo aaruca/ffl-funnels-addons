@@ -104,6 +104,14 @@ class WooBooster_Frontend
             return;
         }
 
+        // Register recommendation context for analytics tracking.
+        if (WooBooster_Matcher::$last_matched_rule) {
+            WooBooster_Tracker::register_recommendation(
+                WooBooster_Matcher::$last_matched_rule->id,
+                $product_ids
+            );
+        }
+
         $section_title = woobooster_get_option('section_title', __('You May Also Like', 'woobooster'));
         $columns = min(count($product_ids), 4);
 
