@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.0.22-blue.svg)
+![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.0+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -69,6 +69,14 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.1.0
+*   Add WooBooster Analytics dashboard — track revenue, conversion, and top rules/products from recommendations.
+*   Add JS attribution tracking: intercepts WooCommerce AJAX add-to-cart to tag items from WooBooster recommendations.
+*   Add `_wb_source_rule` order line item meta for recommendation attribution persistence.
+*   Add add-to-cart counter and conversion rate metrics.
+*   Add date range filter with 7d/30d/90d presets.
+*   Expose `WooBooster_Matcher::$last_matched_rule` for cross-class context sharing.
 
 ### v1.0.22
 *   Fix wishlist count badge not updating via AJAX (class mismatch `.ffla-wishlist-count` vs `.alg-wishlist-count`).

@@ -15,6 +15,13 @@ class WooBooster_Matcher
 {
 
     /**
+     * Last matched rule object (set by get_recommendations).
+     *
+     * @var object|null
+     */
+    public static $last_matched_rule = null;
+
+    /**
      * Get recommended product IDs for a given product.
      *
      * @param int   $product_id The source product ID.
@@ -23,6 +30,8 @@ class WooBooster_Matcher
      */
     public function get_recommendations($product_id, $args = array())
     {
+        self::$last_matched_rule = null;
+
         $product_id = absint($product_id);
 
         if (!$product_id) {
@@ -68,6 +77,7 @@ class WooBooster_Matcher
             return array();
         }
 
+        self::$last_matched_rule = $rule;
         $this->debug_log("Matched rule #{$rule->id} ({$rule->name}) for product {$product_id}");
 
         // Step 4: Execute actions.

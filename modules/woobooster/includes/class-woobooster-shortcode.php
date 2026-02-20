@@ -62,6 +62,14 @@ class WooBooster_Shortcode
             'limit' => $limit,
         ));
 
+        // Register recommendation context for analytics tracking.
+        if (!empty($product_ids) && WooBooster_Matcher::$last_matched_rule) {
+            WooBooster_Tracker::register_recommendation(
+                WooBooster_Matcher::$last_matched_rule->id,
+                $product_ids
+            );
+        }
+
         // Fallback.
         if (empty($product_ids) && 'none' !== $atts['fallback']) {
             $product_ids = self::get_fallback_products(

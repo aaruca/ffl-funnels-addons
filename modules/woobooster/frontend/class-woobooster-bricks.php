@@ -167,6 +167,14 @@ class WooBooster_Bricks
             'exclude_outofstock' => isset($settings['woobooster_exclude_outofstock']) ? $settings['woobooster_exclude_outofstock'] : true,
         ));
 
+        // Register recommendation context for analytics tracking.
+        if (!empty($product_ids) && WooBooster_Matcher::$last_matched_rule) {
+            WooBooster_Tracker::register_recommendation(
+                WooBooster_Matcher::$last_matched_rule->id,
+                $product_ids
+            );
+        }
+
         // Handle fallback.
         if (empty($product_ids) && !empty($settings['woobooster_fallback']) && 'none' !== $settings['woobooster_fallback']) {
             $product_ids = $this->get_fallback_products(
