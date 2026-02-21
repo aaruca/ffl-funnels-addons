@@ -321,7 +321,11 @@ class WooBooster_Admin
                 echo '</div>';
                 echo '</div>';
                 echo '<div class="wb-card__body wb-card__body--table">';
+                echo '<form method="get">';
+                echo '<input type="hidden" name="page" value="ffla-woobooster-rules" />';
+                $list->search_box(__('Search Rules', 'woobooster'), 'rule');
                 $list->display();
+                echo '</form>';
                 echo '</div></div>';
                 break;
         }
@@ -643,10 +647,10 @@ class WooBooster_Admin
         }
 
         global $wpdb;
-        $rules_table      = $wpdb->prefix . 'woobooster_rules';
-        $index_table      = $wpdb->prefix . 'woobooster_rule_index';
+        $rules_table = $wpdb->prefix . 'woobooster_rules';
+        $index_table = $wpdb->prefix . 'woobooster_rule_index';
         $conditions_table = $wpdb->prefix . 'woobooster_rule_conditions';
-        $actions_table    = $wpdb->prefix . 'woobooster_rule_actions';
+        $actions_table = $wpdb->prefix . 'woobooster_rule_actions';
 
         // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared -- TRUNCATE does not support placeholders; table names are hardcoded.
         $wpdb->query("TRUNCATE TABLE {$conditions_table}");
