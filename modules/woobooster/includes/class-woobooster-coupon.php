@@ -65,10 +65,11 @@ class WooBooster_Coupon
         $auto_coupons = $session->get(self::SESSION_KEY, array());
 
         // Find all coupon IDs that should be applied based on current cart.
+        // Returns coupon_id => message pairs.
         $should_apply = $this->get_matching_coupon_ids($cart);
 
         // Apply new coupons.
-        foreach ($should_apply as $coupon_id) {
+        foreach ($should_apply as $coupon_id => $message) {
             $coupon = new WC_Coupon($coupon_id);
             $code = $coupon->get_code();
 
@@ -78,13 +79,14 @@ class WooBooster_Coupon
 
             if (!$cart->has_discount($code)) {
                 $cart->apply_coupon($code);
-                $auto_coupons[$coupon_id] = $code;
+                $auto_coupons[$coupon_id] = array('code' => $code, 'message' => $message);
             }
         }
 
         // Remove coupons that no longer match.
-        foreach ($auto_coupons as $coupon_id => $code) {
-            if (!in_array($coupon_id, $should_apply, true)) {
+        foreach ($auto_coupons as $coupon_id => $data) {
+            $code = is_array($data) ? $data['code'] : $data;
+            if (!isset($should_apply[$coupon_id])) {
                 $cart->remove_coupon($code);
                 unset($auto_coupons[$coupon_id]);
             }
@@ -102,7 +104,7 @@ class WooBooster_Coupon
      * that have 'apply_coupon' actions.
      *
      * @param WC_Cart $cart The WC cart object.
-     * @return array Array of coupon IDs (int).
+     * @return array Associative array of coupon_id => custom_message.
      */
     private function get_matching_coupon_ids($cart)
     {
@@ -151,13 +153,14 @@ class WooBooster_Coupon
                 $actions = WooBooster_Rule::get_actions($rule->id);
                 foreach ($actions as $action) {
                     if ('apply_coupon' === $action->action_source && !empty($action->action_coupon_id)) {
-                        $coupon_ids[] = absint($action->action_coupon_id);
+                        $msg = isset($action->action_coupon_message) ? $action->action_coupon_message : '';
+                        $coupon_ids[absint($action->action_coupon_id)] = $msg;
                     }
                 }
             }
         }
 
-        return array_unique($coupon_ids);
+        return $coupon_ids;
     }
 
     /**
@@ -385,11 +388,14 @@ class WooBooster_Coupon
 
         $auto_coupons = $session->get(self::SESSION_KEY, array());
         $is_auto = false;
+        $custom_message = '';
 
         // Check if this coupon was auto-applied by WooBooster.
-        foreach ($auto_coupons as $id => $code) {
+        foreach ($auto_coupons as $id => $data) {
+            $code = is_array($data) ? $data['code'] : $data;
             if (strtolower($code) === strtolower($coupon_code)) {
                 $is_auto = true;
+                $custom_message = is_array($data) && !empty($data['message']) ? $data['message'] : '';
                 break;
             }
         }
@@ -398,15 +404,18 @@ class WooBooster_Coupon
             // Remove WooCommerce's default "Coupon code applied successfully" notice.
             wc_clear_notices();
 
-            // Add our custom notice.
-            wc_add_notice(
-                sprintf(
-                    /* translators: %s: coupon code */
-                    __('🎉 Coupon "%s" has been automatically applied based on your cart!', 'woobooster'),
-                    esc_html(strtoupper($coupon_code))
-                ),
-                'success'
-            );
+            if (!empty($custom_message)) {
+                wc_add_notice(esc_html($custom_message), 'success');
+            } else {
+                wc_add_notice(
+                    sprintf(
+                        /* translators: %s: coupon code */
+                        __('Coupon "%s" has been automatically applied based on your cart!', 'woobooster'),
+                        esc_html(strtoupper($coupon_code))
+                    ),
+                    'success'
+                );
+            }
         }
     }
 

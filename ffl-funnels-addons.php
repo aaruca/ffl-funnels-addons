@@ -106,7 +106,7 @@ final class FFL_Funnels_Addons
                 define('WOOBOOSTER_VERSION', FFLA_VERSION);
             }
             if (!defined('WOOBOOSTER_DB_VERSION')) {
-                define('WOOBOOSTER_DB_VERSION', '1.5.0');
+                define('WOOBOOSTER_DB_VERSION', '1.7.0');
             }
             if (!defined('WOOBOOSTER_FILE')) {
                 define('WOOBOOSTER_FILE', FFLA_FILE);

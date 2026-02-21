@@ -85,6 +85,7 @@ class WooBooster_Rule
             'orderby' => 'priority',
             'order' => 'ASC',
             'status' => null,
+            'search' => '',
             'limit' => 100,
             'offset' => 0,
         );
@@ -93,10 +94,20 @@ class WooBooster_Rule
 
         $sql = "SELECT * FROM %i";
         $params = array(self::$table);
+        $where_clauses = array();
 
         if (null !== $args['status']) {
-            $sql .= " WHERE status = %d";
+            $where_clauses[] = 'status = %d';
             $params[] = absint($args['status']);
+        }
+
+        if (!empty($args['search'])) {
+            $where_clauses[] = 'name LIKE %s';
+            $params[] = '%' . $wpdb->esc_like(sanitize_text_field($args['search'])) . '%';
+        }
+
+        if (!empty($where_clauses)) {
+            $sql .= ' WHERE ' . implode(' AND ', $where_clauses);
         }
 
         // Whitelist orderby columns.
@@ -125,18 +136,26 @@ class WooBooster_Rule
         global $wpdb;
         self::init_tables();
 
+        $sql = "SELECT COUNT(*) FROM %i";
+        $params = array(self::$table);
+        $where_clauses = array();
+
         if (isset($args['status'])) {
-            return (int) $wpdb->get_var(
-                $wpdb->prepare(
-                    "SELECT COUNT(*) FROM %i WHERE status = %d",
-                    self::$table,
-                    absint($args['status'])
-                )
-            );
+            $where_clauses[] = 'status = %d';
+            $params[] = absint($args['status']);
+        }
+
+        if (!empty($args['search'])) {
+            $where_clauses[] = 'name LIKE %s';
+            $params[] = '%' . $wpdb->esc_like(sanitize_text_field($args['search'])) . '%';
+        }
+
+        if (!empty($where_clauses)) {
+            $sql .= ' WHERE ' . implode(' AND ', $where_clauses);
         }
 
         return (int) $wpdb->get_var(
-            $wpdb->prepare("SELECT COUNT(*) FROM %i", self::$table)
+            $wpdb->prepare($sql, ...$params)
         );
     }
 
@@ -400,12 +419,17 @@ class WooBooster_Rule
                             return null !== $v;
                         });
                         $format_map = array(
-                            'rule_id' => '%d', 'group_id' => '%d',
-                            'condition_attribute' => '%s', 'condition_operator' => '%s',
-                            'condition_value' => '%s', 'include_children' => '%d',
+                            'rule_id' => '%d',
+                            'group_id' => '%d',
+                            'condition_attribute' => '%s',
+                            'condition_operator' => '%s',
+                            'condition_value' => '%s',
+                            'include_children' => '%d',
                             'min_quantity' => '%d',
-                            'exclude_categories' => '%s', 'exclude_products' => '%s',
-                            'exclude_price_min' => '%s', 'exclude_price_max' => '%s',
+                            'exclude_categories' => '%s',
+                            'exclude_products' => '%s',
+                            'exclude_price_min' => '%s',
+                            'exclude_price_max' => '%s',
                         );
                         $filtered_format = array();
                         foreach (array_keys($filtered_row) as $key) {
@@ -453,6 +477,7 @@ class WooBooster_Rule
                 // New columns for v1.5.0.
                 $row['action_products'] = isset($action['action_products']) ? sanitize_text_field($action['action_products']) : null;
                 $row['action_coupon_id'] = isset($action['action_coupon_id']) && $action['action_coupon_id'] ? absint($action['action_coupon_id']) : null;
+                $row['action_coupon_message'] = isset($action['action_coupon_message']) && '' !== $action['action_coupon_message'] ? sanitize_text_field($action['action_coupon_message']) : null;
                 $row['exclude_categories'] = isset($action['exclude_categories']) ? sanitize_text_field($action['exclude_categories']) : null;
                 $row['exclude_products'] = isset($action['exclude_products']) ? sanitize_text_field($action['exclude_products']) : null;
                 $row['exclude_price_min'] = isset($action['exclude_price_min']) && '' !== $action['exclude_price_min'] ? floatval($action['exclude_price_min']) : null;
@@ -474,6 +499,7 @@ class WooBooster_Rule
                     'include_children' => '%d',
                     'action_products' => '%s',
                     'action_coupon_id' => '%d',
+                    'action_coupon_message' => '%s',
                     'exclude_categories' => '%s',
                     'exclude_products' => '%s',
                     'exclude_price_min' => '%s',
@@ -524,13 +550,30 @@ class WooBooster_Rule
 
         // Collect all unique condition keys to index.
         $condition_keys = array();
+        $has_not_equals = false;
 
         foreach ($groups as $conditions) {
             foreach ($conditions as $cond) {
                 $attr = sanitize_key($cond->condition_attribute);
                 $val = sanitize_text_field($cond->condition_value);
-                $key = $attr . ':' . $val;
-                $condition_keys[$key] = true;
+                $operator = isset($cond->condition_operator) ? $cond->condition_operator : 'equals';
+
+                // For not_equals conditions, we can't index the specific key (the rule
+                // should match products that DON'T have it). We use a sentinel instead.
+                if ('not_equals' === $operator) {
+                    $has_not_equals = true;
+                    continue;
+                }
+
+                // Expand comma-separated specific_product values into individual index entries.
+                if ('specific_product' === $attr && false !== strpos($val, ',')) {
+                    $ids = array_filter(array_map('absint', explode(',', $val)));
+                    foreach ($ids as $pid) {
+                        $condition_keys['specific_product:' . $pid] = true;
+                    }
+                } else {
+                    $condition_keys[$attr . ':' . $val] = true;
+                }
 
                 // Expand child categories if enabled.
                 if (!empty($cond->include_children) && taxonomy_exists($attr) && is_taxonomy_hierarchical($attr)) {
@@ -538,6 +581,8 @@ class WooBooster_Rule
                     if ($parent_term && !is_wp_error($parent_term)) {
                         $child_ids = get_term_children($parent_term->term_id, $attr);
                         if (!is_wp_error($child_ids)) {
+                            $max_children = (int) apply_filters('woobooster_max_index_children', 500);
+                            $child_ids = array_slice($child_ids, 0, $max_children);
                             foreach ($child_ids as $child_id) {
                                 $child_term = get_term($child_id, $attr);
                                 if ($child_term && !is_wp_error($child_term)) {
@@ -549,6 +594,11 @@ class WooBooster_Rule
                     }
                 }
             }
+        }
+
+        // Add sentinel so rules with not_equals conditions are always candidates.
+        if ($has_not_equals) {
+            $condition_keys['__not_equals__:1'] = true;
         }
 
         // Insert one index entry per unique condition key.
@@ -652,6 +702,18 @@ class WooBooster_Rule
             $sanitized['exclude_outofstock'] = absint($data['exclude_outofstock']) ? 1 : 0;
         }
 
+        if (array_key_exists('start_date', $data)) {
+            $sanitized['start_date'] = !empty($data['start_date'])
+                ? sanitize_text_field($data['start_date'])
+                : null;
+        }
+
+        if (array_key_exists('end_date', $data)) {
+            $sanitized['end_date'] = !empty($data['end_date'])
+                ? sanitize_text_field($data['end_date'])
+                : null;
+        }
+
         return $sanitized;
     }
 
@@ -676,6 +738,8 @@ class WooBooster_Rule
             'action_limit' => '%d',
             'include_children' => '%d',
             'exclude_outofstock' => '%d',
+            'start_date' => '%s',
+            'end_date' => '%s',
         );
 
         $format = array();
@@ -684,6 +748,69 @@ class WooBooster_Rule
         }
 
         return $format;
+    }
+
+    /**
+     * Duplicate a rule including its conditions and actions.
+     *
+     * @param int $id Rule ID to duplicate.
+     * @return int|false New rule ID on success, false on failure.
+     */
+    public static function duplicate($id)
+    {
+        global $wpdb;
+        self::init_tables();
+
+        $rule = self::get($id);
+        if (!$rule) {
+            return false;
+        }
+
+        // Create the new rule.
+        $new_id = self::create(array(
+            'name' => $rule->name . ' (Copy)',
+            'priority' => $rule->priority,
+            'status' => 0, // Start inactive.
+            'condition_attribute' => $rule->condition_attribute,
+            'condition_operator' => $rule->condition_operator,
+            'condition_value' => $rule->condition_value,
+            'include_children' => $rule->include_children,
+            'action_source' => $rule->action_source,
+            'action_value' => $rule->action_value,
+            'action_orderby' => $rule->action_orderby,
+            'action_limit' => $rule->action_limit,
+            'start_date' => isset($rule->start_date) ? $rule->start_date : null,
+            'end_date' => isset($rule->end_date) ? $rule->end_date : null,
+        ));
+
+        if (!$new_id) {
+            return false;
+        }
+
+        // Copy conditions.
+        $groups = self::get_conditions($id);
+        if (!empty($groups)) {
+            $condition_data = array();
+            foreach ($groups as $group_id => $conditions) {
+                $condition_data[$group_id] = array();
+                foreach ($conditions as $cond) {
+                    $condition_data[$group_id][] = (array) $cond;
+                }
+            }
+            self::save_conditions($new_id, $condition_data);
+        }
+
+        // Copy actions.
+        $actions = self::get_actions($id);
+        if (!empty($actions)) {
+            $action_data = array();
+            foreach ($actions as $action) {
+                $action_data[] = (array) $action;
+            }
+            self::save_actions($new_id, $action_data);
+        }
+
+        return $new_id;
     }
 
     /**
