@@ -77,12 +77,17 @@ class WooBooster_Rule_List extends WP_List_Table
         $orderby = isset($_GET['orderby']) ? sanitize_key($_GET['orderby']) : 'priority';
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $order = isset($_GET['order']) ? sanitize_key($_GET['order']) : 'ASC';
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $search = isset($_GET['s']) ? sanitize_text_field(wp_unslash($_GET['s'])) : '';
 
-        $total_items = WooBooster_Rule::count();
+        $total_items = WooBooster_Rule::count(array(
+            'search' => $search,
+        ));
 
         $this->items = WooBooster_Rule::get_all(array(
             'orderby' => $orderby,
             'order' => $order,
+            'search' => $search,
             'limit' => $per_page,
             'offset' => ($current_page - 1) * $per_page,
         ));
@@ -147,10 +152,33 @@ class WooBooster_Rule_List extends WP_List_Table
             return '<span class="wb-text--muted">—</span>';
         }
 
+        $attr_labels = array(
+            'product_cat' => __('Category', 'woobooster'),
+            'product_tag' => __('Tag', 'woobooster'),
+            'specific_product' => __('Product', 'woobooster'),
+        );
+
         $first_group = reset($groups);
         $first_cond = reset($first_group);
-        $html = '<code>' . esc_html($first_cond->condition_attribute) . '</code> = '
-            . '<code>' . esc_html($first_cond->condition_value) . '</code>';
+
+        $attr = $first_cond->condition_attribute;
+        $attr_label = isset($attr_labels[$attr]) ? $attr_labels[$attr] : $attr;
+        $operator = isset($first_cond->condition_operator) ? $first_cond->condition_operator : 'equals';
+        $op_label = ('not_equals' === $operator) ? __('is not', 'woobooster') : __('is', 'woobooster');
+
+        // Resolve value to human name.
+        $value = $first_cond->condition_value;
+        if ('specific_product' === $attr) {
+            $ids = array_filter(array_map('absint', explode(',', $value)));
+            $value = count($ids) . ' ' . _n('product', 'products', count($ids), 'woobooster');
+        } else {
+            $term = get_term_by('slug', $value, $attr);
+            if ($term && !is_wp_error($term)) {
+                $value = $term->name;
+            }
+        }
+
+        $html = esc_html($attr_label) . ' <em>' . esc_html($op_label) . '</em> <code>' . esc_html($value) . '</code>';
 
         $total = 0;
         foreach ($groups as $g) {
@@ -180,6 +208,8 @@ class WooBooster_Rule_List extends WP_List_Table
             'trending' => __('Trending', 'woobooster'),
             'recently_viewed' => __('Recently Viewed', 'woobooster'),
             'similar' => __('Similar Products', 'woobooster'),
+            'specific_products' => __('Specific Products', 'woobooster'),
+            'apply_coupon' => __('Apply Coupon', 'woobooster'),
         );
 
         $actions = WooBooster_Rule::get_actions($item->id);
@@ -189,18 +219,59 @@ class WooBooster_Rule_List extends WP_List_Table
 
         $first = reset($actions);
         $source = isset($source_labels[$first->action_source]) ? $source_labels[$first->action_source] : $first->action_source;
-        $value = $first->action_value;
-        if ('attribute' === $first->action_source) {
-            $value = '—';
-        } elseif ('attribute_value' === $first->action_source && false !== strpos($first->action_value, ':')) {
-            $parts = explode(':', $first->action_value, 2);
-            $term = get_term_by('slug', $parts[1], $parts[0]);
-            $value = $term && !is_wp_error($term) ? $parts[0] . ': ' . $term->name : $first->action_value;
+
+        // Build human-readable value based on source type.
+        $value = '';
+        switch ($first->action_source) {
+            case 'attribute':
+                // "Same Attribute" uses the product's own terms — no static value.
+                break;
+
+            case 'attribute_value':
+                if (false !== strpos($first->action_value, ':')) {
+                    $parts = explode(':', $first->action_value, 2);
+                    $term = get_term_by('slug', $parts[1], $parts[0]);
+                    $value = $term && !is_wp_error($term) ? $term->name : $parts[1];
+                }
+                break;
+
+            case 'category':
+            case 'tag':
+                $taxonomy = ('category' === $first->action_source) ? 'product_cat' : 'product_tag';
+                $term = get_term_by('slug', $first->action_value, $taxonomy);
+                $value = $term && !is_wp_error($term) ? $term->name : $first->action_value;
+                break;
+
+            case 'specific_products':
+                if (!empty($first->action_products)) {
+                    $ids = array_filter(explode(',', $first->action_products));
+                    $value = count($ids) . ' ' . _n('product', 'products', count($ids), 'woobooster');
+                }
+                break;
+
+            case 'apply_coupon':
+                if (!empty($first->action_coupon_id)) {
+                    $coupon = new WC_Coupon(absint($first->action_coupon_id));
+                    $value = strtoupper($coupon->get_code());
+                }
+                break;
+
+            default:
+                // Smart sources (copurchase, trending, recently_viewed, similar) have no static value.
+                break;
         }
 
-        $html = esc_html($source) . ': <code>' . esc_html($value) . '</code>'
-            . ' <span class="wb-text--muted">(' . esc_html($first->action_orderby) . ', '
-            . esc_html($first->action_limit) . ')</span>';
+        $html = esc_html($source);
+        if ($value) {
+            $html .= ': <code>' . esc_html($value) . '</code>';
+        }
+
+        // Show limit/orderby only for product-returning actions.
+        $no_limit_sources = array('apply_coupon');
+        if (!in_array($first->action_source, $no_limit_sources, true)) {
+            $html .= ' <span class="wb-text--muted">(' . esc_html($first->action_orderby) . ', '
+                . esc_html($first->action_limit) . ')</span>';
+        }
 
         if (count($actions) > 1) {
             $html .= ' <span class="wb-badge wb-badge--neutral">+' . (count($actions) - 1) . '</span>';
@@ -217,10 +288,36 @@ class WooBooster_Rule_List extends WP_List_Table
      */
     protected function column_status($item)
     {
+        $status_html = '';
         if ($item->status) {
-            return '<span class="wb-status wb-status--active">' . esc_html__('Active', 'woobooster') . '</span>';
+            $status_html = '<span class="wb-status wb-status--active">' . esc_html__('Active', 'woobooster') . '</span>';
+        } else {
+            $status_html = '<span class="wb-status wb-status--inactive">' . esc_html__('Inactive', 'woobooster') . '</span>';
         }
-        return '<span class="wb-status wb-status--inactive">' . esc_html__('Inactive', 'woobooster') . '</span>';
+
+        // Add schedule info
+        $now = current_time('mysql');
+        $schedule = '';
+        if (!empty($item->start_date) || !empty($item->end_date)) {
+            $schedule .= '<div style="font-size: 11px; margin-top: 4px; color: var(--wb-color-neutral-text);">';
+            if (!empty($item->start_date) && $now < $item->start_date) {
+                // Future
+                $schedule .= '🕒 ' . sprintf(esc_html__('Starts: %s', 'woobooster'), date_i18n(get_option('date_format'), strtotime($item->start_date)));
+            } elseif (!empty($item->end_date) && $now > $item->end_date) {
+                // Expired
+                $schedule .= '⚠️ ' . esc_html__('Expired', 'woobooster');
+            } else {
+                // Active timeframe
+                if (!empty($item->end_date)) {
+                    $schedule .= '⏳ ' . sprintf(esc_html__('Ends: %s', 'woobooster'), date_i18n(get_option('date_format'), strtotime($item->end_date)));
+                } else {
+                    $schedule .= '🕒 ' . sprintf(esc_html__('Started: %s', 'woobooster'), date_i18n(get_option('date_format'), strtotime($item->start_date)));
+                }
+            }
+            $schedule .= '</div>';
+        }
+
+        return $status_html . $schedule;
     }
 
     /**
@@ -232,6 +329,10 @@ class WooBooster_Rule_List extends WP_List_Table
     protected function column_actions($item)
     {
         $edit_url = admin_url('admin.php?page=ffla-woobooster-rules&action=edit&rule_id=' . $item->id);
+        $duplicate_url = wp_nonce_url(
+            admin_url('admin.php?page=ffla-woobooster-rules&action=duplicate&rule_id=' . $item->id),
+            'woobooster_duplicate_rule_' . $item->id
+        );
         $delete_url = wp_nonce_url(
             admin_url('admin.php?page=ffla-woobooster-rules&action=delete&rule_id=' . $item->id),
             'woobooster_delete_rule_' . $item->id
@@ -244,6 +345,9 @@ class WooBooster_Rule_List extends WP_List_Table
         $html = '<div class="wb-row-actions">';
         $html .= '<a href="' . esc_url($edit_url) . '" class="wb-btn wb-btn--subtle wb-btn--xs" title="' . esc_attr__('Edit', 'woobooster') . '">';
         $html .= WooBooster_Icons::get('edit');
+        $html .= '</a>';
+        $html .= '<a href="' . esc_url($duplicate_url) . '" class="wb-btn wb-btn--subtle wb-btn--xs" title="' . esc_attr__('Duplicate', 'woobooster') . '">';
+        $html .= WooBooster_Icons::get('duplicate');
         $html .= '</a>';
         $html .= '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-rule" data-rule-id="' . esc_attr($item->id) . '" title="' . esc_attr($toggle_label) . '">';
         $html .= WooBooster_Icons::get('toggle');
@@ -282,6 +386,20 @@ class WooBooster_Rule_List extends WP_List_Table
             if ($rule_id && check_admin_referer('woobooster_delete_rule_' . $rule_id)) {
                 WooBooster_Rule::delete($rule_id);
                 wp_safe_redirect(admin_url('admin.php?page=ffla-woobooster-rules'));
+                exit;
+            }
+        }
+
+        // Single duplicate.
+        if ('duplicate' === $this->current_action()) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+            $rule_id = isset($_GET['rule_id']) ? absint($_GET['rule_id']) : 0;
+            if ($rule_id && check_admin_referer('woobooster_duplicate_rule_' . $rule_id)) {
+                $new_id = WooBooster_Rule::duplicate($rule_id);
+                $redirect = $new_id
+                    ? admin_url('admin.php?page=ffla-woobooster-rules&action=edit&rule_id=' . $new_id)
+                    : admin_url('admin.php?page=ffla-woobooster-rules');
+                wp_safe_redirect($redirect);
                 exit;
             }
         }
