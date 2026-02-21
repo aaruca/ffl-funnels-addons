@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)
+![Version](https://img.shields.io/badge/version-1.2.1-blue.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.0+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -69,6 +69,19 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.2.1
+*   Add rule scheduling — set start/end dates for time-limited rules (promotions, seasonal campaigns).
+*   Add search/filter on the rules list page.
+*   Add `not_equals` operator for conditions ("Category is not X").
+*   Add rule duplicate button (creates inactive copy with conditions and actions).
+*   Add sticky save bar on rule form.
+*   Improve rule list columns: human-readable condition summaries with operator, resolved term names, and action labels for all source types.
+*   Improve exclusion panels: visual distinction between Condition Exclusions (blue) and Action Exclusions (green).
+*   Fix `min_quantity` tooltip to clarify it only applies to coupon/cart rules.
+*   Fix `specific_product` single-condition rules not found via index lookup.
+*   Fix scheduling enforced in both product matcher and coupon auto-apply engine.
+*   Bump DB version to 1.7.0 (adds `start_date`/`end_date` columns with safe migration).
 
 ### v1.2.0
 *   Add Conditional Coupon System — auto-apply/remove WooCommerce coupons when rule conditions match cart contents.
