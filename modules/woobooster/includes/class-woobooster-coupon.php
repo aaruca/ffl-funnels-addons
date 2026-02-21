@@ -147,7 +147,16 @@ class WooBooster_Coupon
         $cart_keys = array_unique($cart_keys);
 
         // Match against rules.
+        $now = current_time('mysql');
         foreach ($rules as $rule) {
+            // Check scheduling dates — skip if rule is outside its active window.
+            if (!empty($rule->start_date) && $now < $rule->start_date) {
+                continue;
+            }
+            if (!empty($rule->end_date) && $now > $rule->end_date) {
+                continue;
+            }
+
             if ($this->rule_matches_cart($rule, $cart_keys, $cart)) {
                 // Get 'apply_coupon' actions from this rule.
                 $actions = WooBooster_Rule::get_actions($rule->id);
