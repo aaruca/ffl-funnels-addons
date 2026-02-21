@@ -1,5 +1,87 @@
 /* WooBooster Module — Specific Styles */
-/* Condition groups, action repeater, autocomplete, diagnostic tester */
+/* Card sections, condition groups, action repeater, autocomplete, diagnostic tester */
+
+/* ═══════════════════════════════════════════════════════════════════
+   0. CARD SECTIONS & SECTION HEADINGS
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Section containers — visual separation & internal padding */
+.wb-form .wb-card__section {
+  padding: var(--wb-spacing-xl);
+  border-radius: var(--wb-radius-md);
+}
+
+/* Section headings — prominent typographic hierarchy */
+.wb-form .wb-card__section > h3 {
+  font-size: 18px;
+  font-weight: var(--wb-font-weight-bold);
+  margin: 0 0 var(--wb-spacing-sm) 0;
+  padding-bottom: var(--wb-spacing-md);
+  border-bottom: 2px solid var(--wb-color-neutral-stroke-2);
+  letter-spacing: -0.01em;
+}
+
+/* Section description text */
+.wb-section-desc {
+  font-size: var(--wb-font-size-sm);
+  color: var(--wb-color-neutral-foreground-3);
+  margin: 0 0 var(--wb-spacing-lg) 0;
+  line-height: 1.5;
+}
+
+/* ── Schedule Field ──────────────────────────────────────────────── */
+
+.wb-schedule-row {
+  display: flex;
+  gap: var(--wb-spacing-md);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.wb-schedule-label {
+  font-size: var(--wb-font-size-sm);
+  font-weight: var(--wb-font-weight-medium);
+  color: var(--wb-color-neutral-foreground-2);
+  display: flex;
+  align-items: center;
+  gap: var(--wb-spacing-xs);
+}
+
+.wb-input--auto {
+  width: auto !important;
+  max-width: none !important;
+}
+
+/* ── Sub-panels (exclusion, coupon, products) ────────────────────── */
+
+.wb-sub-panel {
+  padding: var(--wb-spacing-sm) 0 var(--wb-spacing-md) var(--wb-spacing-xl);
+}
+
+.wb-sub-panel .wb-field {
+  margin-bottom: var(--wb-spacing-md);
+  max-width: none;
+}
+
+.wb-sub-panel .wb-field:last-child {
+  margin-bottom: 0;
+}
+
+/* ── Price range row ─────────────────────────────────────────────── */
+
+.wb-price-range {
+  display: flex;
+  gap: var(--wb-spacing-sm);
+  align-items: center;
+}
+
+/* ── Global setting separator ────────────────────────────────────── */
+
+.wb-global-setting {
+  margin-top: var(--wb-spacing-xl);
+  border-top: 1px solid var(--wb-color-neutral-stroke-2);
+  padding-top: var(--wb-spacing-xl);
+}
 
 /* ═══════════════════════════════════════════════════════════════════
    1. AUTOCOMPLETE DROPDOWN
@@ -92,7 +174,7 @@
   align-items: center;
   gap: var(--wb-spacing-md);
   margin-bottom: var(--wb-spacing-sm);
-  padding: var(--wb-spacing-sm);
+  padding: var(--wb-spacing-sm) var(--wb-spacing-md);
   background: var(--wb-color-neutral-background-2);
   border-radius: var(--wb-radius-sm);
   border: 1px solid transparent;
@@ -148,6 +230,7 @@
 
 #wb-conditions-section > h3 {
   color: #2271b1;
+  border-bottom-color: rgba(34, 113, 177, 0.2);
 }
 
 #wb-conditions-section > h3::before {
@@ -161,6 +244,7 @@
 
 #wb-actions-section > h3 {
   color: #00a32a;
+  border-bottom-color: rgba(0, 163, 42, 0.2);
 }
 
 #wb-actions-section > h3::before {
@@ -175,7 +259,7 @@
   align-items: center;
   gap: var(--wb-spacing-md);
   margin-bottom: var(--wb-spacing-sm);
-  padding: var(--wb-spacing-sm);
+  padding: var(--wb-spacing-sm) var(--wb-spacing-md);
   background: var(--wb-color-neutral-background-2);
   border-radius: var(--wb-radius-sm);
   border: 1px solid transparent;
@@ -213,6 +297,11 @@
 
 /* ── Exclusion Panel Distinction ────────────────────────────────── */
 
+.wb-cond-exclusion-panel .wb-toggle-cond-exclusions,
+.wb-exclusion-panel .wb-toggle-exclusions {
+  margin-bottom: var(--wb-spacing-sm);
+}
+
 .wb-cond-exclusion-panel .wb-toggle-cond-exclusions {
   color: #2271b1;
 }
@@ -241,7 +330,7 @@
   background: var(--wb-color-neutral-background-1);
   border-top: 1px solid var(--wb-color-neutral-stroke-2);
   box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.06);
-  padding: var(--wb-spacing-md) var(--wb-spacing-lg);
+  padding: var(--wb-spacing-lg) var(--wb-spacing-xl);
   margin: 0 calc(-1 * var(--wb-spacing-xl));
   margin-bottom: calc(-1 * var(--wb-spacing-xl));
   border-radius: 0 0 var(--wb-radius-lg) var(--wb-radius-lg);
