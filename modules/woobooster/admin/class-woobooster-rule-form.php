@@ -121,12 +121,12 @@ class WooBooster_Rule_Form
 
         echo '<div class="wb-field">';
         echo '<label class="wb-field__label">' . esc_html__('Schedule', 'woobooster') . '</label>';
-        echo '<div class="wb-field__control" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">';
-        echo '<label style="font-size: 13px; display: flex; align-items: center; gap: 4px;">' . esc_html__('From', 'woobooster');
-        echo '<input type="datetime-local" name="rule_start_date" value="' . esc_attr($start_date ? date('Y-m-d\TH:i', strtotime($start_date)) : '') . '" class="wb-input wb-input--sm" style="width: auto;">';
+        echo '<div class="wb-field__control wb-schedule-row">';
+        echo '<label class="wb-schedule-label">' . esc_html__('From', 'woobooster');
+        echo '<input type="datetime-local" name="rule_start_date" value="' . esc_attr($start_date ? date('Y-m-d\TH:i', strtotime($start_date)) : '') . '" class="wb-input wb-input--sm wb-input--auto">';
         echo '</label>';
-        echo '<label style="font-size: 13px; display: flex; align-items: center; gap: 4px;">' . esc_html__('Until', 'woobooster');
-        echo '<input type="datetime-local" name="rule_end_date" value="' . esc_attr($end_date ? date('Y-m-d\TH:i', strtotime($end_date)) : '') . '" class="wb-input wb-input--sm" style="width: auto;">';
+        echo '<label class="wb-schedule-label">' . esc_html__('Until', 'woobooster');
+        echo '<input type="datetime-local" name="rule_end_date" value="' . esc_attr($end_date ? date('Y-m-d\TH:i', strtotime($end_date)) : '') . '" class="wb-input wb-input--sm wb-input--auto">';
         echo '</label>';
         echo '</div>';
         echo '<p class="wb-field__desc">' . esc_html__('Optional. Leave empty to keep the rule always active (when enabled).', 'woobooster') . '</p>';
@@ -259,8 +259,8 @@ class WooBooster_Rule_Form
                 $cex_price_max = is_object($cond) && isset($cond->exclude_price_max) ? $cond->exclude_price_max : '';
                 $cex_has = $cex_cats || $cex_prods || '' !== $cex_price_min || '' !== $cex_price_max;
 
-                echo '<div class="wb-cond-exclusion-panel" style="padding: 4px 0 8px 20px;">';
-                echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-cond-exclusions" style="margin-bottom: 6px;">';
+                echo '<div class="wb-cond-exclusion-panel wb-sub-panel">';
+                echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-cond-exclusions">';
                 echo ($cex_has ? '&#9660;' : '&#9654;') . ' ' . esc_html__('Condition Exclusions', 'woobooster');
                 echo '</button>';
 
@@ -268,7 +268,7 @@ class WooBooster_Rule_Form
                 echo '<div class="wb-cond-exclusion-body" style="' . esc_attr($cex_body_display) . '">';
 
                 // Exclude Categories.
-                echo '<div class="wb-field" style="margin-bottom: 8px;">';
+                echo '<div class="wb-field">';
                 echo '<label class="wb-field__label">' . esc_html__('Exclude Categories', 'woobooster') . '</label>';
                 echo '<div class="wb-autocomplete wb-cond-exclude-cats-search" style="max-width: 400px;">';
                 echo '<input type="text" class="wb-input wb-cond-exclude-cats__input" placeholder="' . esc_attr__('Search categories…', 'woobooster') . '" autocomplete="off">';
@@ -278,7 +278,7 @@ class WooBooster_Rule_Form
                 echo '</div></div>';
 
                 // Exclude Products.
-                echo '<div class="wb-field" style="margin-bottom: 8px;">';
+                echo '<div class="wb-field">';
                 echo '<label class="wb-field__label">' . esc_html__('Exclude Products', 'woobooster') . '</label>';
                 echo '<div class="wb-autocomplete wb-cond-exclude-prods-search" style="max-width: 400px;">';
                 echo '<input type="text" class="wb-input wb-cond-exclude-prods__input" placeholder="' . esc_attr__('Search products…', 'woobooster') . '" autocomplete="off">';
@@ -288,9 +288,9 @@ class WooBooster_Rule_Form
                 echo '</div></div>';
 
                 // Exclude Price Range.
-                echo '<div class="wb-field" style="margin-bottom: 8px;">';
+                echo '<div class="wb-field">';
                 echo '<label class="wb-field__label">' . esc_html__('Price Range Filter', 'woobooster') . '</label>';
-                echo '<div style="display: flex; gap: 8px; align-items: center;">';
+                echo '<div class="wb-price-range">';
                 echo '<input type="number" name="' . esc_attr($field_prefix . '[exclude_price_min]') . '" value="' . esc_attr($cex_price_min) . '" class="wb-input wb-input--sm" style="width: 90px;" placeholder="' . esc_attr__('Min $', 'woobooster') . '" step="0.01" min="0">';
                 echo '<span>&mdash;</span>';
                 echo '<input type="number" name="' . esc_attr($field_prefix . '[exclude_price_max]') . '" value="' . esc_attr($cex_price_max) . '" class="wb-input wb-input--sm" style="width: 90px;" placeholder="' . esc_attr__('Max $', 'woobooster') . '" step="0.01" min="0">';
@@ -451,7 +451,7 @@ class WooBooster_Rule_Form
             // ── Specific Products Selector ──
             $sp_display = 'specific_products' === $a_source ? '' : 'display:none;';
             $sp_products = isset($action->action_products) ? $action->action_products : '';
-            echo '<div class="wb-action-products-panel" style="' . esc_attr($sp_display) . ' padding: 8px 0 0 20px;">';
+            echo '<div class="wb-action-products-panel wb-sub-panel" style="' . esc_attr($sp_display) . '">';
             echo '<label class="wb-field__label">' . esc_html__('Select Products', 'woobooster') . '</label>';
             echo '<div class="wb-autocomplete wb-product-search" style="max-width: 500px;">';
             echo '<input type="text" class="wb-input wb-product-search__input" placeholder="' . esc_attr__('Search products by name…', 'woobooster') . '" autocomplete="off">';
@@ -469,15 +469,15 @@ class WooBooster_Rule_Form
                 $cp_label = $cp_coupon->get_code();
             }
             $cp_message = isset($action->action_coupon_message) ? $action->action_coupon_message : '';
-            echo '<div class="wb-action-coupon-panel" style="' . esc_attr($cp_display) . ' padding: 8px 0 0 20px;">';
-            echo '<p class="wb-field__desc" style="margin: 0 0 8px; font-style: italic; color: #666;">' . esc_html__('Works with your existing WooCommerce coupons. Create coupons in WooCommerce > Coupons first.', 'woobooster') . '</p>';
+            echo '<div class="wb-action-coupon-panel wb-sub-panel" style="' . esc_attr($cp_display) . '">';
+            echo '<p class="wb-field__desc" style="font-style: italic; margin: 0 0 var(--wb-spacing-md) 0;">' . esc_html__('Works with your existing WooCommerce coupons. Create coupons in WooCommerce > Coupons first.', 'woobooster') . '</p>';
             echo '<label class="wb-field__label">' . esc_html__('Select Coupon', 'woobooster') . '</label>';
             echo '<div class="wb-autocomplete wb-coupon-search" style="max-width: 400px;">';
             echo '<input type="text" class="wb-input wb-coupon-search__input" placeholder="' . esc_attr__('Search coupons…', 'woobooster') . '" value="' . esc_attr($cp_label) . '" autocomplete="off">';
             echo '<input type="hidden" name="' . esc_attr($prefix . '[action_coupon_id]') . '" class="wb-coupon-search__id" value="' . esc_attr($cp_id) . '">';
             echo '<div class="wb-autocomplete__dropdown"></div>';
             echo '</div>';
-            echo '<div class="wb-field" style="margin-top: 10px;">';
+            echo '<div class="wb-field">';
             echo '<label class="wb-field__label">' . esc_html__('Custom Cart Message', 'woobooster') . '</label>';
             echo '<input type="text" name="' . esc_attr($prefix . '[action_coupon_message]') . '" class="wb-input" style="max-width: 500px;" placeholder="' . esc_attr__('e.g. You got 15% off on Ammo products!', 'woobooster') . '" value="' . esc_attr($cp_message) . '">';
             echo '<p class="wb-field__desc">' . esc_html__('Leave empty for the default auto-apply message.', 'woobooster') . '</p>';
@@ -491,8 +491,8 @@ class WooBooster_Rule_Form
             $ex_price_max = isset($action->exclude_price_max) ? $action->exclude_price_max : '';
             $has_exclusions = $ex_cats || $ex_prods || '' !== $ex_price_min || '' !== $ex_price_max;
 
-            echo '<div class="wb-exclusion-panel" style="padding: 8px 0 0 20px; margin-bottom: 12px;">';
-            echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-exclusions" style="margin-bottom: 8px;">';
+            echo '<div class="wb-exclusion-panel wb-sub-panel">';
+            echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-exclusions">';
             echo ($has_exclusions ? '&#9660;' : '&#9654;') . ' ' . esc_html__('Action Exclusions', 'woobooster');
             echo '</button>';
 
@@ -500,7 +500,7 @@ class WooBooster_Rule_Form
             echo '<div class="wb-exclusion-body" style="' . esc_attr($ex_body_display) . '">';
 
             // Exclude Categories.
-            echo '<div class="wb-field" style="margin-bottom: 10px;">';
+            echo '<div class="wb-field">';
             echo '<label class="wb-field__label">' . esc_html__('Exclude Categories', 'woobooster') . '</label>';
             echo '<div class="wb-autocomplete wb-exclude-cats-search" style="max-width: 500px;">';
             echo '<input type="text" class="wb-input wb-exclude-cats__input" placeholder="' . esc_attr__('Search categories…', 'woobooster') . '" autocomplete="off">';
@@ -510,7 +510,7 @@ class WooBooster_Rule_Form
             echo '</div></div>';
 
             // Exclude Products.
-            echo '<div class="wb-field" style="margin-bottom: 10px;">';
+            echo '<div class="wb-field">';
             echo '<label class="wb-field__label">' . esc_html__('Exclude Products', 'woobooster') . '</label>';
             echo '<div class="wb-autocomplete wb-exclude-prods-search" style="max-width: 500px;">';
             echo '<input type="text" class="wb-input wb-exclude-prods__input" placeholder="' . esc_attr__('Search products…', 'woobooster') . '" autocomplete="off">';
@@ -520,9 +520,9 @@ class WooBooster_Rule_Form
             echo '</div></div>';
 
             // Exclude Price Range.
-            echo '<div class="wb-field" style="margin-bottom: 10px;">';
+            echo '<div class="wb-field">';
             echo '<label class="wb-field__label">' . esc_html__('Price Range Filter', 'woobooster') . '</label>';
-            echo '<div style="display: flex; gap: 10px; align-items: center;">';
+            echo '<div class="wb-price-range">';
             echo '<input type="number" name="' . esc_attr($prefix . '[exclude_price_min]') . '" value="' . esc_attr($ex_price_min) . '" class="wb-input wb-input--sm" style="width: 100px;" placeholder="' . esc_attr__('Min $', 'woobooster') . '" step="0.01" min="0">';
             echo '<span>—</span>';
             echo '<input type="number" name="' . esc_attr($prefix . '[exclude_price_max]') . '" value="' . esc_attr($ex_price_max) . '" class="wb-input wb-input--sm" style="width: 100px;" placeholder="' . esc_attr__('Max $', 'woobooster') . '" step="0.01" min="0">';
@@ -540,7 +540,7 @@ class WooBooster_Rule_Form
         echo '</button>';
 
         // Global Exclude (applies to all).
-        echo '<div class="wb-field" style="margin-top: 24px; border-top: 1px solid #eee; padding-top: 24px;">';
+        echo '<div class="wb-field wb-global-setting">';
         echo '<label class="wb-field__label">' . esc_html__('Exclude Out of Stock', 'woobooster') . '</label>';
         echo '<div class="wb-field__control">';
         echo '<label class="wb-toggle">';

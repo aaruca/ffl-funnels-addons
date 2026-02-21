@@ -254,9 +254,8 @@
 
       // Specific Products panel
       var productsPanel = document.createElement('div');
-      productsPanel.className = 'wb-action-products-panel';
+      productsPanel.className = 'wb-action-products-panel wb-sub-panel';
       productsPanel.style.display = 'none';
-      productsPanel.style.padding = '8px 0 0 20px';
       productsPanel.innerHTML =
         '<label class="wb-field__label">Select Products</label>' +
         '<div class="wb-autocomplete wb-product-search" style="max-width: 500px;">' +
@@ -268,18 +267,17 @@
 
       // Coupon panel
       var couponPanel = document.createElement('div');
-      couponPanel.className = 'wb-action-coupon-panel';
+      couponPanel.className = 'wb-action-coupon-panel wb-sub-panel';
       couponPanel.style.display = 'none';
-      couponPanel.style.padding = '8px 0 0 20px';
       couponPanel.innerHTML =
-        '<p class="wb-field__desc" style="margin: 0 0 8px; font-style: italic; color: #666;">Works with your existing WooCommerce coupons. Create coupons in WooCommerce &gt; Coupons first.</p>' +
+        '<p class="wb-field__desc" style="font-style: italic; margin: 0 0 var(--wb-spacing-md) 0;">Works with your existing WooCommerce coupons. Create coupons in WooCommerce &gt; Coupons first.</p>' +
         '<label class="wb-field__label">Select Coupon</label>' +
         '<div class="wb-autocomplete wb-coupon-search" style="max-width: 400px;">' +
         '<input type="text" class="wb-input wb-coupon-search__input" placeholder="Search coupons\u2026" autocomplete="off">' +
         '<input type="hidden" name="' + prefix + '[action_coupon_id]" class="wb-coupon-search__id" value="">' +
         '<div class="wb-autocomplete__dropdown"></div>' +
         '</div>' +
-        '<div class="wb-field" style="margin-top: 10px;">' +
+        '<div class="wb-field">' +
         '<label class="wb-field__label">Custom Cart Message</label>' +
         '<input type="text" name="' + prefix + '[action_coupon_message]" class="wb-input" style="max-width: 500px;" placeholder="e.g. You got 15% off on Ammo products!" value="">' +
         '<p class="wb-field__desc">Leave empty for the default auto-apply message.</p>' +
@@ -287,13 +285,11 @@
 
       // Exclusion panel
       var exclusionPanel = document.createElement('div');
-      exclusionPanel.className = 'wb-exclusion-panel';
-      exclusionPanel.style.padding = '8px 0 0 20px';
-      exclusionPanel.style.marginBottom = '12px';
+      exclusionPanel.className = 'wb-exclusion-panel wb-sub-panel';
       exclusionPanel.innerHTML =
-        '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-exclusions" style="margin-bottom: 8px;">\u25b6 Action Exclusions</button>' +
+        '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-exclusions">\u25b6 Action Exclusions</button>' +
         '<div class="wb-exclusion-body" style="display:none;">' +
-          '<div class="wb-field" style="margin-bottom: 10px;">' +
+          '<div class="wb-field">' +
             '<label class="wb-field__label">Exclude Categories</label>' +
             '<div class="wb-autocomplete wb-exclude-cats-search" style="max-width: 500px;">' +
               '<input type="text" class="wb-input wb-exclude-cats__input" placeholder="Search categories\u2026" autocomplete="off">' +
@@ -302,7 +298,7 @@
               '<div class="wb-exclude-cats-chips" style="margin-top: 6px;"></div>' +
             '</div>' +
           '</div>' +
-          '<div class="wb-field" style="margin-bottom: 10px;">' +
+          '<div class="wb-field">' +
             '<label class="wb-field__label">Exclude Products</label>' +
             '<div class="wb-autocomplete wb-exclude-prods-search" style="max-width: 500px;">' +
               '<input type="text" class="wb-input wb-exclude-prods__input" placeholder="Search products\u2026" autocomplete="off">' +
@@ -311,9 +307,9 @@
               '<div class="wb-exclude-prods-chips" style="margin-top: 6px;"></div>' +
             '</div>' +
           '</div>' +
-          '<div class="wb-field" style="margin-bottom: 10px;">' +
+          '<div class="wb-field">' +
             '<label class="wb-field__label">Price Range Filter</label>' +
-            '<div style="display: flex; gap: 10px; align-items: center;">' +
+            '<div class="wb-price-range">' +
               '<input type="number" name="' + prefix + '[exclude_price_min]" class="wb-input wb-input--sm" style="width: 100px;" placeholder="Min $" step="0.01" min="0">' +
               '<span>\u2014</span>' +
               '<input type="number" name="' + prefix + '[exclude_price_max]" class="wb-input wb-input--sm" style="width: 100px;" placeholder="Max $" step="0.01" min="0">' +
@@ -1026,12 +1022,11 @@
 
       // Condition exclusion panel.
       var condExPanel = document.createElement('div');
-      condExPanel.className = 'wb-cond-exclusion-panel';
-      condExPanel.style.padding = '4px 0 8px 20px';
+      condExPanel.className = 'wb-cond-exclusion-panel wb-sub-panel';
       condExPanel.innerHTML =
-        '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-cond-exclusions" style="margin-bottom: 6px;">\u25b6 Condition Exclusions</button>' +
+        '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-cond-exclusions">\u25b6 Condition Exclusions</button>' +
         '<div class="wb-cond-exclusion-body" style="display:none;">' +
-          '<div class="wb-field" style="margin-bottom: 8px;">' +
+          '<div class="wb-field">' +
             '<label class="wb-field__label">Exclude Categories</label>' +
             '<div class="wb-autocomplete wb-cond-exclude-cats-search" style="max-width: 400px;">' +
               '<input type="text" class="wb-input wb-cond-exclude-cats__input" placeholder="Search categories\u2026" autocomplete="off">' +
@@ -1040,7 +1035,7 @@
               '<div class="wb-cond-exclude-cats-chips" style="margin-top: 4px;"></div>' +
             '</div>' +
           '</div>' +
-          '<div class="wb-field" style="margin-bottom: 8px;">' +
+          '<div class="wb-field">' +
             '<label class="wb-field__label">Exclude Products</label>' +
             '<div class="wb-autocomplete wb-cond-exclude-prods-search" style="max-width: 400px;">' +
               '<input type="text" class="wb-input wb-cond-exclude-prods__input" placeholder="Search products\u2026" autocomplete="off">' +
@@ -1049,9 +1044,9 @@
               '<div class="wb-cond-exclude-prods-chips" style="margin-top: 4px;"></div>' +
             '</div>' +
           '</div>' +
-          '<div class="wb-field" style="margin-bottom: 8px;">' +
+          '<div class="wb-field">' +
             '<label class="wb-field__label">Price Range Filter</label>' +
-            '<div style="display: flex; gap: 8px; align-items: center;">' +
+            '<div class="wb-price-range">' +
               '<input type="number" name="' + prefix + '[exclude_price_min]" class="wb-input wb-input--sm" style="width: 90px;" placeholder="Min $" step="0.01" min="0">' +
               '<span>\u2014</span>' +
               '<input type="number" name="' + prefix + '[exclude_price_max]" class="wb-input wb-input--sm" style="width: 90px;" placeholder="Max $" step="0.01" min="0">' +
