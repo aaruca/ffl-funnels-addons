@@ -139,6 +139,34 @@
   font-size: var(--wb-font-size-sm);
 }
 
+/* ── Section Visual Distinction ──────────────────────────────────── */
+
+#wb-conditions-section {
+  border-left: 4px solid #2271b1;
+  background: linear-gradient(135deg, rgba(34, 113, 177, 0.03) 0%, transparent 100%);
+}
+
+#wb-conditions-section > h3 {
+  color: #2271b1;
+}
+
+#wb-conditions-section > h3::before {
+  content: '\1F50D ';
+}
+
+#wb-actions-section {
+  border-left: 4px solid #00a32a;
+  background: linear-gradient(135deg, rgba(0, 163, 42, 0.03) 0%, transparent 100%);
+}
+
+#wb-actions-section > h3 {
+  color: #00a32a;
+}
+
+#wb-actions-section > h3::before {
+  content: '\26A1 ';
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    3. ACTION REPEATER
    ═══════════════════════════════════════════════════════════════════ */
@@ -183,8 +211,44 @@
   padding: 8px 12px;
 }
 
+/* ── Exclusion Panel Distinction ────────────────────────────────── */
+
+.wb-cond-exclusion-panel .wb-toggle-cond-exclusions {
+  color: #2271b1;
+}
+
+.wb-cond-exclusion-panel .wb-cond-exclusion-body {
+  border-left: 3px solid rgba(34, 113, 177, 0.3);
+  padding-left: var(--wb-spacing-md);
+}
+
+.wb-exclusion-panel .wb-toggle-exclusions {
+  color: #00a32a;
+}
+
+.wb-exclusion-panel .wb-exclusion-body {
+  border-left: 3px solid rgba(0, 163, 42, 0.3);
+  padding-left: var(--wb-spacing-md);
+}
+
 /* ═══════════════════════════════════════════════════════════════════
-   4. DIAGNOSTIC TESTER
+   4. STICKY SAVE BAR
+   ═══════════════════════════════════════════════════════════════════ */
+.wb-form .wb-actions-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  background: var(--wb-color-neutral-background-1);
+  border-top: 1px solid var(--wb-color-neutral-stroke-2);
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.06);
+  padding: var(--wb-spacing-md) var(--wb-spacing-lg);
+  margin: 0 calc(-1 * var(--wb-spacing-xl));
+  margin-bottom: calc(-1 * var(--wb-spacing-xl));
+  border-radius: 0 0 var(--wb-radius-lg) var(--wb-radius-lg);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   5. DIAGNOSTIC TESTER
    ═══════════════════════════════════════════════════════════════════ */
 .wb-test-results {
   margin-top: var(--wb-spacing-xl);

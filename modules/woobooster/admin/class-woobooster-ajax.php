@@ -12,6 +12,7 @@ class WooBooster_Ajax
         add_action('wp_ajax_woobooster_test_rule', array($this, 'test_rule'));
         add_action('wp_ajax_woobooster_search_products', array($this, 'search_products'));
         add_action('wp_ajax_woobooster_search_coupons', array($this, 'search_coupons'));
+        add_action('wp_ajax_woobooster_resolve_product_names', array($this, 'resolve_product_names'));
     }
 
     public function search_terms()
@@ -190,5 +191,35 @@ class WooBooster_Ajax
             'coupons' => $results,
             'total' => $query->found_posts,
         ));
+    }
+
+    /**
+     * Resolve product IDs to names.
+     */
+    public function resolve_product_names()
+    {
+        check_ajax_referer('woobooster_admin', 'nonce');
+        if (!current_user_can('manage_woocommerce')) {
+            wp_send_json_error(array('message' => 'Permission denied.'));
+        }
+
+        $ids_raw = isset($_POST['ids']) ? sanitize_text_field(wp_unslash($_POST['ids'])) : '';
+        $ids = array_filter(array_map('absint', explode(',', $ids_raw)));
+
+        if (empty($ids)) {
+            wp_send_json_success(array('names' => array()));
+        }
+
+        $names = array();
+        foreach ($ids as $id) {
+            $product = wc_get_product($id);
+            if ($product) {
+                $names[$id] = $product->get_name();
+            } else {
+                $names[$id] = '#' . $id;
+            }
+        }
+
+        wp_send_json_success(array('names' => $names));
     }
 }

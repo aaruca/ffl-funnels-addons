@@ -115,6 +115,23 @@ class WooBooster_Rule_Form
         echo '</label>';
         echo '</div></div>';
 
+        // Schedule.
+        $start_date = $rule && isset($rule->start_date) ? $rule->start_date : '';
+        $end_date = $rule && isset($rule->end_date) ? $rule->end_date : '';
+
+        echo '<div class="wb-field">';
+        echo '<label class="wb-field__label">' . esc_html__('Schedule', 'woobooster') . '</label>';
+        echo '<div class="wb-field__control" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">';
+        echo '<label style="font-size: 13px; display: flex; align-items: center; gap: 4px;">' . esc_html__('From', 'woobooster');
+        echo '<input type="datetime-local" name="rule_start_date" value="' . esc_attr($start_date ? date('Y-m-d\TH:i', strtotime($start_date)) : '') . '" class="wb-input wb-input--sm" style="width: auto;">';
+        echo '</label>';
+        echo '<label style="font-size: 13px; display: flex; align-items: center; gap: 4px;">' . esc_html__('Until', 'woobooster');
+        echo '<input type="datetime-local" name="rule_end_date" value="' . esc_attr($end_date ? date('Y-m-d\TH:i', strtotime($end_date)) : '') . '" class="wb-input wb-input--sm" style="width: auto;">';
+        echo '</label>';
+        echo '</div>';
+        echo '<p class="wb-field__desc">' . esc_html__('Optional. Leave empty to keep the rule always active (when enabled).', 'woobooster') . '</p>';
+        echo '</div>';
+
         echo '</div>'; // .wb-card__section
 
         // ── Conditions ──────────────────────────────────────────────────────
@@ -143,16 +160,15 @@ class WooBooster_Rule_Form
             foreach ($conditions as $cond) {
                 $c_attr = is_object($cond) ? $cond->condition_attribute : '';
                 $c_val = is_object($cond) ? $cond->condition_value : '';
+                $c_op = is_object($cond) && isset($cond->condition_operator) ? $cond->condition_operator : 'equals';
                 $c_inc = is_object($cond) ? (int) $cond->include_children : 0;
                 $c_min_qty = is_object($cond) && isset($cond->min_quantity) ? max(1, (int) $cond->min_quantity) : 1;
 
                 // Resolve label for existing values.
                 $c_label = '';
                 if ('specific_product' === $c_attr && $c_val) {
-                    $product = wc_get_product(absint($c_val));
-                    if ($product) {
-                        $c_label = $product->get_name();
-                    }
+                    // Multi-product: chips rendered by JS from hidden value.
+                    $c_label = '';
                 } elseif ($c_val && $c_attr) {
                     $term = get_term_by('slug', $c_val, $c_attr);
                     if ($term && !is_wp_error($term)) {
@@ -205,14 +221,19 @@ class WooBooster_Rule_Form
                 // Hidden attribute value (actual taxonomy name for save).
                 echo '<input type="hidden" name="' . esc_attr($field_prefix . '[attribute]') . '" class="wb-condition-attr" value="' . esc_attr($c_attr) . '">';
 
-                // Hidden operator.
-                echo '<input type="hidden" name="' . esc_attr($field_prefix . '[operator]') . '" value="equals">';
+                // Operator select.
+                echo '<select name="' . esc_attr($field_prefix . '[operator]') . '" class="wb-select wb-condition-operator" style="width:auto;flex-shrink:0;min-width:70px;">';
+                echo '<option value="equals"' . selected($c_op, 'equals', false) . '>' . esc_html__('is', 'woobooster') . '</option>';
+                echo '<option value="not_equals"' . selected($c_op, 'not_equals', false) . '>' . esc_html__('is not', 'woobooster') . '</option>';
+                echo '</select>';
 
                 // Value autocomplete.
                 echo '<div class="wb-autocomplete wb-condition-value-wrap">';
                 echo '<input type="text" class="wb-input wb-autocomplete__input wb-condition-value-display" placeholder="' . esc_attr__('Value…', 'woobooster') . '" value="' . esc_attr($c_label) . '" autocomplete="off">';
                 echo '<input type="hidden" name="' . esc_attr($field_prefix . '[value]') . '" class="wb-condition-value-hidden" value="' . esc_attr($c_val) . '">';
                 echo '<div class="wb-autocomplete__dropdown"></div>';
+                $chips_display = 'specific_product' === $c_type ? '' : 'display:none;';
+                echo '<div class="wb-condition-product-chips" style="' . esc_attr($chips_display) . ' margin-top:4px;"></div>';
                 echo '</div>';
 
                 // Include children.
@@ -222,7 +243,7 @@ class WooBooster_Rule_Form
                 echo '</label>';
 
                 // Min quantity.
-                echo '<input type="number" name="' . esc_attr($field_prefix . '[min_quantity]') . '" value="' . esc_attr($c_min_qty) . '" min="1" class="wb-input wb-input--sm" style="width: 60px;" title="' . esc_attr__('Min Qty', 'woobooster') . '" placeholder="Qty">';
+                echo '<input type="number" name="' . esc_attr($field_prefix . '[min_quantity]') . '" value="' . esc_attr($c_min_qty) . '" min="1" class="wb-input wb-input--sm" style="width: 60px;" title="' . esc_attr__('Min cart qty (coupon rules only)', 'woobooster') . '" placeholder="Qty">';
 
                 // Remove button.
                 if ($cond_index > 0 || count($conditions) > 1) {
@@ -240,7 +261,7 @@ class WooBooster_Rule_Form
 
                 echo '<div class="wb-cond-exclusion-panel" style="padding: 4px 0 8px 20px;">';
                 echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-cond-exclusions" style="margin-bottom: 6px;">';
-                echo ($cex_has ? '&#9660;' : '&#9654;') . ' ' . esc_html__('Exclusions', 'woobooster');
+                echo ($cex_has ? '&#9660;' : '&#9654;') . ' ' . esc_html__('Condition Exclusions', 'woobooster');
                 echo '</button>';
 
                 $cex_body_display = $cex_has ? '' : 'display:none;';
@@ -299,7 +320,7 @@ class WooBooster_Rule_Form
 
         // ── Action ──────────────────────────────────────────────────────────
 
-        echo '<div class="wb-card__section">';
+        echo '<div class="wb-card__section" id="wb-actions-section">';
         echo '<h3>' . esc_html__('Actions', 'woobooster') . '</h3>';
         echo '<p class="wb-section-desc">' . esc_html__('Define one or more actions to execute when the condition matches. Results from all actions will be merged.', 'woobooster') . '</p>';
 
@@ -447,13 +468,21 @@ class WooBooster_Rule_Form
                 $cp_coupon = new WC_Coupon($cp_id);
                 $cp_label = $cp_coupon->get_code();
             }
+            $cp_message = isset($action->action_coupon_message) ? $action->action_coupon_message : '';
             echo '<div class="wb-action-coupon-panel" style="' . esc_attr($cp_display) . ' padding: 8px 0 0 20px;">';
+            echo '<p class="wb-field__desc" style="margin: 0 0 8px; font-style: italic; color: #666;">' . esc_html__('Works with your existing WooCommerce coupons. Create coupons in WooCommerce > Coupons first.', 'woobooster') . '</p>';
             echo '<label class="wb-field__label">' . esc_html__('Select Coupon', 'woobooster') . '</label>';
             echo '<div class="wb-autocomplete wb-coupon-search" style="max-width: 400px;">';
             echo '<input type="text" class="wb-input wb-coupon-search__input" placeholder="' . esc_attr__('Search coupons…', 'woobooster') . '" value="' . esc_attr($cp_label) . '" autocomplete="off">';
             echo '<input type="hidden" name="' . esc_attr($prefix . '[action_coupon_id]') . '" class="wb-coupon-search__id" value="' . esc_attr($cp_id) . '">';
             echo '<div class="wb-autocomplete__dropdown"></div>';
-            echo '</div></div>';
+            echo '</div>';
+            echo '<div class="wb-field" style="margin-top: 10px;">';
+            echo '<label class="wb-field__label">' . esc_html__('Custom Cart Message', 'woobooster') . '</label>';
+            echo '<input type="text" name="' . esc_attr($prefix . '[action_coupon_message]') . '" class="wb-input" style="max-width: 500px;" placeholder="' . esc_attr__('e.g. You got 15% off on Ammo products!', 'woobooster') . '" value="' . esc_attr($cp_message) . '">';
+            echo '<p class="wb-field__desc">' . esc_html__('Leave empty for the default auto-apply message.', 'woobooster') . '</p>';
+            echo '</div>';
+            echo '</div>';
 
             // ── Exclusion Panel (collapsible) ──
             $ex_cats = isset($action->exclude_categories) ? $action->exclude_categories : '';
@@ -464,7 +493,7 @@ class WooBooster_Rule_Form
 
             echo '<div class="wb-exclusion-panel" style="padding: 8px 0 0 20px; margin-bottom: 12px;">';
             echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-exclusions" style="margin-bottom: 8px;">';
-            echo ($has_exclusions ? '▼' : '▶') . ' ' . esc_html__('Exclusions', 'woobooster');
+            echo ($has_exclusions ? '&#9660;' : '&#9654;') . ' ' . esc_html__('Action Exclusions', 'woobooster');
             echo '</button>';
 
             $ex_body_display = $has_exclusions ? '' : 'display:none;';
@@ -561,17 +590,18 @@ class WooBooster_Rule_Form
 
         foreach ($raw_actions as $action) {
             $clean_actions[] = array(
-                'action_source'      => isset($action['action_source']) ? sanitize_key($action['action_source']) : 'category',
-                'action_value'       => isset($action['action_value']) ? sanitize_text_field(wp_unslash($action['action_value'])) : '',
-                'action_limit'       => isset($action['action_limit']) ? absint($action['action_limit']) : 4,
-                'action_orderby'     => isset($action['action_orderby']) ? sanitize_key($action['action_orderby']) : 'rand',
-                'include_children'   => isset($action['include_children']) ? absint($action['include_children']) : 0,
-                'action_products'    => isset($action['action_products']) ? sanitize_text_field(wp_unslash($action['action_products'])) : '',
-                'action_coupon_id'   => isset($action['action_coupon_id']) && $action['action_coupon_id'] ? absint($action['action_coupon_id']) : '',
+                'action_source' => isset($action['action_source']) ? sanitize_key($action['action_source']) : 'category',
+                'action_value' => isset($action['action_value']) ? sanitize_text_field(wp_unslash($action['action_value'])) : '',
+                'action_limit' => isset($action['action_limit']) ? absint($action['action_limit']) : 4,
+                'action_orderby' => isset($action['action_orderby']) ? sanitize_key($action['action_orderby']) : 'rand',
+                'include_children' => isset($action['include_children']) ? absint($action['include_children']) : 0,
+                'action_products' => isset($action['action_products']) ? sanitize_text_field(wp_unslash($action['action_products'])) : '',
+                'action_coupon_id' => isset($action['action_coupon_id']) && $action['action_coupon_id'] ? absint($action['action_coupon_id']) : '',
                 'exclude_categories' => isset($action['exclude_categories']) ? sanitize_text_field(wp_unslash($action['exclude_categories'])) : '',
-                'exclude_products'   => isset($action['exclude_products']) ? sanitize_text_field(wp_unslash($action['exclude_products'])) : '',
-                'exclude_price_min'  => isset($action['exclude_price_min']) && '' !== $action['exclude_price_min'] ? floatval($action['exclude_price_min']) : '',
-                'exclude_price_max'  => isset($action['exclude_price_max']) && '' !== $action['exclude_price_max'] ? floatval($action['exclude_price_max']) : '',
+                'exclude_products' => isset($action['exclude_products']) ? sanitize_text_field(wp_unslash($action['exclude_products'])) : '',
+                'exclude_price_min' => isset($action['exclude_price_min']) && '' !== $action['exclude_price_min'] ? floatval($action['exclude_price_min']) : '',
+                'exclude_price_max' => isset($action['exclude_price_max']) && '' !== $action['exclude_price_max'] ? floatval($action['exclude_price_max']) : '',
+                'action_coupon_message' => isset($action['action_coupon_message']) ? sanitize_text_field(wp_unslash($action['action_coupon_message'])) : '',
             );
         }
 
@@ -603,9 +633,17 @@ class WooBooster_Rule_Form
         $first_group = !empty($raw_conditions) ? reset($raw_conditions) : array();
         $first_cond = !empty($first_group) ? reset($first_group) : array();
         $data['condition_attribute'] = isset($first_cond['attribute']) ? sanitize_key($first_cond['attribute']) : '';
-        $data['condition_operator'] = 'equals';
+        $data['condition_operator'] = isset($first_cond['operator']) ? sanitize_key($first_cond['operator']) : 'equals';
         $data['condition_value'] = isset($first_cond['value']) ? sanitize_text_field(wp_unslash($first_cond['value'])) : '';
         $data['include_children'] = isset($first_cond['include_children']) ? 1 : 0;
+
+        // Scheduling dates.
+        $data['start_date'] = !empty($_POST['rule_start_date'])
+            ? date('Y-m-d H:i:s', strtotime(sanitize_text_field(wp_unslash($_POST['rule_start_date']))))
+            : null;
+        $data['end_date'] = !empty($_POST['rule_end_date'])
+            ? date('Y-m-d H:i:s', strtotime(sanitize_text_field(wp_unslash($_POST['rule_end_date']))))
+            : null;
 
         if ($rule_id) {
             WooBooster_Rule::update($rule_id, $data);
@@ -626,7 +664,7 @@ class WooBooster_Rule_Form
                 }
                 $group_conditions[] = array(
                     'condition_attribute' => sanitize_key($cond['attribute']),
-                    'condition_operator' => 'equals',
+                    'condition_operator' => isset($cond['operator']) ? sanitize_key($cond['operator']) : 'equals',
                     'condition_value' => sanitize_text_field(wp_unslash($cond['value'] ?? '')),
                     'include_children' => isset($cond['include_children']) ? 1 : 0,
                     'min_quantity' => isset($cond['min_quantity']) ? max(1, absint($cond['min_quantity'])) : 1,

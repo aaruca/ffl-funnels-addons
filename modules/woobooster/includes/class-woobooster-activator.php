@@ -54,6 +54,8 @@ class WooBooster_Activator
 			action_orderby varchar(50) NOT NULL DEFAULT 'rand',
 			action_limit int(11) NOT NULL DEFAULT 4,
 			exclude_outofstock tinyint(1) NOT NULL DEFAULT 1,
+			start_date datetime DEFAULT NULL,
+			end_date datetime DEFAULT NULL,
 			updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 			PRIMARY KEY  (id),
 			KEY status (status)
@@ -89,6 +91,7 @@ class WooBooster_Activator
 			include_children tinyint(1) NOT NULL DEFAULT 0,
 			action_products longtext DEFAULT NULL,
 			action_coupon_id bigint(20) DEFAULT NULL,
+			action_coupon_message text DEFAULT NULL,
 			exclude_categories longtext DEFAULT NULL,
 			exclude_products longtext DEFAULT NULL,
 			exclude_price_min decimal(10,2) DEFAULT NULL,
@@ -218,7 +221,16 @@ class WooBooster_Activator
                 }
             }
 
-            // 6. Add exclusion + min_quantity columns to conditions table (v1.5.0).
+            // 6. Add action_coupon_message column to actions table (v1.6.0).
+            $msg_col_exists = $wpdb->get_results($wpdb->prepare(
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = %s AND column_name = 'action_coupon_message'",
+                $actions_table
+            ));
+            if (empty($msg_col_exists)) {
+                $wpdb->query("ALTER TABLE {$actions_table} ADD action_coupon_message text DEFAULT NULL"); // phpcs:ignore WordPress.DB.PreparedSQL
+            }
+
+            // 7. Add exclusion + min_quantity columns to conditions table (v1.5.0).
             $new_cond_cols = array(
                 'min_quantity' => 'int(11) NOT NULL DEFAULT 1',
                 'exclude_categories' => 'longtext DEFAULT NULL',
@@ -234,6 +246,22 @@ class WooBooster_Activator
                 ));
                 if (empty($col_exists)) {
                     $wpdb->query("ALTER TABLE {$conditions_table} ADD {$col_name} {$col_def}"); // phpcs:ignore WordPress.DB.PreparedSQL
+                }
+            }
+
+            // 8. Add scheduling columns to rules table (v1.7.0).
+            $schedule_cols = array(
+                'start_date' => 'datetime DEFAULT NULL',
+                'end_date' => 'datetime DEFAULT NULL',
+            );
+            foreach ($schedule_cols as $col_name => $col_def) {
+                $col_exists = $wpdb->get_results($wpdb->prepare(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = %s AND column_name = %s",
+                    $rules_table,
+                    $col_name
+                ));
+                if (empty($col_exists)) {
+                    $wpdb->query("ALTER TABLE {$rules_table} ADD {$col_name} {$col_def}"); // phpcs:ignore WordPress.DB.PreparedSQL
                 }
             }
 

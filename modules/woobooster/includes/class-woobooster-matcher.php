@@ -68,6 +68,10 @@ class WooBooster_Matcher
         foreach ($terms as $term) {
             $condition_keys[] = $term['taxonomy'] . ':' . $term['slug'];
         }
+        // Include product ID key so specific_product conditions are found in the index.
+        $condition_keys[] = 'specific_product:' . $product_id;
+        // Include sentinel so rules with not_equals conditions are always candidates.
+        $condition_keys[] = '__not_equals__:1';
 
         // Step 3: Find the winning rule via the lookup index.
         $rule = $this->find_matching_rule($condition_keys, $terms, $product_id);
@@ -205,6 +209,15 @@ class WooBooster_Matcher
                 continue;
             }
 
+            // Check scheduling dates — skip if rule is outside its active window.
+            $now = current_time('mysql');
+            if (!empty($rule->start_date) && $now < $rule->start_date) {
+                continue;
+            }
+            if (!empty($rule->end_date) && $now > $rule->end_date) {
+                continue;
+            }
+
             // Get condition groups for this rule.
             $groups = WooBooster_Rule::get_conditions($rule_id);
 
@@ -224,40 +237,53 @@ class WooBooster_Matcher
                         break;
                     }
 
-                    $cond_key = sanitize_key($cond->condition_attribute) . ':' . sanitize_text_field($cond->condition_value);
+                    $operator = isset($cond->condition_operator) ? $cond->condition_operator : 'equals';
+                    $key_matched = false;
 
-                    // Direct key match.
-                    if (isset($product_keys_set[$cond_key])) {
-                        continue; // This condition is satisfied.
-                    }
+                    // Handle comma-separated specific_product values.
+                    if ('specific_product' === $cond->condition_attribute && false !== strpos($cond->condition_value, ',')) {
+                        $sp_ids = array_filter(array_map('absint', explode(',', $cond->condition_value)));
+                        foreach ($sp_ids as $sp_id) {
+                            if (isset($product_keys_set['specific_product:' . $sp_id])) {
+                                $key_matched = true;
+                                break;
+                            }
+                        }
+                    } else {
+                        $cond_key = sanitize_key($cond->condition_attribute) . ':' . sanitize_text_field($cond->condition_value);
 
-                    // If include_children is enabled, check if any product term
-                    // is a descendant of this condition's term.
-                    if (!empty($cond->include_children)) {
-                        $found_child = false;
-                        $attr = sanitize_key($cond->condition_attribute);
-                        $parent_term = get_term_by('slug', $cond->condition_value, $attr);
+                        // Direct key match.
+                        if (isset($product_keys_set[$cond_key])) {
+                            $key_matched = true;
+                        }
 
-                        if ($parent_term && !is_wp_error($parent_term)) {
-                            foreach ($terms as $term) {
-                                if (
-                                    $term['taxonomy'] === $attr &&
-                                    term_is_ancestor_of((int) $parent_term->term_id, (int) $term['term_id'], $attr)
-                                ) {
-                                    $found_child = true;
-                                    break;
+                        // If include_children is enabled, check if any product term
+                        // is a descendant of this condition's term.
+                        if (!$key_matched && !empty($cond->include_children)) {
+                            $attr = sanitize_key($cond->condition_attribute);
+                            $parent_term = get_term_by('slug', $cond->condition_value, $attr);
+
+                            if ($parent_term && !is_wp_error($parent_term)) {
+                                foreach ($terms as $term) {
+                                    if (
+                                        $term['taxonomy'] === $attr &&
+                                        term_is_ancestor_of((int) $parent_term->term_id, (int) $term['term_id'], $attr)
+                                    ) {
+                                        $key_matched = true;
+                                        break;
+                                    }
                                 }
                             }
                         }
-
-                        if ($found_child) {
-                            continue; // This condition is satisfied via child match.
-                        }
                     }
 
-                    // This condition is NOT satisfied.
-                    $group_satisfied = false;
-                    break;
+                    // Apply operator: for not_equals, invert the match.
+                    $condition_satisfied = ('not_equals' === $operator) ? !$key_matched : $key_matched;
+
+                    if (!$condition_satisfied) {
+                        $group_satisfied = false;
+                        break;
+                    }
                 }
 
                 if ($group_satisfied) {
@@ -497,29 +523,19 @@ class WooBooster_Matcher
      */
     private function apply_exclusions($query_args, $action)
     {
-        // 1. Exclude categories.
+        // 1. Exclude categories (stored as comma-separated slugs).
         if (!empty($action->exclude_categories)) {
-            $cat_ids = array_filter(array_map('absint', explode(',', $action->exclude_categories)));
-            if (!empty($cat_ids)) {
-                // Get slugs from IDs for tax_query.
-                $slugs = array();
-                foreach ($cat_ids as $cat_id) {
-                    $term = get_term($cat_id, 'product_cat');
-                    if ($term && !is_wp_error($term)) {
-                        $slugs[] = $term->slug;
-                    }
+            $slugs = array_filter(array_map('trim', explode(',', $action->exclude_categories)));
+            if (!empty($slugs)) {
+                if (!isset($query_args['tax_query'])) {
+                    $query_args['tax_query'] = array();
                 }
-                if (!empty($slugs)) {
-                    if (!isset($query_args['tax_query'])) {
-                        $query_args['tax_query'] = array();
-                    }
-                    $query_args['tax_query'][] = array(
-                        'taxonomy' => 'product_cat',
-                        'field' => 'slug',
-                        'terms' => $slugs,
-                        'operator' => 'NOT IN',
-                    );
-                }
+                $query_args['tax_query'][] = array(
+                    'taxonomy' => 'product_cat',
+                    'field' => 'slug',
+                    'terms' => $slugs,
+                    'operator' => 'NOT IN',
+                );
             }
         }
 
@@ -857,6 +873,8 @@ class WooBooster_Matcher
         foreach ($terms as $term) {
             $condition_keys[] = $term['taxonomy'] . ':' . $term['slug'];
         }
+        $condition_keys[] = 'specific_product:' . $product_id;
+        $condition_keys[] = '__not_equals__:1';
         $result['keys'] = $condition_keys;
 
         // Step 3: Find rule.
