@@ -60,7 +60,7 @@ class WooBooster_Admin
         wp_enqueue_script(
             'woobooster-ai-js',
             plugins_url('js/woobooster-ai.js', __FILE__),
-            array('jquery'),
+            array('jquery', 'woobooster-module'),
             WOOBOOSTER_VERSION,
             true
         );
@@ -363,9 +363,6 @@ class WooBooster_Admin
 
                 // Render AI Modal Structure
                 $this->render_ai_chat_modal();
-                break;
-                echo '</form>';
-                echo '</div></div>';
                 break;
         }
     }
