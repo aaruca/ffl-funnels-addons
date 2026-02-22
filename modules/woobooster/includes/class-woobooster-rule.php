@@ -714,6 +714,12 @@ class WooBooster_Rule
                 : null;
         }
 
+        if (isset($data['action_logic'])) {
+            $sanitized['action_logic'] = in_array($data['action_logic'], array('or', 'and'), true)
+                ? $data['action_logic']
+                : 'or';
+        }
+
         return $sanitized;
     }
 
@@ -740,6 +746,7 @@ class WooBooster_Rule
             'exclude_outofstock' => '%d',
             'start_date' => '%s',
             'end_date' => '%s',
+            'action_logic' => '%s',
         );
 
         $format = array();
@@ -781,6 +788,7 @@ class WooBooster_Rule
             'action_limit' => $rule->action_limit,
             'start_date' => isset($rule->start_date) ? $rule->start_date : null,
             'end_date' => isset($rule->end_date) ? $rule->end_date : null,
+            'action_logic' => isset($rule->action_logic) ? $rule->action_logic : 'or',
         ));
 
         if (!$new_id) {

@@ -15,10 +15,11 @@
 .wb-form .wb-card__section > h3 {
   font-size: 18px;
   font-weight: var(--wb-font-weight-bold);
-  margin: 0 0 var(--wb-spacing-sm) 0;
+  margin: 0 0 var(--wb-spacing-lg) 0;
   padding-bottom: var(--wb-spacing-md);
   border-bottom: 2px solid var(--wb-color-neutral-stroke-2);
   letter-spacing: -0.01em;
+  color: var(--wb-color-neutral-foreground-1);
 }
 
 /* Section description text */
@@ -55,16 +56,24 @@
 /* ── Sub-panels (exclusion, coupon, products) ────────────────────── */
 
 .wb-sub-panel {
-  padding: var(--wb-spacing-sm) 0 var(--wb-spacing-md) var(--wb-spacing-xl);
+  padding: var(--wb-spacing-md) 0 var(--wb-spacing-md) var(--wb-spacing-xl);
 }
 
 .wb-sub-panel .wb-field {
-  margin-bottom: var(--wb-spacing-md);
+  margin-bottom: var(--wb-spacing-lg);
   max-width: none;
 }
 
 .wb-sub-panel .wb-field:last-child {
   margin-bottom: 0;
+}
+
+.wb-sub-panel .wb-field__label {
+  margin-bottom: var(--wb-spacing-xs);
+}
+
+.wb-sub-panel .wb-field__desc {
+  margin-top: var(--wb-spacing-xs);
 }
 
 /* ── Price range row ─────────────────────────────────────────────── */
@@ -223,32 +232,11 @@
 
 /* ── Section Visual Distinction ──────────────────────────────────── */
 
-#wb-conditions-section {
-  border-left: 4px solid #2271b1;
-  background: linear-gradient(135deg, rgba(34, 113, 177, 0.03) 0%, transparent 100%);
-}
-
-#wb-conditions-section > h3 {
-  color: #2271b1;
-  border-bottom-color: rgba(34, 113, 177, 0.2);
-}
-
-#wb-conditions-section > h3::before {
-  content: '\1F50D ';
-}
-
+#wb-conditions-section,
 #wb-actions-section {
-  border-left: 4px solid #00a32a;
-  background: linear-gradient(135deg, rgba(0, 163, 42, 0.03) 0%, transparent 100%);
-}
-
-#wb-actions-section > h3 {
-  color: #00a32a;
-  border-bottom-color: rgba(0, 163, 42, 0.2);
-}
-
-#wb-actions-section > h3::before {
-  content: '\26A1 ';
+  border: 1px solid var(--wb-color-neutral-stroke-2);
+  border-radius: var(--wb-radius-md);
+  background: var(--wb-color-neutral-background-1);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -282,7 +270,8 @@
 }
 
 .wb-action-value-wrap {
-  flex-grow: 1;
+  flex: 1;
+  min-width: 200px;
 }
 
 /* Compact inputs in repeater rows */
@@ -295,6 +284,62 @@
   padding: 8px 12px;
 }
 
+/* Inline selects in rows — shrink to content */
+.wb-select--inline {
+  width: auto !important;
+  flex-shrink: 0;
+}
+
+/* Fixed-width small inputs */
+.wb-input--w60 { width: 60px !important; }
+.wb-input--w70 { width: 70px !important; }
+.wb-input--w90 { width: 90px !important; }
+.wb-input--w100 { width: 100px !important; }
+
+/* Operator select (narrow) */
+.wb-select--operator {
+  width: auto !important;
+  flex-shrink: 0;
+  min-width: 70px;
+}
+
+/* Children checkbox label alignment */
+.wb-action-children-label {
+  margin-left: 10px;
+  align-self: center;
+}
+
+/* ── AND/OR divider between action rows ─────────────────────────── */
+
+.wb-action-logic-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: var(--wb-spacing-xs) 0;
+}
+
+.wb-action-logic-divider select {
+  font-size: var(--wb-font-size-xs);
+  font-weight: var(--wb-font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--wb-color-neutral-foreground-3);
+  background: var(--wb-color-neutral-background-2);
+  border: 1px solid var(--wb-color-neutral-stroke-2);
+  border-radius: var(--wb-radius-sm);
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.wb-action-logic-divider::before,
+.wb-action-logic-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--wb-color-neutral-stroke-2);
+  margin: 0 var(--wb-spacing-md);
+}
+
 /* ── Exclusion Panel Distinction ────────────────────────────────── */
 
 .wb-cond-exclusion-panel .wb-toggle-cond-exclusions,
@@ -302,21 +347,9 @@
   margin-bottom: var(--wb-spacing-sm);
 }
 
-.wb-cond-exclusion-panel .wb-toggle-cond-exclusions {
-  color: #2271b1;
-}
-
-.wb-cond-exclusion-panel .wb-cond-exclusion-body {
-  border-left: 3px solid rgba(34, 113, 177, 0.3);
-  padding-left: var(--wb-spacing-md);
-}
-
-.wb-exclusion-panel .wb-toggle-exclusions {
-  color: #00a32a;
-}
-
+.wb-cond-exclusion-panel .wb-cond-exclusion-body,
 .wb-exclusion-panel .wb-exclusion-body {
-  border-left: 3px solid rgba(0, 163, 42, 0.3);
+  border-left: 3px solid var(--wb-color-neutral-stroke-2);
   padding-left: var(--wb-spacing-md);
 }
 
@@ -385,4 +418,112 @@
   font-weight: var(--wb-font-weight-semibold);
   color: var(--wb-color-neutral-foreground-2);
   background: rgba(0, 0, 0, 0.02);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   6. UTILITY CLASSES — Autocomplete, Chips, Input Modifiers
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Autocomplete container max-widths */
+.wb-autocomplete--sm { max-width: 400px; }
+.wb-autocomplete--md { max-width: 500px; }
+
+/* Chip containers */
+.wb-chips { margin-top: var(--wb-spacing-xs); }
+
+/* Chip elements */
+.wb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--wb-color-neutral-background-2);
+  border-radius: 12px;
+  font-size: var(--wb-font-size-xs);
+  margin: 2px;
+}
+
+.wb-chip--loading {
+  color: var(--wb-color-neutral-foreground-3);
+}
+
+.wb-chip__remove {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--wb-color-neutral-foreground-3);
+  padding: 0;
+  line-height: 1;
+}
+
+/* Coupon description note */
+.wb-coupon-desc {
+  font-style: italic;
+  margin: 0 0 var(--wb-spacing-md) 0;
+}
+
+/* Input max-width modifier */
+.wb-input--max-md { max-width: 500px; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   7. RULE LIST — SEARCH BOX OVERRIDE
+   ═══════════════════════════════════════════════════════════════════ */
+
+.wb-card__body--table .search-box {
+  margin: 0 0 var(--wb-spacing-lg) 0;
+  padding: 0 var(--wb-spacing-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--wb-spacing-sm);
+}
+
+.wb-card__body--table .search-box label {
+  display: none;
+}
+
+.wb-card__body--table .search-box #rule-search-input {
+  font-family: var(--wb-font-family);
+  font-size: var(--wb-font-size-base);
+  padding: 8px 12px;
+  border: 1px solid var(--wb-color-neutral-stroke-1);
+  border-radius: var(--wb-radius-sm);
+  background: var(--wb-color-neutral-background-1);
+  color: var(--wb-color-neutral-foreground-1);
+  min-width: 260px;
+  transition: border-color var(--wb-duration-fast);
+}
+
+.wb-card__body--table .search-box #rule-search-input:focus {
+  outline: none;
+  border-color: var(--wb-color-brand-foreground);
+  box-shadow: 0 0 0 2px rgba(15, 108, 189, 0.15);
+}
+
+.wb-card__body--table .search-box #search-submit {
+  font-family: var(--wb-font-family);
+  font-size: var(--wb-font-size-sm);
+  font-weight: var(--wb-font-weight-medium);
+  padding: 8px 16px;
+  border: 1px solid var(--wb-color-neutral-stroke-1);
+  border-radius: var(--wb-radius-sm);
+  background: var(--wb-color-neutral-background-1);
+  color: var(--wb-color-neutral-foreground-1);
+  cursor: pointer;
+  transition: all var(--wb-duration-fast);
+}
+
+.wb-card__body--table .search-box #search-submit:hover {
+  background: var(--wb-color-neutral-background-3);
+  border-color: var(--wb-color-neutral-stroke-1);
+}
+
+/* Override WP_List_Table default table styles inside our card */
+.wb-card__body--table .wp-list-table {
+  border: none;
+  border-spacing: 0;
+}
+
+.wb-card__body--table .tablenav {
+  padding: 0 var(--wb-spacing-lg);
 }

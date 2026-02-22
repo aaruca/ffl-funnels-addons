@@ -150,6 +150,9 @@
       bindActionRow(row);
     });
 
+    // Sync existing AND/OR divider selects with hidden input.
+    initActionLogicSync();
+
     // Add Action.
     if (addBtn) {
       addBtn.addEventListener('click', function () {
@@ -157,31 +160,76 @@
         var fragment = createActionRow(newIdx);
         // Grab the action row element before appending (fragment empties on append).
         var actionRow = fragment.querySelector('.wb-action-row');
+
+        // Insert AND/OR divider before the new row (if not the first).
+        if (newIdx > 0) {
+          var logicHidden = document.getElementById('wb-action-logic');
+          var currentLogic = logicHidden ? logicHidden.value : 'or';
+          var divider = document.createElement('div');
+          divider.className = 'wb-action-logic-divider';
+          divider.innerHTML = '<select class="wb-action-logic-select">' +
+            '<option value="or"' + (currentLogic === 'or' ? ' selected' : '') + '>OR</option>' +
+            '<option value="and"' + (currentLogic === 'and' ? ' selected' : '') + '>AND</option>' +
+            '</select>';
+          container.appendChild(divider);
+          bindLogicSelect(divider.querySelector('select'));
+        }
+
         container.appendChild(fragment);
         bindActionRow(actionRow);
         renumberActionFields();
       });
     }
 
-    // Remove Action (also removes sibling panels).
+    // Remove Action (also removes sibling panels and divider).
     container.addEventListener('click', function (e) {
       if (e.target.classList.contains('wb-remove-action')) {
         var row = e.target.closest('.wb-action-row');
         if (container.querySelectorAll('.wb-action-row').length > 1) {
+          // Remove the AND/OR divider before this row (if any).
+          var prev = row.previousElementSibling;
+          if (prev && prev.classList.contains('wb-action-logic-divider')) {
+            prev.remove();
+          }
           // Remove sibling panels that follow this action row.
           var sibling = row.nextElementSibling;
-          while (sibling && !sibling.classList.contains('wb-action-row')) {
+          while (sibling && !sibling.classList.contains('wb-action-row') && !sibling.classList.contains('wb-action-logic-divider')) {
             var next = sibling.nextElementSibling;
             sibling.remove();
             sibling = next;
           }
           row.remove();
+          // If first row now has a divider before it, remove that too.
+          var firstRow = container.querySelector('.wb-action-row');
+          if (firstRow) {
+            var firstPrev = firstRow.previousElementSibling;
+            if (firstPrev && firstPrev.classList.contains('wb-action-logic-divider')) {
+              firstPrev.remove();
+            }
+          }
           renumberActionFields();
         } else {
           alert('At least one action is required.');
         }
       }
     });
+
+    function initActionLogicSync() {
+      container.querySelectorAll('.wb-action-logic-select').forEach(function (sel) {
+        bindLogicSelect(sel);
+      });
+    }
+
+    function bindLogicSelect(sel) {
+      sel.addEventListener('change', function () {
+        var logicHidden = document.getElementById('wb-action-logic');
+        if (logicHidden) logicHidden.value = sel.value;
+        // Sync all other divider selects to match.
+        container.querySelectorAll('.wb-action-logic-select').forEach(function (s) {
+          if (s !== sel) s.value = sel.value;
+        });
+      });
+    }
 
     function bindActionRow(row) {
       initActionRowToggle(row);
@@ -208,7 +256,7 @@
 
       row.innerHTML =
         // Source Type
-        '<select name="' + prefix + '[action_source]" class="wb-select wb-action-source" style="width: auto; flex-shrink: 0;">' +
+        '<select name="' + prefix + '[action_source]" class="wb-select wb-select--inline wb-action-source">' +
         '<option value="category">Category</option>' +
         '<option value="tag">Tag</option>' +
         '<option value="attribute">Same Attribute</option>' +
@@ -222,22 +270,22 @@
         '</select>' +
 
         // Attribute Taxonomy (for attribute_value source)
-        '<select class="wb-select wb-action-attr-taxonomy" style="width: auto; flex-shrink: 0; display:none;">' + attrOptions + '</select>' +
+        '<select class="wb-select wb-select--inline wb-action-attr-taxonomy" style="display:none;">' + attrOptions + '</select>' +
 
         // Value Autocomplete
-        '<div class="wb-autocomplete wb-action-value-wrap" style="flex: 1; min-width: 200px;">' +
+        '<div class="wb-autocomplete wb-action-value-wrap">' +
         '<input type="text" class="wb-input wb-autocomplete__input wb-action-value-display" placeholder="Value\u2026" autocomplete="off">' +
         '<input type="hidden" name="' + prefix + '[action_value]" class="wb-action-value-hidden">' +
         '<div class="wb-autocomplete__dropdown"></div>' +
         '</div>' +
 
         // Include Children
-        '<label class="wb-checkbox wb-action-children-label" style="display:none; margin-left: 10px; align-self: center;">' +
+        '<label class="wb-checkbox wb-action-children-label" style="display:none;">' +
         '<input type="checkbox" name="' + prefix + '[include_children]" value="1"> + Children' +
         '</label>' +
 
         // Order By
-        '<select name="' + prefix + '[action_orderby]" class="wb-select" style="width: auto; flex-shrink: 0;" title="Order By">' +
+        '<select name="' + prefix + '[action_orderby]" class="wb-select wb-select--inline" title="Order By">' +
         '<option value="rand">Random</option>' +
         '<option value="date">Newest</option>' +
         '<option value="price">Price (Low to High)</option>' +
@@ -247,7 +295,7 @@
         '</select>' +
 
         // Limit
-        '<input type="number" name="' + prefix + '[action_limit]" value="4" min="1" class="wb-input wb-input--sm" style="width: 70px;" title="Limit">' +
+        '<input type="number" name="' + prefix + '[action_limit]" value="4" min="1" class="wb-input wb-input--sm wb-input--w70" title="Limit">' +
 
         // Remove
         '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-remove-action" title="Remove">&times;</button>';
@@ -258,11 +306,11 @@
       productsPanel.style.display = 'none';
       productsPanel.innerHTML =
         '<label class="wb-field__label">Select Products</label>' +
-        '<div class="wb-autocomplete wb-product-search" style="max-width: 500px;">' +
+        '<div class="wb-autocomplete wb-autocomplete--md wb-product-search">' +
         '<input type="text" class="wb-input wb-product-search__input" placeholder="Search products by name\u2026" autocomplete="off">' +
         '<input type="hidden" name="' + prefix + '[action_products]" class="wb-product-search__ids" value="">' +
         '<div class="wb-autocomplete__dropdown"></div>' +
-        '<div class="wb-product-chips" style="margin-top: 6px;"></div>' +
+        '<div class="wb-product-chips wb-chips"></div>' +
         '</div>';
 
       // Coupon panel
@@ -270,16 +318,16 @@
       couponPanel.className = 'wb-action-coupon-panel wb-sub-panel';
       couponPanel.style.display = 'none';
       couponPanel.innerHTML =
-        '<p class="wb-field__desc" style="font-style: italic; margin: 0 0 var(--wb-spacing-md) 0;">Works with your existing WooCommerce coupons. Create coupons in WooCommerce &gt; Coupons first.</p>' +
+        '<p class="wb-field__desc wb-coupon-desc">Works with your existing WooCommerce coupons. Create coupons in Marketing &gt; Coupons first.</p>' +
         '<label class="wb-field__label">Select Coupon</label>' +
-        '<div class="wb-autocomplete wb-coupon-search" style="max-width: 400px;">' +
+        '<div class="wb-autocomplete wb-autocomplete--sm wb-coupon-search">' +
         '<input type="text" class="wb-input wb-coupon-search__input" placeholder="Search coupons\u2026" autocomplete="off">' +
         '<input type="hidden" name="' + prefix + '[action_coupon_id]" class="wb-coupon-search__id" value="">' +
         '<div class="wb-autocomplete__dropdown"></div>' +
         '</div>' +
         '<div class="wb-field">' +
         '<label class="wb-field__label">Custom Cart Message</label>' +
-        '<input type="text" name="' + prefix + '[action_coupon_message]" class="wb-input" style="max-width: 500px;" placeholder="e.g. You got 15% off on Ammo products!" value="">' +
+        '<input type="text" name="' + prefix + '[action_coupon_message]" class="wb-input wb-input--max-md" placeholder="e.g. You got 15% off on Ammo products!" value="">' +
         '<p class="wb-field__desc">Leave empty for the default auto-apply message.</p>' +
         '</div>';
 
@@ -291,28 +339,28 @@
         '<div class="wb-exclusion-body" style="display:none;">' +
           '<div class="wb-field">' +
             '<label class="wb-field__label">Exclude Categories</label>' +
-            '<div class="wb-autocomplete wb-exclude-cats-search" style="max-width: 500px;">' +
+            '<div class="wb-autocomplete wb-autocomplete--md wb-exclude-cats-search">' +
               '<input type="text" class="wb-input wb-exclude-cats__input" placeholder="Search categories\u2026" autocomplete="off">' +
               '<input type="hidden" name="' + prefix + '[exclude_categories]" class="wb-exclude-cats__ids" value="">' +
               '<div class="wb-autocomplete__dropdown"></div>' +
-              '<div class="wb-exclude-cats-chips" style="margin-top: 6px;"></div>' +
+              '<div class="wb-exclude-cats-chips wb-chips"></div>' +
             '</div>' +
           '</div>' +
           '<div class="wb-field">' +
             '<label class="wb-field__label">Exclude Products</label>' +
-            '<div class="wb-autocomplete wb-exclude-prods-search" style="max-width: 500px;">' +
+            '<div class="wb-autocomplete wb-autocomplete--md wb-exclude-prods-search">' +
               '<input type="text" class="wb-input wb-exclude-prods__input" placeholder="Search products\u2026" autocomplete="off">' +
               '<input type="hidden" name="' + prefix + '[exclude_products]" class="wb-exclude-prods__ids" value="">' +
               '<div class="wb-autocomplete__dropdown"></div>' +
-              '<div class="wb-exclude-prods-chips" style="margin-top: 6px;"></div>' +
+              '<div class="wb-exclude-prods-chips wb-chips"></div>' +
             '</div>' +
           '</div>' +
           '<div class="wb-field">' +
             '<label class="wb-field__label">Price Range Filter</label>' +
             '<div class="wb-price-range">' +
-              '<input type="number" name="' + prefix + '[exclude_price_min]" class="wb-input wb-input--sm" style="width: 100px;" placeholder="Min $" step="0.01" min="0">' +
+              '<input type="number" name="' + prefix + '[exclude_price_min]" class="wb-input wb-input--sm wb-input--w100" placeholder="Min $" step="0.01" min="0">' +
               '<span>\u2014</span>' +
-              '<input type="number" name="' + prefix + '[exclude_price_max]" class="wb-input wb-input--sm" style="width: 100px;" placeholder="Max $" step="0.01" min="0">' +
+              '<input type="number" name="' + prefix + '[exclude_price_max]" class="wb-input wb-input--sm wb-input--w100" placeholder="Max $" step="0.01" min="0">' +
               '<span class="wb-field__desc">Only include products in this price range</span>' +
             '</div>' +
           '</div>' +
@@ -759,7 +807,7 @@
         ids.forEach(function (id) {
           var chip = document.createElement('span');
           chip.className = 'wb-chip';
-          chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:#f0f0f0;border-radius:12px;font-size:12px;margin:2px;color:#999;';
+          chip.className = 'wb-chip wb-chip--loading';
           chip.textContent = '#' + id + '\u2026';
           chipsEl.appendChild(chip);
         });
@@ -780,12 +828,11 @@
 
       var chip = document.createElement('span');
       chip.className = 'wb-chip';
-      chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:#f0f0f0;border-radius:12px;font-size:12px;margin:2px;';
       chip.textContent = label + ' ';
       var removeBtn = document.createElement('button');
       removeBtn.type = 'button';
+      removeBtn.className = 'wb-chip__remove';
       removeBtn.textContent = '\u00d7';
-      removeBtn.style.cssText = 'border:none;background:none;cursor:pointer;font-size:14px;color:#666;padding:0;line-height:1;';
       removeBtn.addEventListener('click', function () {
         var newIds = (hiddenInput.value || '').split(',').filter(function (v) { return v !== id; });
         hiddenInput.value = newIds.join(',');
@@ -993,7 +1040,7 @@
 
       row.innerHTML =
         // Condition Type
-        '<select class="wb-select wb-condition-type" style="width: auto; flex-shrink: 0;" required>' +
+        '<select class="wb-select wb-select--inline wb-condition-type" required>' +
         '<option value="">Type\u2026</option>' +
         '<option value="category">Category</option>' +
         '<option value="tag">Tag</option>' +
@@ -1001,10 +1048,10 @@
         '<option value="specific_product">Specific Product</option>' +
         '</select>' +
         // Attribute Taxonomy (hidden unless type=attribute)
-        '<select class="wb-select wb-condition-attr-taxonomy" style="width: auto; flex-shrink: 0; display:none;">' + attrTaxOptions + '</select>' +
+        '<select class="wb-select wb-select--inline wb-condition-attr-taxonomy" style="display:none;">' + attrTaxOptions + '</select>' +
         // Hidden attribute value
         '<input type="hidden" name="' + prefix + '[attribute]" class="wb-condition-attr" value="">' +
-        '<select name="' + prefix + '[operator]" class="wb-select wb-condition-operator" style="width:auto;flex-shrink:0;min-width:70px;">' +
+        '<select name="' + prefix + '[operator]" class="wb-select wb-select--operator wb-condition-operator">' +
         '<option value="equals">is</option>' +
         '<option value="not_equals">is not</option>' +
         '</select>' +
@@ -1012,12 +1059,12 @@
         '<input type="text" class="wb-input wb-autocomplete__input wb-condition-value-display" placeholder="Value\u2026" autocomplete="off">' +
         '<input type="hidden" name="' + prefix + '[value]" class="wb-condition-value-hidden">' +
         '<div class="wb-autocomplete__dropdown"></div>' +
-        '<div class="wb-condition-product-chips" style="display:none; margin-top:4px;"></div>' +
+        '<div class="wb-condition-product-chips wb-chips" style="display:none;"></div>' +
         '</div>' +
         '<label class="wb-checkbox wb-condition-children-label" style="display:none;">' +
         '<input type="checkbox" name="' + prefix + '[include_children]" value="1"> + Children' +
         '</label>' +
-        '<input type="number" name="' + prefix + '[min_quantity]" value="1" min="1" class="wb-input wb-input--sm" style="width: 60px;" title="Min cart qty (coupon rules only)" placeholder="Qty">' +
+        '<input type="number" name="' + prefix + '[min_quantity]" value="1" min="1" class="wb-input wb-input--sm wb-input--w60" title="Min cart qty (coupon rules only)" placeholder="Qty">' +
         '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-remove-condition">&times;</button>';
 
       // Condition exclusion panel.
@@ -1028,28 +1075,28 @@
         '<div class="wb-cond-exclusion-body" style="display:none;">' +
           '<div class="wb-field">' +
             '<label class="wb-field__label">Exclude Categories</label>' +
-            '<div class="wb-autocomplete wb-cond-exclude-cats-search" style="max-width: 400px;">' +
+            '<div class="wb-autocomplete wb-autocomplete--sm wb-cond-exclude-cats-search">' +
               '<input type="text" class="wb-input wb-cond-exclude-cats__input" placeholder="Search categories\u2026" autocomplete="off">' +
               '<input type="hidden" name="' + prefix + '[exclude_categories]" class="wb-cond-exclude-cats__ids" value="">' +
               '<div class="wb-autocomplete__dropdown"></div>' +
-              '<div class="wb-cond-exclude-cats-chips" style="margin-top: 4px;"></div>' +
+              '<div class="wb-cond-exclude-cats-chips wb-chips"></div>' +
             '</div>' +
           '</div>' +
           '<div class="wb-field">' +
             '<label class="wb-field__label">Exclude Products</label>' +
-            '<div class="wb-autocomplete wb-cond-exclude-prods-search" style="max-width: 400px;">' +
+            '<div class="wb-autocomplete wb-autocomplete--sm wb-cond-exclude-prods-search">' +
               '<input type="text" class="wb-input wb-cond-exclude-prods__input" placeholder="Search products\u2026" autocomplete="off">' +
               '<input type="hidden" name="' + prefix + '[exclude_products]" class="wb-cond-exclude-prods__ids" value="">' +
               '<div class="wb-autocomplete__dropdown"></div>' +
-              '<div class="wb-cond-exclude-prods-chips" style="margin-top: 4px;"></div>' +
+              '<div class="wb-cond-exclude-prods-chips wb-chips"></div>' +
             '</div>' +
           '</div>' +
           '<div class="wb-field">' +
             '<label class="wb-field__label">Price Range Filter</label>' +
             '<div class="wb-price-range">' +
-              '<input type="number" name="' + prefix + '[exclude_price_min]" class="wb-input wb-input--sm" style="width: 90px;" placeholder="Min $" step="0.01" min="0">' +
+              '<input type="number" name="' + prefix + '[exclude_price_min]" class="wb-input wb-input--sm wb-input--w90" placeholder="Min $" step="0.01" min="0">' +
               '<span>\u2014</span>' +
-              '<input type="number" name="' + prefix + '[exclude_price_max]" class="wb-input wb-input--sm" style="width: 90px;" placeholder="Max $" step="0.01" min="0">' +
+              '<input type="number" name="' + prefix + '[exclude_price_max]" class="wb-input wb-input--sm wb-input--w90" placeholder="Max $" step="0.01" min="0">' +
             '</div>' +
           '</div>' +
         '</div>';

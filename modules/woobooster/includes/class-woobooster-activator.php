@@ -56,6 +56,7 @@ class WooBooster_Activator
 			exclude_outofstock tinyint(1) NOT NULL DEFAULT 1,
 			start_date datetime DEFAULT NULL,
 			end_date datetime DEFAULT NULL,
+			action_logic varchar(10) NOT NULL DEFAULT 'or',
 			updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 			PRIMARY KEY  (id),
 			KEY status (status)
@@ -263,6 +264,15 @@ class WooBooster_Activator
                 if (empty($col_exists)) {
                     $wpdb->query("ALTER TABLE {$rules_table} ADD {$col_name} {$col_def}"); // phpcs:ignore WordPress.DB.PreparedSQL
                 }
+            }
+
+            // 9. Add action_logic column to rules table.
+            $al_exists = $wpdb->get_results($wpdb->prepare(
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = %s AND column_name = 'action_logic'",
+                $rules_table
+            ));
+            if (empty($al_exists)) {
+                $wpdb->query("ALTER TABLE {$rules_table} ADD action_logic varchar(10) NOT NULL DEFAULT 'or'"); // phpcs:ignore WordPress.DB.PreparedSQL
             }
 
             // Mark migration as complete.
