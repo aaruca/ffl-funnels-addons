@@ -17,20 +17,20 @@ document.addEventListener('DOMContentLoaded', function () {
     // Open Modal
     openBtn.addEventListener('click', (e) => {
         e.preventDefault();
-        modalOverlay.classList.add('active');
+        modalOverlay.classList.add('wb-modal-active');
         inputField.focus();
     });
 
     // Close Modal
     const closeModal = () => {
-        modalOverlay.classList.remove('active');
+        modalOverlay.classList.remove('wb-modal-active');
     };
     closeBtn.addEventListener('click', closeModal);
     modalOverlay.addEventListener('click', (e) => {
         if (e.target === modalOverlay) closeModal();
     });
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && modalOverlay.classList.contains('active')) closeModal();
+        if (e.key === 'Escape' && modalOverlay.classList.contains('wb-modal-active')) closeModal();
     });
 
     // Auto-resize textarea
@@ -89,7 +89,7 @@ document.addEventListener('DOMContentLoaded', function () {
             // Send conversation history (last few messages to save tokens)
             formData.append('chat_history', JSON.stringify(messages.slice(-6)));
 
-            const response = await fetch(ajaxurl, {
+            const response = await fetch(wooboosterAdmin.ajaxUrl, {
                 method: 'POST',
                 body: formData
             });
