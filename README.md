@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.3.1-blue.svg)
+![Version](https://img.shields.io/badge/version-1.4.0-blue.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.0+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -13,6 +13,7 @@ This plugin is a modular suite of tools designed to enhance FFL Funnels stores. 
 
 ### 1. WooBooster Module
 An intelligent product recommendation engine that goes beyond simple "related products".
+*   **AI Rule Generator:** Create robust recommendation rules using natural language (powered by OpenAI and Tavily) for smart compatibility resolution.
 *   **Targeted Rules:** Create specific recommendation rules based on Categories, Tags, and Attributes (e.g., recommend specific holsters for Glock 19).
 *   **Smart Recommendations:** Automatically display "Bought Together", "Trending", "Recently Viewed", and "Similar Products" without manual curation.
 *   **High Performance:** Uses custom index tables and aggressive caching to ensure zero impact on page load speed.
@@ -69,6 +70,11 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.4.0
+*   Feature: AI Rule Generator! Generate Woobooster recommendations automatically using OpenAI and Tavily Web Search.
+*   Enhancement: Added fields for OpenAI API Key and Tavily API Key in General Settings.
+*   Enhancement: Recursive AI tool loop allows searching real-time web compatibility data before rule generation.
 
 ### v1.3.1
 *   Fix: Prevent fatal error (Cannot redeclare class/function) when multiple plugin directories exist during updates.
