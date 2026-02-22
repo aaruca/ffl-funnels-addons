@@ -557,3 +557,386 @@
 .wb-card__body--table .tablenav {
   padding: 0 var(--wb-spacing-lg);
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   8. AI CHAT MODAL
+   ═══════════════════════════════════════════════════════════════════ */
+
+.wb-ai-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+  z-index: 100000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+.wb-ai-modal-overlay.wb-modal-active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.wb-ai-modal {
+  background: var(--wb-color-neutral-background-1);
+  width: 90%;
+  max-width: 600px;
+  height: 80vh;
+  max-height: 700px;
+  border-radius: var(--wb-radius-lg);
+  box-shadow: var(--wb-shadow-4);
+  display: flex;
+  flex-direction: column;
+  transform: translateY(20px);
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  overflow: hidden;
+}
+
+.wb-ai-modal-overlay.wb-modal-active .wb-ai-modal {
+  transform: translateY(0);
+}
+
+.wb-ai-modal__header {
+  padding: var(--wb-spacing-lg) var(--wb-spacing-xl);
+  border-bottom: 1px solid var(--wb-color-neutral-stroke-1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--wb-color-neutral-background-2);
+}
+
+.wb-ai-modal__title {
+  display: flex;
+  align-items: center;
+  gap: var(--wb-spacing-sm);
+  font-weight: var(--wb-font-weight-bold);
+  font-size: 16px;
+  color: var(--wb-color-neutral-foreground-1);
+  margin: 0;
+}
+
+.wb-ai-modal__title svg {
+  color: #a855f7;
+  /* Purple accent for AI */
+}
+
+.wb-ai-modal__close {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--wb-color-neutral-foreground-3);
+  padding: 4px;
+  border-radius: var(--wb-radius-sm);
+  transition: all var(--wb-duration-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wb-ai-modal__close:hover {
+  background: var(--wb-color-neutral-stroke-2);
+  color: var(--wb-color-neutral-foreground-1);
+}
+
+.wb-ai-modal__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--wb-spacing-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--wb-spacing-lg);
+  background: var(--wb-color-neutral-background-1);
+}
+
+.wb-ai-message {
+  display: flex;
+  flex-direction: column;
+  max-width: 85%;
+}
+
+.wb-ai-message--user {
+  align-self: flex-end;
+}
+
+.wb-ai-message--assistant {
+  align-self: flex-start;
+}
+
+.wb-ai-message__bubble {
+  padding: 12px 16px;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--wb-color-neutral-foreground-1);
+}
+
+.wb-ai-message--user .wb-ai-message__bubble {
+  background: var(--wb-color-brand-background);
+  color: var(--wb-color-brand-foreground);
+  border-bottom-right-radius: 4px;
+}
+
+.wb-ai-message--assistant .wb-ai-message__bubble {
+  background: var(--wb-color-neutral-background-2);
+  border: 1px solid var(--wb-color-neutral-stroke-2);
+  border-bottom-left-radius: 4px;
+}
+
+.wb-ai-message__time {
+  font-size: 11px;
+  color: var(--wb-color-neutral-foreground-3);
+  margin-top: 4px;
+  padding: 0 4px;
+}
+
+.wb-ai-message--user .wb-ai-message__time {
+  text-align: right;
+}
+
+/* Typing Indicator */
+.wb-typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  background: var(--wb-color-neutral-background-2);
+  border-radius: 12px;
+  border-bottom-left-radius: 4px;
+  width: fit-content;
+}
+
+.wb-typing-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--wb-color-neutral-foreground-3);
+  border-radius: 50%;
+  animation: wb-bounce 1.4s infinite ease-in-out both;
+}
+
+.wb-typing-dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.wb-typing-dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes wb-bounce {
+
+  0%,
+  80%,
+  100% {
+    transform: scale(0);
+  }
+
+  40% {
+    transform: scale(1);
+  }
+}
+
+.wb-ai-modal__footer {
+  padding: var(--wb-spacing-lg) var(--wb-spacing-xl);
+  border-top: 1px solid var(--wb-color-neutral-stroke-1);
+  background: var(--wb-color-neutral-background-1);
+}
+
+.wb-ai-input-group {
+  display: flex;
+  gap: var(--wb-spacing-sm);
+  position: relative;
+}
+
+.wb-ai-input {
+  flex: 1;
+  border: 1px solid var(--wb-color-neutral-stroke-2);
+  border-radius: 24px;
+  padding: 12px 16px;
+  padding-right: 48px;
+  font-family: var(--wb-font-family);
+  font-size: 14px;
+  color: var(--wb-color-neutral-foreground-1);
+  background: var(--wb-color-neutral-background-1);
+  box-shadow: var(--wb-shadow-1);
+  resize: none;
+  overflow: hidden;
+  height: 44px;
+  /* Default single line height */
+  min-height: 44px;
+  max-height: 120px;
+  transition: border-color var(--wb-duration-fast);
+}
+
+.wb-ai-input:focus {
+  outline: none;
+  border-color: #a855f7;
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.15);
+}
+
+.wb-ai-submit {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--wb-color-brand-background);
+  color: #fff;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--wb-duration-fast);
+}
+
+.wb-ai-submit:hover {
+  background: var(--wb-color-brand-foreground);
+  transform: scale(1.05);
+}
+
+.wb-ai-submit:disabled {
+  background: var(--wb-color-neutral-stroke-2);
+  color: var(--wb-color-neutral-foreground-3);
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* AI Empty State */
+.wb-ai-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  height: 100%;
+  color: var(--wb-color-neutral-foreground-2);
+}
+
+.wb-ai-empty svg {
+  width: 48px;
+  height: 48px;
+  color: #e9d5ff;
+  /* Light purple */
+  margin-bottom: var(--wb-spacing-lg);
+}
+
+.wb-ai-empty h4 {
+  font-size: 16px;
+  font-weight: var(--wb-font-weight-semibold);
+  margin: 0 0 var(--wb-spacing-sm) 0;
+  color: var(--wb-color-neutral-foreground-1);
+}
+
+.wb-ai-empty p {
+  font-size: 14px;
+  margin: 0 0 var(--wb-spacing-xl) 0;
+  max-width: 300px;
+  line-height: 1.5;
+}
+
+.wb-ai-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wb-spacing-sm);
+  width: 100%;
+  max-width: 400px;
+}
+
+.wb-ai-suggestion-btn {
+  background: var(--wb-color-neutral-background-2);
+  border: 1px solid var(--wb-color-neutral-stroke-2);
+  border-radius: var(--wb-radius-md);
+  padding: 12px 16px;
+  text-align: left;
+  font-size: 13px;
+  color: var(--wb-color-neutral-foreground-2);
+  cursor: pointer;
+  transition: all var(--wb-duration-fast);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.wb-ai-suggestion-btn:hover {
+  background: #fff;
+  border-color: #a855f7;
+  color: var(--wb-color-neutral-foreground-1);
+  box-shadow: var(--wb-shadow-1);
+  transform: translateY(-1px);
+}
+
+.wb-ai-suggestion-btn svg {
+  width: 16px;
+  height: 16px;
+  color: #a855f7;
+  opacity: 0;
+  transition: opacity var(--wb-duration-fast);
+  transform: translateX(-4px);
+}
+
+.wb-ai-suggestion-btn:hover svg {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* AI JSON Preview Box */
+.wb-ai-preview {
+  margin-top: var(--wb-spacing-md);
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--wb-radius-md);
+  padding: var(--wb-spacing-md);
+  font-family: inherit;
+}
+
+.wb-ai-preview-header {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: var(--wb-spacing-sm);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.wb-ai-preview-body {
+  font-family: monospace;
+  font-size: 11px;
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 12px;
+  border-radius: 4px;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.wb-ai-preview-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--wb-spacing-sm);
+  margin-top: var(--wb-spacing-md);
+}
+
+.wb-btn-ai-apply {
+  background: linear-gradient(135deg, #a855f7, #7e22ce);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: var(--wb-radius-sm);
+  font-weight: 500;
+  font-size: 13px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.wb-btn-ai-apply:hover {
+  opacity: 0.9;
+}
