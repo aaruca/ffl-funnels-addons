@@ -141,8 +141,8 @@
   /* ── Action Repeater ─────────────────────────────────────────────── */
 
   function initActionRepeater() {
-    var container = document.getElementById('wb-action-repeater');
-    var addBtn = document.getElementById('wb-add-action');
+    var container = document.getElementById('wb-action-groups');
+    var addGroupBtn = document.getElementById('wb-add-action-group');
     if (!container) return;
 
     // Init existing rows.
@@ -150,85 +150,90 @@
       bindActionRow(row);
     });
 
-    // Sync existing AND/OR divider selects with hidden input.
-    initActionLogicSync();
+    // Add OR Group.
+    if (addGroupBtn) {
+      addGroupBtn.addEventListener('click', function () {
+        var groups = container.querySelectorAll('.wb-action-group');
+        var newIdx = groups.length;
 
-    // Add Action.
-    if (addBtn) {
-      addBtn.addEventListener('click', function () {
-        var newIdx = container.querySelectorAll('.wb-action-row').length;
-        var fragment = createActionRow(newIdx);
-        // Grab the action row element before appending (fragment empties on append).
-        var actionRow = fragment.querySelector('.wb-action-row');
+        var divider = document.createElement('div');
+        divider.className = 'wb-or-divider';
+        divider.textContent = '— OR —';
+        container.appendChild(divider);
 
-        // Insert AND/OR divider before the new row (if not the first).
-        if (newIdx > 0) {
-          var logicHidden = document.getElementById('wb-action-logic');
-          var currentLogic = logicHidden ? logicHidden.value : 'or';
-          var divider = document.createElement('div');
-          divider.className = 'wb-action-logic-divider';
-          divider.innerHTML = '<select class="wb-action-logic-select">' +
-            '<option value="or"' + (currentLogic === 'or' ? ' selected' : '') + '>OR</option>' +
-            '<option value="and"' + (currentLogic === 'and' ? ' selected' : '') + '>AND</option>' +
-            '</select>';
-          container.appendChild(divider);
-          bindLogicSelect(divider.querySelector('select'));
-        }
-
-        container.appendChild(fragment);
-        bindActionRow(actionRow);
-        renumberActionFields();
+        var group = createActionGroupEl(newIdx);
+        container.appendChild(group);
       });
     }
 
-    // Remove Action (also removes sibling panels and divider).
+    // Remove Action or Group.
     container.addEventListener('click', function (e) {
       if (e.target.classList.contains('wb-remove-action')) {
-        var row = e.target.closest('.wb-action-row');
-        if (container.querySelectorAll('.wb-action-row').length > 1) {
-          // Remove the AND/OR divider before this row (if any).
-          var prev = row.previousElementSibling;
-          if (prev && prev.classList.contains('wb-action-logic-divider')) {
-            prev.remove();
-          }
-          // Remove sibling panels that follow this action row.
-          var sibling = row.nextElementSibling;
-          while (sibling && !sibling.classList.contains('wb-action-row') && !sibling.classList.contains('wb-action-logic-divider')) {
+        var actionRow = e.target.closest('.wb-action-row');
+        // Check if it's the last action in the group
+        var group = actionRow.closest('.wb-action-group');
+        if (group.querySelectorAll('.wb-action-row').length > 1) {
+          // Remove sibling panels that follow this action row
+          var sibling = actionRow.nextElementSibling;
+          while (sibling && !sibling.classList.contains('wb-action-row') && !sibling.classList.contains('wb-btn')) {
             var next = sibling.nextElementSibling;
             sibling.remove();
             sibling = next;
           }
-          row.remove();
-          // If first row now has a divider before it, remove that too.
-          var firstRow = container.querySelector('.wb-action-row');
-          if (firstRow) {
-            var firstPrev = firstRow.previousElementSibling;
-            if (firstPrev && firstPrev.classList.contains('wb-action-logic-divider')) {
-              firstPrev.remove();
-            }
-          }
+          actionRow.remove();
           renumberActionFields();
         } else {
-          alert('At least one action is required.');
+          alert('At least one action is required in a group.');
         }
+      }
+      if (e.target.classList.contains('wb-remove-action-group')) {
+        var groupToRemove = e.target.closest('.wb-action-group');
+        var divider = groupToRemove.previousElementSibling;
+        if (divider && divider.classList.contains('wb-or-divider')) divider.remove();
+        groupToRemove.remove();
+        renumberActionFields();
+      }
+      if (e.target.classList.contains('wb-add-action')) {
+        addActionToGroup(e.target.closest('.wb-action-group'));
       }
     });
 
-    function initActionLogicSync() {
-      container.querySelectorAll('.wb-action-logic-select').forEach(function (sel) {
-        bindLogicSelect(sel);
-      });
+    function createActionGroupEl(groupIdx) {
+      var group = document.createElement('div');
+      group.className = 'wb-action-group';
+      group.dataset.group = groupIdx;
+
+      group.innerHTML = '<div class="wb-action-group__header">' +
+        '<span class="wb-action-group__label">Action Group ' + (groupIdx + 1) + '</span>' +
+        '<button type="button" class="wb-btn wb-btn--danger wb-btn--xs wb-remove-action-group" title="Remove Group">&times;</button>' +
+        '</div>';
+
+      var fragment = createActionRow(groupIdx, 0);
+      var actionRow = fragment.querySelector('.wb-action-row');
+      group.appendChild(fragment);
+
+      var addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'wb-btn wb-btn--subtle wb-btn--sm wb-add-action';
+      addBtn.textContent = '+ AND Action';
+      group.appendChild(addBtn);
+
+      bindActionRow(actionRow);
+
+      return group;
     }
 
-    function bindLogicSelect(sel) {
-      sel.addEventListener('change', function () {
-        var logicHidden = document.getElementById('wb-action-logic');
-        if (logicHidden) logicHidden.value = sel.value;
-        // Sync all other divider selects to match.
-        container.querySelectorAll('.wb-action-logic-select').forEach(function (s) {
-          if (s !== sel) s.value = sel.value;
-        });
-      });
+    function addActionToGroup(group) {
+      var rows = group.querySelectorAll('.wb-action-row');
+      var gIdx = parseInt(group.dataset.group, 10);
+      var aIdx = rows.length;
+
+      var fragment = createActionRow(gIdx, aIdx);
+      var actionRow = fragment.querySelector('.wb-action-row');
+      var addBtn = group.querySelector('.wb-add-action');
+      group.insertBefore(fragment, addBtn);
+
+      bindActionRow(actionRow);
     }
 
     function bindActionRow(row) {
@@ -239,11 +244,11 @@
       initExclusionPanel(row);
     }
 
-    function createActionRow(idx) {
+    function createActionRow(gIdx, aIdx) {
       var row = document.createElement('div');
       row.className = 'wb-action-row';
-      row.dataset.index = idx;
-      var prefix = 'actions[' + idx + ']';
+      row.dataset.index = aIdx;
+      var prefix = 'action_groups[' + gIdx + '][actions][' + aIdx + ']';
 
       // Build attribute taxonomy options from existing select.
       var existingAttrSelect = document.querySelector('.wb-action-attr-taxonomy');
@@ -337,33 +342,33 @@
       exclusionPanel.innerHTML =
         '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-exclusions">\u25b6 Action Exclusions</button>' +
         '<div class="wb-exclusion-body" style="display:none;">' +
-          '<div class="wb-field">' +
-            '<label class="wb-field__label">Exclude Categories</label>' +
-            '<div class="wb-autocomplete wb-autocomplete--md wb-exclude-cats-search">' +
-              '<input type="text" class="wb-input wb-exclude-cats__input" placeholder="Search categories\u2026" autocomplete="off">' +
-              '<input type="hidden" name="' + prefix + '[exclude_categories]" class="wb-exclude-cats__ids" value="">' +
-              '<div class="wb-autocomplete__dropdown"></div>' +
-              '<div class="wb-exclude-cats-chips wb-chips"></div>' +
-            '</div>' +
-          '</div>' +
-          '<div class="wb-field">' +
-            '<label class="wb-field__label">Exclude Products</label>' +
-            '<div class="wb-autocomplete wb-autocomplete--md wb-exclude-prods-search">' +
-              '<input type="text" class="wb-input wb-exclude-prods__input" placeholder="Search products\u2026" autocomplete="off">' +
-              '<input type="hidden" name="' + prefix + '[exclude_products]" class="wb-exclude-prods__ids" value="">' +
-              '<div class="wb-autocomplete__dropdown"></div>' +
-              '<div class="wb-exclude-prods-chips wb-chips"></div>' +
-            '</div>' +
-          '</div>' +
-          '<div class="wb-field">' +
-            '<label class="wb-field__label">Price Range Filter</label>' +
-            '<div class="wb-price-range">' +
-              '<input type="number" name="' + prefix + '[exclude_price_min]" class="wb-input wb-input--sm wb-input--w100" placeholder="Min $" step="0.01" min="0">' +
-              '<span>\u2014</span>' +
-              '<input type="number" name="' + prefix + '[exclude_price_max]" class="wb-input wb-input--sm wb-input--w100" placeholder="Max $" step="0.01" min="0">' +
-              '<span class="wb-field__desc">Only include products in this price range</span>' +
-            '</div>' +
-          '</div>' +
+        '<div class="wb-field">' +
+        '<label class="wb-field__label">Exclude Categories</label>' +
+        '<div class="wb-autocomplete wb-autocomplete--md wb-exclude-cats-search">' +
+        '<input type="text" class="wb-input wb-exclude-cats__input" placeholder="Search categories\u2026" autocomplete="off">' +
+        '<input type="hidden" name="' + prefix + '[exclude_categories]" class="wb-exclude-cats__ids" value="">' +
+        '<div class="wb-autocomplete__dropdown"></div>' +
+        '<div class="wb-exclude-cats-chips wb-chips"></div>' +
+        '</div>' +
+        '</div>' +
+        '<div class="wb-field">' +
+        '<label class="wb-field__label">Exclude Products</label>' +
+        '<div class="wb-autocomplete wb-autocomplete--md wb-exclude-prods-search">' +
+        '<input type="text" class="wb-input wb-exclude-prods__input" placeholder="Search products\u2026" autocomplete="off">' +
+        '<input type="hidden" name="' + prefix + '[exclude_products]" class="wb-exclude-prods__ids" value="">' +
+        '<div class="wb-autocomplete__dropdown"></div>' +
+        '<div class="wb-exclude-prods-chips wb-chips"></div>' +
+        '</div>' +
+        '</div>' +
+        '<div class="wb-field">' +
+        '<label class="wb-field__label">Price Range Filter</label>' +
+        '<div class="wb-price-range">' +
+        '<input type="number" name="' + prefix + '[exclude_price_min]" class="wb-input wb-input--sm wb-input--w100" placeholder="Min $" step="0.01" min="0">' +
+        '<span>\u2014</span>' +
+        '<input type="number" name="' + prefix + '[exclude_price_max]" class="wb-input wb-input--sm wb-input--w100" placeholder="Max $" step="0.01" min="0">' +
+        '<span class="wb-field__desc">Only include products in this price range</span>' +
+        '</div>' +
+        '</div>' +
         '</div>';
 
       // Append panels after the action row (as siblings in the container)
@@ -377,30 +382,34 @@
     }
 
     function renumberActionFields() {
-      container.querySelectorAll('.wb-action-row').forEach(function (row, i) {
-        row.dataset.index = i;
-        var num = row.querySelector('.wb-action-number');
-        if (num) num.textContent = i + 1;
+      container.querySelectorAll('.wb-action-group').forEach(function (group, gIdx) {
+        group.dataset.group = gIdx;
+        var label = group.querySelector('.wb-action-group__label');
+        if (label) label.textContent = 'Action Group ' + (gIdx + 1);
 
-        var prefix = 'actions[' + i + ']';
-        // Renumber the action row itself.
-        row.querySelectorAll('[name]').forEach(function (el) {
-          var name = el.getAttribute('name');
-          if (name) {
-            el.setAttribute('name', name.replace(/actions\[\d+\]/, prefix));
-          }
-        });
-        // Renumber sibling panels (products, coupon, exclusion) that follow this row.
-        var sibling = row.nextElementSibling;
-        while (sibling && !sibling.classList.contains('wb-action-row')) {
-          sibling.querySelectorAll('[name]').forEach(function (el) {
+        group.querySelectorAll('.wb-action-row').forEach(function (row, aIdx) {
+          row.dataset.index = aIdx;
+
+          var prefix = 'action_groups[' + gIdx + '][actions][' + aIdx + ']';
+          // Renumber the action row itself.
+          row.querySelectorAll('[name]').forEach(function (el) {
             var name = el.getAttribute('name');
             if (name) {
-              el.setAttribute('name', name.replace(/actions\[\d+\]/, prefix));
+              el.setAttribute('name', name.replace(/action_groups\[\d+\]\[actions\]\[\d+\]/, prefix));
             }
           });
-          sibling = sibling.nextElementSibling;
-        }
+          // Renumber sibling panels (products, coupon, exclusion) that follow this row.
+          var sibling = row.nextElementSibling;
+          while (sibling && !sibling.classList.contains('wb-action-row') && !sibling.classList.contains('wb-btn')) {
+            sibling.querySelectorAll('[name]').forEach(function (el) {
+              var name = el.getAttribute('name');
+              if (name) {
+                el.setAttribute('name', name.replace(/action_groups\[\d+\]\[actions\]\[\d+\]/, prefix));
+              }
+            });
+            sibling = sibling.nextElementSibling;
+          }
+        });
       });
     }
 
@@ -1073,32 +1082,32 @@
       condExPanel.innerHTML =
         '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-cond-exclusions">\u25b6 Condition Exclusions</button>' +
         '<div class="wb-cond-exclusion-body" style="display:none;">' +
-          '<div class="wb-field">' +
-            '<label class="wb-field__label">Exclude Categories</label>' +
-            '<div class="wb-autocomplete wb-autocomplete--sm wb-cond-exclude-cats-search">' +
-              '<input type="text" class="wb-input wb-cond-exclude-cats__input" placeholder="Search categories\u2026" autocomplete="off">' +
-              '<input type="hidden" name="' + prefix + '[exclude_categories]" class="wb-cond-exclude-cats__ids" value="">' +
-              '<div class="wb-autocomplete__dropdown"></div>' +
-              '<div class="wb-cond-exclude-cats-chips wb-chips"></div>' +
-            '</div>' +
-          '</div>' +
-          '<div class="wb-field">' +
-            '<label class="wb-field__label">Exclude Products</label>' +
-            '<div class="wb-autocomplete wb-autocomplete--sm wb-cond-exclude-prods-search">' +
-              '<input type="text" class="wb-input wb-cond-exclude-prods__input" placeholder="Search products\u2026" autocomplete="off">' +
-              '<input type="hidden" name="' + prefix + '[exclude_products]" class="wb-cond-exclude-prods__ids" value="">' +
-              '<div class="wb-autocomplete__dropdown"></div>' +
-              '<div class="wb-cond-exclude-prods-chips wb-chips"></div>' +
-            '</div>' +
-          '</div>' +
-          '<div class="wb-field">' +
-            '<label class="wb-field__label">Price Range Filter</label>' +
-            '<div class="wb-price-range">' +
-              '<input type="number" name="' + prefix + '[exclude_price_min]" class="wb-input wb-input--sm wb-input--w90" placeholder="Min $" step="0.01" min="0">' +
-              '<span>\u2014</span>' +
-              '<input type="number" name="' + prefix + '[exclude_price_max]" class="wb-input wb-input--sm wb-input--w90" placeholder="Max $" step="0.01" min="0">' +
-            '</div>' +
-          '</div>' +
+        '<div class="wb-field">' +
+        '<label class="wb-field__label">Exclude Categories</label>' +
+        '<div class="wb-autocomplete wb-autocomplete--sm wb-cond-exclude-cats-search">' +
+        '<input type="text" class="wb-input wb-cond-exclude-cats__input" placeholder="Search categories\u2026" autocomplete="off">' +
+        '<input type="hidden" name="' + prefix + '[exclude_categories]" class="wb-cond-exclude-cats__ids" value="">' +
+        '<div class="wb-autocomplete__dropdown"></div>' +
+        '<div class="wb-cond-exclude-cats-chips wb-chips"></div>' +
+        '</div>' +
+        '</div>' +
+        '<div class="wb-field">' +
+        '<label class="wb-field__label">Exclude Products</label>' +
+        '<div class="wb-autocomplete wb-autocomplete--sm wb-cond-exclude-prods-search">' +
+        '<input type="text" class="wb-input wb-cond-exclude-prods__input" placeholder="Search products\u2026" autocomplete="off">' +
+        '<input type="hidden" name="' + prefix + '[exclude_products]" class="wb-cond-exclude-prods__ids" value="">' +
+        '<div class="wb-autocomplete__dropdown"></div>' +
+        '<div class="wb-cond-exclude-prods-chips wb-chips"></div>' +
+        '</div>' +
+        '</div>' +
+        '<div class="wb-field">' +
+        '<label class="wb-field__label">Price Range Filter</label>' +
+        '<div class="wb-price-range">' +
+        '<input type="number" name="' + prefix + '[exclude_price_min]" class="wb-input wb-input--sm wb-input--w90" placeholder="Min $" step="0.01" min="0">' +
+        '<span>\u2014</span>' +
+        '<input type="number" name="' + prefix + '[exclude_price_max]" class="wb-input wb-input--sm wb-input--w90" placeholder="Max $" step="0.01" min="0">' +
+        '</div>' +
+        '</div>' +
         '</div>';
 
       var fragment = document.createDocumentFragment();
@@ -1543,7 +1552,7 @@
             prodPanel = prodPanel.nextElementSibling;
           }
           if (prodPanel) {
-            var prodIds = prodPanel.querySelector('.wb-action-products');
+            var prodIds = prodPanel.querySelector('.wb-product-search__ids');
             if (prodIds && !prodIds.value) {
               errors.push('A "Specific Products" action has no products selected.');
             }

@@ -85,6 +85,7 @@ class WooBooster_Activator
         $sql_actions = "CREATE TABLE $actions_table (
 			id bigint(20) NOT NULL AUTO_INCREMENT,
 			rule_id bigint(20) NOT NULL,
+			group_id int(11) NOT NULL DEFAULT 0,
 			action_source varchar(50) NOT NULL,
 			action_value longtext NOT NULL,
 			action_limit int(11) NOT NULL DEFAULT 4,
@@ -266,13 +267,22 @@ class WooBooster_Activator
                 }
             }
 
-            // 9. Add action_logic column to rules table.
+            // 9. Add action_logic column to rules table (Legacy fallback).
             $al_exists = $wpdb->get_results($wpdb->prepare(
                 "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = %s AND column_name = 'action_logic'",
                 $rules_table
             ));
             if (empty($al_exists)) {
                 $wpdb->query("ALTER TABLE {$rules_table} ADD action_logic varchar(10) NOT NULL DEFAULT 'or'"); // phpcs:ignore WordPress.DB.PreparedSQL
+            }
+
+            // 10. Add group_id to actions table (v1.7.0).
+            $ag_exists = $wpdb->get_results($wpdb->prepare(
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = %s AND column_name = 'group_id'",
+                $actions_table
+            ));
+            if (empty($ag_exists)) {
+                $wpdb->query("ALTER TABLE {$actions_table} ADD group_id int(11) NOT NULL DEFAULT 0 AFTER rule_id"); // phpcs:ignore WordPress.DB.PreparedSQL
             }
 
             // Mark migration as complete.

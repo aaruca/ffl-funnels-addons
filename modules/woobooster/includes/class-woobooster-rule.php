@@ -346,7 +346,7 @@ class WooBooster_Rule
 
         $rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT * FROM %i WHERE rule_id = %d ORDER BY id ASC",
+                "SELECT * FROM %i WHERE rule_id = %d ORDER BY group_id ASC, id ASC",
                 self::$actions_table,
                 absint($rule_id)
             )
@@ -355,22 +355,30 @@ class WooBooster_Rule
         // Fallback to legacy rule columns if no action rows exist.
         if (empty($rows)) {
             $rule = self::get($rule_id);
-            if ($rule) {
+            if ($rule && !empty($rule->action_source)) {
                 return array(
-                    (object) array(
-                        'id' => 0,
-                        'rule_id' => $rule_id,
-                        'action_source' => $rule->action_source,
-                        'action_value' => $rule->action_value,
-                        'action_limit' => $rule->action_limit,
-                        'action_orderby' => $rule->action_orderby,
+                    0 => array(
+                        (object) array(
+                            'id' => 0,
+                            'rule_id' => $rule_id,
+                            'group_id' => 0,
+                            'action_source' => $rule->action_source,
+                            'action_value' => $rule->action_value,
+                            'action_limit' => $rule->action_limit,
+                            'action_orderby' => $rule->action_orderby,
+                        ),
                     ),
                 );
             }
             return array();
         }
 
-        return $rows;
+        $groups = array();
+        foreach ($rows as $row) {
+            $groups[(int) $row->group_id][] = $row;
+        }
+
+        return $groups;
     }
 
     /**
@@ -452,7 +460,7 @@ class WooBooster_Rule
      * @param int   $rule_id Rule ID.
      * @param array $actions Array of actions.
      */
-    public static function save_actions($rule_id, $actions)
+    public static function save_actions($rule_id, $groups)
     {
         global $wpdb;
         self::init_tables();
@@ -463,53 +471,57 @@ class WooBooster_Rule
         $wpdb->delete(self::$actions_table, array('rule_id' => $rule_id), array('%d'));
 
         // Insert new actions.
-        if (!empty($actions)) {
-            foreach ($actions as $action) {
-                $row = array(
-                    'rule_id' => $rule_id,
-                    'action_source' => sanitize_key($action['action_source']),
-                    'action_value' => sanitize_text_field($action['action_value']),
-                    'action_limit' => absint($action['action_limit'] ?? 4),
-                    'action_orderby' => sanitize_key($action['action_orderby'] ?? 'rand'),
-                    'include_children' => absint($action['include_children'] ?? 0),
-                );
+        if (!empty($groups)) {
+            foreach ($groups as $group_id => $actions) {
+                if (!empty($actions)) {
+                    foreach ($actions as $action) {
+                        $row = array(
+                            'rule_id' => $rule_id,
+                            'group_id' => absint($group_id),
+                            'action_source' => sanitize_key($action['action_source']),
+                            'action_value' => sanitize_text_field($action['action_value']),
+                            'action_limit' => absint($action['action_limit'] ?? 4),
+                            'action_orderby' => sanitize_key($action['action_orderby'] ?? 'rand'),
+                            'include_children' => absint($action['include_children'] ?? 0),
+                        );
 
-                // New columns for v1.5.0.
-                $row['action_products'] = isset($action['action_products']) ? sanitize_text_field($action['action_products']) : null;
-                $row['action_coupon_id'] = isset($action['action_coupon_id']) && $action['action_coupon_id'] ? absint($action['action_coupon_id']) : null;
-                $row['action_coupon_message'] = isset($action['action_coupon_message']) && '' !== $action['action_coupon_message'] ? sanitize_text_field($action['action_coupon_message']) : null;
-                $row['exclude_categories'] = isset($action['exclude_categories']) ? sanitize_text_field($action['exclude_categories']) : null;
-                $row['exclude_products'] = isset($action['exclude_products']) ? sanitize_text_field($action['exclude_products']) : null;
-                $row['exclude_price_min'] = isset($action['exclude_price_min']) && '' !== $action['exclude_price_min'] ? floatval($action['exclude_price_min']) : null;
-                $row['exclude_price_max'] = isset($action['exclude_price_max']) && '' !== $action['exclude_price_max'] ? floatval($action['exclude_price_max']) : null;
+                        // New columns for v1.5.0.
+                        $row['action_products'] = isset($action['action_products']) ? sanitize_text_field($action['action_products']) : null;
+                        $row['action_coupon_id'] = isset($action['action_coupon_id']) && $action['action_coupon_id'] ? absint($action['action_coupon_id']) : null;
+                        $row['action_coupon_message'] = isset($action['action_coupon_message']) && '' !== $action['action_coupon_message'] ? sanitize_text_field($action['action_coupon_message']) : null;
+                        $row['exclude_categories'] = isset($action['exclude_categories']) ? sanitize_text_field($action['exclude_categories']) : null;
+                        $row['exclude_products'] = isset($action['exclude_products']) ? sanitize_text_field($action['exclude_products']) : null;
+                        $row['exclude_price_min'] = isset($action['exclude_price_min']) && '' !== $action['exclude_price_min'] ? floatval($action['exclude_price_min']) : null;
+                        $row['exclude_price_max'] = isset($action['exclude_price_max']) && '' !== $action['exclude_price_max'] ? floatval($action['exclude_price_max']) : null;
 
-                $format = array('%d', '%s', '%s', '%d', '%s', '%d', '%s', '%d', '%s', '%s', '%s', '%s');
+                        // Handle NULLs — wpdb->insert won't insert NULL correctly, so filter them.
+                        $filtered_row = array_filter($row, function ($v) {
+                            return null !== $v;
+                        });
+                        $filtered_format = array();
+                        $format_map = array(
+                            'rule_id' => '%d',
+                            'group_id' => '%d',
+                            'action_source' => '%s',
+                            'action_value' => '%s',
+                            'action_limit' => '%d',
+                            'action_orderby' => '%s',
+                            'include_children' => '%d',
+                            'action_products' => '%s',
+                            'action_coupon_id' => '%d',
+                            'action_coupon_message' => '%s',
+                            'exclude_categories' => '%s',
+                            'exclude_products' => '%s',
+                            'exclude_price_min' => '%s',
+                            'exclude_price_max' => '%s',
+                        );
+                        foreach (array_keys($filtered_row) as $key) {
+                            $filtered_format[] = isset($format_map[$key]) ? $format_map[$key] : '%s';
+                        }
 
-                // Handle NULLs — wpdb->insert won't insert NULL correctly, so filter them.
-                $filtered_row = array_filter($row, function ($v) {
-                    return null !== $v;
-                });
-                $filtered_format = array();
-                $format_map = array(
-                    'rule_id' => '%d',
-                    'action_source' => '%s',
-                    'action_value' => '%s',
-                    'action_limit' => '%d',
-                    'action_orderby' => '%s',
-                    'include_children' => '%d',
-                    'action_products' => '%s',
-                    'action_coupon_id' => '%d',
-                    'action_coupon_message' => '%s',
-                    'exclude_categories' => '%s',
-                    'exclude_products' => '%s',
-                    'exclude_price_min' => '%s',
-                    'exclude_price_max' => '%s',
-                );
-                foreach (array_keys($filtered_row) as $key) {
-                    $filtered_format[] = isset($format_map[$key]) ? $format_map[$key] : '%s';
+                        $wpdb->insert(self::$actions_table, $filtered_row, $filtered_format);
+                    }
                 }
-
-                $wpdb->insert(self::$actions_table, $filtered_row, $filtered_format);
             }
         }
     }
@@ -809,11 +821,14 @@ class WooBooster_Rule
         }
 
         // Copy actions.
-        $actions = self::get_actions($id);
-        if (!empty($actions)) {
+        $action_groups = self::get_actions($id);
+        if (!empty($action_groups)) {
             $action_data = array();
-            foreach ($actions as $action) {
-                $action_data[] = (array) $action;
+            foreach ($action_groups as $group_id => $actions) {
+                $action_data[$group_id] = array();
+                foreach ($actions as $action) {
+                    $action_data[$group_id][] = (array) $action;
+                }
             }
             self::save_actions($new_id, $action_data);
         }
