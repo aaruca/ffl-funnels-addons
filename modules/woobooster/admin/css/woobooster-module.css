@@ -12,7 +12,7 @@
 }
 
 /* Section headings — prominent typographic hierarchy */
-.wb-form .wb-card__section > h3 {
+.wb-form .wb-card__section>h3 {
   font-size: 18px;
   font-weight: var(--wb-font-weight-bold);
   margin: 0 0 var(--wb-spacing-lg) 0;
@@ -143,7 +143,8 @@
 /* ═══════════════════════════════════════════════════════════════════
    2. CONDITION REPEATER
    ═══════════════════════════════════════════════════════════════════ */
-.wb-condition-group {
+.wb-condition-group,
+.wb-action-group {
   background: var(--wb-color-neutral-background-1);
   border: 1px solid var(--wb-color-neutral-stroke-2);
   border-radius: var(--wb-radius-md);
@@ -153,12 +154,14 @@
   transition: all var(--wb-duration-fast);
 }
 
-.wb-condition-group:hover {
+.wb-condition-group:hover,
+.wb-action-group:hover {
   box-shadow: var(--wb-shadow-2);
   border-color: var(--wb-color-neutral-stroke-1);
 }
 
-.wb-condition-group__header {
+.wb-condition-group__header,
+.wb-action-group__header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -167,7 +170,8 @@
   border-bottom: 2px solid var(--wb-color-neutral-background-2);
 }
 
-.wb-condition-group__label {
+.wb-condition-group__label,
+.wb-action-group__label {
   font-weight: var(--wb-font-weight-bold);
   font-size: 12px;
   color: var(--wb-color-neutral-foreground-2);
@@ -278,7 +282,9 @@
 .wb-action-row .wb-input,
 .wb-action-row .wb-select,
 .wb-condition-row .wb-input,
-.wb-condition-row .wb-select {
+.wb-condition-row .wb-select,
+.wb-sub-panel .wb-input,
+.wb-sub-panel .wb-select {
   margin-bottom: 0;
   font-size: 13px;
   padding: 8px 12px;
@@ -291,10 +297,21 @@
 }
 
 /* Fixed-width small inputs */
-.wb-input--w60 { width: 60px !important; }
-.wb-input--w70 { width: 70px !important; }
-.wb-input--w90 { width: 90px !important; }
-.wb-input--w100 { width: 100px !important; }
+.wb-input--w60 {
+  width: 60px !important;
+}
+
+.wb-input--w70 {
+  width: 70px !important;
+}
+
+.wb-input--w90 {
+  width: 90px !important;
+}
+
+.wb-input--w100 {
+  width: 100px !important;
+}
 
 /* Operator select (narrow) */
 .wb-select--operator {
@@ -318,7 +335,8 @@
   margin: var(--wb-spacing-xs) 0;
 }
 
-.wb-action-logic-divider select {
+.wb-action-logic-divider select,
+.wb-action-logic-divider span.wb-and-divider {
   font-size: var(--wb-font-size-xs);
   font-weight: var(--wb-font-weight-bold);
   text-transform: uppercase;
@@ -328,6 +346,9 @@
   border: 1px solid var(--wb-color-neutral-stroke-2);
   border-radius: var(--wb-radius-sm);
   padding: 2px 8px;
+}
+
+.wb-action-logic-divider select {
   cursor: pointer;
 }
 
@@ -425,11 +446,18 @@
    ═══════════════════════════════════════════════════════════════════ */
 
 /* Autocomplete container max-widths */
-.wb-autocomplete--sm { max-width: 400px; }
-.wb-autocomplete--md { max-width: 500px; }
+.wb-autocomplete--sm {
+  max-width: 400px;
+}
+
+.wb-autocomplete--md {
+  max-width: 500px;
+}
 
 /* Chip containers */
-.wb-chips { margin-top: var(--wb-spacing-xs); }
+.wb-chips {
+  margin-top: var(--wb-spacing-xs);
+}
 
 /* Chip elements */
 .wb-chip {
@@ -464,7 +492,9 @@
 }
 
 /* Input max-width modifier */
-.wb-input--max-md { max-width: 500px; }
+.wb-input--max-md {
+  max-width: 500px;
+}
 
 /* ═══════════════════════════════════════════════════════════════════
    7. RULE LIST — SEARCH BOX OVERRIDE

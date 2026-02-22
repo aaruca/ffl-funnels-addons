@@ -86,29 +86,32 @@ class WooBooster_Matcher
 
         // Step 4: Execute actions.
         $all_product_ids = array();
-        $actions = WooBooster_Rule::get_actions($rule->id);
-        $action_logic = isset($rule->action_logic) ? $rule->action_logic : 'or';
+        $action_groups = WooBooster_Rule::get_actions($rule->id);
 
-        if (!empty($actions)) {
-            if ('and' === $action_logic && count($actions) > 1) {
-                // AND logic: intersect results from all actions.
-                $first = true;
+        if (!empty($action_groups)) {
+            // Groups are merged (OR), rows within a group are intersected (AND).
+            foreach ($action_groups as $group_id => $actions) {
+                if (empty($actions)) {
+                    continue;
+                }
+
+                $group_product_ids = array();
+                $first_in_group = true;
+
                 foreach ($actions as $action) {
                     $ids = $this->execute_query($product_id, $action, $args, $terms);
-                    if ($first) {
-                        $all_product_ids = $ids;
-                        $first = false;
+                    if ($first_in_group) {
+                        $group_product_ids = $ids;
+                        $first_in_group = false;
                     } else {
-                        $all_product_ids = array_intersect($all_product_ids, $ids);
+                        // AND logic within group
+                        $group_product_ids = array_intersect($group_product_ids, $ids);
                     }
                 }
-            } else {
-                // OR logic (default): merge results from all actions.
-                foreach ($actions as $action) {
-                    $ids = $this->execute_query($product_id, $action, $args, $terms);
-                    if (!empty($ids)) {
-                        $all_product_ids = array_merge($all_product_ids, $ids);
-                    }
+
+                if (!empty($group_product_ids)) {
+                    // OR logic between groups
+                    $all_product_ids = array_merge($all_product_ids, $group_product_ids);
                 }
             }
         }
@@ -124,8 +127,14 @@ class WooBooster_Matcher
         // Step 5: Cache the result.
         wp_cache_set($cache_key, $all_product_ids, 'woobooster', HOUR_IN_SECONDS);
 
+        $total_actions = 0;
+        if (!empty($action_groups)) {
+            foreach ($action_groups as $group) {
+                $total_actions += count($group);
+            }
+        }
         $elapsed = round((microtime(true) - $start_time) * 1000, 2);
-        $this->debug_log("Recommendation query for product {$product_id}: {$elapsed}ms, returned " . count($all_product_ids) . ' products from ' . count($actions) . ' actions');
+        $this->debug_log("Recommendation query for product {$product_id}: {$elapsed}ms, returned " . count($all_product_ids) . ' products from ' . $total_actions . ' actions');
 
         return $all_product_ids;
     }

@@ -322,233 +322,252 @@ class WooBooster_Rule_Form
 
         echo '<div class="wb-card__section" id="wb-actions-section">';
         echo '<h3>' . esc_html__('Actions', 'woobooster') . '</h3>';
-        echo '<p class="wb-section-desc">' . esc_html__('Define one or more actions to execute when the condition matches.', 'woobooster') . '</p>';
+        echo '<p class="wb-section-desc">' . esc_html__('Groups are combined with OR. Actions within a group are combined with AND.', 'woobooster') . '</p>';
 
-        $actions = $rule_id ? WooBooster_Rule::get_actions($rule_id) : array();
-        if (empty($actions)) {
-            $actions = array(
-                (object) array(
-                    'action_source' => 'category',
-                    'action_value' => '',
-                    'action_orderby' => 'rand',
-                    'action_limit' => 4,
-                    'action_products' => '',
-                    'action_coupon_id' => '',
-                    'exclude_categories' => '',
-                    'exclude_products' => '',
-                    'exclude_price_min' => '',
-                    'exclude_price_max' => '',
+        $action_groups = $rule_id ? WooBooster_Rule::get_actions($rule_id) : array();
+        if (empty($action_groups)) {
+            $action_groups = array(
+                0 => array(
+                    (object) array(
+                        'action_source' => 'category',
+                        'action_value' => '',
+                        'action_orderby' => 'rand',
+                        'action_limit' => 4,
+                        'action_products' => '',
+                        'action_coupon_id' => '',
+                        'exclude_categories' => '',
+                        'exclude_products' => '',
+                        'exclude_price_min' => '',
+                        'exclude_price_max' => '',
+                    )
                 )
             );
         }
 
-        $action_logic = $rule && isset($rule->action_logic) ? $rule->action_logic : 'or';
-        echo '<input type="hidden" name="action_logic" id="wb-action-logic" value="' . esc_attr($action_logic) . '">';
+        echo '<div id="wb-action-groups">';
 
-        echo '<div id="wb-action-repeater">';
-
-        foreach ($actions as $index => $action) {
-            // AND/OR divider between action rows.
-            if ($index > 0) {
-                echo '<div class="wb-action-logic-divider">';
-                echo '<select class="wb-action-logic-select">';
-                echo '<option value="or"' . selected($action_logic, 'or', false) . '>' . esc_html__('OR', 'woobooster') . '</option>';
-                echo '<option value="and"' . selected($action_logic, 'and', false) . '>' . esc_html__('AND', 'woobooster') . '</option>';
-                echo '</select>';
-                echo '</div>';
+        $a_group_index = 0;
+        foreach ($action_groups as $group_id => $actions) {
+            if ($a_group_index > 0) {
+                echo '<div class="wb-or-divider">' . esc_html__('— OR —', 'woobooster') . '</div>';
             }
-            $a_source = $action->action_source;
-            $a_value = $action->action_value;
-            $a_orderby = $action->action_orderby;
-            $a_limit = $action->action_limit;
-            $a_inc = isset($action->include_children) ? (int) $action->include_children : 0;
 
-            // Resolve label for existing value.
-            $a_label = '';
-            $selected_attr_tax = '';
-            $attr_term_slug = '';
+            echo '<div class="wb-action-group" data-group="' . esc_attr($a_group_index) . '">';
+            echo '<div class="wb-action-group__header">';
+            echo '<span class="wb-action-group__label">' . esc_html__('Action Group', 'woobooster') . ' ' . ($a_group_index + 1) . '</span>';
+            if ($a_group_index > 0) {
+                echo '<button type="button" class="wb-btn wb-btn--danger wb-btn--xs wb-remove-action-group" title="' . esc_attr__('Remove Group', 'woobooster') . '">&times;</button>';
+            }
+            echo '</div>';
 
-            if ($a_value) {
-                if ('attribute_value' === $a_source && false !== strpos($a_value, ':')) {
-                    $parts = explode(':', $a_value, 2);
-                    $selected_attr_tax = $parts[0];
-                    $attr_term_slug = $parts[1];
-                    $term = get_term_by('slug', $attr_term_slug, $selected_attr_tax);
-                    if ($term && !is_wp_error($term)) {
-                        $a_label = $term->name;
-                    }
-                } else {
-                    $action_tax = 'category' === $a_source ? 'product_cat' : ('tag' === $a_source ? 'product_tag' : '');
-                    if ($action_tax) {
-                        $term = get_term_by('slug', $a_value, $action_tax);
+            $a_index = 0;
+            foreach ($actions as $action) {
+                $a_source = $action->action_source;
+                $a_value = $action->action_value;
+                $a_orderby = $action->action_orderby;
+                $a_limit = $action->action_limit;
+                $a_inc = isset($action->include_children) ? (int) $action->include_children : 0;
+
+                // Resolve label for existing value.
+                $a_label = '';
+                $selected_attr_tax = '';
+                $attr_term_slug = '';
+
+                if ($a_value) {
+                    if ('attribute_value' === $a_source && false !== strpos($a_value, ':')) {
+                        $parts = explode(':', $a_value, 2);
+                        $selected_attr_tax = $parts[0];
+                        $attr_term_slug = $parts[1];
+                        $term = get_term_by('slug', $attr_term_slug, $selected_attr_tax);
                         if ($term && !is_wp_error($term)) {
                             $a_label = $term->name;
                         }
+                    } else {
+                        $action_tax = 'category' === $a_source ? 'product_cat' : ('tag' === $a_source ? 'product_tag' : '');
+                        if ($action_tax) {
+                            $term = get_term_by('slug', $a_value, $action_tax);
+                            if ($term && !is_wp_error($term)) {
+                                $a_label = $term->name;
+                            }
+                        }
                     }
                 }
-            }
 
-            $prefix = 'actions[' . $index . ']';
+                $prefix = 'action_groups[' . $a_group_index . '][actions][' . $a_index . ']';
 
-            echo '<div class="wb-action-row" data-index="' . esc_attr($index) . '">';
-
-            // Source Type.
-            echo '<select name="' . esc_attr($prefix . '[action_source]') . '" class="wb-select wb-select--inline wb-action-source">';
-            echo '<option value="category"' . selected($a_source, 'category', false) . '>' . esc_html__('Category', 'woobooster') . '</option>';
-            echo '<option value="tag"' . selected($a_source, 'tag', false) . '>' . esc_html__('Tag', 'woobooster') . '</option>';
-            echo '<option value="attribute"' . selected($a_source, 'attribute', false) . '>' . esc_html__('Same Attribute', 'woobooster') . '</option>';
-            echo '<option value="attribute_value"' . selected($a_source, 'attribute_value', false) . '>' . esc_html__('Attribute', 'woobooster') . '</option>';
-            echo '<option value="copurchase"' . selected($a_source, 'copurchase', false) . '>' . esc_html__('Bought Together', 'woobooster') . '</option>';
-            echo '<option value="trending"' . selected($a_source, 'trending', false) . '>' . esc_html__('Trending', 'woobooster') . '</option>';
-            echo '<option value="recently_viewed"' . selected($a_source, 'recently_viewed', false) . '>' . esc_html__('Recently Viewed', 'woobooster') . '</option>';
-            echo '<option value="similar"' . selected($a_source, 'similar', false) . '>' . esc_html__('Similar Products', 'woobooster') . '</option>';
-            echo '<option value="specific_products"' . selected($a_source, 'specific_products', false) . '>' . esc_html__('Specific Products', 'woobooster') . '</option>';
-            echo '<option value="apply_coupon"' . selected($a_source, 'apply_coupon', false) . '>' . esc_html__('Apply Coupon', 'woobooster') . '</option>';
-            echo '</select>';
-
-            // Attribute Taxonomy Selector (for attribute_value source).
-            $attr_taxonomies = wc_get_attribute_taxonomies();
-            $display_attr = 'attribute_value' === $a_source ? '' : 'display:none;';
-            echo '<select class="wb-select wb-select--inline wb-action-attr-taxonomy" style="' . esc_attr($display_attr) . '">';
-            echo '<option value="">' . esc_html__('Attribute…', 'woobooster') . '</option>';
-            if ($attr_taxonomies) {
-                foreach ($attr_taxonomies as $attribute) {
-                    $tax_name = wc_attribute_taxonomy_name($attribute->attribute_name);
-                    echo '<option value="' . esc_attr($tax_name) . '"' . selected($selected_attr_tax, $tax_name, false) . '>';
-                    echo esc_html($attribute->attribute_label);
-                    echo '</option>';
+                if ($a_index > 0) {
+                    echo '<div class="wb-action-logic-divider"><span class="wb-and-divider">' . esc_html__('AND', 'woobooster') . '</span></div>';
                 }
+
+                echo '<div class="wb-action-row" data-index="' . esc_attr($a_index) . '">';
+
+                // Source Type.
+                echo '<select name="' . esc_attr($prefix . '[action_source]') . '" class="wb-select wb-select--inline wb-action-source">';
+                echo '<option value="category"' . selected($a_source, 'category', false) . '>' . esc_html__('Category', 'woobooster') . '</option>';
+                echo '<option value="tag"' . selected($a_source, 'tag', false) . '>' . esc_html__('Tag', 'woobooster') . '</option>';
+                echo '<option value="attribute"' . selected($a_source, 'attribute', false) . '>' . esc_html__('Same Attribute', 'woobooster') . '</option>';
+                echo '<option value="attribute_value"' . selected($a_source, 'attribute_value', false) . '>' . esc_html__('Attribute', 'woobooster') . '</option>';
+                echo '<option value="copurchase"' . selected($a_source, 'copurchase', false) . '>' . esc_html__('Bought Together', 'woobooster') . '</option>';
+                echo '<option value="trending"' . selected($a_source, 'trending', false) . '>' . esc_html__('Trending', 'woobooster') . '</option>';
+                echo '<option value="recently_viewed"' . selected($a_source, 'recently_viewed', false) . '>' . esc_html__('Recently Viewed', 'woobooster') . '</option>';
+                echo '<option value="similar"' . selected($a_source, 'similar', false) . '>' . esc_html__('Similar Products', 'woobooster') . '</option>';
+                echo '<option value="specific_products"' . selected($a_source, 'specific_products', false) . '>' . esc_html__('Specific Products', 'woobooster') . '</option>';
+                echo '<option value="apply_coupon"' . selected($a_source, 'apply_coupon', false) . '>' . esc_html__('Apply Coupon', 'woobooster') . '</option>';
+                echo '</select>';
+
+                // Attribute Taxonomy Selector (for attribute_value source).
+                $attr_taxonomies = wc_get_attribute_taxonomies();
+                $display_attr = 'attribute_value' === $a_source ? '' : 'display:none;';
+                echo '<select class="wb-select wb-select--inline wb-action-attr-taxonomy" style="' . esc_attr($display_attr) . '">';
+                echo '<option value="">' . esc_html__('Attribute…', 'woobooster') . '</option>';
+                if ($attr_taxonomies) {
+                    foreach ($attr_taxonomies as $attribute) {
+                        $tax_name = wc_attribute_taxonomy_name($attribute->attribute_name);
+                        echo '<option value="' . esc_attr($tax_name) . '"' . selected($selected_attr_tax, $tax_name, false) . '>';
+                        echo esc_html($attribute->attribute_label);
+                        echo '</option>';
+                    }
+                }
+                echo '</select>';
+
+                // Value Autocomplete.
+                echo '<div class="wb-autocomplete wb-action-value-wrap">';
+                echo '<input type="text" class="wb-input wb-autocomplete__input wb-action-value-display" placeholder="' . esc_attr__('Value…', 'woobooster') . '" value="' . esc_attr($a_label) . '" autocomplete="off">';
+                echo '<input type="hidden" name="' . esc_attr($prefix . '[action_value]') . '" class="wb-action-value-hidden" value="' . esc_attr($a_value) . '">';
+                echo '<div class="wb-autocomplete__dropdown"></div>';
+                echo '</div>';
+
+                // Include Children Checkbox (hidden unless source=category).
+                $display_inc = 'category' === $a_source ? '' : 'display:none;';
+                echo '<label class="wb-checkbox wb-action-children-label" style="' . esc_attr($display_inc) . '">';
+                echo '<input type="checkbox" name="' . esc_attr($prefix . '[include_children]') . '" value="1"' . checked($a_inc, 1, false) . '> ';
+                echo esc_html__('+ Children', 'woobooster');
+                echo '</label>';
+
+                // Order By.
+                echo '<select name="' . esc_attr($prefix . '[action_orderby]') . '" class="wb-select wb-select--inline" title="' . esc_attr__('Order By', 'woobooster') . '">';
+                $orderbys = array(
+                    'rand' => __('Random', 'woobooster'),
+                    'date' => __('Newest', 'woobooster'),
+                    'price' => __('Price (Low to High)', 'woobooster'),
+                    'price_desc' => __('Price (High to Low)', 'woobooster'),
+                    'bestselling' => __('Bestselling', 'woobooster'),
+                    'rating' => __('Rating', 'woobooster'),
+                );
+                foreach ($orderbys as $key => $label) {
+                    echo '<option value="' . esc_attr($key) . '"' . selected($a_orderby, $key, false) . '>' . esc_html($label) . '</option>';
+                }
+                echo '</select>';
+
+                // Limit.
+                echo '<input type="number" name="' . esc_attr($prefix . '[action_limit]') . '" value="' . esc_attr($a_limit) . '" min="1" class="wb-input wb-input--sm wb-input--w70" title="' . esc_attr__('Limit', 'woobooster') . '">';
+
+                // Remove Button.
+                if ($a_index > 0 || count($actions) > 1) {
+                    echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-remove-action" title="' . esc_attr__('Remove', 'woobooster') . '">&times;</button>';
+                }
+
+                echo '</div>'; // .wb-action-row
+
+                // ── Specific Products Selector ──
+                $sp_display = 'specific_products' === $a_source ? '' : 'display:none;';
+                $sp_products = isset($action->action_products) ? $action->action_products : '';
+                echo '<div class="wb-action-products-panel wb-sub-panel" style="' . esc_attr($sp_display) . '">';
+                echo '<label class="wb-field__label">' . esc_html__('Select Products', 'woobooster') . '</label>';
+                echo '<div class="wb-autocomplete wb-autocomplete--md wb-product-search">';
+                echo '<input type="text" class="wb-input wb-product-search__input" placeholder="' . esc_attr__('Search products by name…', 'woobooster') . '" autocomplete="off">';
+                echo '<input type="hidden" name="' . esc_attr($prefix . '[action_products]') . '" class="wb-product-search__ids" value="' . esc_attr($sp_products) . '">';
+                echo '<div class="wb-autocomplete__dropdown"></div>';
+                echo '<div class="wb-product-chips wb-chips"></div>';
+                echo '</div></div>';
+
+                // ── Coupon Selector ──
+                $cp_display = 'apply_coupon' === $a_source ? '' : 'display:none;';
+                $cp_id = isset($action->action_coupon_id) ? absint($action->action_coupon_id) : 0;
+                $cp_label = '';
+                if ($cp_id) {
+                    $cp_coupon = new WC_Coupon($cp_id);
+                    $cp_label = $cp_coupon->get_code();
+                }
+                $cp_message = isset($action->action_coupon_message) ? $action->action_coupon_message : '';
+                echo '<div class="wb-action-coupon-panel wb-sub-panel" style="' . esc_attr($cp_display) . '">';
+                echo '<p class="wb-field__desc wb-coupon-desc">' . esc_html__('Works with your existing WooCommerce coupons. Create coupons in Marketing > Coupons first.', 'woobooster') . '</p>';
+                echo '<label class="wb-field__label">' . esc_html__('Select Coupon', 'woobooster') . '</label>';
+                echo '<div class="wb-autocomplete wb-autocomplete--sm wb-coupon-search">';
+                echo '<input type="text" class="wb-input wb-coupon-search__input" placeholder="' . esc_attr__('Search coupons…', 'woobooster') . '" value="' . esc_attr($cp_label) . '" autocomplete="off">';
+                echo '<input type="hidden" name="' . esc_attr($prefix . '[action_coupon_id]') . '" class="wb-coupon-search__id" value="' . esc_attr($cp_id) . '">';
+                echo '<div class="wb-autocomplete__dropdown"></div>';
+                echo '</div>';
+                echo '<div class="wb-field">';
+                echo '<label class="wb-field__label">' . esc_html__('Custom Cart Message', 'woobooster') . '</label>';
+                echo '<input type="text" name="' . esc_attr($prefix . '[action_coupon_message]') . '" class="wb-input wb-input--max-md" placeholder="' . esc_attr__('e.g. You got 15% off on Ammo products!', 'woobooster') . '" value="' . esc_attr($cp_message) . '">';
+                echo '<p class="wb-field__desc">' . esc_html__('Leave empty for the default auto-apply message.', 'woobooster') . '</p>';
+                echo '</div>';
+                echo '</div>';
+
+                // ── Exclusion Panel (collapsible) ──
+                $ex_cats = isset($action->exclude_categories) ? $action->exclude_categories : '';
+                $ex_prods = isset($action->exclude_products) ? $action->exclude_products : '';
+                $ex_price_min = isset($action->exclude_price_min) ? $action->exclude_price_min : '';
+                $ex_price_max = isset($action->exclude_price_max) ? $action->exclude_price_max : '';
+                $has_exclusions = $ex_cats || $ex_prods || '' !== $ex_price_min || '' !== $ex_price_max;
+
+                echo '<div class="wb-exclusion-panel wb-sub-panel">';
+                echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-exclusions">';
+                echo ($has_exclusions ? '&#9660;' : '&#9654;') . ' ' . esc_html__('Action Exclusions', 'woobooster');
+                echo '</button>';
+
+                $ex_body_display = $has_exclusions ? '' : 'display:none;';
+                echo '<div class="wb-exclusion-body" style="' . esc_attr($ex_body_display) . '">';
+
+                // Exclude Categories.
+                echo '<div class="wb-field">';
+                echo '<label class="wb-field__label">' . esc_html__('Exclude Categories', 'woobooster') . '</label>';
+                echo '<div class="wb-autocomplete wb-autocomplete--md wb-exclude-cats-search">';
+                echo '<input type="text" class="wb-input wb-exclude-cats__input" placeholder="' . esc_attr__('Search categories…', 'woobooster') . '" autocomplete="off">';
+                echo '<input type="hidden" name="' . esc_attr($prefix . '[exclude_categories]') . '" class="wb-exclude-cats__ids" value="' . esc_attr($ex_cats) . '">';
+                echo '<div class="wb-autocomplete__dropdown"></div>';
+                echo '<div class="wb-exclude-cats-chips wb-chips"></div>';
+                echo '</div></div>';
+
+                // Exclude Products.
+                echo '<div class="wb-field">';
+                echo '<label class="wb-field__label">' . esc_html__('Exclude Products', 'woobooster') . '</label>';
+                echo '<div class="wb-autocomplete wb-autocomplete--md wb-exclude-prods-search">';
+                echo '<input type="text" class="wb-input wb-exclude-prods__input" placeholder="' . esc_attr__('Search products…', 'woobooster') . '" autocomplete="off">';
+                echo '<input type="hidden" name="' . esc_attr($prefix . '[exclude_products]') . '" class="wb-exclude-prods__ids" value="' . esc_attr($ex_prods) . '">';
+                echo '<div class="wb-autocomplete__dropdown"></div>';
+                echo '<div class="wb-exclude-prods-chips wb-chips"></div>';
+                echo '</div></div>';
+
+                // Exclude Price Range.
+                echo '<div class="wb-field">';
+                echo '<label class="wb-field__label">' . esc_html__('Price Range Filter', 'woobooster') . '</label>';
+                echo '<div class="wb-price-range">';
+                echo '<input type="number" name="' . esc_attr($prefix . '[exclude_price_min]') . '" value="' . esc_attr($ex_price_min) . '" class="wb-input wb-input--sm wb-input--w100" placeholder="' . esc_attr__('Min $', 'woobooster') . '" step="0.01" min="0">';
+                echo '<span>—</span>';
+                echo '<input type="number" name="' . esc_attr($prefix . '[exclude_price_max]') . '" value="' . esc_attr($ex_price_max) . '" class="wb-input wb-input--sm wb-input--w100" placeholder="' . esc_attr__('Max $', 'woobooster') . '" step="0.01" min="0">';
+                echo '<span class="wb-field__desc">' . esc_html__('Only include products in this price range', 'woobooster') . '</span>';
+                echo '</div></div>';
+
+                echo '</div>'; // .wb-exclusion-body
+                echo '</div>'; // .wb-exclusion-panel
+
+                $a_index++;
             }
-            echo '</select>';
 
-            // Value Autocomplete.
-            echo '<div class="wb-autocomplete wb-action-value-wrap">';
-            echo '<input type="text" class="wb-input wb-autocomplete__input wb-action-value-display" placeholder="' . esc_attr__('Value…', 'woobooster') . '" value="' . esc_attr($a_label) . '" autocomplete="off">';
-            echo '<input type="hidden" name="' . esc_attr($prefix . '[action_value]') . '" class="wb-action-value-hidden" value="' . esc_attr($a_value) . '">';
-            echo '<div class="wb-autocomplete__dropdown"></div>';
-            echo '</div>';
-
-            // Include Children Checkbox (hidden unless source=category).
-            $display_inc = 'category' === $a_source ? '' : 'display:none;';
-            echo '<label class="wb-checkbox wb-action-children-label" style="' . esc_attr($display_inc) . '">';
-            echo '<input type="checkbox" name="' . esc_attr($prefix . '[include_children]') . '" value="1"' . checked($a_inc, 1, false) . '> ';
-            echo esc_html__('+ Children', 'woobooster');
-            echo '</label>';
-
-            // Order By.
-            echo '<select name="' . esc_attr($prefix . '[action_orderby]') . '" class="wb-select wb-select--inline" title="' . esc_attr__('Order By', 'woobooster') . '">';
-            $orderbys = array(
-                'rand' => __('Random', 'woobooster'),
-                'date' => __('Newest', 'woobooster'),
-                'price' => __('Price (Low to High)', 'woobooster'),
-                'price_desc' => __('Price (High to Low)', 'woobooster'),
-                'bestselling' => __('Bestselling', 'woobooster'),
-                'rating' => __('Rating', 'woobooster'),
-            );
-            foreach ($orderbys as $key => $label) {
-                echo '<option value="' . esc_attr($key) . '"' . selected($a_orderby, $key, false) . '>' . esc_html($label) . '</option>';
-            }
-            echo '</select>';
-
-            // Limit.
-            echo '<input type="number" name="' . esc_attr($prefix . '[action_limit]') . '" value="' . esc_attr($a_limit) . '" min="1" class="wb-input wb-input--sm wb-input--w70" title="' . esc_attr__('Limit', 'woobooster') . '">';
-
-            // Remove Button.
-            if ($index > 0 || count($actions) > 1) {
-                echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-remove-action" title="' . esc_attr__('Remove', 'woobooster') . '">&times;</button>';
-            }
-
-            echo '</div>'; // .wb-action-row
-
-            // ── Specific Products Selector ──
-            $sp_display = 'specific_products' === $a_source ? '' : 'display:none;';
-            $sp_products = isset($action->action_products) ? $action->action_products : '';
-            echo '<div class="wb-action-products-panel wb-sub-panel" style="' . esc_attr($sp_display) . '">';
-            echo '<label class="wb-field__label">' . esc_html__('Select Products', 'woobooster') . '</label>';
-            echo '<div class="wb-autocomplete wb-autocomplete--md wb-product-search">';
-            echo '<input type="text" class="wb-input wb-product-search__input" placeholder="' . esc_attr__('Search products by name…', 'woobooster') . '" autocomplete="off">';
-            echo '<input type="hidden" name="' . esc_attr($prefix . '[action_products]') . '" class="wb-product-search__ids" value="' . esc_attr($sp_products) . '">';
-            echo '<div class="wb-autocomplete__dropdown"></div>';
-            echo '<div class="wb-product-chips wb-chips"></div>';
-            echo '</div></div>';
-
-            // ── Coupon Selector ──
-            $cp_display = 'apply_coupon' === $a_source ? '' : 'display:none;';
-            $cp_id = isset($action->action_coupon_id) ? absint($action->action_coupon_id) : 0;
-            $cp_label = '';
-            if ($cp_id) {
-                $cp_coupon = new WC_Coupon($cp_id);
-                $cp_label = $cp_coupon->get_code();
-            }
-            $cp_message = isset($action->action_coupon_message) ? $action->action_coupon_message : '';
-            echo '<div class="wb-action-coupon-panel wb-sub-panel" style="' . esc_attr($cp_display) . '">';
-            echo '<p class="wb-field__desc wb-coupon-desc">' . esc_html__('Works with your existing WooCommerce coupons. Create coupons in Marketing > Coupons first.', 'woobooster') . '</p>';
-            echo '<label class="wb-field__label">' . esc_html__('Select Coupon', 'woobooster') . '</label>';
-            echo '<div class="wb-autocomplete wb-autocomplete--sm wb-coupon-search">';
-            echo '<input type="text" class="wb-input wb-coupon-search__input" placeholder="' . esc_attr__('Search coupons…', 'woobooster') . '" value="' . esc_attr($cp_label) . '" autocomplete="off">';
-            echo '<input type="hidden" name="' . esc_attr($prefix . '[action_coupon_id]') . '" class="wb-coupon-search__id" value="' . esc_attr($cp_id) . '">';
-            echo '<div class="wb-autocomplete__dropdown"></div>';
-            echo '</div>';
-            echo '<div class="wb-field">';
-            echo '<label class="wb-field__label">' . esc_html__('Custom Cart Message', 'woobooster') . '</label>';
-            echo '<input type="text" name="' . esc_attr($prefix . '[action_coupon_message]') . '" class="wb-input wb-input--max-md" placeholder="' . esc_attr__('e.g. You got 15% off on Ammo products!', 'woobooster') . '" value="' . esc_attr($cp_message) . '">';
-            echo '<p class="wb-field__desc">' . esc_html__('Leave empty for the default auto-apply message.', 'woobooster') . '</p>';
-            echo '</div>';
-            echo '</div>';
-
-            // ── Exclusion Panel (collapsible) ──
-            $ex_cats = isset($action->exclude_categories) ? $action->exclude_categories : '';
-            $ex_prods = isset($action->exclude_products) ? $action->exclude_products : '';
-            $ex_price_min = isset($action->exclude_price_min) ? $action->exclude_price_min : '';
-            $ex_price_max = isset($action->exclude_price_max) ? $action->exclude_price_max : '';
-            $has_exclusions = $ex_cats || $ex_prods || '' !== $ex_price_min || '' !== $ex_price_max;
-
-            echo '<div class="wb-exclusion-panel wb-sub-panel">';
-            echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-exclusions">';
-            echo ($has_exclusions ? '&#9660;' : '&#9654;') . ' ' . esc_html__('Action Exclusions', 'woobooster');
+            echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--sm wb-add-action">';
+            echo '+ ' . esc_html__('AND Action', 'woobooster');
             echo '</button>';
 
-            $ex_body_display = $has_exclusions ? '' : 'display:none;';
-            echo '<div class="wb-exclusion-body" style="' . esc_attr($ex_body_display) . '">';
-
-            // Exclude Categories.
-            echo '<div class="wb-field">';
-            echo '<label class="wb-field__label">' . esc_html__('Exclude Categories', 'woobooster') . '</label>';
-            echo '<div class="wb-autocomplete wb-autocomplete--md wb-exclude-cats-search">';
-            echo '<input type="text" class="wb-input wb-exclude-cats__input" placeholder="' . esc_attr__('Search categories…', 'woobooster') . '" autocomplete="off">';
-            echo '<input type="hidden" name="' . esc_attr($prefix . '[exclude_categories]') . '" class="wb-exclude-cats__ids" value="' . esc_attr($ex_cats) . '">';
-            echo '<div class="wb-autocomplete__dropdown"></div>';
-            echo '<div class="wb-exclude-cats-chips wb-chips"></div>';
-            echo '</div></div>';
-
-            // Exclude Products.
-            echo '<div class="wb-field">';
-            echo '<label class="wb-field__label">' . esc_html__('Exclude Products', 'woobooster') . '</label>';
-            echo '<div class="wb-autocomplete wb-autocomplete--md wb-exclude-prods-search">';
-            echo '<input type="text" class="wb-input wb-exclude-prods__input" placeholder="' . esc_attr__('Search products…', 'woobooster') . '" autocomplete="off">';
-            echo '<input type="hidden" name="' . esc_attr($prefix . '[exclude_products]') . '" class="wb-exclude-prods__ids" value="' . esc_attr($ex_prods) . '">';
-            echo '<div class="wb-autocomplete__dropdown"></div>';
-            echo '<div class="wb-exclude-prods-chips wb-chips"></div>';
-            echo '</div></div>';
-
-            // Exclude Price Range.
-            echo '<div class="wb-field">';
-            echo '<label class="wb-field__label">' . esc_html__('Price Range Filter', 'woobooster') . '</label>';
-            echo '<div class="wb-price-range">';
-            echo '<input type="number" name="' . esc_attr($prefix . '[exclude_price_min]') . '" value="' . esc_attr($ex_price_min) . '" class="wb-input wb-input--sm wb-input--w100" placeholder="' . esc_attr__('Min $', 'woobooster') . '" step="0.01" min="0">';
-            echo '<span>—</span>';
-            echo '<input type="number" name="' . esc_attr($prefix . '[exclude_price_max]') . '" value="' . esc_attr($ex_price_max) . '" class="wb-input wb-input--sm wb-input--w100" placeholder="' . esc_attr__('Max $', 'woobooster') . '" step="0.01" min="0">';
-            echo '<span class="wb-field__desc">' . esc_html__('Only include products in this price range', 'woobooster') . '</span>';
-            echo '</div></div>';
-
-            echo '</div>'; // .wb-exclusion-body
-            echo '</div>'; // .wb-exclusion-panel
+            echo '</div>'; // .wb-action-group
+            $a_group_index++;
         }
 
-        echo '</div>'; // #wb-action-repeater
+        echo '</div>'; // #wb-action-groups
 
-        echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--sm" id="wb-add-action">';
-        echo '+ ' . esc_html__('Add Action', 'woobooster');
+        echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--sm" id="wb-add-action-group">';
+        echo '+ ' . esc_html__('OR Group', 'woobooster');
         echo '</button>';
 
         // Global Exclude (applies to all).
@@ -597,28 +616,38 @@ class WooBooster_Rule_Form
         $rule_id = isset($_POST['rule_id']) ? absint($_POST['rule_id']) : 0;
 
         // Process Actions.
-        $raw_actions = isset($_POST['actions']) && is_array($_POST['actions']) ? $_POST['actions'] : array();
-        $clean_actions = array();
+        $raw_action_groups = isset($_POST['action_groups']) && is_array($_POST['action_groups']) ? $_POST['action_groups'] : array();
+        $clean_action_groups = array();
 
-        foreach ($raw_actions as $action) {
-            $clean_actions[] = array(
-                'action_source' => isset($action['action_source']) ? sanitize_key($action['action_source']) : 'category',
-                'action_value' => isset($action['action_value']) ? sanitize_text_field(wp_unslash($action['action_value'])) : '',
-                'action_limit' => isset($action['action_limit']) ? absint($action['action_limit']) : 4,
-                'action_orderby' => isset($action['action_orderby']) ? sanitize_key($action['action_orderby']) : 'rand',
-                'include_children' => isset($action['include_children']) ? absint($action['include_children']) : 0,
-                'action_products' => isset($action['action_products']) ? sanitize_text_field(wp_unslash($action['action_products'])) : '',
-                'action_coupon_id' => isset($action['action_coupon_id']) && $action['action_coupon_id'] ? absint($action['action_coupon_id']) : '',
-                'exclude_categories' => isset($action['exclude_categories']) ? sanitize_text_field(wp_unslash($action['exclude_categories'])) : '',
-                'exclude_products' => isset($action['exclude_products']) ? sanitize_text_field(wp_unslash($action['exclude_products'])) : '',
-                'exclude_price_min' => isset($action['exclude_price_min']) && '' !== $action['exclude_price_min'] ? floatval($action['exclude_price_min']) : '',
-                'exclude_price_max' => isset($action['exclude_price_max']) && '' !== $action['exclude_price_max'] ? floatval($action['exclude_price_max']) : '',
-                'action_coupon_message' => isset($action['action_coupon_message']) ? sanitize_text_field(wp_unslash($action['action_coupon_message'])) : '',
-            );
+        foreach ($raw_action_groups as $group_id => $group_data) {
+            $raw_actions = isset($group_data['actions']) && is_array($group_data['actions']) ? $group_data['actions'] : array();
+            $clean_actions = array();
+
+            foreach ($raw_actions as $action) {
+                $clean_actions[] = array(
+                    'action_source' => isset($action['action_source']) ? sanitize_key($action['action_source']) : 'category',
+                    'action_value' => isset($action['action_value']) ? sanitize_text_field(wp_unslash($action['action_value'])) : '',
+                    'action_limit' => isset($action['action_limit']) ? absint($action['action_limit']) : 4,
+                    'action_orderby' => isset($action['action_orderby']) ? sanitize_key($action['action_orderby']) : 'rand',
+                    'include_children' => isset($action['include_children']) ? absint($action['include_children']) : 0,
+                    'action_products' => isset($action['action_products']) ? sanitize_text_field(wp_unslash($action['action_products'])) : '',
+                    'action_coupon_id' => isset($action['action_coupon_id']) && $action['action_coupon_id'] ? absint($action['action_coupon_id']) : '',
+                    'exclude_categories' => isset($action['exclude_categories']) ? sanitize_text_field(wp_unslash($action['exclude_categories'])) : '',
+                    'exclude_products' => isset($action['exclude_products']) ? sanitize_text_field(wp_unslash($action['exclude_products'])) : '',
+                    'exclude_price_min' => isset($action['exclude_price_min']) && '' !== $action['exclude_price_min'] ? floatval($action['exclude_price_min']) : '',
+                    'exclude_price_max' => isset($action['exclude_price_max']) && '' !== $action['exclude_price_max'] ? floatval($action['exclude_price_max']) : '',
+                    'action_coupon_message' => isset($action['action_coupon_message']) ? sanitize_text_field(wp_unslash($action['action_coupon_message'])) : '',
+                );
+            }
+
+            if (!empty($clean_actions)) {
+                $clean_action_groups[] = $clean_actions;
+            }
         }
 
-        // Fallback for legacy columns (use first action).
-        $first_action = !empty($clean_actions) ? reset($clean_actions) : array(
+        // Fallback for legacy columns (use first action of first group).
+        $first_group = !empty($clean_action_groups) ? reset($clean_action_groups) : array();
+        $first_action = !empty($first_group) ? reset($first_group) : array(
             'action_source' => 'category',
             'action_value' => '',
             'action_limit' => 4,
