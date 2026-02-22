@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.2.2-blue.svg)
+![Version](https://img.shields.io/badge/version-1.2.3-blue.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.0+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -69,6 +69,14 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.2.3
+*   Fix updater not detecting updates via WP-Cron (moved initialization outside `is_admin()`).
+*   Fix potential TypeError in updater by removing strict object type hint in `check_update`.
+*   Various rule UI style and template updates.
+
+### v1.2.2
+*   UI Style overhaul for the rule form.
 
 ### v1.2.1
 *   Add rule scheduling — set start/end dates for time-limited rules (promotions, seasonal campaigns).

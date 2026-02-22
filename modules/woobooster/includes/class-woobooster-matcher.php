@@ -87,18 +87,34 @@ class WooBooster_Matcher
         // Step 4: Execute actions.
         $all_product_ids = array();
         $actions = WooBooster_Rule::get_actions($rule->id);
+        $action_logic = isset($rule->action_logic) ? $rule->action_logic : 'or';
 
         if (!empty($actions)) {
-            foreach ($actions as $action) {
-                $ids = $this->execute_query($product_id, $action, $args, $terms);
-                if (!empty($ids)) {
-                    $all_product_ids = array_merge($all_product_ids, $ids);
+            if ('and' === $action_logic && count($actions) > 1) {
+                // AND logic: intersect results from all actions.
+                $first = true;
+                foreach ($actions as $action) {
+                    $ids = $this->execute_query($product_id, $action, $args, $terms);
+                    if ($first) {
+                        $all_product_ids = $ids;
+                        $first = false;
+                    } else {
+                        $all_product_ids = array_intersect($all_product_ids, $ids);
+                    }
+                }
+            } else {
+                // OR logic (default): merge results from all actions.
+                foreach ($actions as $action) {
+                    $ids = $this->execute_query($product_id, $action, $args, $terms);
+                    if (!empty($ids)) {
+                        $all_product_ids = array_merge($all_product_ids, $ids);
+                    }
                 }
             }
         }
 
-        // Limit global results if override is set, otherwise deduplicate.
-        $all_product_ids = array_unique($all_product_ids);
+        // Deduplicate.
+        $all_product_ids = array_values(array_unique($all_product_ids));
 
         // If a global hard limit was requested, apply it here too.
         if (isset($args['limit']) && $args['limit'] > 0) {

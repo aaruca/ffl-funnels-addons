@@ -279,9 +279,9 @@ class FFLA_Updater
     /**
      * Inject update info into WordPress update transient.
      */
-    public function check_update(object $transient): object
+    public function check_update($transient)
     {
-        if (empty($transient->checked)) {
+        if (!is_object($transient) || empty($transient->checked)) {
             return $transient;
         }
 
