@@ -3,7 +3,7 @@
  * Plugin Name:       FFL Funnels Addons
  * Plugin URI:        https://github.com/aaruca/ffl-funnels-addons
  * Description:       Modular WooCommerce toolkit — WooBooster, Wishlist, and Doofinder Sync in a single unified plugin.
- * Version:           1.5.1
+ * Version:           1.5.2
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Alejandro Aruca
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants.
-define('FFLA_VERSION', '1.5.1');
+define('FFLA_VERSION', '1.5.2');
 
 
 define('FFLA_DB_VERSION', '1.0.0');

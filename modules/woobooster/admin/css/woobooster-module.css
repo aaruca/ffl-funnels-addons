@@ -491,6 +491,11 @@
   margin: 0 0 var(--wb-spacing-md) 0;
 }
 
+/* Custom Cart Message field in coupon panel */
+.wb-action-coupon-panel .wb-field {
+  margin-top: var(--wb-spacing-md);
+}
+
 /* Input max-width modifier */
 .wb-input--max-md {
   max-width: 500px;

@@ -444,8 +444,9 @@ class WooBooster_Rule_Form
                 echo esc_html__('+ Children', 'woobooster');
                 echo '</label>';
 
-                // Order By.
-                echo '<select name="' . esc_attr($prefix . '[action_orderby]') . '" class="wb-select wb-select--inline" title="' . esc_attr__('Order By', 'woobooster') . '">';
+                // Order By (hidden for apply_coupon actions).
+                $display_order_limit = 'apply_coupon' === $a_source ? 'display:none;' : '';
+                echo '<select name="' . esc_attr($prefix . '[action_orderby]') . '" class="wb-select wb-select--inline" style="' . esc_attr($display_order_limit) . '" title="' . esc_attr__('Order By', 'woobooster') . '">';
                 $orderbys = array(
                     'rand' => __('Random', 'woobooster'),
                     'date' => __('Newest', 'woobooster'),
@@ -459,8 +460,8 @@ class WooBooster_Rule_Form
                 }
                 echo '</select>';
 
-                // Limit.
-                echo '<input type="number" name="' . esc_attr($prefix . '[action_limit]') . '" value="' . esc_attr($a_limit) . '" min="1" class="wb-input wb-input--sm wb-input--w70" title="' . esc_attr__('Limit', 'woobooster') . '">';
+                // Limit (hidden for apply_coupon actions).
+                echo '<input type="number" name="' . esc_attr($prefix . '[action_limit]') . '" value="' . esc_attr($a_limit) . '" min="1" class="wb-input wb-input--sm wb-input--w70" style="' . esc_attr($display_order_limit) . '" title="' . esc_attr__('Limit', 'woobooster') . '">';
 
                 // Remove Button.
                 if ($a_index > 0 || count($actions) > 1) {

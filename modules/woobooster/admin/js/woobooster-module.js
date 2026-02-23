@@ -418,6 +418,8 @@
       var valWrap = row.querySelector('.wb-action-value-wrap');
       var childLabel = row.querySelector('.wb-action-children-label');
       var attrTaxSelect = row.querySelector('.wb-action-attr-taxonomy');
+      var orderbySelect = row.querySelector('[name*="[action_orderby]"]');
+      var limitInput = row.querySelector('[name*="[action_limit]"]');
       var productsPanel = row.parentElement && row.nextElementSibling && row.nextElementSibling.classList.contains('wb-action-products-panel') ? row.nextElementSibling : null;
       var couponPanel = null;
       var noValueSources = ['attribute', 'copurchase', 'trending', 'recently_viewed', 'similar', 'specific_products', 'apply_coupon'];
@@ -440,6 +442,12 @@
         }
         if (attrTaxSelect) {
           attrTaxSelect.style.display = source.value === 'attribute_value' ? '' : 'none';
+        }
+        if (orderbySelect) {
+          orderbySelect.style.display = source.value === 'apply_coupon' ? 'none' : '';
+        }
+        if (limitInput) {
+          limitInput.style.display = source.value === 'apply_coupon' ? 'none' : '';
         }
         if (productsPanel) {
           productsPanel.style.display = source.value === 'specific_products' ? '' : 'none';

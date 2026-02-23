@@ -1233,6 +1233,13 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
         );
         if (!empty($args['action_products'])) {
             $action_row['action_products'] = sanitize_text_field($args['action_products']);
+            // Auto-derive action_limit from product count for specific_products
+            if ('specific_products' === $rule_data['action_source']) {
+                $product_ids = array_filter(array_map('intval', explode(',', $action_row['action_products'])));
+                if (!empty($product_ids)) {
+                    $action_row['action_limit'] = count($product_ids);
+                }
+            }
         }
         WooBooster_Rule::save_actions($rule_id, array(
             array($action_row), // Group 0

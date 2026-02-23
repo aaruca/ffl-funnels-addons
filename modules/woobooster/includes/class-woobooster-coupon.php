@@ -159,11 +159,13 @@ class WooBooster_Coupon
 
             if ($this->rule_matches_cart($rule, $cart_keys, $cart)) {
                 // Get 'apply_coupon' actions from this rule.
-                $actions = WooBooster_Rule::get_actions($rule->id);
-                foreach ($actions as $action) {
-                    if ('apply_coupon' === $action->action_source && !empty($action->action_coupon_id)) {
-                        $msg = isset($action->action_coupon_message) ? $action->action_coupon_message : '';
-                        $coupon_ids[absint($action->action_coupon_id)] = $msg;
+                $action_groups = WooBooster_Rule::get_actions($rule->id);
+                foreach ($action_groups as $group_id => $group_actions) {
+                    foreach ($group_actions as $action) {
+                        if ('apply_coupon' === $action->action_source && !empty($action->action_coupon_id)) {
+                            $msg = isset($action->action_coupon_message) ? $action->action_coupon_message : '';
+                            $coupon_ids[absint($action->action_coupon_id)] = $msg;
+                        }
                     }
                 }
             }

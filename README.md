@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.5.1-blue.svg)
+![Version](https://img.shields.io/badge/version-1.5.2-blue.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.0+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -70,6 +70,12 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.5.2
+*   Fix: **CRITICAL** — Coupon auto-apply system was broken due to incorrect iteration of grouped actions array. Coupons now apply correctly on cart pages.
+*   Fix: Hide meaningless "Limit" and "Order By" fields when the action type is "Apply Coupon".
+*   Fix: Add spacing above "Custom Cart Message" field in coupon rule panel for better visual separation.
+*   Fix: When AI creates rules with specific products, automatically set quantity limit to match the number of products found.
 
 ### v1.5.1
 *   Feature: AI chat now fully interactive — step-by-step confirmation before creating any rule.
