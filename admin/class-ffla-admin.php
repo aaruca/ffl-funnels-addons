@@ -29,7 +29,21 @@ class FFLA_Admin
     {
         add_action('admin_menu', [$this, 'add_menu']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
+        add_action('admin_head', [$this, 'hide_submenu_flyout']);
         add_action('wp_ajax_ffla_toggle_module', [$this, 'ajax_toggle_module']);
+    }
+
+    /**
+     * Hide the submenu flyout for FFL Funnels from the WP sidebar via CSS.
+     *
+     * We target only the <ul class="wp-submenu"> that is a direct child of the
+     * FFL Funnels top-level <li>, so the main menu item stays fully clickable.
+     * Pages are still registered (accessible via URL) — only the visual flyout
+     * is hidden.
+     */
+    public function hide_submenu_flyout(): void
+    {
+        echo '<style>#adminmenu .toplevel_page_ffl-funnels-addons>.wp-submenu{display:none!important;}</style>';
     }
 
     /**
@@ -49,6 +63,8 @@ class FFLA_Admin
         );
 
         // Register admin pages for each active module.
+        // Pages must remain in $submenu so WordPress adds them to $_registered_pages
+        // and allows access. The flyout is hidden via CSS in hide_submenu_flyout().
         foreach ($this->registry->get_active() as $module) {
             foreach ($module->get_admin_pages() as $page) {
                 add_submenu_page(
@@ -59,15 +75,10 @@ class FFLA_Admin
                     $page['slug'],
                     [$this, 'render_page']
                 );
-
-                // Immediately remove the submenu from the visual sidebar.
-                // The page is still registered and accessible to 'manage_woocommerce', 
-                // but no dropdown/flyout menu item will be shown.
-                remove_submenu_page('ffl-funnels-addons', $page['slug']);
             }
         }
 
-        // Hide the default duplicated submenu link for the dashboard.
+        // Hide the default duplicated "Dashboard" submenu link.
         remove_submenu_page('ffl-funnels-addons', 'ffl-funnels-addons');
     }
 
