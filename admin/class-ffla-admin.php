@@ -52,14 +52,15 @@ class FFLA_Admin
             return;
         }
 
-        // Build individual selectors to hide only the submenu links, not parent menus.
+        // Hide submenu items from native WordPress menu.
+        // Target the list items directly (not just links) to properly hide them.
         $selectors = array_map(function ($slug) {
-            return '#adminmenu a[href*="page=' . $slug . '"]';
+            return '#adminmenu li a[href*="page=' . $slug . '"]';
         }, $slugs);
 
-        // Ensure the FFL Funnels main menu item is ALWAYS visible.
+        // CSS to hide submenu links, and explicitly show the main menu.
         $css = implode(',', $selectors) . '{display:none!important;}';
-        $css .= '#adminmenu a[href*="page=ffl-funnels-addons"] {display:block!important;}';
+        $css .= '#adminmenu a[href*="page=ffl-funnels-addons"]{display:block!important;}';
 
         echo '<style type="text/css">' . $css . '</style>';
     }

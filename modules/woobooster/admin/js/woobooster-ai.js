@@ -119,6 +119,7 @@ document.addEventListener('DOMContentLoaded', function () {
         saveHistory();
 
         showTyping();
+        showLoadingMessage('Searching for information...');
 
         try {
             var formData = new FormData();
@@ -133,6 +134,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             var result = await response.json();
             hideTyping();
+            removeLoadingMessage();
 
             if (result.success) {
                 // Show tool steps (what the AI did behind the scenes).
@@ -167,6 +169,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         } catch (error) {
             hideTyping();
+            removeLoadingMessage();
             appendSystemMessage('error', 'Connection error. Please check your internet and try again.');
         }
     });
@@ -370,6 +373,40 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function hideTyping() {
         typingIndicator.style.display = 'none';
+    }
+
+    /**
+     * Show animated loading indicator with animated dots.
+     * Useful for long-running operations to show the system is still working.
+     */
+    function showLoadingMessage(text) {
+        removeLoadingMessage();
+
+        var container = document.createElement('div');
+        container.className = 'wb-ai-loading-message';
+        container.id = 'wb-ai-loading-msg';
+
+        var content = document.createElement('div');
+        content.className = 'wb-ai-loading-content';
+        content.textContent = text + ' ';
+
+        var dots = document.createElement('span');
+        dots.className = 'wb-ai-dots';
+        for (var i = 0; i < 3; i++) {
+            var dot = document.createElement('span');
+            dot.textContent = '.';
+            dots.appendChild(dot);
+        }
+
+        content.appendChild(dots);
+        container.appendChild(content);
+        chatBody.insertBefore(container, typingIndicator);
+        scrollToBottom();
+    }
+
+    function removeLoadingMessage() {
+        var elem = document.getElementById('wb-ai-loading-msg');
+        if (elem) elem.remove();
     }
 
     function scrollToBottom() {
