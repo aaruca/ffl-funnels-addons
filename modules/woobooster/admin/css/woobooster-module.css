@@ -1009,3 +1009,35 @@
   color: #991b1b;
   border: 1px solid #fecaca;
 }
+
+.wb-ai-system-msg--info {
+  background: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+}
+
+/* Rule creation action from AI chat */
+.wb-ai-rule-action {
+  display: flex;
+  gap: 8px;
+}
+
+.wb-ai-create-rule-btn {
+  background: var(--wb-color-brand-background);
+  color: white;
+  border: none;
+  border-radius: var(--wb-radius-md);
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.wb-ai-create-rule-btn:hover {
+  background: var(--wb-color-brand-background-hover);
+}
+
+.wb-ai-create-rule-btn:active {
+  background: var(--wb-color-brand-background-pressed);
+}

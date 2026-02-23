@@ -176,6 +176,8 @@ document.addEventListener('DOMContentLoaded', function () {
     /**
      * Append a chat message. User content is text-only (no HTML injection).
      * Assistant content allows safe HTML (already escaped server-side with wp_kses_post).
+     *
+     * Special handling: If message contains [RULE]...[/RULE], extract rule data and show "Create Rule" button.
      */
     function appendMessage(role, content, scroll) {
         if (emptyState) emptyState.style.display = 'none';
@@ -186,18 +188,106 @@ document.addEventListener('DOMContentLoaded', function () {
         var bubble = document.createElement('div');
         bubble.className = 'wb-ai-message__content';
 
+        // Check if assistant message contains rule data.
+        var ruleMatch = role === 'assistant' ? content.match(/\[RULE\](.*?)\[\/RULE\]/s) : null;
+        var displayContent = content;
+        var ruleData = null;
+
+        if (ruleMatch) {
+            // Extract rule JSON and remove it from display content.
+            try {
+                ruleData = JSON.parse(ruleMatch[1].trim());
+                displayContent = content.replace(/\[RULE\].*?\[\/RULE\]/s, '').trim();
+            } catch (e) {
+                // If parsing fails, just show content as-is.
+                ruleData = null;
+            }
+        }
+
         if (role === 'user') {
             // User messages: safe text only — prevents XSS.
             bubble.textContent = content;
         } else {
             // Assistant messages: pre-escaped by server (wp_kses_post).
-            bubble.innerHTML = formatMarkdown(content);
+            bubble.innerHTML = formatMarkdown(displayContent);
+
+            // If we extracted rule data, append a "Create Rule" button.
+            if (ruleData) {
+                var buttonDiv = document.createElement('div');
+                buttonDiv.className = 'wb-ai-rule-action';
+                buttonDiv.style.marginTop = '12px';
+
+                var btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'wb-ai-create-rule-btn';
+                btn.textContent = 'Create This Rule';
+                btn.dataset.ruleData = JSON.stringify(ruleData);
+
+                btn.addEventListener('click', function () {
+                    createRuleFromAI(ruleData);
+                });
+
+                buttonDiv.appendChild(btn);
+                bubble.appendChild(buttonDiv);
+            }
         }
 
         msgDiv.appendChild(bubble);
         chatBody.insertBefore(msgDiv, typingIndicator);
 
         if (scroll) scrollToBottom();
+    }
+
+    /**
+     * Handle "Create Rule" button click from AI suggestion.
+     */
+    function createRuleFromAI(ruleData) {
+        if (!ruleData || !ruleData.name) {
+            alert('Invalid rule data. Please try again.');
+            return;
+        }
+
+        // Show loading state.
+        appendSystemMessage('info', 'Creating rule...');
+
+        fetch(wooboosterAdmin.ajaxUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: buildParams({
+                action: 'woobooster_ai_create_rule',
+                nonce: wooboosterAdmin.nonce,
+                rule_data: JSON.stringify(ruleData)
+            })
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (result) {
+                if (result.success) {
+                    appendSystemMessage('success', 'Rule created! Opening editor...');
+                    if (result.data.edit_url) {
+                        setTimeout(function () {
+                            window.location.href = result.data.edit_url;
+                        }, 1200);
+                    } else {
+                        setTimeout(function () {
+                            window.location.reload();
+                        }, 1500);
+                    }
+                } else {
+                    appendSystemMessage('error', result.data ? result.data.message : 'Failed to create rule');
+                }
+            })
+            .catch(function () {
+                appendSystemMessage('error', 'Connection error. Please try again.');
+            });
+    }
+
+    /**
+     * Utility function to build URL params.
+     */
+    function buildParams(obj) {
+        return Object.keys(obj).map(function (k) {
+            return encodeURIComponent(k) + '=' + encodeURIComponent(obj[k]);
+        }).join('&');
     }
 
     /**

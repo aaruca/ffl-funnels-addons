@@ -29,6 +29,7 @@ class WooBooster_Admin
         add_action('wp_ajax_woobooster_purge_index', array($this, 'ajax_purge_index'));
         add_action('wp_ajax_woobooster_delete_all_rules', array($this, 'ajax_delete_all_rules'));
         add_action('wp_ajax_woobooster_ai_generate', array($this, 'ajax_ai_generate'));
+        add_action('wp_ajax_woobooster_ai_create_rule', array($this, 'ajax_ai_create_rule'));
     }
 
     /**
@@ -882,12 +883,19 @@ A rule has TWO parts:
 3. **Use \`search_store\`** to find exact product names, category slugs, tag slugs, and product IDs.
    {$web_instruction}
 5. **After searching web**, compare results to store inventory and suggest which products match.
-6. **DESCRIBE THE PROPOSED RULE** in natural language before asking to create it:
-   - \"When a customer views [product/category], recommend [these products] sorted by [order]\"
-   - Ask: \"Should I create this rule?\" or \"Would you like to modify this?\"
+6. **DESCRIBE THE PROPOSED RULE** with explicit metadata:
+   - Describe in natural language: \"For Glock 19 customers, recommend bestselling holsters...\"
+   - THEN use this format for rule data (exactly as shown):
+     \`\`\`
+     [RULE]
+     {\"name\":\"Glock 19 Holsters\",\"condition_attribute\":\"specific_product\",\"condition_value\":\"123\",\"action_source\":\"category\",\"action_value\":\"holsters\",\"action_orderby\":\"bestselling\"}
+     [/RULE]
+     \`\`\`
+   - Ask: \"Should I create this rule for you?\"
 7. **NEVER create rules automatically** — only suggest them and wait for explicit confirmation.
 8. **Prefer** \`product_cat\` or \`pa_*\` conditions over \`specific_product\` (broader reach).
-9. Keep responses concise and helpful. Focus on the user's exact need.
+9. When suggesting ONLY include PRODUCTS THAT EXIST in the store inventory (filtered from web search results).
+10. Keep responses concise and helpful. Focus on the user's exact need.
 
 ## FFL Store Context
 Common product types: firearms (handguns, rifles, shotguns), ammunition, holsters, optics/scopes, red dots, magazines, cleaning kits, gun cases, safes, ear protection, eye protection, grips, stocks, lights, lasers, bipods, slings, targets, range gear, reloading equipment, and tactical accessories.";
@@ -1285,6 +1293,44 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
     /**
      * Render the AI Chat Modal HTML structure
      */
+    /**
+     * AJAX: Create a rule from AI chat suggestion.
+     * Called when user clicks "Create Rule" button after AI proposes one.
+     */
+    public function ajax_ai_create_rule()
+    {
+        check_ajax_referer('woobooster_admin', 'nonce');
+
+        if (!current_user_can('manage_woocommerce')) {
+            wp_send_json_error(array('message' => __('Permission denied.', 'ffl-funnels-addons')));
+        }
+
+        // Parse incoming rule data from frontend.
+        $rule_data = isset($_POST['rule_data']) ? wp_unslash($_POST['rule_data']) : '';
+        if (empty($rule_data)) {
+            wp_send_json_error(array('message' => __('No rule data provided.', 'ffl-funnels-addons')));
+        }
+
+        // Decode and validate.
+        $data = json_decode($rule_data, true);
+        if (!is_array($data)) {
+            wp_send_json_error(array('message' => __('Invalid rule data format.', 'ffl-funnels-addons')));
+        }
+
+        // Create the rule via the tool function (reuse existing logic).
+        $result = $this->ai_tool_create_rule($data);
+
+        if ($result['success']) {
+            wp_send_json_success(array(
+                'message' => $result['message'],
+                'rule_id' => $result['rule_id'],
+                'edit_url' => $result['edit_url'],
+            ));
+        } else {
+            wp_send_json_error(array('message' => $result['message']));
+        }
+    }
+
     private function render_ai_chat_modal()
     {
         ?>
