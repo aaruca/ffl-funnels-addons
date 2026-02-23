@@ -36,7 +36,7 @@ class FFLA_Admin
     /**
      * Hide module submenu items from the native WP admin left sidebar.
      * All navigation happens through the plugin's custom sidebar instead.
-     * The top-level "FFL Funnels" menu item is kept visible.
+     * The top-level "FFL Funnels" menu item is ALWAYS kept visible.
      */
     public function hide_wp_submenu(): void
     {
@@ -44,7 +44,7 @@ class FFLA_Admin
         $slugs = [];
         foreach ($this->registry->get_active() as $module) {
             foreach ($module->get_admin_pages() as $page) {
-                $slugs[] = esc_attr($page['slug']);
+                $slugs[] = sanitize_key($page['slug']);
             }
         }
 
@@ -52,11 +52,16 @@ class FFLA_Admin
             return;
         }
 
+        // Build individual selectors to hide only the submenu links, not parent menus.
         $selectors = array_map(function ($slug) {
-            return '#adminmenu a[href="admin.php?page=' . $slug . '"]';
+            return '#adminmenu a[href*="page=' . $slug . '"]';
         }, $slugs);
 
-        echo '<style>' . implode(',', $selectors) . '{display:none!important;}</style>';
+        // Ensure the FFL Funnels main menu item is ALWAYS visible.
+        $css = implode(',', $selectors) . '{display:none!important;}';
+        $css .= '#adminmenu a[href*="page=ffl-funnels-addons"] {display:block!important;}';
+
+        echo '<style type="text/css">' . $css . '</style>';
     }
 
     /**

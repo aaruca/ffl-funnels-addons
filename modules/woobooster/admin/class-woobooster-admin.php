@@ -803,52 +803,6 @@ class WooBooster_Admin
                         $tool_result = $this->ai_tool_get_rules();
                         break;
 
-                    case 'create_rule':
-                        $steps[] = array('tool' => 'create_rule', 'label' => sprintf(__('Creating rule "%s"...', 'ffl-funnels-addons'), $fn_args['name'] ?? ''));
-                        $result = $this->ai_tool_create_rule($fn_args);
-                        if ($result['success']) {
-                            // Feed result back to AI so it can summarize.
-                            $chat_history[] = array(
-                                'role' => 'tool',
-                                'tool_call_id' => $tool_call['id'],
-                                'content' => $result['message'],
-                            );
-                            // Get AI's summary response.
-                            $summary = $this->ai_get_final_message($api_url, $headers, $chat_history, $tools);
-                            wp_send_json_success(array(
-                                'is_final' => true,
-                                'message' => $summary,
-                                'rule_id' => $result['rule_id'],
-                                'edit_url' => $result['edit_url'],
-                                'steps' => $steps,
-                            ));
-                        } else {
-                            $tool_result = $result['message'];
-                        }
-                        break;
-
-                    case 'update_rule':
-                        $steps[] = array('tool' => 'update_rule', 'label' => sprintf(__('Updating rule #%d...', 'ffl-funnels-addons'), $fn_args['rule_id'] ?? 0));
-                        $result = $this->ai_tool_update_rule($fn_args);
-                        if ($result['success']) {
-                            $chat_history[] = array(
-                                'role' => 'tool',
-                                'tool_call_id' => $tool_call['id'],
-                                'content' => $result['message'],
-                            );
-                            $summary = $this->ai_get_final_message($api_url, $headers, $chat_history, $tools);
-                            wp_send_json_success(array(
-                                'is_final' => true,
-                                'message' => $summary,
-                                'rule_id' => $result['rule_id'],
-                                'edit_url' => $result['edit_url'],
-                                'steps' => $steps,
-                            ));
-                        } else {
-                            $tool_result = $result['message'];
-                        }
-                        break;
-
                     default:
                         $tool_result = 'Unknown tool: ' . $fn_name;
                         break;
@@ -866,7 +820,7 @@ class WooBooster_Admin
             // Loop continues — OpenAI will get all tool results and decide next step.
         }
 
-        // Return the final text response from the AI.
+        // Return the final text response from the AI (just a message, no auto-creation).
         wp_send_json_success(array(
             'is_final' => false,
             'message' => wp_kses_post($assistant_message['content'] ?? ''),
@@ -919,14 +873,21 @@ A rule has TWO parts:
 - `date` — Newest arrivals first
 - `rating` — Highest rated first
 
-## Your Workflow
-1. ALWAYS use `search_store` to find exact slugs and IDs before creating a rule. Never guess.
-{$web_instruction}
-3. Prefer `product_cat` or `pa_*` conditions over `specific_product` (broader reach, less maintenance).
-4. Rules are created as **inactive** so the owner can review them before going live.
-5. Keep responses concise. After creating a rule, briefly summarize what it does.
-6. If the user's request is vague, ask ONE clarifying question. Don't over-ask.
-7. You can create multiple rules in sequence if the user asks for it.
+## Your Workflow (INTERACTIVE - DO NOT AUTO-CREATE RULES)
+1. **BE CONVERSATIONAL**: Help the user step-by-step. Don't rush to create rules.
+2. **If the user mentions a product with multiple matches** (e.g., \"Glock\" has Glock 17, 19, 22):
+   - Use \`search_store\` to find all matches
+   - Ask the user to clarify: \"I found 5 Glock models in your store. Which one?\"
+   - Wait for their answer before proceeding
+3. **Use \`search_store\`** to find exact product names, category slugs, tag slugs, and product IDs.
+   {$web_instruction}
+5. **After searching web**, compare results to store inventory and suggest which products match.
+6. **DESCRIBE THE PROPOSED RULE** in natural language before asking to create it:
+   - \"When a customer views [product/category], recommend [these products] sorted by [order]\"
+   - Ask: \"Should I create this rule?\" or \"Would you like to modify this?\"
+7. **NEVER create rules automatically** — only suggest them and wait for explicit confirmation.
+8. **Prefer** \`product_cat\` or \`pa_*\` conditions over \`specific_product\` (broader reach).
+9. Keep responses concise and helpful. Focus on the user's exact need.
 
 ## FFL Store Context
 Common product types: firearms (handguns, rifles, shotguns), ammunition, holsters, optics/scopes, red dots, magazines, cleaning kits, gun cases, safes, ear protection, eye protection, grips, stocks, lights, lasers, bipods, slings, targets, range gear, reloading equipment, and tactical accessories.";
