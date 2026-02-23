@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)
+![Version](https://img.shields.io/badge/version-1.5.1-blue.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.0+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -70,6 +70,15 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.5.1
+*   Feature: AI chat now fully interactive — step-by-step confirmation before creating any rule.
+*   Feature: "Create This Rule" button appears after AI proposes a rule, so the user explicitly approves.
+*   Fix: AI no longer asks the user for product IDs — it searches the store automatically and presents results for confirmation.
+*   Fix: When multiple products match a search, AI lists them and asks the user to choose.
+*   Fix: Specific product IDs found by AI are now correctly populated in the `action_products` field when creating rules.
+*   Fix: Animated loading indicator during AI requests so the chat doesn't appear frozen on long operations.
+*   Fix: WordPress sidebar "FFL Funnels" menu item now always visible.
 
 ### v1.5.0
 *   Fix: AI Rule Generator hallucination. Introduced the `search_store` tool allowing the AI to query actual product IDs, category slugs, and attributes.
