@@ -75,16 +75,6 @@ class FFLA_Admin
             56
         );
 
-        // Dashboard sub-page (replaces default duplicate).
-        add_submenu_page(
-            'ffl-funnels-addons',
-            __('Dashboard', 'ffl-funnels-addons'),
-            __('Dashboard', 'ffl-funnels-addons'),
-            'manage_woocommerce',
-            'ffl-funnels-addons',
-            [$this, 'render_page']
-        );
-
         // Register admin pages for each active module.
         foreach ($this->registry->get_active() as $module) {
             foreach ($module->get_admin_pages() as $page) {
@@ -98,6 +88,9 @@ class FFLA_Admin
                 );
             }
         }
+
+        // Hide the default duplicated submenu link for the dashboard.
+        remove_submenu_page('ffl-funnels-addons', 'ffl-funnels-addons');
     }
 
     /**

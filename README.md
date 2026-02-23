@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.4.0-blue.svg)
+![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.0+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -70,6 +70,12 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.5.0
+*   Fix: AI Rule Generator hallucination. Introduced the `search_store` tool allowing the AI to query actual product IDs, category slugs, and attributes.
+*   Feature: AI Rule Editing. The AI can now fetch and update existing rules.
+*   Feature: Persistent Chat History. The AI chat modal now preserves conversation flow via `localStorage` and includes a "Clear Chat" button.
+*   Enhancement: Cleaned up the WordPress Admin Menu by safely removing the duplicate "Dashboard" submenu item under FFL Funnels.
 
 ### v1.4.0
 *   Feature: AI Rule Generator! Generate Woobooster recommendations automatically using OpenAI and Tavily Web Search.

@@ -12,13 +12,74 @@ document.addEventListener('DOMContentLoaded', function () {
     const suggestionBtns = document.querySelectorAll('.wb-ai-suggestion-btn');
     const submitBtn = document.getElementById('wb-ai-submit-btn');
 
+    // Create Clear Chat button if it doesn't exist in DOM, or we can just append it to the header
+    let clearChatBtn = document.getElementById('wb-clear-ai-chat');
+    if (!clearChatBtn) {
+        clearChatBtn = document.createElement('button');
+        clearChatBtn.id = 'wb-clear-ai-chat';
+        clearChatBtn.type = 'button';
+        clearChatBtn.className = 'button button-secondary button-small';
+        clearChatBtn.style.marginLeft = 'auto';
+        clearChatBtn.style.marginRight = '10px';
+        clearChatBtn.textContent = 'Clear Chat';
+
+        const header = document.querySelector('.wb-ai-modal__header');
+        if (header) {
+            header.insertBefore(clearChatBtn, closeBtn);
+        }
+    }
+
+    const HISTORY_KEY = 'wb_ai_chat_history';
     let messages = [];
+
+    // Load history from localStorage
+    function loadHistory() {
+        const stored = localStorage.getItem(HISTORY_KEY);
+        if (stored) {
+            try {
+                messages = JSON.parse(stored);
+                // Render existing messages
+                if (messages.length > 0) {
+                    if (emptyState) emptyState.style.display = 'none';
+                    messages.forEach(msg => {
+                        appendMessageDOM(msg.role, msg.content, false);
+                    });
+                    scrollToBottom();
+                }
+            } catch (e) {
+                console.error('Failed to parse chat history', e);
+                messages = [];
+            }
+        }
+    }
+
+    // Save history to localStorage
+    function saveHistory() {
+        // Keep only the last 20 messages to prevent excessive growth
+        if (messages.length > 20) {
+            messages = messages.slice(-20);
+        }
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(messages));
+    }
+
+    // Clear history
+    clearChatBtn.addEventListener('click', () => {
+        if (confirm('Are you sure you want to clear the chat history?')) {
+            messages = [];
+            saveHistory();
+            // Remove all message divs
+            const messageDivs = chatBody.querySelectorAll('.wb-ai-message:not(#wb-ai-typing-indicator)');
+            messageDivs.forEach(div => div.remove());
+            if (emptyState) emptyState.style.display = 'block';
+        }
+    });
 
     // Open Modal
     openBtn.addEventListener('click', (e) => {
         e.preventDefault();
         modalOverlay.classList.add('wb-modal-active');
         inputField.focus();
+        scrollToBottom();
     });
 
     // Close Modal
@@ -76,8 +137,9 @@ document.addEventListener('DOMContentLoaded', function () {
         inputField.style.height = 'auto';
         submitBtn.style.opacity = '0.5';
 
-        appendMessage('user', text);
+        appendMessageDOM('user', text, true);
         messages.push({ role: 'user', content: text });
+        saveHistory();
 
         showTyping();
 
@@ -86,8 +148,9 @@ document.addEventListener('DOMContentLoaded', function () {
             formData.append('action', 'woobooster_ai_generate');
             formData.append('nonce', wooboosterAdmin.nonce);
 
-            // Send conversation history (last few messages to save tokens)
-            formData.append('chat_history', JSON.stringify(messages.slice(-6)));
+            // Send conversation history limit strictly for context window safely
+            // Send the last 10 messages for context (tool messages handles backend)
+            formData.append('chat_history', JSON.stringify(messages.slice(-10)));
 
             const response = await fetch(wooboosterAdmin.ajaxUrl, {
                 method: 'POST',
@@ -101,7 +164,9 @@ document.addEventListener('DOMContentLoaded', function () {
             if (result.success) {
                 // If the AI generated the JSON and the rule was created
                 if (result.data.is_final) {
-                    appendMessage('assistant', result.data.message);
+                    appendMessageDOM('assistant', result.data.message, true);
+                    messages.push({ role: 'assistant', content: result.data.message });
+                    saveHistory();
 
                     // Show success block and reload
                     const div = document.createElement('div');
@@ -114,21 +179,22 @@ document.addEventListener('DOMContentLoaded', function () {
                     setTimeout(() => window.location.reload(), 1500);
                 } else {
                     // Normal conversation / clarifying question
-                    appendMessage('assistant', result.data.message);
+                    appendMessageDOM('assistant', result.data.message, true);
                     messages.push({ role: 'assistant', content: result.data.message });
+                    saveHistory();
                 }
             } else {
-                appendMessage('system', 'Error: ' + (result.data.message || 'Unknown error occurred.'));
+                appendMessageDOM('system', 'Error: ' + (result.data.message || 'Unknown error occurred.'), true);
             }
 
         } catch (error) {
             console.error('AI Error:', error);
             hideTyping();
-            appendMessage('system', 'Connection error. Please check your internet and try again.');
+            appendMessageDOM('system', 'Connection error. Please check your internet and try again.', true);
         }
     });
 
-    function appendMessage(role, content) {
+    function appendMessageDOM(role, content, scroll = true) {
         if (emptyState) emptyState.style.display = 'none';
 
         const msgDiv = document.createElement('div');
@@ -141,7 +207,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
         msgDiv.innerHTML = `<div class="wb-ai-message__content">${formattedContent}</div>`;
         chatBody.insertBefore(msgDiv, typingIndicator);
-        scrollToBottom();
+
+        if (scroll) {
+            scrollToBottom();
+        }
     }
 
     function showTyping() {
@@ -157,4 +226,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function scrollToBottom() {
         chatBody.scrollTop = chatBody.scrollHeight;
     }
+
+    // Initialize
+    loadHistory();
 });
