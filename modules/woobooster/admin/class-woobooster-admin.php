@@ -701,8 +701,10 @@ class WooBooster_Admin
     }
 
     /**
-     * AJAX: Handle AI Rule Generation Request
-     * Uses wp_remote_post to query our secure AI Proxy.
+     * AJAX: Handle AI Rule Generation Request.
+     *
+     * Uses a proper while-loop to handle multi-turn tool calls from OpenAI.
+     * Supports parallel tool calls, web search, store search, and rule CRUD.
      */
     public function ajax_ai_generate()
     {
@@ -719,7 +721,6 @@ class WooBooster_Admin
             wp_send_json_error(array('message' => __('No message provided.', 'ffl-funnels-addons')));
         }
 
-        // Send conversation to OpenAI directly
         $options = get_option('woobooster_settings', array());
         $api_key = isset($options['openai_key']) ? $options['openai_key'] : '';
         $tavily_key = isset($options['tavily_key']) ? $options['tavily_key'] : '';
@@ -728,90 +729,288 @@ class WooBooster_Admin
             wp_send_json_error(array('message' => __('OpenAI API Key is required. Please add it in WooBooster General Settings.', 'ffl-funnels-addons')));
         }
 
-        $system_message = array(
-            'role' => 'system',
-            'content' => "You are an AI assistant that helps store owners create product recommendation rules.
-If the user wants to create a rule, ask for clarification if you don't have enough info, or call the 'create_rule' tool to generate the JSON configuration.
-Keep your responses concise and helpful."
-        );
-        array_unshift($chat_history, $system_message);
+        // Build system prompt with full domain context.
+        $system_prompt = $this->build_ai_system_prompt($tavily_key);
+        array_unshift($chat_history, array('role' => 'system', 'content' => $system_prompt));
 
         $api_url = 'https://api.openai.com/v1/chat/completions';
+        $tools = $this->get_ai_tools($tavily_key);
+        $headers = array(
+            'Content-Type' => 'application/json',
+            'Authorization' => 'Bearer ' . trim($api_key),
+        );
 
+        // Track tool steps for frontend feedback.
+        $steps = array();
+        $max_turns = 8;
+        $turn = 0;
+
+        while ($turn < $max_turns) {
+            $turn++;
+
+            $response = wp_remote_post($api_url, array(
+                'body' => wp_json_encode(array(
+                    'model' => 'gpt-4o-mini',
+                    'messages' => $chat_history,
+                    'tools' => $tools,
+                )),
+                'headers' => $headers,
+                'timeout' => 45,
+                'data_format' => 'body',
+            ));
+
+            if (is_wp_error($response)) {
+                wp_send_json_error(array('message' => $response->get_error_message(), 'steps' => $steps));
+            }
+
+            $data = json_decode(wp_remote_retrieve_body($response), true);
+
+            if (empty($data) || isset($data['error'])) {
+                $err_msg = isset($data['error']['message']) ? $data['error']['message'] : __('Invalid response from OpenAI.', 'ffl-funnels-addons');
+                wp_send_json_error(array('message' => $err_msg, 'steps' => $steps));
+            }
+
+            $assistant_message = $data['choices'][0]['message'];
+
+            // No tool calls — AI is responding with text. Done.
+            if (empty($assistant_message['tool_calls'])) {
+                break;
+            }
+
+            // Add assistant message (with tool_calls) to history.
+            $chat_history[] = $assistant_message;
+
+            // Execute ALL tool calls from this turn (supports parallel calls).
+            foreach ($assistant_message['tool_calls'] as $tool_call) {
+                $fn_name = $tool_call['function']['name'];
+                $fn_args = json_decode($tool_call['function']['arguments'], true);
+
+                $tool_result = '';
+
+                switch ($fn_name) {
+                    case 'search_store':
+                        $steps[] = array('tool' => 'search_store', 'label' => sprintf(__('Searching store for "%s"...', 'ffl-funnels-addons'), $fn_args['query'] ?? ''));
+                        $tool_result = $this->ai_tool_search_store($fn_args);
+                        break;
+
+                    case 'search_web':
+                        $steps[] = array('tool' => 'search_web', 'label' => sprintf(__('Searching the web for "%s"...', 'ffl-funnels-addons'), $fn_args['query'] ?? ''));
+                        $tool_result = $this->ai_tool_search_web($fn_args, $tavily_key);
+                        break;
+
+                    case 'get_rules':
+                        $steps[] = array('tool' => 'get_rules', 'label' => __('Checking existing rules...', 'ffl-funnels-addons'));
+                        $tool_result = $this->ai_tool_get_rules();
+                        break;
+
+                    case 'create_rule':
+                        $steps[] = array('tool' => 'create_rule', 'label' => sprintf(__('Creating rule "%s"...', 'ffl-funnels-addons'), $fn_args['name'] ?? ''));
+                        $result = $this->ai_tool_create_rule($fn_args);
+                        if ($result['success']) {
+                            // Feed result back to AI so it can summarize.
+                            $chat_history[] = array(
+                                'role' => 'tool',
+                                'tool_call_id' => $tool_call['id'],
+                                'content' => $result['message'],
+                            );
+                            // Get AI's summary response.
+                            $summary = $this->ai_get_final_message($api_url, $headers, $chat_history, $tools);
+                            wp_send_json_success(array(
+                                'is_final' => true,
+                                'message' => $summary,
+                                'rule_id' => $result['rule_id'],
+                                'edit_url' => $result['edit_url'],
+                                'steps' => $steps,
+                            ));
+                        } else {
+                            $tool_result = $result['message'];
+                        }
+                        break;
+
+                    case 'update_rule':
+                        $steps[] = array('tool' => 'update_rule', 'label' => sprintf(__('Updating rule #%d...', 'ffl-funnels-addons'), $fn_args['rule_id'] ?? 0));
+                        $result = $this->ai_tool_update_rule($fn_args);
+                        if ($result['success']) {
+                            $chat_history[] = array(
+                                'role' => 'tool',
+                                'tool_call_id' => $tool_call['id'],
+                                'content' => $result['message'],
+                            );
+                            $summary = $this->ai_get_final_message($api_url, $headers, $chat_history, $tools);
+                            wp_send_json_success(array(
+                                'is_final' => true,
+                                'message' => $summary,
+                                'rule_id' => $result['rule_id'],
+                                'edit_url' => $result['edit_url'],
+                                'steps' => $steps,
+                            ));
+                        } else {
+                            $tool_result = $result['message'];
+                        }
+                        break;
+
+                    default:
+                        $tool_result = 'Unknown tool: ' . $fn_name;
+                        break;
+                }
+
+                // Add tool result to history for the next turn.
+                if (!empty($tool_result)) {
+                    $chat_history[] = array(
+                        'role' => 'tool',
+                        'tool_call_id' => $tool_call['id'],
+                        'content' => $tool_result,
+                    );
+                }
+            }
+            // Loop continues — OpenAI will get all tool results and decide next step.
+        }
+
+        // Return the final text response from the AI.
+        wp_send_json_success(array(
+            'is_final' => false,
+            'message' => wp_kses_post($assistant_message['content'] ?? ''),
+            'steps' => $steps,
+        ));
+    }
+
+    /**
+     * Build the AI system prompt with full WooBooster and FFL domain context.
+     */
+    private function build_ai_system_prompt(string $tavily_key): string
+    {
+        $has_web = !empty($tavily_key);
+        $web_instruction = $has_web
+            ? "- Use `search_web` to find product compatibility data (e.g. \"best holsters for Glock 19\", \"compatible optics for AR-15 platform\", \"what magazines work with Sig P365\"). This is very powerful — use it whenever the user asks about compatibility or \"best sellers\" for a specific product."
+            : "- Web search is not available (no Tavily API key configured). Rely on store search and your own knowledge.";
+
+        return "You are a product recommendation specialist for an FFL (Federal Firearms Licensed) WooCommerce store. You help store owners create WooBooster recommendation rules that drive cross-sells and upsells.
+
+## How WooBooster Rules Work
+A rule has TWO parts:
+1. **Condition** — WHEN to show recommendations (triggered when a customer views a product matching this condition)
+2. **Action** — WHAT products to recommend
+
+### Condition Attributes (use these exact values):
+- `product_cat` — Product category (use the slug, e.g. \"handguns\", \"rifles\")
+- `product_tag` — Product tag (use the slug)
+- `pa_*` — Product attribute taxonomy (e.g. `pa_caliber`, `pa_brand`, `pa_manufacturer`)
+- `specific_product` — A specific product by ID
+
+### Condition Operators:
+- `equals` — Exact match (most common)
+- `not_equals` — Everything except this
+- `contains` — Partial match
+
+### Action Sources (what to recommend):
+- `category` — Products from a category slug
+- `tag` — Products with a tag slug
+- `attribute_value` — Products with a specific attribute value
+- `specific_products` — Hand-picked products by ID (put IDs in action_products, NOT action_value)
+- `copurchase` — Frequently bought together (based on order history)
+- `trending` — Currently trending products
+- `apply_coupon` — Attach a coupon to the recommendation
+
+### Action Sort Options (action_orderby):
+- `rand` — Random order (default, good for variety)
+- `bestselling` — Best sellers first (great for proven products)
+- `price` — Cheapest first
+- `price_desc` — Most expensive first
+- `date` — Newest arrivals first
+- `rating` — Highest rated first
+
+## Your Workflow
+1. ALWAYS use `search_store` to find exact slugs and IDs before creating a rule. Never guess.
+{$web_instruction}
+3. Prefer `product_cat` or `pa_*` conditions over `specific_product` (broader reach, less maintenance).
+4. Rules are created as **inactive** so the owner can review them before going live.
+5. Keep responses concise. After creating a rule, briefly summarize what it does.
+6. If the user's request is vague, ask ONE clarifying question. Don't over-ask.
+7. You can create multiple rules in sequence if the user asks for it.
+
+## FFL Store Context
+Common product types: firearms (handguns, rifles, shotguns), ammunition, holsters, optics/scopes, red dots, magazines, cleaning kits, gun cases, safes, ear protection, eye protection, grips, stocks, lights, lasers, bipods, slings, targets, range gear, reloading equipment, and tactical accessories.";
+    }
+
+    /**
+     * Define the AI tool schemas.
+     */
+    private function get_ai_tools(string $tavily_key): array
+    {
         $tools = array(
             array(
                 'type' => 'function',
                 'function' => array(
                     'name' => 'search_store',
-                    'description' => 'Search the WooCommerce store for products, categories, or attributes to get their exact IDs and slugs',
+                    'description' => 'Search the WooCommerce catalog for products, categories, tags, or attributes. Returns IDs and slugs needed for rule creation.',
                     'parameters' => array(
                         'type' => 'object',
                         'properties' => array(
-                            'type' => array('type' => 'string', 'enum' => array('product', 'category', 'tag', 'attribute'), 'description' => 'What type of entity to search for'),
-                            'query' => array('type' => 'string', 'description' => 'The search query (e.g. \"Glock 19\" or \"9mm\")')
+                            'type' => array('type' => 'string', 'enum' => array('product', 'category', 'tag', 'attribute'), 'description' => 'Entity type to search'),
+                            'query' => array('type' => 'string', 'description' => 'Search term (e.g. "Glock 19", "holsters", "9mm")'),
                         ),
-                        'required' => array('type', 'query')
-                    )
-                )
+                        'required' => array('type', 'query'),
+                    ),
+                ),
             ),
             array(
                 'type' => 'function',
                 'function' => array(
                     'name' => 'get_rules',
-                    'description' => 'Get a list of existing WooBooster recommendation rules.',
+                    'description' => 'List existing WooBooster rules to avoid duplicates or understand current setup.',
                     'parameters' => array(
                         'type' => 'object',
-                        'properties' => array(
-                            'dummy' => array('type' => 'boolean', 'description' => 'Dummy parameter, just pass true')
-                        )
-                    )
-                )
+                        'properties' => new \stdClass(),
+                    ),
+                ),
             ),
             array(
                 'type' => 'function',
                 'function' => array(
                     'name' => 'create_rule',
-                    'description' => 'Create a new WooCommerce recommendation rule',
+                    'description' => 'Create a new recommendation rule. Always search_store first to get correct slugs/IDs.',
                     'parameters' => array(
                         'type' => 'object',
                         'properties' => array(
-                            'name' => array('type' => 'string', 'description' => 'Name of the rule'),
-                            'priority' => array('type' => 'integer', 'description' => 'Priority (default 10, lower number means higher priority)'),
+                            'name' => array('type' => 'string', 'description' => 'Descriptive rule name'),
+                            'priority' => array('type' => 'integer', 'description' => 'Lower = higher priority. Default 10.'),
+                            'condition_attribute' => array('type' => 'string', 'description' => 'One of: product_cat, product_tag, specific_product, or pa_* taxonomy'),
                             'condition_operator' => array('type' => 'string', 'enum' => array('equals', 'not_equals', 'contains')),
-                            'condition_attribute' => array('type' => 'string', 'description' => 'Must be one of: \"specific_product\", \"product_cat\", \"product_tag\", or a custom attribute taxonomy like \"pa_brand\" or \"pa_caliber\"'),
-                            'condition_value' => array('type' => 'string', 'description' => 'For categories/tags/attributes, use the exact slug. For \"specific_product\", this should be an empty string, and you should leave it empty because specific product condition uses complex repeater logic not fully supported here yet. If possible use \"product_cat\" or \"pa_\" attributes.'),
-                            'action_source' => array('type' => 'string', 'enum' => array('category', 'tag', 'attribute', 'attribute_value', 'copurchase', 'trending', 'specific_products')),
-                            'action_value' => array('type' => 'string', 'description' => 'Used if action_source is category, tag, or attribute_value. Provide the slug.'),
-                            'action_products' => array('type' => 'string', 'description' => 'IMPORTANT: If action_source is \"specific_products\", you MUST provide a comma-separated list of product IDs here, NOT in action_value.'),
-                            'action_limit' => array('type' => 'integer', 'description' => 'Max products to show (default 4)')
+                            'condition_value' => array('type' => 'string', 'description' => 'The slug or ID for the condition'),
+                            'action_source' => array('type' => 'string', 'enum' => array('category', 'tag', 'attribute_value', 'specific_products', 'copurchase', 'trending')),
+                            'action_value' => array('type' => 'string', 'description' => 'Slug for category/tag/attribute_value actions'),
+                            'action_products' => array('type' => 'string', 'description' => 'Comma-separated product IDs for specific_products action'),
+                            'action_orderby' => array('type' => 'string', 'enum' => array('rand', 'bestselling', 'price', 'price_desc', 'date', 'rating'), 'description' => 'Sort order. Default rand.'),
+                            'action_limit' => array('type' => 'integer', 'description' => 'Max products to show. Default 4.'),
                         ),
-                        'required' => array('name', 'condition_operator', 'condition_attribute', 'action_source')
-                    )
-                )
+                        'required' => array('name', 'condition_attribute', 'condition_operator', 'action_source'),
+                    ),
+                ),
             ),
             array(
                 'type' => 'function',
                 'function' => array(
                     'name' => 'update_rule',
-                    'description' => 'Update an existing WooCommerce recommendation rule',
+                    'description' => 'Update an existing rule. Only provide fields you want to change.',
                     'parameters' => array(
                         'type' => 'object',
                         'properties' => array(
-                            'rule_id' => array('type' => 'integer', 'description' => 'The exact ID of the rule to update'),
-                            'name' => array('type' => 'string', 'description' => 'Name of the rule'),
-                            'priority' => array('type' => 'integer', 'description' => 'Priority (default 10, lower number means higher priority)'),
+                            'rule_id' => array('type' => 'integer', 'description' => 'ID of the rule to update'),
+                            'name' => array('type' => 'string'),
+                            'priority' => array('type' => 'integer'),
+                            'condition_attribute' => array('type' => 'string'),
                             'condition_operator' => array('type' => 'string', 'enum' => array('equals', 'not_equals', 'contains')),
-                            'condition_attribute' => array('type' => 'string', 'description' => 'Must be one of: \"specific_product\", \"product_cat\", \"product_tag\", or a custom attribute taxonomy like \"pa_brand\" or \"pa_caliber\"'),
-                            'condition_value' => array('type' => 'string', 'description' => 'For categories/tags/attributes, use the slug.'),
-                            'action_source' => array('type' => 'string', 'enum' => array('category', 'tag', 'attribute', 'attribute_value', 'copurchase', 'trending', 'specific_products')),
-                            'action_value' => array('type' => 'string', 'description' => 'Used if action_source is category, tag, or attribute_value. Provide the slug.'),
-                            'action_products' => array('type' => 'string', 'description' => 'IMPORTANT: If action_source is \"specific_products\", you MUST provide a comma-separated list of product IDs here, NOT in action_value.'),
-                            'action_limit' => array('type' => 'integer', 'description' => 'Max products to show (default 4)')
+                            'condition_value' => array('type' => 'string'),
+                            'action_source' => array('type' => 'string', 'enum' => array('category', 'tag', 'attribute_value', 'specific_products', 'copurchase', 'trending')),
+                            'action_value' => array('type' => 'string'),
+                            'action_products' => array('type' => 'string'),
+                            'action_orderby' => array('type' => 'string', 'enum' => array('rand', 'bestselling', 'price', 'price_desc', 'date', 'rating')),
+                            'action_limit' => array('type' => 'integer'),
                         ),
-                        'required' => array('rule_id')
-                    )
-                )
-            )
+                        'required' => array('rule_id'),
+                    ),
+                ),
+            ),
         );
 
         if (!empty($tavily_key)) {
@@ -819,329 +1018,308 @@ Keep your responses concise and helpful."
                 'type' => 'function',
                 'function' => array(
                     'name' => 'search_web',
-                    'description' => 'Search the internet for product knowledge, compatibility, or general information',
+                    'description' => 'Search the web for product compatibility, best-sellers, or general firearms knowledge. Use for questions like "what holsters fit X" or "compatible optics for Y".',
                     'parameters' => array(
                         'type' => 'object',
                         'properties' => array(
-                            'query' => array('type' => 'string', 'description' => 'The search query string')
+                            'query' => array('type' => 'string', 'description' => 'Search query'),
                         ),
-                        'required' => array('query')
-                    )
-                )
+                        'required' => array('query'),
+                    ),
+                ),
             );
         }
 
-        $api_args = array(
+        return $tools;
+    }
+
+    /**
+     * Get a final text message from the AI after a terminal tool call.
+     */
+    private function ai_get_final_message(string $api_url, array $headers, array $chat_history, array $tools): string
+    {
+        $response = wp_remote_post($api_url, array(
             'body' => wp_json_encode(array(
                 'model' => 'gpt-4o-mini',
                 'messages' => $chat_history,
-                'tools' => $tools
+                'tools' => $tools,
             )),
-            'headers' => array(
-                'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer ' . trim($api_key)
-            ),
-            'timeout' => 45,
-            'data_format' => 'body'
-        );
-
-        $response = wp_remote_post($api_url, $api_args);
+            'headers' => $headers,
+            'timeout' => 30,
+            'data_format' => 'body',
+        ));
 
         if (is_wp_error($response)) {
-            wp_send_json_error(array('message' => $response->get_error_message()));
+            return __('Rule saved successfully.', 'ffl-funnels-addons');
         }
 
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
+        $data = json_decode(wp_remote_retrieve_body($response), true);
+        $content = $data['choices'][0]['message']['content'] ?? '';
 
-        if (empty($data) || isset($data['error'])) {
-            $err_msg = isset($data['error']['message']) ? $data['error']['message'] : __('Invalid response from OpenAI.', 'ffl-funnels-addons');
-            wp_send_json_error(array('message' => $err_msg));
-        }
+        return !empty($content) ? wp_kses_post($content) : __('Rule saved successfully.', 'ffl-funnels-addons');
+    }
 
-        $assistant_message = $data['choices'][0]['message'];
+    // ── AI Tool Handlers ──────────────────────────────────────────────
 
-        // Handle tool execution loop
-        if (!empty($assistant_message['tool_calls'])) {
-            $tool_call = $assistant_message['tool_calls'][0];
+    /**
+     * Tool: Search the WooCommerce store catalog.
+     */
+    private function ai_tool_search_store(array $args): string
+    {
+        $type = isset($args['type']) ? sanitize_text_field($args['type']) : 'product';
+        $query = isset($args['query']) ? sanitize_text_field($args['query']) : '';
+        $results = array();
 
-            $needs_another_turn = false;
-
-            // 1. Tavily Search Web loop
-            if ($tool_call['function']['name'] === 'search_web' && !empty($tavily_key)) {
-                $args = json_decode($tool_call['function']['arguments'], true);
-                $query = isset($args['query']) ? $args['query'] : '';
-
-                $tavily_response = wp_remote_post('https://api.tavily.com/search', array(
-                    'body' => wp_json_encode(array(
-                        'api_key' => trim($tavily_key),
-                        'query' => $query,
-                        'search_depth' => 'basic',
-                        'include_answer' => true,
-                        'max_results' => 3
-                    )),
-                    'headers' => array('Content-Type' => 'application/json'),
-                    'timeout' => 30
-                ));
-
-                $search_result_text = "Search failed.";
-                if (!is_wp_error($tavily_response)) {
-                    $tavily_body = json_decode(wp_remote_retrieve_body($tavily_response), true);
-                    if (isset($tavily_body['answer'])) {
-                        $search_result_text = $tavily_body['answer'];
-                    } elseif (isset($tavily_body['results'])) {
-                        $search_result_text = wp_json_encode($tavily_body['results']);
-                    }
+        if ('product' === $type) {
+            $products = wc_get_products(array(
+                'status' => 'publish',
+                'limit' => 15,
+                's' => $query,
+                'return' => 'objects',
+            ));
+            foreach ($products as $p) {
+                $item = array('id' => $p->get_id(), 'name' => $p->get_name(), 'slug' => $p->get_slug());
+                $cats = wp_get_post_terms($p->get_id(), 'product_cat', array('fields' => 'names'));
+                if (!is_wp_error($cats) && !empty($cats)) {
+                    $item['categories'] = implode(', ', $cats);
                 }
-
-                // Append assistant context and tool result to history
-                $chat_history[] = $assistant_message;
-                $chat_history[] = array(
-                    'role' => 'tool',
-                    'tool_call_id' => $tool_call['id'],
-                    'name' => 'search_web',
-                    'content' => $search_result_text
-                );
-
-                $needs_another_turn = true;
+                $results[] = $item;
             }
-
-            // 2. Search Store Tool Call
-            if ($tool_call['function']['name'] === 'search_store') {
-                $args = json_decode($tool_call['function']['arguments'], true);
-                $type = isset($args['type']) ? sanitize_text_field($args['type']) : 'product';
-                $query = isset($args['query']) ? sanitize_text_field($args['query']) : '';
-
-                $result_data = array();
-
-                if ($type === 'product') {
-                    $products = wc_get_products(array(
-                        'status' => 'publish',
-                        'limit' => 15,
-                        's' => $query,
-                        'return' => 'objects' // We need objects to get both ID and name/slug
-                    ));
-                    foreach ($products as $p) {
-                        $result_data[] = array('id' => $p->get_id(), 'name' => $p->get_name(), 'slug' => $p->get_slug());
-                    }
-                } elseif ($type === 'category' || $type === 'tag' || $type === 'attribute') {
-                    $taxonomy = 'product_cat';
-                    if ($type === 'tag') {
-                        $taxonomy = 'product_tag';
-                    } elseif ($type === 'attribute') {
-                        // Attempt to find any mapping pa_ attribute, or just search terms generally if query is generic
-                        // For simplicity, we could search across multiple if needed, but lets assume the AI knows to use category/tag if not explicitly an attribute.
-                        // Or we can query all global taxonomies starting with pa_
-                        global $wpdb;
-                        $tax_query = $wpdb->prepare(
-                            "SELECT t.term_id, t.name, t.slug, tt.taxonomy 
-                            FROM {$wpdb->terms} AS t 
-                            INNER JOIN {$wpdb->term_taxonomy} AS tt ON t.term_id = tt.term_id 
-                            WHERE t.name LIKE %s AND tt.taxonomy LIKE %s LIMIT 20",
-                            '%' . $wpdb->esc_like($query) . '%',
-                            'pa_%'
-                        );
-                        $terms = $wpdb->get_results($tax_query);
-                        foreach ($terms as $t) {
-                            $result_data[] = array('id' => $t->term_id, 'name' => $t->name, 'slug' => $t->slug, 'taxonomy' => $t->taxonomy);
-                        }
-                    }
-
-                    if ($type === 'category' || $type === 'tag') {
-                        $terms = get_terms(array(
-                            'taxonomy' => $taxonomy,
-                            'name__like' => $query,
-                            'number' => 15,
-                            'hide_empty' => false
-                        ));
-                        if (!is_wp_error($terms)) {
-                            foreach ($terms as $t) {
-                                $result_data[] = array('id' => $t->term_id, 'name' => $t->name, 'slug' => $t->slug);
-                            }
-                        }
-                    }
-                }
-
-                $chat_history[] = $assistant_message;
-                $chat_history[] = array(
-                    'role' => 'tool',
-                    'tool_call_id' => $tool_call['id'],
-                    'name' => 'search_store',
-                    'content' => empty($result_data) ? "No results found for $query." : wp_json_encode($result_data)
-                );
-
-                $needs_another_turn = true;
+        } elseif ('attribute' === $type) {
+            global $wpdb;
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+            $terms = $wpdb->get_results($wpdb->prepare(
+                "SELECT t.term_id, t.name, t.slug, tt.taxonomy
+                FROM {$wpdb->terms} AS t
+                INNER JOIN {$wpdb->term_taxonomy} AS tt ON t.term_id = tt.term_id
+                WHERE t.name LIKE %s AND tt.taxonomy LIKE %s LIMIT 20",
+                '%' . $wpdb->esc_like($query) . '%',
+                'pa_%'
+            ));
+            foreach ($terms as $t) {
+                $results[] = array('id' => $t->term_id, 'name' => $t->name, 'slug' => $t->slug, 'taxonomy' => $t->taxonomy);
             }
-
-            // 3. Get Rules Tool Call
-            if ($tool_call['function']['name'] === 'get_rules') {
-                require_once WOOBOOSTER_PATH . 'includes/class-woobooster-rule.php';
-                $rules = WooBooster_Rule::get_all_rules();
-                $rule_summary = array();
-
-                foreach ($rules as $rule) {
-                    $rule_summary[] = array(
-                        'id' => $rule->id,
-                        'name' => $rule->name,
-                        'priority' => $rule->priority,
-                        'status' => $rule->status
-                    );
-                }
-
-                $chat_history[] = $assistant_message;
-                $chat_history[] = array(
-                    'role' => 'tool',
-                    'tool_call_id' => $tool_call['id'],
-                    'name' => 'get_rules',
-                    'content' => empty($rule_summary) ? "No rules exist yet." : wp_json_encode($rule_summary)
-                );
-
-                $needs_another_turn = true;
-            }
-
-            if ($needs_another_turn) {
-                // Re-run OpenAI with updated history containing the tool result
-                $api_args['body'] = wp_json_encode(array(
-                    'model' => 'gpt-4o-mini',
-                    'messages' => $chat_history,
-                    'tools' => $tools
-                ));
-
-                $response2 = wp_remote_post($api_url, $api_args);
-                if (is_wp_error($response2)) {
-                    wp_send_json_error(array('message' => $response2->get_error_message()));
-                }
-
-                $data2 = json_decode(wp_remote_retrieve_body($response2), true);
-                if (empty($data2) || isset($data2['error'])) {
-                    $err_msg = isset($data2['error']['message']) ? $data2['error']['message'] : __('Invalid response from OpenAI.', 'ffl-funnels-addons');
-                    wp_send_json_error(array('message' => $err_msg));
-                }
-
-                // Assign updated assistant message
-                $assistant_message = $data2['choices'][0]['message'];
-
-                // Re-assign tool call reference if the recursion yielded another tool call 
-                if (!empty($assistant_message['tool_calls'])) {
-                    $tool_call = $assistant_message['tool_calls'][0];
-                }
-            }
-
-            // 4. Create Rule Tool Call (could be triggered immediately, or after another tool)
-            if (!empty($assistant_message['tool_calls']) && $tool_call['function']['name'] === 'create_rule') {
-                require_once WOOBOOSTER_PATH . 'includes/class-woobooster-rule.php';
-
-                $rule_data = json_decode($tool_call['function']['arguments'], true);
-                // Map the AI's simplified JSON structure to WooBooster's internal structure
-                $mapped_data = array(
-                    'name' => $rule_data['name'],
-                    'priority' => isset($rule_data['priority']) ? $rule_data['priority'] : 10,
-                    'status' => 'active',
-                    'conditions' => array(
-                        array(
-                            array(
-                                'attribute' => $rule_data['condition_attribute'],
-                                'operator' => $rule_data['condition_operator'],
-                                'value' => $rule_data['condition_value'] ?? ''
-                            )
-                        )
-                    ),
-                    'actions' => array(
-                        array(
-                            array(
-                                'action_source' => $rule_data['action_source'],
-                                'action_value' => $rule_data['action_value'] ?? '',
-                                'action_products' => $rule_data['action_products'] ?? '',
-                                'action_limit' => isset($rule_data['action_limit']) ? $rule_data['action_limit'] : 4
-                            )
-                        )
-                    )
-                );
-
-                $rule_id = WooBooster_Rule::create($mapped_data);
-
-                if ($rule_id) {
-                    wp_send_json_success(array(
-                        'is_final' => true,
-                        'message' => __('Rule generated and saved successfully! Refreshing...', 'ffl-funnels-addons'),
-                        'rule_id' => $rule_id
-                    ));
-                } else {
-                    wp_send_json_error(array('message' => __('AI generated the rule, but saving to the database failed. Invalid schema?', 'ffl-funnels-addons')));
-                }
-            }
-
-            // 5. Update Rule Tool Call 
-            if (!empty($assistant_message['tool_calls']) && $tool_call['function']['name'] === 'update_rule') {
-                require_once WOOBOOSTER_PATH . 'includes/class-woobooster-rule.php';
-
-                $rule_data = json_decode($tool_call['function']['arguments'], true);
-                if (empty($rule_data['rule_id'])) {
-                    wp_send_json_error(array('message' => __('Missing rule_id for update.', 'ffl-funnels-addons')));
-                }
-
-                $mapped_data = array();
-                if (isset($rule_data['name'])) {
-                    $mapped_data['name'] = $rule_data['name'];
-                }
-                if (isset($rule_data['priority'])) {
-                    $mapped_data['priority'] = $rule_data['priority'];
-                }
-
-                // If the AI is sending conditions/actions, replace the existing ones (simplified approach for now)
-                if (isset($rule_data['condition_attribute']) || isset($rule_data['action_source'])) {
-
-                    // Fetch existing to fill in gaps if AI didn't provide everything
-                    $existing_rule = new WooBooster_Rule($rule_data['rule_id']);
-                    if (!$existing_rule->id) {
-                        wp_send_json_error(array('message' => __('Rule ID not found.', 'ffl-funnels-addons')));
-                    }
-
-                    if (isset($rule_data['condition_attribute'])) {
-                        $mapped_data['conditions'] = array(
-                            array(
-                                array(
-                                    'attribute' => $rule_data['condition_attribute'],
-                                    'operator' => $rule_data['condition_operator'] ?? 'equals',
-                                    'value' => $rule_data['condition_value'] ?? ''
-                                )
-                            )
-                        );
-                    }
-
-                    if (isset($rule_data['action_source'])) {
-                        $mapped_data['actions'] = array(
-                            array(
-                                array(
-                                    'action_source' => $rule_data['action_source'],
-                                    'action_value' => $rule_data['action_value'] ?? '',
-                                    'action_products' => $rule_data['action_products'] ?? '',
-                                    'action_limit' => isset($rule_data['action_limit']) ? $rule_data['action_limit'] : 4
-                                )
-                            )
-                        );
-                    }
-                }
-
-                $success = WooBooster_Rule::update($rule_data['rule_id'], $mapped_data);
-
-                if ($success) {
-                    wp_send_json_success(array(
-                        'is_final' => true,
-                        'message' => sprintf(__('Rule #%d updated successfully! Refreshing...', 'ffl-funnels-addons'), $rule_data['rule_id']),
-                        'rule_id' => $rule_data['rule_id']
-                    ));
-                } else {
-                    wp_send_json_error(array('message' => __('Failed to update the rule.', 'ffl-funnels-addons')));
+        } else {
+            $taxonomy = ('tag' === $type) ? 'product_tag' : 'product_cat';
+            $terms = get_terms(array(
+                'taxonomy' => $taxonomy,
+                'name__like' => $query,
+                'number' => 15,
+                'hide_empty' => false,
+            ));
+            if (!is_wp_error($terms)) {
+                foreach ($terms as $t) {
+                    $results[] = array('id' => $t->term_id, 'name' => $t->name, 'slug' => $t->slug, 'count' => $t->count);
                 }
             }
         }
 
-        // A clarifying response or intermediate chat message
-        wp_send_json_success(array(
-            'is_final' => false,
-            'message' => wp_kses_post($assistant_message['content'] ?? '')
+        return empty($results)
+            ? sprintf('No %s found matching "%s".', $type, $query)
+            : wp_json_encode($results);
+    }
+
+    /**
+     * Tool: Search the web via Tavily API.
+     */
+    private function ai_tool_search_web(array $args, string $tavily_key): string
+    {
+        $query = isset($args['query']) ? $args['query'] : '';
+
+        if (empty($tavily_key)) {
+            return 'Web search is not configured (no Tavily API key).';
+        }
+
+        $response = wp_remote_post('https://api.tavily.com/search', array(
+            'body' => wp_json_encode(array(
+                'api_key' => trim($tavily_key),
+                'query' => $query,
+                'search_depth' => 'basic',
+                'include_answer' => true,
+                'max_results' => 5,
+            )),
+            'headers' => array('Content-Type' => 'application/json'),
+            'timeout' => 30,
         ));
+
+        if (is_wp_error($response)) {
+            return 'Web search failed: ' . $response->get_error_message();
+        }
+
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        if (isset($body['answer'])) {
+            return $body['answer'];
+        }
+
+        if (isset($body['results'])) {
+            return wp_json_encode(array_slice($body['results'], 0, 5));
+        }
+
+        return 'No web results found.';
+    }
+
+    /**
+     * Tool: Get all existing rules.
+     */
+    private function ai_tool_get_rules(): string
+    {
+        require_once WOOBOOSTER_PATH . 'includes/class-woobooster-rule.php';
+        $rules = WooBooster_Rule::get_all_rules();
+        $summary = array();
+
+        foreach ($rules as $rule) {
+            $summary[] = array(
+                'id' => $rule->id,
+                'name' => $rule->name,
+                'priority' => $rule->priority,
+                'status' => $rule->status ? 'active' : 'inactive',
+                'condition' => $rule->condition_attribute . ' ' . $rule->condition_operator . ' ' . $rule->condition_value,
+                'action' => $rule->action_source . ':' . $rule->action_value,
+            );
+        }
+
+        return empty($summary) ? 'No rules exist yet.' : wp_json_encode($summary);
+    }
+
+    /**
+     * Tool: Create a new rule with proper conditions/actions table support.
+     *
+     * @return array{success: bool, message: string, rule_id?: int, edit_url?: string}
+     */
+    private function ai_tool_create_rule(array $args): array
+    {
+        require_once WOOBOOSTER_PATH . 'includes/class-woobooster-rule.php';
+
+        $rule_data = array(
+            'name' => sanitize_text_field($args['name'] ?? ''),
+            'priority' => absint($args['priority'] ?? 10),
+            'status' => 0, // Inactive — let owner review first.
+            'condition_attribute' => sanitize_key($args['condition_attribute'] ?? ''),
+            'condition_operator' => $args['condition_operator'] ?? 'equals',
+            'condition_value' => sanitize_text_field($args['condition_value'] ?? ''),
+            'action_source' => sanitize_key($args['action_source'] ?? 'category'),
+            'action_value' => sanitize_text_field($args['action_value'] ?? ''),
+            'action_orderby' => sanitize_key($args['action_orderby'] ?? 'rand'),
+            'action_limit' => max(1, absint($args['action_limit'] ?? 4)),
+        );
+
+        $rule_id = WooBooster_Rule::create($rule_data);
+
+        if (!$rule_id) {
+            return array('success' => false, 'message' => 'Failed to save rule to database.');
+        }
+
+        // Save condition to the conditions table.
+        WooBooster_Rule::save_conditions($rule_id, array(
+            array( // Group 0
+                array(
+                    'condition_attribute' => $rule_data['condition_attribute'],
+                    'condition_operator' => $rule_data['condition_operator'],
+                    'condition_value' => $rule_data['condition_value'],
+                    'include_children' => 1,
+                    'min_quantity' => 1,
+                ),
+            ),
+        ));
+
+        // Save action to the actions table.
+        $action_row = array(
+            'action_source' => $rule_data['action_source'],
+            'action_value' => $rule_data['action_value'],
+            'action_orderby' => $rule_data['action_orderby'],
+            'action_limit' => $rule_data['action_limit'],
+            'include_children' => 1,
+        );
+        if (!empty($args['action_products'])) {
+            $action_row['action_products'] = sanitize_text_field($args['action_products']);
+        }
+        WooBooster_Rule::save_actions($rule_id, array(
+            array($action_row), // Group 0
+        ));
+
+        $edit_url = admin_url('admin.php?page=ffla-woobooster-rules&action=edit&rule_id=' . $rule_id);
+
+        return array(
+            'success' => true,
+            'message' => sprintf('Rule #%d "%s" created successfully (inactive). Edit URL: %s', $rule_id, $rule_data['name'], $edit_url),
+            'rule_id' => $rule_id,
+            'edit_url' => $edit_url,
+        );
+    }
+
+    /**
+     * Tool: Update an existing rule.
+     *
+     * @return array{success: bool, message: string, rule_id?: int, edit_url?: string}
+     */
+    private function ai_tool_update_rule(array $args): array
+    {
+        require_once WOOBOOSTER_PATH . 'includes/class-woobooster-rule.php';
+
+        $rule_id = absint($args['rule_id'] ?? 0);
+        if (!$rule_id) {
+            return array('success' => false, 'message' => 'Missing rule_id.');
+        }
+
+        $existing = WooBooster_Rule::get($rule_id);
+        if (!$existing) {
+            return array('success' => false, 'message' => sprintf('Rule #%d not found.', $rule_id));
+        }
+
+        // Update main rule table (only provided fields).
+        $update_data = array();
+        $field_map = array('name', 'priority', 'condition_attribute', 'condition_operator', 'condition_value', 'action_source', 'action_value', 'action_orderby', 'action_limit');
+        foreach ($field_map as $field) {
+            if (isset($args[$field])) {
+                $update_data[$field] = $args[$field];
+            }
+        }
+
+        if (!empty($update_data)) {
+            WooBooster_Rule::update($rule_id, $update_data);
+        }
+
+        // If condition fields changed, rebuild conditions table.
+        if (isset($args['condition_attribute'])) {
+            WooBooster_Rule::save_conditions($rule_id, array(
+                array(
+                    array(
+                        'condition_attribute' => sanitize_key($args['condition_attribute']),
+                        'condition_operator' => $args['condition_operator'] ?? $existing->condition_operator,
+                        'condition_value' => sanitize_text_field($args['condition_value'] ?? $existing->condition_value),
+                        'include_children' => 1,
+                        'min_quantity' => 1,
+                    ),
+                ),
+            ));
+        }
+
+        // If action fields changed, rebuild actions table.
+        if (isset($args['action_source'])) {
+            $action_row = array(
+                'action_source' => sanitize_key($args['action_source']),
+                'action_value' => sanitize_text_field($args['action_value'] ?? $existing->action_value),
+                'action_orderby' => sanitize_key($args['action_orderby'] ?? 'rand'),
+                'action_limit' => max(1, absint($args['action_limit'] ?? 4)),
+                'include_children' => 1,
+            );
+            if (!empty($args['action_products'])) {
+                $action_row['action_products'] = sanitize_text_field($args['action_products']);
+            }
+            WooBooster_Rule::save_actions($rule_id, array(
+                array($action_row),
+            ));
+        }
+
+        $edit_url = admin_url('admin.php?page=ffla-woobooster-rules&action=edit&rule_id=' . $rule_id);
+
+        return array(
+            'success' => true,
+            'message' => sprintf('Rule #%d updated. Edit URL: %s', $rule_id, $edit_url),
+            'rule_id' => $rule_id,
+            'edit_url' => $edit_url,
+        );
     }
     /**
      * Render the AI Chat Modal HTML structure
@@ -1157,65 +1335,62 @@ Keep your responses concise and helpful."
                             <h3 id="wb-ai-modal-title" class="wb-ai-modal__title">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
                                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                                    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+                                    <path d="M19 3v4"/><path d="M21 5h-4"/>
                                 </svg>
                                 <?php esc_html_e('WooBooster AI Assistant', 'ffl-funnels-addons'); ?>
                             </h3>
-                            <button type="button" id="wb-close-ai-modal" class="wb-ai-modal__close"
-                                aria-label="<?php esc_attr_e('Close', 'ffl-funnels-addons'); ?>">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
-                                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M18 6L6 18M6 6l12 12" />
-                                </svg>
-                            </button>
+                            <div class="wb-ai-modal__header-actions">
+                                <button type="button" id="wb-clear-ai-chat" class="wb-ai-modal__clear">
+                                    <?php esc_html_e('Clear', 'ffl-funnels-addons'); ?>
+                                </button>
+                                <button type="button" id="wb-close-ai-modal" class="wb-ai-modal__close"
+                                    aria-label="<?php esc_attr_e('Close', 'ffl-funnels-addons'); ?>">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M18 6L6 18M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Chat Body -->
                         <div id="wb-ai-chat-body" class="wb-ai-modal__body">
-                            <!-- Empty State (Shown initially) -->
+                            <!-- Empty State -->
                             <div id="wb-ai-empty-state" class="wb-ai-empty">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none"
                                     stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                                    <path
-                                        d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z">
-                                    </path>
-                                    <circle cx="12" cy="12" r="4"></circle>
+                                    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+                                    <path d="M19 3v4"/><path d="M21 5h-4"/>
                                 </svg>
                                 <h4><?php esc_html_e('What kind of rule do you need?', 'ffl-funnels-addons'); ?></h4>
-                                <p><?php esc_html_e('Describe your cross-sell goal in natural language. The AI will look up your store\'s actual inventory and attributes to build a strict WooBooster rule.', 'ffl-funnels-addons'); ?>
-                                </p>
+                                <p><?php esc_html_e('Describe your cross-sell or upsell goal. The AI will search your store catalog, look up product compatibility on the web, and create the rule for you.', 'ffl-funnels-addons'); ?></p>
 
                                 <div class="wb-ai-suggestions">
-                                    <button type="button" class="wb-ai-suggestion-btn">
-                                        "Suggest compatible magazines and cleaning kits for the Sig Sauer P365"
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                                            stroke="currentColor" stroke-width="2">
-                                            <line x1="5" y1="12" x2="19" y2="12"></line>
-                                            <polyline points="12 5 19 12 12 19"></polyline>
-                                        </svg>
+                                    <button type="button" class="wb-ai-suggestion-btn"
+                                        data-prompt="Find the best-selling holsters for the Glock 19 and recommend them when someone views that gun">
+                                        <?php esc_html_e('Recommend holsters for the Glock 19', 'ffl-funnels-addons'); ?>
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
                                     </button>
-                                    <button type="button" class="wb-ai-suggestion-btn">
-                                        "When someone looks at 9mm Ammo, show them eye and ear protection."
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                                            stroke="currentColor" stroke-width="2">
-                                            <line x1="5" y1="12" x2="19" y2="12"></line>
-                                            <polyline points="12 5 19 12 12 19"></polyline>
-                                        </svg>
+                                    <button type="button" class="wb-ai-suggestion-btn"
+                                        data-prompt="When someone looks at any 9mm ammo, show them eye and ear protection from my store">
+                                        <?php esc_html_e('Cross-sell safety gear with 9mm ammo', 'ffl-funnels-addons'); ?>
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
                                     </button>
-                                    <button type="button" class="wb-ai-suggestion-btn">
-                                        "Show popular Holsters for the Glock 19 under $100."
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                                            stroke="currentColor" stroke-width="2">
-                                            <line x1="5" y1="12" x2="19" y2="12"></line>
-                                            <polyline points="12 5 19 12 12 19"></polyline>
-                                        </svg>
+                                    <button type="button" class="wb-ai-suggestion-btn"
+                                        data-prompt="Show compatible optics and red dots when a customer views any AR-15 rifle">
+                                        <?php esc_html_e('Suggest optics for AR-15 rifles', 'ffl-funnels-addons'); ?>
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                                    </button>
+                                    <button type="button" class="wb-ai-suggestion-btn"
+                                        data-prompt="When viewing any shotgun, recommend cleaning kits and cases that fit">
+                                        <?php esc_html_e('Cleaning kits & cases for shotguns', 'ffl-funnels-addons'); ?>
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
                                     </button>
                                 </div>
                             </div>
 
-                            <!-- Messages will be injected here via JS -->
-
-                            <!-- Template for Typing Indicator -->
+                            <!-- Typing Indicator -->
                             <div id="wb-ai-typing-indicator" class="wb-ai-message wb-ai-message--assistant" style="display: none;">
                                 <div class="wb-typing-indicator">
                                     <div class="wb-typing-dot"></div>
@@ -1229,9 +1404,9 @@ Keep your responses concise and helpful."
                         <div class="wb-ai-modal__footer">
                             <form id="wb-ai-chat-form" class="wb-ai-input-group">
                                 <textarea id="wb-ai-input" class="wb-ai-input"
-                                    placeholder="<?php esc_attr_e('Example: Show optics compatible with an AR-15...', 'ffl-funnels-addons'); ?>"
+                                    placeholder="<?php esc_attr_e('Describe a recommendation rule...', 'ffl-funnels-addons'); ?>"
                                     rows="1"></textarea>
-                                <button type="submit" id="wb-ai-submit-btn" class="wb-ai-submit"
+                                <button type="submit" id="wb-ai-submit-btn" class="wb-ai-submit" disabled
                                     aria-label="<?php esc_attr_e('Send message', 'ffl-funnels-addons'); ?>">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
                                         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

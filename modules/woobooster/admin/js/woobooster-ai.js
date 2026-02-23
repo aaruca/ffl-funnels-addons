@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const modalOverlay = document.getElementById('wb-ai-modal-overlay');
     const closeBtn = document.getElementById('wb-close-ai-modal');
+    const clearBtn = document.getElementById('wb-clear-ai-chat');
     const chatForm = document.getElementById('wb-ai-chat-form');
     const inputField = document.getElementById('wb-ai-input');
     const chatBody = document.getElementById('wb-ai-chat-body');
@@ -12,104 +13,78 @@ document.addEventListener('DOMContentLoaded', function () {
     const suggestionBtns = document.querySelectorAll('.wb-ai-suggestion-btn');
     const submitBtn = document.getElementById('wb-ai-submit-btn');
 
-    // Create Clear Chat button if it doesn't exist in DOM, or we can just append it to the header
-    let clearChatBtn = document.getElementById('wb-clear-ai-chat');
-    if (!clearChatBtn) {
-        clearChatBtn = document.createElement('button');
-        clearChatBtn.id = 'wb-clear-ai-chat';
-        clearChatBtn.type = 'button';
-        clearChatBtn.className = 'button button-secondary button-small';
-        clearChatBtn.style.marginLeft = 'auto';
-        clearChatBtn.style.marginRight = '10px';
-        clearChatBtn.textContent = 'Clear Chat';
-
-        const header = document.querySelector('.wb-ai-modal__header');
-        if (header) {
-            header.insertBefore(clearChatBtn, closeBtn);
-        }
-    }
-
     const HISTORY_KEY = 'wb_ai_chat_history';
     let messages = [];
 
-    // Load history from localStorage
+    // ── History ────────────────────────────────────────────────────
+
     function loadHistory() {
         const stored = localStorage.getItem(HISTORY_KEY);
-        if (stored) {
-            try {
-                messages = JSON.parse(stored);
-                // Render existing messages
-                if (messages.length > 0) {
-                    if (emptyState) emptyState.style.display = 'none';
-                    messages.forEach(msg => {
-                        appendMessageDOM(msg.role, msg.content, false);
-                    });
-                    scrollToBottom();
-                }
-            } catch (e) {
-                console.error('Failed to parse chat history', e);
-                messages = [];
+        if (!stored) return;
+        try {
+            messages = JSON.parse(stored);
+            if (messages.length > 0) {
+                if (emptyState) emptyState.style.display = 'none';
+                messages.forEach(function (msg) {
+                    appendMessage(msg.role, msg.content, false);
+                });
+                scrollToBottom();
             }
+        } catch (e) {
+            messages = [];
         }
     }
 
-    // Save history to localStorage
     function saveHistory() {
-        // Keep only the last 20 messages to prevent excessive growth
         if (messages.length > 20) {
             messages = messages.slice(-20);
         }
         localStorage.setItem(HISTORY_KEY, JSON.stringify(messages));
     }
 
-    // Clear history
-    clearChatBtn.addEventListener('click', () => {
-        if (confirm('Are you sure you want to clear the chat history?')) {
-            messages = [];
-            saveHistory();
-            // Remove all message divs
-            const messageDivs = chatBody.querySelectorAll('.wb-ai-message:not(#wb-ai-typing-indicator)');
-            messageDivs.forEach(div => div.remove());
-            if (emptyState) emptyState.style.display = 'block';
-        }
-    });
+    // ── Modal ──────────────────────────────────────────────────────
 
-    // Open Modal
-    openBtn.addEventListener('click', (e) => {
+    openBtn.addEventListener('click', function (e) {
         e.preventDefault();
         modalOverlay.classList.add('wb-modal-active');
         inputField.focus();
         scrollToBottom();
     });
 
-    // Close Modal
-    const closeModal = () => {
+    function closeModal() {
         modalOverlay.classList.remove('wb-modal-active');
-    };
+    }
+
     closeBtn.addEventListener('click', closeModal);
-    modalOverlay.addEventListener('click', (e) => {
+    modalOverlay.addEventListener('click', function (e) {
         if (e.target === modalOverlay) closeModal();
     });
-    document.addEventListener('keydown', (e) => {
+    document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape' && modalOverlay.classList.contains('wb-modal-active')) closeModal();
     });
 
-    // Auto-resize textarea
+    // ── Clear Chat ─────────────────────────────────────────────────
+
+    if (clearBtn) {
+        clearBtn.addEventListener('click', function () {
+            if (!confirm('Are you sure you want to clear the chat history?')) return;
+            messages = [];
+            saveHistory();
+            var msgs = chatBody.querySelectorAll('.wb-ai-message:not(#wb-ai-typing-indicator)');
+            msgs.forEach(function (el) { el.remove(); });
+            removeAllSteps();
+            if (emptyState) emptyState.style.display = '';
+        });
+    }
+
+    // ── Auto-resize + submit state ─────────────────────────────────
+
     inputField.addEventListener('input', function () {
         this.style.height = 'auto';
-        this.style.height = (this.scrollHeight) + 'px';
-
-        // Enable/Disable submit
-        if (this.value.trim().length > 0) {
-            submitBtn.style.opacity = '1';
-            submitBtn.style.cursor = 'pointer';
-        } else {
-            submitBtn.style.opacity = '0.5';
-            submitBtn.style.cursor = 'not-allowed';
-        }
+        this.style.height = this.scrollHeight + 'px';
+        submitBtn.disabled = this.value.trim().length === 0;
     });
 
-    // Submit via Enter
     inputField.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -117,100 +92,184 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    // Suggestions
-    suggestionBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const text = btn.textContent.trim().replace(/^"|"$/g, '');
+    // ── Suggestions ────────────────────────────────────────────────
+
+    suggestionBtns.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var text = btn.dataset.prompt || btn.textContent.trim().replace(/^"|"$/g, '');
             inputField.value = text;
             chatForm.dispatchEvent(new Event('submit'));
         });
     });
 
-    // Form Submit
-    chatForm.addEventListener('submit', async (e) => {
+    // ── Submit ─────────────────────────────────────────────────────
+
+    chatForm.addEventListener('submit', async function (e) {
         e.preventDefault();
 
-        const text = inputField.value.trim();
+        var text = inputField.value.trim();
         if (!text) return;
 
         inputField.value = '';
         inputField.style.height = 'auto';
-        submitBtn.style.opacity = '0.5';
+        submitBtn.disabled = true;
 
-        appendMessageDOM('user', text, true);
+        appendMessage('user', text, true);
         messages.push({ role: 'user', content: text });
         saveHistory();
 
         showTyping();
 
         try {
-            const formData = new FormData();
+            var formData = new FormData();
             formData.append('action', 'woobooster_ai_generate');
             formData.append('nonce', wooboosterAdmin.nonce);
-
-            // Send conversation history limit strictly for context window safely
-            // Send the last 10 messages for context (tool messages handles backend)
             formData.append('chat_history', JSON.stringify(messages.slice(-10)));
 
-            const response = await fetch(wooboosterAdmin.ajaxUrl, {
+            var response = await fetch(wooboosterAdmin.ajaxUrl, {
                 method: 'POST',
-                body: formData
+                body: formData,
             });
 
-            const result = await response.json();
-
+            var result = await response.json();
             hideTyping();
 
             if (result.success) {
-                // If the AI generated the JSON and the rule was created
+                // Show tool steps (what the AI did behind the scenes).
+                if (result.data.steps && result.data.steps.length > 0) {
+                    renderSteps(result.data.steps);
+                }
+
                 if (result.data.is_final) {
-                    appendMessageDOM('assistant', result.data.message, true);
+                    appendMessage('assistant', result.data.message, true);
                     messages.push({ role: 'assistant', content: result.data.message });
                     saveHistory();
 
-                    // Show success block and reload
-                    const div = document.createElement('div');
-                    div.className = 'wb-ai-message wb-ai-message--system';
-                    div.innerHTML = `<div class="wb-ai-message__content" style="background:#dcfce7; color:#166534; border:1px solid #bbf7d0;">
-                        Rule generated successfully! Reloading page...</div>`;
-                    chatBody.insertBefore(div, typingIndicator);
-                    scrollToBottom();
+                    // Show success + redirect to rule editor.
+                    appendSystemMessage('success', 'Rule created! Opening editor...');
 
-                    setTimeout(() => window.location.reload(), 1500);
+                    if (result.data.edit_url) {
+                        setTimeout(function () {
+                            window.location.href = result.data.edit_url;
+                        }, 1200);
+                    } else {
+                        setTimeout(function () {
+                            window.location.reload();
+                        }, 1500);
+                    }
                 } else {
-                    // Normal conversation / clarifying question
-                    appendMessageDOM('assistant', result.data.message, true);
+                    appendMessage('assistant', result.data.message, true);
                     messages.push({ role: 'assistant', content: result.data.message });
                     saveHistory();
                 }
             } else {
-                appendMessageDOM('system', 'Error: ' + (result.data.message || 'Unknown error occurred.'), true);
+                appendSystemMessage('error', result.data.message || 'Unknown error occurred.');
             }
-
         } catch (error) {
-            console.error('AI Error:', error);
             hideTyping();
-            appendMessageDOM('system', 'Connection error. Please check your internet and try again.', true);
+            appendSystemMessage('error', 'Connection error. Please check your internet and try again.');
         }
     });
 
-    function appendMessageDOM(role, content, scroll = true) {
+    // ── DOM Helpers ────────────────────────────────────────────────
+
+    /**
+     * Append a chat message. User content is text-only (no HTML injection).
+     * Assistant content allows safe HTML (already escaped server-side with wp_kses_post).
+     */
+    function appendMessage(role, content, scroll) {
         if (emptyState) emptyState.style.display = 'none';
 
-        const msgDiv = document.createElement('div');
-        msgDiv.className = `wb-ai-message wb-ai-message--${role}`;
+        var msgDiv = document.createElement('div');
+        msgDiv.className = 'wb-ai-message wb-ai-message--' + role;
 
-        // Simple markdown parsing for bold text
-        const formattedContent = content
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\n/g, '<br>');
+        var bubble = document.createElement('div');
+        bubble.className = 'wb-ai-message__content';
 
-        msgDiv.innerHTML = `<div class="wb-ai-message__content">${formattedContent}</div>`;
+        if (role === 'user') {
+            // User messages: safe text only — prevents XSS.
+            bubble.textContent = content;
+        } else {
+            // Assistant messages: pre-escaped by server (wp_kses_post).
+            bubble.innerHTML = formatMarkdown(content);
+        }
+
+        msgDiv.appendChild(bubble);
         chatBody.insertBefore(msgDiv, typingIndicator);
 
-        if (scroll) {
-            scrollToBottom();
+        if (scroll) scrollToBottom();
+    }
+
+    /**
+     * Show a system status message (success or error).
+     */
+    function appendSystemMessage(type, text) {
+        var div = document.createElement('div');
+        div.className = 'wb-ai-message wb-ai-message--system';
+
+        var inner = document.createElement('div');
+        inner.className = 'wb-ai-system-msg wb-ai-system-msg--' + type;
+        inner.textContent = text;
+
+        div.appendChild(inner);
+        chatBody.insertBefore(div, typingIndicator);
+        scrollToBottom();
+    }
+
+    /**
+     * Render tool steps as small status labels above the AI response.
+     */
+    function renderSteps(steps) {
+        var container = document.createElement('div');
+        container.className = 'wb-ai-steps';
+
+        steps.forEach(function (step) {
+            var el = document.createElement('div');
+            el.className = 'wb-ai-step';
+
+            var icon = getToolIcon(step.tool);
+            el.innerHTML = '<span class="wb-ai-step__icon">' + icon + '</span>';
+
+            var label = document.createElement('span');
+            label.className = 'wb-ai-step__label';
+            label.textContent = step.label;
+            el.appendChild(label);
+
+            container.appendChild(el);
+        });
+
+        chatBody.insertBefore(container, typingIndicator);
+        scrollToBottom();
+    }
+
+    function removeAllSteps() {
+        chatBody.querySelectorAll('.wb-ai-steps').forEach(function (el) { el.remove(); });
+    }
+
+    function getToolIcon(tool) {
+        switch (tool) {
+            case 'search_store':
+                return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
+            case 'search_web':
+                return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
+            case 'get_rules':
+                return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>';
+            case 'create_rule':
+            case 'update_rule':
+                return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
+            default:
+                return '';
         }
+    }
+
+    /**
+     * Basic markdown: **bold**, newlines → <br>.
+     */
+    function formatMarkdown(text) {
+        if (!text) return '';
+        return text
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\n/g, '<br>');
     }
 
     function showTyping() {
@@ -227,6 +286,6 @@ document.addEventListener('DOMContentLoaded', function () {
         chatBody.scrollTop = chatBody.scrollHeight;
     }
 
-    // Initialize
+    // ── Init ───────────────────────────────────────────────────────
     loadHistory();
 });

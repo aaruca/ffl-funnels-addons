@@ -940,3 +940,72 @@
 .wb-btn-ai-apply:hover {
   opacity: 0.9;
 }
+
+/* Header actions (clear + close) */
+.wb-ai-modal__header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--wb-spacing-sm);
+}
+
+.wb-ai-modal__clear {
+  background: transparent;
+  border: 1px solid var(--wb-color-neutral-stroke-2);
+  color: var(--wb-color-neutral-foreground-3);
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: var(--wb-radius-sm);
+  cursor: pointer;
+  transition: all var(--wb-duration-fast);
+}
+
+.wb-ai-modal__clear:hover {
+  border-color: var(--wb-color-neutral-stroke-1);
+  color: var(--wb-color-neutral-foreground-1);
+}
+
+/* Tool step indicators */
+.wb-ai-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 4px;
+}
+
+.wb-ai-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--wb-color-neutral-foreground-3);
+}
+
+.wb-ai-step__icon {
+  display: flex;
+  align-items: center;
+  color: #a855f7;
+}
+
+.wb-ai-step__label {
+  font-style: italic;
+}
+
+/* System messages (success / error) */
+.wb-ai-system-msg {
+  padding: 8px 14px;
+  border-radius: var(--wb-radius-md);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.wb-ai-system-msg--success {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.wb-ai-system-msg--error {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
