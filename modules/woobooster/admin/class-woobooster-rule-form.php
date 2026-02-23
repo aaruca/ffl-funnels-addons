@@ -726,8 +726,8 @@ class WooBooster_Rule_Form
         }
 
         // Save multi-actions.
-        if (!empty($clean_actions)) {
-            WooBooster_Rule::save_actions($rule_id, $clean_actions);
+        if (!empty($clean_action_groups)) {
+            WooBooster_Rule::save_actions($rule_id, $clean_action_groups);
         }
 
         wp_safe_redirect(admin_url('admin.php?page=ffla-woobooster-rules&action=edit&rule_id=' . $rule_id . '&saved=1'));
