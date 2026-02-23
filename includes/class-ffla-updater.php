@@ -114,6 +114,9 @@ class FFLA_Updater
 
     /**
      * AJAX handler for the dashboard "Check for Updates" button.
+     *
+     * Bypasses wp_update_plugins() (which is async) and queries the GitHub API
+     * directly so the result is always fresh and accurate.
      */
     public function ajax_check_update(): void
     {
@@ -123,21 +126,33 @@ class FFLA_Updater
             wp_send_json_error(['message' => __('Permission denied.', 'ffl-funnels-addons')]);
         }
 
-        $this->force_check();
+        // Force a fresh fetch — clear cached release and any error transient.
+        $this->github_response = null;
+        delete_transient('ffla_github_release');
+        delete_transient('ffla_github_api_error');
 
-        $update_transient = get_site_transient('update_plugins');
-        $has_update = isset($update_transient->response[$this->plugin_basename]);
+        $release = $this->get_github_release();
 
-        if ($has_update) {
-            $new_version = $update_transient->response[$this->plugin_basename]->new_version;
+        if (!$release) {
+            $api_error = get_transient('ffla_github_api_error');
+            wp_send_json_error([
+                'status'  => 'error',
+                'message' => $api_error ?: __('Could not connect to GitHub.', 'ffl-funnels-addons'),
+            ]);
+            return;
+        }
+
+        $latest_version = ltrim($release->tag_name, 'v');
+
+        if (version_compare($latest_version, $this->current_version, '>')) {
             wp_send_json_success([
-                'status' => 'update_available',
-                'message' => sprintf(__('Update available: v%s', 'ffl-funnels-addons'), $new_version),
-                'version' => $new_version,
+                'status'  => 'update_available',
+                'message' => sprintf(__('Update available: v%s', 'ffl-funnels-addons'), $latest_version),
+                'version' => $latest_version,
             ]);
         } else {
             wp_send_json_success([
-                'status' => 'up_to_date',
+                'status'  => 'up_to_date',
                 'message' => sprintf(__('You are running the latest version (v%s).', 'ffl-funnels-addons'), $this->current_version),
             ]);
         }
@@ -160,12 +175,23 @@ class FFLA_Updater
     }
 
     /**
-     * Show admin notice if GitHub API failed. Truly dismissible via AJAX.
+     * Show admin notice if GitHub API failed. Only on FFL Funnels or Plugins pages.
      */
     public function maybe_show_token_notice(): void
     {
         $error = get_transient('ffla_github_api_error');
         if (!$error || !current_user_can('manage_options')) {
+            return;
+        }
+
+        // Only show on pages relevant to this plugin — not on every admin page.
+        $screen = get_current_screen();
+        if (!$screen) {
+            return;
+        }
+        $is_plugins_page  = 'plugins' === $screen->id;
+        $is_ffl_page      = false !== strpos($screen->id, 'ffl-funnels');
+        if (!$is_plugins_page && !$is_ffl_page) {
             return;
         }
 
