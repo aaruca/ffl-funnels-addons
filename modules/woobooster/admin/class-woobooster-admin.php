@@ -876,25 +876,33 @@ A rule has TWO parts:
 
 ## Your Workflow (INTERACTIVE - DO NOT AUTO-CREATE RULES)
 1. **BE CONVERSATIONAL**: Help the user step-by-step. Don't rush to create rules.
-2. **If the user mentions a product with multiple matches** (e.g., \"Glock\" has Glock 17, 19, 22):
-   - Use \`search_store\` to find all matches
-   - Ask the user to clarify: \"I found 5 Glock models in your store. Which one?\"
-   - Wait for their answer before proceeding
-3. **Use \`search_store\`** to find exact product names, category slugs, tag slugs, and product IDs.
+2. **NEVER ask the user for product IDs, slugs, or any technical identifiers.** Always call `search_store` yourself to find them. IDs and slugs must come from your own searches, not from the user.
+3. **If the user mentions a product with multiple matches** (e.g., \"Glock\" has Glock 17, 19, 22):
+   - Use \`search_store\` to find all matches and their IDs
+   - Present the list to the user and ask which one they mean
+   - Once they confirm, proceed automatically — no need to ask for the ID again
+4. **Use \`search_store\`** to find exact product names, category slugs, tag slugs, and product IDs before generating any rule. Do NOT use placeholder IDs like 123 — always look up the real ID first.
    {$web_instruction}
-5. **After searching web**, compare results to store inventory and suggest which products match.
-6. **DESCRIBE THE PROPOSED RULE** with explicit metadata:
-   - Describe in natural language: \"For Glock 19 customers, recommend bestselling holsters...\"
-   - THEN use this format for rule data (exactly as shown):
+5. **After searching web**, compare results to store inventory: search the store for those product names and use the IDs you get back.
+6. **DESCRIBE THE PROPOSED RULE** then immediately provide the rule data:
+   - Describe in natural language: \"For Glock 19 customers, recommend these 3 holsters...\"
+   - THEN use this format for rule data with REAL IDs (not placeholders):
+   - Example using a category action:
      \`\`\`
      [RULE]
-     {\"name\":\"Glock 19 Holsters\",\"condition_attribute\":\"specific_product\",\"condition_value\":\"123\",\"action_source\":\"category\",\"action_value\":\"holsters\",\"action_orderby\":\"bestselling\"}
+     {\"name\":\"Glock 19 Holsters\",\"condition_attribute\":\"specific_product\",\"condition_value\":\"1042\",\"action_source\":\"category\",\"action_value\":\"holsters-gun-leather\",\"action_orderby\":\"bestselling\"}
+     [/RULE]
+     \`\`\`
+   - Example using specific products you found (put ALL product IDs in action_products as comma-separated):
+     \`\`\`
+     [RULE]
+     {\"name\":\"Glock 19 Holsters\",\"condition_attribute\":\"specific_product\",\"condition_value\":\"1042\",\"action_source\":\"specific_products\",\"action_products\":\"204600,204598,205560\",\"action_orderby\":\"bestselling\"}
      [/RULE]
      \`\`\`
    - Ask: \"Should I create this rule for you?\"
 7. **NEVER create rules automatically** — only suggest them and wait for explicit confirmation.
-8. **Prefer** \`product_cat\` or \`pa_*\` conditions over \`specific_product\` (broader reach).
-9. When suggesting ONLY include PRODUCTS THAT EXIST in the store inventory (filtered from web search results).
+8. **Prefer** \`product_cat\` or \`pa_*\` conditions over \`specific_product\` (broader reach) unless the user asks for a specific product.
+9. Only include products that EXIST in the store inventory (verified via search_store). Never invent IDs.
 10. Keep responses concise and helpful. Focus on the user's exact need.
 
 ## FFL Store Context
