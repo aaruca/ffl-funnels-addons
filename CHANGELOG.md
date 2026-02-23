@@ -2,6 +2,57 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.5.1] - 2026-02-22
+
+### 🎯 Features - Interactive AI Chat & One-Click Rule Creation
+
+- **Interactive AI workflow**: Removed auto-rule creation, now fully conversational
+  - AI asks clarifying questions when multiple options found ("Which Glock model?")
+  - User controls every step, no automatic actions
+  - Chat waits for user confirmation before creating rules
+
+- **Smart product filtering**: AI suggestions based on store inventory
+  - Web search results filtered to products you actually have
+  - Only recommends products confirmed in store
+  - Never suggests unavailable items
+
+- **One-click rule creation**: New "Create Rule" button in chat
+  - AI generates rule JSON with complete metadata
+  - Button appears when AI suggests a rule
+  - Click to create rule as inactive draft
+  - User reviews in editor before activation
+
+### 🔧 Technical - Backend & Frontend Improvements
+
+- **New AJAX endpoint**: `woobooster_ai_create_rule()`
+  - Accepts rule data from frontend
+  - Creates rules via existing logic
+  - Returns rule ID and editor URL
+
+- **Enhanced message parsing**: Frontend now detects rule suggestions
+  - Finds `[RULE]...[/RULE]` blocks in AI messages
+  - Extracts JSON rule data automatically
+  - Renders "Create This Rule" button with data
+
+- **Improved CSS styling**
+  - New button styles matching design system
+  - Info message type for feedback
+  - Proper spacing and typography
+
+### 🐛 Bugs Fixed
+
+- **WordPress sidebar menu now always visible**
+  - Fixed CSS selector to ensure "FFL Funnels" menu never hidden
+  - Module dropdowns work correctly
+
+### 📋 Known Improvements Over v1.5.0
+
+- ✅ No more auto-rule creation
+- ✅ User controls each step
+- ✅ Only suggests products in inventory
+- ✅ One-click rule creation from chat
+- ✅ Safe draft-based workflow
+
 ## [1.5.0] - 2026-02-22
 
 ### 🎯 Features - AI Chat Assistant Complete Rewrite
