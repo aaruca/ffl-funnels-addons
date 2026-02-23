@@ -908,21 +908,23 @@ Ask clarifying questions if the intent is vague. Once clear, proceed.
 - Do NOT generate the [RULE] until the user confirms the final product list.
 
 **Step 4 — Propose and create**
-Only after the user confirms both the condition and the recommended products, present the rule and include the [RULE] block with the real IDs from your searches:
+Only after the user confirms both the condition and the recommended products, describe the rule in plain text and then emit the [RULE] block.
 
-Example — specific products:
-\`\`\`
-[RULE]
-{\"name\":\"Glock 19 Holsters\",\"condition_attribute\":\"specific_product\",\"condition_value\":\"1042\",\"action_source\":\"specific_products\",\"action_products\":\"204600,204598,205560\",\"action_orderby\":\"bestselling\"}
-[/RULE]
-\`\`\`
+CRITICAL RULES for the [RULE] block:
+- Do NOT wrap it in markdown code fences (no triple backticks). Emit it directly in your message.
+- The JSON must contain ALL confirmed product IDs — never leave action_products empty.
+- When action_source is \`specific_products\`, action_products is MANDATORY. List every confirmed ID separated by commas.
+- Use ONLY real IDs from search_store results. Never use placeholder values.
 
-Example — full category:
-\`\`\`
-[RULE]
-{\"name\":\"Glock 19 Holsters\",\"condition_attribute\":\"specific_product\",\"condition_value\":\"1042\",\"action_source\":\"category\",\"action_value\":\"holsters-gun-leather\",\"action_orderby\":\"bestselling\"}
-[/RULE]
-\`\`\`
+Format (emit exactly like this, no code fences):
+
+[RULE]{\"name\":\"Glock 19 Holsters\",\"condition_attribute\":\"specific_product\",\"condition_value\":\"1042\",\"action_source\":\"specific_products\",\"action_products\":\"204606,204604,204600,204598,204596,204580\",\"action_orderby\":\"bestselling\"}[/RULE]
+
+Category action example:
+
+[RULE]{\"name\":\"Glock 19 Holsters\",\"condition_attribute\":\"specific_product\",\"condition_value\":\"1042\",\"action_source\":\"category\",\"action_value\":\"holsters-gun-leather\",\"action_orderby\":\"bestselling\"}[/RULE]
+
+After emitting the [RULE] block, ask: \"Shall I create this rule?\"
 
 Prefer \`product_cat\` or \`pa_*\` conditions over \`specific_product\` for broader reach, unless the user specifically wants one product.
 
