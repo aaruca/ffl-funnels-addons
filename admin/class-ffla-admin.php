@@ -369,6 +369,23 @@ class FFLA_Admin
     }
 
     /**
+     * Render a password/secret field (masked input).
+     */
+    public static function render_password_field(string $label, string $name, string $value, string $desc): void
+    {
+        ?>
+        <div class="wb-field">
+            <label class="wb-field__label" for="<?php echo esc_attr($name); ?>"><?php echo esc_html($label); ?></label>
+            <div class="wb-field__control">
+                <input type="password" id="<?php echo esc_attr($name); ?>" name="<?php echo esc_attr($name); ?>"
+                    value="<?php echo esc_attr($value); ?>" class="wb-input" autocomplete="off">
+                <p class="wb-field__desc"><?php echo esc_html($desc); ?></p>
+            </div>
+        </div>
+        <?php
+    }
+
+    /**
      * Static helper to render a toggle field.
      */
     public static function render_toggle_field(string $label, string $name, string $value, string $desc): void

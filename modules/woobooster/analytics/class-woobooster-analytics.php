@@ -129,19 +129,26 @@ class WooBooster_Analytics
         $rules_data = array();
         $products_data = array();
 
-        // Single query — all completed/processing orders in range.
-        $orders = wc_get_orders(array(
-            'status' => array('wc-completed', 'wc-processing'),
-            'date_created' => $date_from . '...' . $date_to . ' 23:59:59',
-            'limit' => -1,
-            'return' => 'ids',
-        ));
+        // Paginated query — all completed/processing orders in range.
+        $offset = 0;
+        $page_size = 500;
+        $all_processed = false;
 
-        foreach ($orders as $order_id) {
-            $order = wc_get_order($order_id);
-            if (!$order) {
-                continue;
+        while (!$all_processed) {
+            $orders = wc_get_orders(array(
+                'status' => array('wc-completed', 'wc-processing'),
+                'date_created' => $date_from . '...' . $date_to . ' 23:59:59',
+                'limit' => $page_size,
+                'offset' => $offset,
+                'return' => 'objects',
+            ));
+
+            if (empty($orders)) {
+                $all_processed = true;
+                break;
             }
+
+        foreach ($orders as $order) {
 
             $stats['total_orders']++;
             $day_key = $order->get_date_created()->format('Y-m-d');
@@ -195,6 +202,9 @@ class WooBooster_Analytics
                 $stats['wb_orders']++;
             }
         }
+
+            $offset += $page_size;
+        } // end while
 
         // Build daily arrays.
         $daily = array('labels' => array(), 'total' => array(), 'wb' => array());

@@ -2,6 +2,63 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.6.0] - 2026-02-26
+
+### 🔒 Security — Full Plugin Audit (v1 + v2)
+
+Two comprehensive security audits were performed across all modules. This release addresses every finding.
+
+#### HIGH
+
+- **N+1 `get_term_by()` in matcher.php** — Added static per-request term slug cache to avoid 1000+ queries on sites with many rules
+- **Import rules without size limit (DoS)** — Capped rule import at 500 rules per batch
+- **XSS in build status dates (admin)** — Escaped all interpolated values inside `sprintf()` with `esc_html()` / `absint()`
+- **Info disclosure in wishlist AJAX** — Response now returns only `status` + `count`, not the full product ID array
+- **SVG/CSS over-sanitized in wishlist admin** — Field-specific sanitization: `wp_kses()` for SVG, `wp_strip_all_tags()` for CSS, `sanitize_text_field()` for colors
+- **URL redirect without origin check (AI JS)** — `window.location.href` now validates `startsWith(window.location.origin)` before redirect
+- **API keys displayed in plain text** — Changed API key fields from `type="text"` to `type="password"` with new `render_password_field()` helper
+
+#### MEDIUM
+
+- **Inline `<script>` in Doofinder violates CSP** — Moved price-structure-fix JS to external file enqueued via `wp_enqueue_script()`
+- **Race condition in module activation** — `activate_module()` now re-reads `ffla_active_modules` from DB before write
+- **N+1 in wishlist page render** — Pre-warm WP object cache with `WP_Query` before product loop
+- **`json_decode` without error check (AI chat)** — Added `is_array()` fallback for malformed chat history
+- **`$_GET['ffla_checked']` unsanitized** — Now passes through `sanitize_text_field(wp_unslash())`
+- **Wishlist query without LIMIT** — Added `LIMIT 500` to prevent memory exhaustion on large wishlists
+- **N+1 `wp_get_post_terms()` in coupon matcher** — Added static per-request product term cache
+- **N+1 `wp_get_post_terms()` in trending builder** — Replaced loop with single SQL JOIN query
+- **Analytics unbounded order query** — Replaced `limit: -1` with paginated 500-order batches
+
+#### LOW
+
+- **OpenAI API errors exposed to frontend** — Now logged server-side with generic user-facing message
+- **CSS injection via custom CSS in wishlist** — Strips `@import`, `expression()`, `javascript:`, `url(data:)` patterns
+- **Nonce/capability failures silent in rule form** — Changed `return` to `wp_die()` with error message
+- **`headers_sent()` guard on wishlist cookies** — Prevents PHP warnings when output already started
+- **UTC consistency** — Changed `current_time('mysql')` to `current_time('mysql', true)` in matcher and coupon for consistent timezone handling
+- **`$product->get_price_html()` unescaped in wishlist** — Wrapped with `wp_kses_post()`
+
+### 🧹 Cleanup
+
+- Removed unused `FFLA_DB_VERSION` and `FFLA_PLUGIN_DIR` constants
+- Bumped `Requires at least` to WordPress 6.2
+- Added `Requires Plugins: woocommerce` header
+
+---
+
+## [1.5.2] - 2026-02-24
+
+### Bug Fixes
+
+- Fix coupon auto-apply + UI improvements for rule form
+- Fix fatal error on rule save — pass `clean_action_groups` not `clean_actions`
+- Restore page access — hide submenu flyout via CSS instead of `remove_submenu_page()`
+- Fix Check for Updates button + API notice scope
+- Fix `[RULE]` block format + menu via `remove_submenu_page()`
+
+---
+
 ## [1.5.1] - 2026-02-22
 
 ### 🎯 Features - Interactive AI Chat & One-Click Rule Creation

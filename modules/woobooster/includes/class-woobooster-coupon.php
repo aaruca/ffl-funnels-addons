@@ -131,10 +131,7 @@ class WooBooster_Coupon
             }
 
             // Get product terms for condition matching.
-            $terms = wp_get_post_terms($product_id, get_object_taxonomies('product'), array('fields' => 'all'));
-            if (is_wp_error($terms)) {
-                $terms = array();
-            }
+            $terms = $this->get_cached_product_terms($product_id);
 
             foreach ($terms as $term) {
                 $cart_keys[] = sanitize_key($term->taxonomy) . ':' . sanitize_text_field($term->slug);
@@ -147,7 +144,7 @@ class WooBooster_Coupon
         $cart_keys = array_unique($cart_keys);
 
         // Match against rules.
-        $now = current_time('mysql');
+        $now = current_time('mysql', true);
         foreach ($rules as $rule) {
             // Check scheduling dates — skip if rule is outside its active window.
             if (!empty($rule->start_date) && $now < $rule->start_date) {
@@ -172,6 +169,19 @@ class WooBooster_Coupon
         }
 
         return $coupon_ids;
+    }
+
+    /**
+     * Cached product terms to avoid N+1 in cart loops.
+     */
+    private function get_cached_product_terms($product_id)
+    {
+        static $term_cache = array();
+        if (!isset($term_cache[$product_id])) {
+            $terms = wp_get_post_terms($product_id, get_object_taxonomies('product'), array('fields' => 'all'));
+            $term_cache[$product_id] = is_wp_error($terms) ? array() : $terms;
+        }
+        return $term_cache[$product_id];
     }
 
     /**
@@ -220,10 +230,7 @@ class WooBooster_Coupon
                 continue;
             }
 
-            $terms = wp_get_post_terms($product_id, get_object_taxonomies('product'), array('fields' => 'all'));
-            if (is_wp_error($terms)) {
-                $terms = array();
-            }
+            $terms = $this->get_cached_product_terms($product_id);
 
             $item_keys = array();
             $item_cat_ids = array();

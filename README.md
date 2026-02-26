@@ -2,8 +2,8 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.5.2-blue.svg)
-![WordPress](https://img.shields.io/badge/WordPress-6.0+-blue.svg)
+![Version](https://img.shields.io/badge/version-1.6.0-blue.svg)
+![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
 
@@ -64,12 +64,19 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 
 ## Requirements
 
-*   WordPress 6.0 or higher
+*   WordPress 6.2 or higher
 *   WooCommerce 8.0 or higher
 *   PHP 7.4 or higher
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.6.0 — Security Audit
+*   **30+ security and performance fixes** from two comprehensive audits across all modules.
+*   HIGH: N+1 query caches (matcher, coupon, trending), import DoS limit, XSS escaping, wishlist info disclosure, SVG/CSS field sanitization, AI redirect origin check, API key masking.
+*   MEDIUM: Doofinder inline script externalized (CSP), module activation race condition, wishlist cache pre-warming, analytics pagination, updater input sanitization.
+*   LOW: OpenAI error masking, CSS injection patterns, nonce wp_die(), headers_sent() guards, UTC consistency, price HTML escaping.
+*   Cleanup: Removed unused constants, bumped WP requirement to 6.2, added `Requires Plugins: woocommerce` header.
 
 ### v1.5.2
 *   Fix: **CRITICAL** — Coupon auto-apply system was broken due to incorrect iteration of grouped actions array. Coupons now apply correctly on cart pages.

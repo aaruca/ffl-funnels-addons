@@ -184,9 +184,26 @@ class Wishlist_Admin
             'alg_wishlist_custom_css',
         ];
 
+        $svg_allowlist = array(
+            'svg'      => array('xmlns' => true, 'viewBox' => true, 'width' => true, 'height' => true, 'fill' => true, 'stroke' => true, 'stroke-width' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'class' => true),
+            'path'     => array('d' => true, 'fill' => true, 'stroke' => true),
+            'circle'   => array('cx' => true, 'cy' => true, 'r' => true, 'fill' => true, 'stroke' => true),
+            'rect'     => array('x' => true, 'y' => true, 'width' => true, 'height' => true, 'rx' => true, 'ry' => true, 'fill' => true, 'stroke' => true),
+            'line'     => array('x1' => true, 'y1' => true, 'x2' => true, 'y2' => true, 'stroke' => true),
+            'polyline' => array('points' => true, 'fill' => true, 'stroke' => true),
+            'polygon'  => array('points' => true, 'fill' => true, 'stroke' => true),
+        );
+
         foreach ($fields as $field) {
             if (isset($_POST[$field])) {
-                $options[$field] = sanitize_text_field(wp_unslash($_POST[$field]));
+                $value = wp_unslash($_POST[$field]);
+                if ('alg_wishlist_icon_svg' === $field) {
+                    $options[$field] = wp_kses($value, $svg_allowlist);
+                } elseif ('alg_wishlist_custom_css' === $field) {
+                    $options[$field] = wp_strip_all_tags($value);
+                } else {
+                    $options[$field] = sanitize_text_field($value);
+                }
             }
         }
 

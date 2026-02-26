@@ -51,8 +51,7 @@ class Alg_Wishlist_Ajax
 
         wp_send_json_success(array(
             'status' => $status,
-            'count' => $count,
-            'items' => $items // Send all items to sync frontend state
+            'count'  => $count,
         ));
     }
 

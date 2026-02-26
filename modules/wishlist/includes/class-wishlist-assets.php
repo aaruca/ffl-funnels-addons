@@ -42,6 +42,11 @@ class Alg_Wishlist_Assets
         $hover   = $this->sanitize_css_color(isset($options['alg_wishlist_color_hover']) ? $options['alg_wishlist_color_hover'] : '#ff0000');
         $active  = $this->sanitize_css_color(isset($options['alg_wishlist_color_active']) ? $options['alg_wishlist_color_active'] : '#cc0000');
         $custom  = isset($options['alg_wishlist_custom_css']) ? wp_strip_all_tags($options['alg_wishlist_custom_css']) : '';
+        // Strip dangerous CSS patterns that could be used for injection.
+        $custom = preg_replace('/@import\b/i', '', $custom);
+        $custom = preg_replace('/expression\s*\(/i', '', $custom);
+        $custom = preg_replace('/javascript\s*:/i', '', $custom);
+        $custom = preg_replace('/url\s*\(\s*["\']?\s*data:/i', '', $custom);
 
         $custom_css = "
             :root {

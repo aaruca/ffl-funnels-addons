@@ -163,8 +163,9 @@ class FFLA_Updater
      */
     public function show_update_notice(string $file, array $plugin): void
     {
-        if (!empty($_GET['ffla_checked'])) {
-            $msg = ('update_available' === $_GET['ffla_checked'])
+        $checked = isset($_GET['ffla_checked']) ? sanitize_text_field(wp_unslash($_GET['ffla_checked'])) : '';
+        if (!empty($checked)) {
+            $msg = ('update_available' === $checked)
                 ? __('Update found! Click "update now" above.', 'ffl-funnels-addons')
                 : sprintf(__('You are running the latest version (v%s).', 'ffl-funnels-addons'), $this->current_version);
 

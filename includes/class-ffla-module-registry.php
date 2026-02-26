@@ -88,8 +88,16 @@ class FFLA_Module_Registry
         }
 
         if (!$this->is_active($id)) {
-            $this->active_ids[] = $id;
-            update_option('ffla_active_modules', $this->active_ids);
+            // Re-read from DB to avoid race conditions under concurrency.
+            $active_ids = get_option('ffla_active_modules', []);
+            if (!is_array($active_ids)) {
+                $active_ids = [];
+            }
+            if (!in_array($id, $active_ids, true)) {
+                $active_ids[] = $id;
+                update_option('ffla_active_modules', $active_ids);
+            }
+            $this->active_ids = $active_ids;
         }
 
         // Run the module's activation routine (create tables, etc.).

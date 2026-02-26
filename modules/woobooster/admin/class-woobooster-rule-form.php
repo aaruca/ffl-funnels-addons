@@ -607,11 +607,11 @@ class WooBooster_Rule_Form
         }
 
         if (!wp_verify_nonce(sanitize_key($_POST['woobooster_rule_nonce']), 'woobooster_save_rule')) {
-            return;
+            wp_die(esc_html__('Security check failed: invalid nonce.', 'ffl-funnels-addons'));
         }
 
         if (!current_user_can('manage_woocommerce')) {
-            return;
+            wp_die(esc_html__('Security check failed: insufficient permissions.', 'ffl-funnels-addons'));
         }
 
         $rule_id = isset($_POST['rule_id']) ? absint($_POST['rule_id']) : 0;

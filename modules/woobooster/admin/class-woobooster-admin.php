@@ -114,14 +114,14 @@ class WooBooster_Admin
             __('Choose how recommendations are rendered on the frontend.', 'ffl-funnels-addons')
         );
 
-        FFLA_Admin::render_text_field(
+        FFLA_Admin::render_password_field(
             __('OpenAI API Key', 'ffl-funnels-addons'),
             'woobooster_openai_key',
             isset($options['openai_key']) ? $options['openai_key'] : '',
             __('Enter your OpenAI API key to enable AI rule generation. Needs access to GPT-4o models.', 'ffl-funnels-addons')
         );
 
-        FFLA_Admin::render_text_field(
+        FFLA_Admin::render_password_field(
             __('Tavily API Key', 'ffl-funnels-addons'),
             'woobooster_tavily_key',
             isset($options['tavily_key']) ? $options['tavily_key'] : '',
@@ -288,18 +288,18 @@ class WooBooster_Admin
                                 $cp = $last_build['copurchase'];
                                 $parts[] = sprintf(
                                     __('Co-purchase: %1$d products in %2$ss (%3$s)', 'ffl-funnels-addons'),
-                                    $cp['products'],
-                                    $cp['time'],
-                                    $cp['date']
+                                    absint($cp['products']),
+                                    esc_html($cp['time']),
+                                    esc_html($cp['date'])
                                 );
                             }
                             if (!empty($last_build['trending'])) {
                                 $tr = $last_build['trending'];
                                 $parts[] = sprintf(
                                     __('Trending: %1$d categories in %2$ss (%3$s)', 'ffl-funnels-addons'),
-                                    $tr['categories'],
-                                    $tr['time'],
-                                    $tr['date']
+                                    absint($tr['categories']),
+                                    esc_html($tr['time']),
+                                    esc_html($tr['date'])
                                 );
                             }
                             if (!empty($parts)) {
@@ -549,6 +549,15 @@ class WooBooster_Admin
             wp_send_json_error(array('message' => __('Invalid JSON file.', 'ffl-funnels-addons')));
         }
 
+        $max_import = 500;
+        if (count($data['rules']) > $max_import) {
+            wp_send_json_error(array('message' => sprintf(
+                /* translators: %d: maximum number of rules allowed per import */
+                __('Maximum %d rules per import.', 'ffl-funnels-addons'),
+                $max_import
+            )));
+        }
+
         $count = 0;
         foreach ($data['rules'] as $rule_data) {
             $conditions = isset($rule_data['conditions']) ? $rule_data['conditions'] : array();
@@ -761,14 +770,16 @@ class WooBooster_Admin
             ));
 
             if (is_wp_error($response)) {
-                wp_send_json_error(array('message' => $response->get_error_message(), 'steps' => $steps));
+                error_log('WooBooster AI: WP_Error — ' . $response->get_error_message());
+                wp_send_json_error(array('message' => __('AI service error. Please try again.', 'ffl-funnels-addons'), 'steps' => $steps));
             }
 
             $data = json_decode(wp_remote_retrieve_body($response), true);
 
             if (empty($data) || isset($data['error'])) {
-                $err_msg = isset($data['error']['message']) ? $data['error']['message'] : __('Invalid response from OpenAI.', 'ffl-funnels-addons');
-                wp_send_json_error(array('message' => $err_msg, 'steps' => $steps));
+                $err_msg = isset($data['error']['message']) ? $data['error']['message'] : 'Unknown API error';
+                error_log('WooBooster AI: API error — ' . $err_msg);
+                wp_send_json_error(array('message' => __('AI service error. Please try again.', 'ffl-funnels-addons'), 'steps' => $steps));
             }
 
             $assistant_message = $data['choices'][0]['message'];

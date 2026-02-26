@@ -106,20 +106,34 @@ class WooBooster_Trending
             }
         }
 
-        // Group products by category and store as transients.
+        // Group products by category using a single SQL JOIN (avoids N+1).
         $categories_indexed = 0;
         $category_products = array();
 
-        foreach ($product_sales as $product_id => $qty) {
-            $cats = wp_get_post_terms($product_id, 'product_cat', array('fields' => 'ids'));
-            if (is_wp_error($cats) || empty($cats)) {
-                continue;
-            }
-            foreach ($cats as $cat_id) {
+        $product_ids = array_keys($product_sales);
+        if (!empty($product_ids)) {
+            $placeholders = implode(', ', array_fill(0, count($product_ids), '%d'));
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $cat_relationships = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT tt.term_id, p.ID as product_id
+                    FROM {$wpdb->posts} p
+                    INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+                    INNER JOIN {$wpdb->term_taxonomy} tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
+                    WHERE p.ID IN ({$placeholders}) AND tt.taxonomy = %s",
+                    array_merge($product_ids, array('product_cat'))
+                )
+            );
+
+            foreach ($cat_relationships as $row) {
+                $cat_id = absint($row->term_id);
+                $pid = absint($row->product_id);
                 if (!isset($category_products[$cat_id])) {
                     $category_products[$cat_id] = array();
                 }
-                $category_products[$cat_id][$product_id] = $qty;
+                if (isset($product_sales[$pid])) {
+                    $category_products[$cat_id][$pid] = $product_sales[$pid];
+                }
             }
         }
 

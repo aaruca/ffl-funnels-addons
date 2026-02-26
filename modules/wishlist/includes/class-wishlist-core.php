@@ -41,6 +41,9 @@ class Alg_Wishlist_Core
             // Ensure guest has a session ID cookie
             if (!isset($_COOKIE[self::$session_cookie_name])) {
                 $session_id = wp_generate_password(32, false);
+                if (headers_sent()) {
+                    return;
+                }
                 setcookie(self::$session_cookie_name, $session_id, [
                     'expires' => time() + 30 * DAY_IN_SECONDS,
                     'path' => COOKIEPATH,
@@ -210,7 +213,7 @@ class Alg_Wishlist_Core
             return array();
 
         $table_items = $wpdb->prefix . 'alg_wishlist_items';
-        return $wpdb->get_col($wpdb->prepare("SELECT product_id FROM $table_items WHERE wishlist_id = %d", $wishlist_id));
+        return $wpdb->get_col($wpdb->prepare("SELECT product_id FROM $table_items WHERE wishlist_id = %d LIMIT 500", $wishlist_id));
     }
 
     /**
@@ -256,6 +259,9 @@ class Alg_Wishlist_Core
             }
 
             // Clear cookie
+            if (headers_sent()) {
+                return;
+            }
             setcookie(self::$session_cookie_name, '', [
                 'expires' => time() - 3600,
                 'path' => COOKIEPATH,

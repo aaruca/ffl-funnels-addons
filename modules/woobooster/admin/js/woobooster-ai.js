@@ -150,7 +150,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     // Show success + redirect to rule editor.
                     appendSystemMessage('success', 'Rule created! Opening editor...');
 
-                    if (result.data.edit_url) {
+                    if (result.data.edit_url && result.data.edit_url.startsWith(window.location.origin)) {
                         setTimeout(function () {
                             window.location.href = result.data.edit_url;
                         }, 1200);
@@ -266,7 +266,7 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(function (result) {
                 if (result.success) {
                     appendSystemMessage('success', 'Rule created! Opening editor...');
-                    if (result.data.edit_url) {
+                    if (result.data.edit_url && result.data.edit_url.startsWith(window.location.origin)) {
                         setTimeout(function () {
                             window.location.href = result.data.edit_url;
                         }, 1200);

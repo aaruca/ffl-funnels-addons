@@ -22,6 +22,25 @@ class WooBooster_Matcher
     public static $last_matched_rule = null;
 
     /**
+     * Per-request cache for get_term_by() lookups.
+     *
+     * @var array
+     */
+    private static $term_slug_cache = [];
+
+    /**
+     * Cached get_term_by() to avoid N+1 queries in condition loops.
+     */
+    private static function get_term_cached(string $slug, string $taxonomy)
+    {
+        $key = $taxonomy . ':' . $slug;
+        if (!isset(self::$term_slug_cache[$key])) {
+            self::$term_slug_cache[$key] = get_term_by('slug', $slug, $taxonomy);
+        }
+        return self::$term_slug_cache[$key];
+    }
+
+    /**
      * Get recommended product IDs for a given product.
      *
      * @param int   $product_id The source product ID.
@@ -235,7 +254,7 @@ class WooBooster_Matcher
             }
 
             // Check scheduling dates — skip if rule is outside its active window.
-            $now = current_time('mysql');
+            $now = current_time('mysql', true);
             if (!empty($rule->start_date) && $now < $rule->start_date) {
                 continue;
             }
@@ -286,7 +305,7 @@ class WooBooster_Matcher
                         // is a descendant of this condition's term.
                         if (!$key_matched && !empty($cond->include_children)) {
                             $attr = sanitize_key($cond->condition_attribute);
-                            $parent_term = get_term_by('slug', $cond->condition_value, $attr);
+                            $parent_term = self::get_term_cached($cond->condition_value, $attr);
 
                             if ($parent_term && !is_wp_error($parent_term)) {
                                 foreach ($terms as $term) {

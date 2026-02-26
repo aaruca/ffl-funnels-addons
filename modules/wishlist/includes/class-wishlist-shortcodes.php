@@ -161,6 +161,19 @@ class Alg_Wishlist_Shortcodes
     {
         $items = Alg_Wishlist_Core::get_wishlist_items();
 
+        // Pre-warm WP object cache to avoid N+1 queries.
+        if (!empty($items)) {
+            $items_int = array_map('absint', $items);
+            new WP_Query([
+                'post_type'      => 'product',
+                'post__in'       => $items_int,
+                'posts_per_page' => count($items_int),
+                'no_found_rows'  => true,
+                'fields'         => 'ids',
+            ]);
+            wp_reset_postdata();
+        }
+
         ob_start();
         ?>
         <div class="alg-wishlist-grid">
@@ -192,7 +205,7 @@ class Alg_Wishlist_Shortcodes
                                 <a href="<?php echo esc_url($product->get_permalink()); ?>"><?php echo esc_html($product->get_name()); ?></a>
                             </h3>
                             <div class="alg-card-price">
-                                <?php echo $product->get_price_html(); ?>
+                                <?php echo wp_kses_post($product->get_price_html()); ?>
                             </div>
                             <div class="alg-card-actions">
                                 <a href="<?php echo esc_url($product->add_to_cart_url()); ?>" class="button alg-add-cart-btn"
