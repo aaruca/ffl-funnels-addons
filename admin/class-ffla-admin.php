@@ -78,8 +78,10 @@ class FFLA_Admin
             }
         }
 
-        // Hide the default duplicated "Dashboard" submenu link.
-        remove_submenu_page('ffl-funnels-addons', 'ffl-funnels-addons');
+        // Hide the auto-generated duplicate "Dashboard" submenu visually.
+        // We do NOT use remove_submenu_page() because it also removes the page
+        // from $_registered_pages, which can block access to the main menu page.
+        // Instead, the flyout CSS in hide_submenu_flyout() hides all sub-items.
     }
 
     /**

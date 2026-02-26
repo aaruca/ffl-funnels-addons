@@ -151,13 +151,13 @@ class WooBooster_Admin
 
         echo '</div></div>';
 
+        $this->render_smart_recommendations_section();
+
         echo '<div class="wb-actions-bar">';
         echo '<button type="submit" class="wb-btn wb-btn--primary">' . esc_html__('Save Settings', 'ffl-funnels-addons') . '</button>';
         echo '</div>';
 
         echo '</form>';
-
-        $this->render_smart_recommendations_section();
     }
 
     /**
@@ -177,8 +177,7 @@ class WooBooster_Admin
                     <?php esc_html_e('Enable intelligent recommendation strategies. These work as new Action Sources in your rules. Zero extra database tables.', 'ffl-funnels-addons'); ?>
                 </p>
 
-                <form method="post" action="" id="wb-smart-settings-form">
-                    <?php wp_nonce_field('woobooster_save_settings', 'woobooster_settings_nonce'); ?>
+                <div id="wb-smart-settings-form">
                     <input type="hidden" name="woobooster_smart_save" value="1">
 
                     <div class="wb-field">
@@ -265,11 +264,7 @@ class WooBooster_Admin
                         </div>
                     </div>
 
-                    <div class="wb-actions-bar" style="margin-top:16px;">
-                        <button type="submit"
-                            class="wb-btn wb-btn--primary"><?php esc_html_e('Save Smart Settings', 'ffl-funnels-addons'); ?></button>
-                    </div>
-                </form>
+                </div>
 
                 <hr style="border:none; border-top:1px solid #eee; margin:20px 0;">
 
@@ -466,21 +461,7 @@ class WooBooster_Admin
 
         $existing = get_option('woobooster_settings', array());
 
-        if (isset($_POST['woobooster_smart_save'])) {
-            $existing['smart_copurchase'] = isset($_POST['woobooster_smart_copurchase']) ? '1' : '0';
-            $existing['smart_trending'] = isset($_POST['woobooster_smart_trending']) ? '1' : '0';
-            $existing['smart_recently_viewed'] = isset($_POST['woobooster_smart_recently_viewed']) ? '1' : '0';
-            $existing['smart_similar'] = isset($_POST['woobooster_smart_similar']) ? '1' : '0';
-            $existing['smart_days'] = isset($_POST['woobooster_smart_days']) ? absint($_POST['woobooster_smart_days']) : 90;
-            $existing['smart_max_relations'] = isset($_POST['woobooster_smart_max_relations']) ? absint($_POST['woobooster_smart_max_relations']) : 20;
-
-            update_option('woobooster_settings', $existing);
-            WooBooster_Cron::schedule();
-
-            wp_safe_redirect(add_query_arg('settings-updated', 'true', admin_url('admin.php?page=ffla-woobooster')));
-            exit;
-        }
-
+        // General settings.
         $options = array_merge($existing, array(
             'enabled' => isset($_POST['woobooster_enabled']) ? '1' : '0',
             'section_title' => isset($_POST['woobooster_section_title']) ? sanitize_text_field(wp_unslash($_POST['woobooster_section_title'])) : '',
@@ -492,7 +473,21 @@ class WooBooster_Admin
             'delete_data_uninstall' => isset($_POST['woobooster_delete_data']) ? '1' : '0',
         ));
 
+        // Smart recommendations settings (same form).
+        if (isset($_POST['woobooster_smart_save'])) {
+            $options['smart_copurchase'] = isset($_POST['woobooster_smart_copurchase']) ? '1' : '0';
+            $options['smart_trending'] = isset($_POST['woobooster_smart_trending']) ? '1' : '0';
+            $options['smart_recently_viewed'] = isset($_POST['woobooster_smart_recently_viewed']) ? '1' : '0';
+            $options['smart_similar'] = isset($_POST['woobooster_smart_similar']) ? '1' : '0';
+            $options['smart_days'] = isset($_POST['woobooster_smart_days']) ? absint($_POST['woobooster_smart_days']) : 90;
+            $options['smart_max_relations'] = isset($_POST['woobooster_smart_max_relations']) ? absint($_POST['woobooster_smart_max_relations']) : 20;
+        }
+
         update_option('woobooster_settings', $options);
+
+        if (isset($_POST['woobooster_smart_save'])) {
+            WooBooster_Cron::schedule();
+        }
 
         wp_safe_redirect(add_query_arg('settings-updated', 'true', admin_url('admin.php?page=ffla-woobooster')));
         exit;
