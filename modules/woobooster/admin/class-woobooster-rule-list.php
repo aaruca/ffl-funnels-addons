@@ -212,7 +212,22 @@ class WooBooster_Rule_List extends WP_List_Table
             'apply_coupon' => __('Apply Coupon', 'woobooster'),
         );
 
-        $actions = WooBooster_Rule::get_actions($item->id);
+        $action_groups = WooBooster_Rule::get_actions($item->id);
+        if (empty($action_groups)) {
+            return '<span class="wb-text--muted">—</span>';
+        }
+
+        // Flatten grouped actions to get a flat list of action objects.
+        $actions = array();
+        foreach ($action_groups as $group) {
+            if (is_array($group)) {
+                foreach ($group as $action) {
+                    $actions[] = $action;
+                }
+            } else {
+                $actions[] = $group;
+            }
+        }
         if (empty($actions)) {
             return '<span class="wb-text--muted">—</span>';
         }
