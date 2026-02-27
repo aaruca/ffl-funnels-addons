@@ -506,7 +506,7 @@
    ═══════════════════════════════════════════════════════════════════ */
 
 .wb-card__body--table .search-box {
-  margin: 0 0 var(--wb-spacing-lg) 0;
+  margin: var(--wb-spacing-lg) 0 var(--wb-spacing-lg) 0;
   padding: 0 var(--wb-spacing-lg);
   display: flex;
   align-items: center;
@@ -521,12 +521,16 @@
   font-family: var(--wb-font-family);
   font-size: var(--wb-font-size-base);
   padding: 8px 12px;
-  border: 1px solid var(--wb-color-neutral-stroke-1);
+  border: 1.5px solid #8c8f94;
   border-radius: var(--wb-radius-sm);
-  background: var(--wb-color-neutral-background-1);
+  background: #fff;
   color: var(--wb-color-neutral-foreground-1);
   min-width: 260px;
   transition: border-color var(--wb-duration-fast);
+}
+
+.wb-card__body--table .search-box #rule-search-input::placeholder {
+  color: #8c8f94;
 }
 
 .wb-card__body--table .search-box #rule-search-input:focus {

@@ -422,11 +422,13 @@ class WooBooster_Rule_List extends WP_List_Table
         // Bulk actions.
         $action = $this->current_action();
         if (in_array($action, array('bulk_delete', 'bulk_activate', 'bulk_deactivate'), true)) {
-            if (!isset($_POST['_wpnonce']) || !wp_verify_nonce(sanitize_key($_POST['_wpnonce']), 'bulk-rules')) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- nonce verified below via wp_verify_nonce.
+            if (!isset($_REQUEST['_wpnonce']) || !wp_verify_nonce(sanitize_key($_REQUEST['_wpnonce']), 'bulk-rules')) {
                 return;
             }
 
-            $rule_ids = isset($_POST['rule_ids']) ? array_map('absint', $_POST['rule_ids']) : array();
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- nonce already verified above.
+            $rule_ids = isset($_REQUEST['rule_ids']) ? array_map('absint', (array) $_REQUEST['rule_ids']) : array();
 
             foreach ($rule_ids as $rid) {
                 switch ($action) {

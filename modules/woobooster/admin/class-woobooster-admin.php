@@ -695,11 +695,13 @@ class WooBooster_Admin
         $conditions_table = $wpdb->prefix . 'woobooster_rule_conditions';
         $actions_table = $wpdb->prefix . 'woobooster_rule_actions';
 
-        // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared -- TRUNCATE does not support placeholders; table names are hardcoded.
-        $wpdb->query("TRUNCATE TABLE {$conditions_table}");
-        $wpdb->query("TRUNCATE TABLE {$actions_table}");
-        $wpdb->query("TRUNCATE TABLE {$index_table}");
-        $wpdb->query("TRUNCATE TABLE {$rules_table}");
+        // Use DELETE instead of TRUNCATE — TRUNCATE requires DROP privilege
+        // which many shared hosts do not grant to the WordPress DB user.
+        // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared -- table names are hardcoded constants.
+        $wpdb->query("DELETE FROM {$conditions_table}");
+        $wpdb->query("DELETE FROM {$actions_table}");
+        $wpdb->query("DELETE FROM {$index_table}");
+        $wpdb->query("DELETE FROM {$rules_table}");
         // phpcs:enable
 
         wp_send_json_success(array('message' => __('All rules deleted successfully.', 'ffl-funnels-addons')));
