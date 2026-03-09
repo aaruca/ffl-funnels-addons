@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.6.0-blue.svg)
+![Version](https://img.shields.io/badge/version-1.6.1-blue.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -22,7 +22,7 @@ An intelligent product recommendation engine that goes beyond simple "related pr
 ### 2. Wishlist Module
 A lightweight wishlist implementation optimized for performance.
 *   Item toggling via AJAX.
-*   Bricks Builder integration.
+*   Bricks Builder integration (with native elements: Button and Counter).
 *   Guest wishlist support.
 *   Doofinder shadow DOM integration.
 
@@ -70,6 +70,10 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.6.1
+*   Feature: Replaced wishlist shortcodes with Native Bricks Elements (Wishlist Button and Wishlist Counter).
+*   Fix: Resolved "The plugin does not have a valid header" activation error on new installations by removing the `ffl-zip-build` directory that was causing WordPress extraction mapping issues.
 
 ### v1.6.0 — Security Audit
 *   **30+ security and performance fixes** from two comprehensive audits across all modules.
