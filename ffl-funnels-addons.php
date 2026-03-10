@@ -3,7 +3,7 @@
  * Plugin Name:       FFL Funnels Addons
  * Plugin URI:        https://github.com/aaruca/ffl-funnels-addons
  * Description:       Modular WooCommerce toolkit — WooBooster, Wishlist, and Doofinder Sync in a single unified plugin.
- * Version:           1.6.2
+ * Version:           1.6.3-beta.1
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants.
-define('FFLA_VERSION', '1.6.2');
+define('FFLA_VERSION', '1.6.3-beta.1');
 define('FFLA_FILE', __FILE__);
 define('FFLA_PATH', plugin_dir_path(__FILE__));
 define('FFLA_URL', plugin_dir_url(__FILE__));
@@ -80,6 +80,7 @@ if (!class_exists('FFL_Funnels_Addons')):
             require_once FFLA_PATH . 'modules/woobooster/class-woobooster-module.php';
             require_once FFLA_PATH . 'modules/wishlist/class-wishlist-module.php';
             require_once FFLA_PATH . 'modules/doofinder-sync/class-doofinder-module.php';
+            require_once FFLA_PATH . 'modules/ffl-checkout/class-ffl-checkout-module.php';
         }
 
         /**
@@ -91,6 +92,7 @@ if (!class_exists('FFL_Funnels_Addons')):
             $this->registry->register(new WooBooster_Module());
             $this->registry->register(new Wishlist_Module());
             $this->registry->register(new Doofinder_Module());
+            $this->registry->register(new FFL_Checkout_Module());
         }
 
         /**

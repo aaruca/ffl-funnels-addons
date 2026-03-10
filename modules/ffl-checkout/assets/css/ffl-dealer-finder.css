@@ -1,0 +1,312 @@
+/**
+ * FFL Dealer Finder — Widget Styles.
+ *
+ * Scoped to .ffl-dealer-finder.
+ * Relies on CSS custom properties so themes can override colours easily.
+ *
+ * @package FFL_Funnels_Addons
+ */
+
+/* ── Custom properties (overrideable per-instance via Bricks CSS) ───────── */
+
+.ffl-dealer-finder {
+    --ffl-primary:       #1a56db;
+    --ffl-primary-dark:  #1245b0;
+    --ffl-green:         #0e7c3a;
+    --ffl-green-bg:      #eafbf0;
+    --ffl-border:        #e2e8f0;
+    --ffl-bg:            #ffffff;
+    --ffl-result-bg:     #f8fafc;
+    --ffl-result-hover:  #f0f4ff;
+    --ffl-selected-bg:   #eafbf0;
+    --ffl-text:          #1e293b;
+    --ffl-muted:         #64748b;
+    --ffl-radius:        8px;
+    --ffl-shadow:        0 1px 3px rgba(0,0,0,.08);
+    --ffl-transition:    150ms ease;
+
+    box-sizing: border-box;
+    font-family: inherit;
+    color: var(--ffl-text);
+    background: var(--ffl-bg);
+}
+
+.ffl-dealer-finder *,
+.ffl-dealer-finder *::before,
+.ffl-dealer-finder *::after {
+    box-sizing: inherit;
+}
+
+/* ── Inactive / hidden state ─────────────────────────────────────────────── */
+
+.ffl-dealer-finder--inactive {
+    padding: 12px 16px;
+    border: 1px dashed #d1d5db;
+    border-radius: var(--ffl-radius);
+    color: var(--ffl-muted);
+    font-size: .875rem;
+}
+
+.ffl-dealer-finder--hidden {
+    display: none !important;
+}
+
+/* ── Search bar ──────────────────────────────────────────────────────────── */
+
+.ffl-dealer-finder__search {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.ffl-dealer-finder__input {
+    flex: 1;
+    padding: 10px 14px;
+    font-size: 1rem;
+    border: 1px solid var(--ffl-border);
+    border-radius: var(--ffl-radius);
+    outline: none;
+    transition: border-color var(--ffl-transition), box-shadow var(--ffl-transition);
+    color: var(--ffl-text);
+    background: var(--ffl-bg);
+}
+
+.ffl-dealer-finder__input:focus {
+    border-color: var(--ffl-primary);
+    box-shadow: 0 0 0 3px rgba(26, 86, 219, .15);
+}
+
+.ffl-dealer-finder__input--error {
+    border-color: #e53e3e;
+    box-shadow: 0 0 0 3px rgba(229, 62, 62, .15);
+    animation: ffl-shake .3s ease;
+}
+
+@keyframes ffl-shake {
+    0%, 100% { transform: translateX(0); }
+    25%       { transform: translateX(-4px); }
+    75%       { transform: translateX(4px); }
+}
+
+.ffl-dealer-finder__btn {
+    padding: 10px 20px;
+    font-size: .9375rem;
+    font-weight: 600;
+    background: var(--ffl-primary);
+    color: #fff;
+    border: none;
+    border-radius: var(--ffl-radius);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background var(--ffl-transition), transform var(--ffl-transition);
+}
+
+.ffl-dealer-finder__btn:hover:not(:disabled) {
+    background: var(--ffl-primary-dark);
+}
+
+.ffl-dealer-finder__btn:active:not(:disabled) {
+    transform: scale(.98);
+}
+
+.ffl-dealer-finder__btn:disabled {
+    opacity: .55;
+    cursor: not-allowed;
+}
+
+/* ── Loading spinner ─────────────────────────────────────────────────────── */
+
+.ffl-dealer-finder__loading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 0;
+    color: var(--ffl-muted);
+    font-size: .875rem;
+}
+
+.ffl-dealer-finder__spinner {
+    width: 20px;
+    height: 20px;
+    border: 3px solid var(--ffl-border);
+    border-top-color: var(--ffl-primary);
+    border-radius: 50%;
+    animation: ffl-spin .7s linear infinite;
+    flex-shrink: 0;
+}
+
+@keyframes ffl-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ── Selected dealer banner ──────────────────────────────────────────────── */
+
+.ffl-dealer-finder__selected-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    background: var(--ffl-green-bg);
+    border: 1px solid #bbf7d0;
+    border-radius: var(--ffl-radius);
+    font-size: .9rem;
+}
+
+.ffl-dealer-finder__selected-label {
+    font-weight: 600;
+    color: var(--ffl-green);
+}
+
+.ffl-dealer-finder__selected-name {
+    font-weight: 500;
+    flex: 1;
+}
+
+.ffl-dealer-finder__change-btn {
+    padding: 4px 12px;
+    font-size: .8125rem;
+    background: transparent;
+    color: var(--ffl-primary);
+    border: 1px solid var(--ffl-primary);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background var(--ffl-transition), color var(--ffl-transition);
+}
+
+.ffl-dealer-finder__change-btn:hover {
+    background: var(--ffl-primary);
+    color: #fff;
+}
+
+/* ── Results list ────────────────────────────────────────────────────────── */
+
+.ffl-dealer-finder__results {
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ffl-dealer-finder__result {
+    padding: 14px 16px;
+    background: var(--ffl-result-bg);
+    border: 1px solid var(--ffl-border);
+    border-radius: var(--ffl-radius);
+    box-shadow: var(--ffl-shadow);
+    transition: background var(--ffl-transition), border-color var(--ffl-transition);
+}
+
+.ffl-dealer-finder__result:hover {
+    background: var(--ffl-result-hover);
+    border-color: var(--ffl-primary);
+}
+
+.ffl-dealer-finder__result--selected {
+    background: var(--ffl-selected-bg) !important;
+    border-color: var(--ffl-green) !important;
+}
+
+/* ── Result card internals ───────────────────────────────────────────────── */
+
+.ffl-dealer-finder__result-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.ffl-dealer-finder__result-name {
+    font-weight: 600;
+    font-size: 1rem;
+    line-height: 1.4;
+}
+
+.ffl-dealer-finder__result-distance {
+    font-size: .8125rem;
+    color: var(--ffl-muted);
+    white-space: nowrap;
+}
+
+.ffl-dealer-finder__result-address {
+    font-size: .875rem;
+    color: var(--ffl-muted);
+    margin-bottom: 6px;
+}
+
+.ffl-dealer-finder__result-meta {
+    font-size: .8125rem;
+    color: var(--ffl-muted);
+    margin-bottom: 2px;
+}
+
+/* ── Select button ───────────────────────────────────────────────────────── */
+
+.ffl-dealer-finder__select-btn {
+    margin-top: 10px;
+    padding: 7px 16px;
+    font-size: .875rem;
+    font-weight: 500;
+    background: var(--ffl-primary);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background var(--ffl-transition), transform var(--ffl-transition);
+}
+
+.ffl-dealer-finder__select-btn:hover:not(:disabled) {
+    background: var(--ffl-primary-dark);
+}
+
+.ffl-dealer-finder__select-btn:disabled {
+    opacity: .55;
+    cursor: not-allowed;
+}
+
+.ffl-dealer-finder__select-btn--selected {
+    background: var(--ffl-green);
+}
+
+.ffl-dealer-finder__select-btn--selected:hover:not(:disabled) {
+    background: var(--ffl-green);
+}
+
+/* ── No results message ──────────────────────────────────────────────────── */
+
+.ffl-dealer-finder__no-results {
+    padding: 24px;
+    text-align: center;
+    color: var(--ffl-muted);
+    font-size: .9375rem;
+    border: 1px dashed var(--ffl-border);
+    border-radius: var(--ffl-radius);
+}
+
+/* ── Builder preview ─────────────────────────────────────────────────────── */
+
+.ffl-dealer-finder--preview .ffl-dealer-finder__input,
+.ffl-dealer-finder--preview .ffl-dealer-finder__btn,
+.ffl-dealer-finder--preview .ffl-dealer-finder__select-btn {
+    opacity: .7;
+    cursor: not-allowed;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+
+@media (max-width: 480px) {
+    .ffl-dealer-finder__search {
+        flex-direction: column;
+    }
+
+    .ffl-dealer-finder__btn {
+        width: 100%;
+    }
+
+    .ffl-dealer-finder__result-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
