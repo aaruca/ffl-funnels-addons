@@ -2,7 +2,7 @@
 /**
  * FFL Checkout Assets — Frontend script/style loader.
  *
- * Conditionally enqueues Radar SDK + custom JS on the WooCommerce checkout page.
+ * Conditionally enqueues Mapbox Search Box + custom JS on the WooCommerce checkout page.
  *
  * @package FFL_Funnels_Addons
  */
@@ -14,10 +14,9 @@ if (!defined('ABSPATH')) {
 class FFL_Checkout_Assets
 {
     /**
-     * Radar SDK & autocomplete plugin versions.
+     * Mapbox Search Box JS version (CDN).
      */
-    const RADAR_SDK_VERSION          = 'v4.4.3';
-    const RADAR_AUTOCOMPLETE_VERSION = 'v1.0.0';
+    const MAPBOX_SEARCH_BOX_VERSION = '1.0.0-beta.21';
 
     /**
      * Register the wp_enqueue_scripts hook.
@@ -28,7 +27,7 @@ class FFL_Checkout_Assets
     }
 
     /**
-     * Conditionally enqueue Radar SDK and our custom JS on the checkout page.
+     * Conditionally enqueue Mapbox Search Box and our custom JS on the checkout page.
      */
     public static function maybe_enqueue(): void
     {
@@ -39,51 +38,46 @@ class FFL_Checkout_Assets
 
         $settings = get_option('ffl_checkout_settings', []);
         $enabled  = ($settings['autocomplete_enabled'] ?? '0') === '1';
-        $key      = $settings['radar_publishable_key'] ?? '';
+        $token    = $settings['mapbox_public_token'] ?? '';
 
-        // Don't load if disabled or key is missing.
-        if (!$enabled || empty($key)) {
+        // Don't load if disabled or token is missing.
+        if (!$enabled || empty($token)) {
             return;
         }
 
-        // ── Radar SDK ─────────────────────────────────────────────────
-        wp_enqueue_script(
-            'radar-sdk',
-            'https://js.radar.com/' . self::RADAR_SDK_VERSION . '/radar.min.js',
-            [],
-            null,  // External script — no local version.
-            true   // Load in footer.
-        );
+        $ver = self::MAPBOX_SEARCH_BOX_VERSION;
 
-        // ── Radar Autocomplete UI Plugin ──────────────────────────────
+        // ── Mapbox Search Box CSS ──────────────────────────────────────
         wp_enqueue_style(
-            'radar-autocomplete-css',
-            'https://js.radar.com/autocomplete/' . self::RADAR_AUTOCOMPLETE_VERSION . '/radar-autocomplete.css',
+            'mapbox-search-box-css',
+            'https://api.mapbox.com/search-js/v' . $ver . '/web.css',
             [],
             null
         );
 
+        // ── Mapbox Search Box JS (ES module via classic script tag) ────
+        // The CDN exposes a UMD/IIFE build alongside the ESM build.
         wp_enqueue_script(
-            'radar-autocomplete-js',
-            'https://js.radar.com/autocomplete/' . self::RADAR_AUTOCOMPLETE_VERSION . '/radar-autocomplete.min.js',
-            ['radar-sdk'],
+            'mapbox-search-box-js',
+            'https://api.mapbox.com/search-js/v' . $ver . '/web.js',
+            [],
             null,
-            true
+            true   // Load in footer.
         );
 
-        // ── Our custom initialization script ──────────────────────────
+        // ── Our custom initialisation script ───────────────────────────
         $module_url = FFLA_URL . 'modules/ffl-checkout/';
 
         wp_enqueue_script(
-            'ffl-checkout-radar',
-            $module_url . 'assets/js/ffl-checkout-radar.js',
-            ['radar-sdk', 'radar-autocomplete-js'],
+            'ffl-checkout-mapbox',
+            $module_url . 'assets/js/ffl-checkout-mapbox.js',
+            ['mapbox-search-box-js'],
             FFLA_VERSION,
             true
         );
 
-        wp_localize_script('ffl-checkout-radar', 'fflCheckoutRadar', [
-            'publishableKey' => $key,
+        wp_localize_script('ffl-checkout-mapbox', 'fflCheckoutMapbox', [
+            'accessToken' => $token,
         ]);
     }
 }
