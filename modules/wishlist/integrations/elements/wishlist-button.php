@@ -58,6 +58,23 @@ class FFLA_Wishlist_Button extends \Bricks\Element
             'placeholder' => esc_html__('Auto', 'ffl-funnels-addons'),
         ];
 
+        // F6: Button action control — determines what happens on click
+        $this->controls['buttonAction'] = [
+            'group' => 'button',
+            'tab' => 'content',
+            'label' => esc_html__('Button action', 'ffl-funnels-addons'),
+            'type' => 'select',
+            'options' => [
+                'toggle' => esc_html__('Toggle', 'ffl-funnels-addons'),
+                'add'    => esc_html__('Add only', 'ffl-funnels-addons'),
+                'remove' => esc_html__('Remove only', 'ffl-funnels-addons'),
+            ],
+            'inline' => true,
+            'clearable' => false,
+            'default' => 'toggle',
+            'description' => esc_html__('Choose what happens when the button is clicked. "Remove only" is useful in wishlist query loops.', 'ffl-funnels-addons'),
+        ];
+
         $this->controls['showText'] = [
             'group' => 'button',
             'tab' => 'content',
@@ -131,6 +148,16 @@ class FFLA_Wishlist_Button extends \Bricks\Element
             'default' => 24,
         ];
 
+        // F4: Custom icon (raw SVG)
+        $this->controls['customIcon'] = [
+            'group' => 'iconStyle',
+            'tab' => 'style',
+            'label' => esc_html__('Custom icon (SVG)', 'ffl-funnels-addons'),
+            'type' => 'textarea',
+            'hasDynamicData' => false,
+            'description' => esc_html__('Paste a custom SVG to replace the default heart icon.', 'ffl-funnels-addons'),
+        ];
+
         $this->controls['textTypo'] = [
             'group' => 'iconStyle',
             'tab' => 'style',
@@ -138,6 +165,23 @@ class FFLA_Wishlist_Button extends \Bricks\Element
             'type' => 'typography',
             'css' => [['property' => 'typography', 'selector' => '.ffla-wishlist-label']],
             'required' => ['showText', '=', true],
+        ];
+    }
+
+    /**
+     * Allowed SVG tags for wp_kses sanitization.
+     */
+    private function get_svg_allowed_tags()
+    {
+        return [
+            'svg'      => ['xmlns' => true, 'viewBox' => true, 'width' => true, 'height' => true, 'fill' => true, 'stroke' => true, 'stroke-width' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'class' => true],
+            'path'     => ['d' => true, 'fill' => true, 'stroke' => true],
+            'circle'   => ['cx' => true, 'cy' => true, 'r' => true, 'fill' => true, 'stroke' => true],
+            'rect'     => ['x' => true, 'y' => true, 'width' => true, 'height' => true, 'rx' => true, 'ry' => true, 'fill' => true, 'stroke' => true],
+            'line'     => ['x1' => true, 'y1' => true, 'x2' => true, 'y2' => true, 'stroke' => true],
+            'polyline' => ['points' => true, 'fill' => true, 'stroke' => true],
+            'polygon'  => ['points' => true, 'fill' => true, 'stroke' => true],
+            'g'        => ['fill' => true, 'stroke' => true, 'transform' => true],
         ];
     }
 
@@ -161,6 +205,12 @@ class FFLA_Wishlist_Button extends \Bricks\Element
         $this->set_attribute('_root', 'data-product-id', $product_id);
         $this->set_attribute('_root', 'aria-label', esc_attr__('Toggle Wishlist', 'ffl-funnels-addons'));
 
+        // F6: Button action — add data-todo attribute for JS forwarding.
+        $button_action = $settings['buttonAction'] ?? 'toggle';
+        if ($button_action !== 'toggle') {
+            $this->set_attribute('_root', 'data-todo', esc_attr($button_action));
+        }
+
         if ($is_active) {
             $this->set_attribute('_root', 'class', 'active');
         }
@@ -169,7 +219,12 @@ class FFLA_Wishlist_Button extends \Bricks\Element
         $remove_text = $settings['removeText'] ?? esc_html__('Remove from Wishlist', 'ffl-funnels-addons');
         $show_text = !empty($settings['showText']);
 
-        $icon_svg = '<svg class="ffla-wishlist-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>';
+        // F4: Custom icon SVG support.
+        if (!empty($settings['customIcon']) && strpos($settings['customIcon'], '<svg') !== false) {
+            $icon_svg = wp_kses($settings['customIcon'], $this->get_svg_allowed_tags());
+        } else {
+            $icon_svg = '<svg class="ffla-wishlist-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>';
+        }
 
         $output = "<{$this->tag} {$this->render_attributes('_root')}>";
         $output .= $icon_svg;

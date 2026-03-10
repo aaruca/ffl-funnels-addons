@@ -25,7 +25,8 @@ class Alg_Wishlist_Shortcodes
     public function render_aws_button($atts)
     {
         $atts = shortcode_atts(array(
-            'product_id' => get_the_ID()
+            'product_id' => get_the_ID(),
+            'action'     => 'toggle', // F7: toggle | add | remove
         ), $atts);
 
         $id = intval($atts['product_id']);
@@ -45,10 +46,17 @@ class Alg_Wishlist_Shortcodes
             $text = __('Remove from wishlist', 'algenib-wishlist');
         }
 
+        // F7: data-todo attribute for forced action
+        $todo_attr = '';
+        $action = sanitize_text_field($atts['action']);
+        if (in_array($action, ['add', 'remove'], true)) {
+            $todo_attr = ' data-todo="' . esc_attr($action) . '"';
+        }
+
         ob_start();
         ?>
         <a href="#" class="<?php echo esc_attr($class); ?>" data-product-id="<?php echo esc_attr($id); ?>"
-            data-type="<?php echo esc_attr($type); ?>" data-is-initialized="YES">
+            data-type="<?php echo esc_attr($type); ?>" data-is-initialized="YES"<?php echo $todo_attr; ?>>
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
                 <path
                     d="M47.6 300.4L228.3 469.1c7.5 7 17.4 10.9 27.7 10.9s20.2-3.9 27.7-10.9L464.4 300.4c30.4-28.3 47.6-68 47.6-109.5v-5.8c0-69.9-50.5-129.5-119.4-141C347 36.5 300.6 51.4 268 84L256 96 244 84c-32.6-32.6-79-47.5-124.6-39.9C50.5 55.6 0 115.2 0 185.1v5.8c0 41.5 17.2 81.2 47.6 109.5z">
@@ -69,7 +77,8 @@ class Alg_Wishlist_Shortcodes
             'color' => '',
             'active_color' => '',
             'hover_color' => '',
-            'icon' => '' // Pass raw SVG or 'heart'
+            'icon' => '', // Pass raw SVG or 'heart'
+            'action' => 'toggle', // F7: toggle | add | remove
         ), $atts);
 
         $id = intval($atts['product_id']);
@@ -103,11 +112,18 @@ class Alg_Wishlist_Shortcodes
             }
         }
 
+        // F7: data-todo attribute for forced action
+        $todo_attr = '';
+        $action = sanitize_text_field($atts['action']);
+        if (in_array($action, ['add', 'remove'], true)) {
+            $todo_attr = ' data-todo="' . esc_attr($action) . '"';
+        }
+
         ob_start();
         ?>
         <button type="button" class="alg-add-to-wishlist <?php echo esc_attr($atts['class']); ?>"
             data-product-id="<?php echo esc_attr($id); ?>" style="<?php echo esc_attr($style); ?>"
-            aria-label="<?php esc_attr_e('Add to Wishlist', 'algenib-wishlist'); ?>">
+            aria-label="<?php esc_attr_e('Add to Wishlist', 'algenib-wishlist'); ?>"<?php echo $todo_attr; ?>>
 
             <?php echo $icon_html; ?>
 
@@ -128,7 +144,8 @@ class Alg_Wishlist_Shortcodes
             'class' => '',
             'color' => '',
             'icon_color' => '',
-            'icon' => 'heart'
+            'icon' => 'heart',
+            'is_link' => 'yes', // F1 parity: 'yes' = <a>, 'no' = <div>
         ), $atts);
 
         $style = '';
@@ -146,14 +163,27 @@ class Alg_Wishlist_Shortcodes
             $icon_html = '<svg class="alg-count-icon" style="' . esc_attr($icon_style) . '" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>';
         }
 
+        // F1 parity: Choose <a> or <div> based on is_link attribute
+        $is_link = strtolower($atts['is_link']) !== 'no';
+        $page_url = esc_url(get_permalink(Alg_Wishlist_Core::get_wishlist_page_id()));
+
         ob_start();
+        if ($is_link) {
         ?>
-        <a href="<?php echo esc_url(get_permalink(Alg_Wishlist_Core::get_wishlist_page_id())); ?>"
+        <a href="<?php echo $page_url; ?>"
             class="alg-wishlist-counter-link <?php echo esc_attr($atts['class']); ?>" style="<?php echo esc_attr($style); ?>">
             <?php echo $icon_html; ?>
             <span class="alg-wishlist-count hidden">0</span>
         </a>
         <?php
+        } else {
+        ?>
+        <div class="alg-wishlist-counter-link <?php echo esc_attr($atts['class']); ?>" style="<?php echo esc_attr($style); ?>">
+            <?php echo $icon_html; ?>
+            <span class="alg-wishlist-count hidden">0</span>
+        </div>
+        <?php
+        }
         return ob_get_clean();
     }
 

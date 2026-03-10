@@ -5,11 +5,32 @@ window.AlgWishlist = {
     init: function () {
         this.bindEvents();
         this.updateUI(); // Check initial state
+
+        // BUG 1 fix: Set initial count from PHP-localized data
+        if (typeof AlgWishlistSettings !== 'undefined' && Array.isArray(AlgWishlistSettings.initial_items)) {
+            this.updateCount(AlgWishlistSettings.initial_items.length);
+        }
     },
 
     bindEvents: function () {
         // Event Delegation for standard DOM buttons (WooCommerce loops, product pages)
         document.body.addEventListener('click', (e) => {
+            // BUG 2 fix: Also handle .alg-remove-btn clicks
+            const removeBtn = e.target.closest('.alg-remove-btn');
+            if (removeBtn) {
+                e.preventDefault();
+                this.removeItem(removeBtn);
+                return;
+            }
+
+            // Share button handler
+            const shareBtn = e.target.closest('.alg-share-wishlist-btn');
+            if (shareBtn) {
+                e.preventDefault();
+                this.copyShareLink(shareBtn);
+                return;
+            }
+
             const btn = e.target.closest('.alg-add-to-wishlist, .aws-wishlist--trigger');
             if (btn) {
                 e.preventDefault();
@@ -43,10 +64,12 @@ window.AlgWishlist = {
         const productId = btn.getAttribute('data-product-id');
         if (!productId) return;
 
-        this.toggleItem(productId, btn);
+        // F6: Forward data-todo attribute if present
+        const forcedAction = btn.getAttribute('data-todo');
+        this.toggleItem(productId, btn, forcedAction);
     },
 
-    toggleItem: function (productId, btn) {
+    toggleItem: function (productId, btn, forcedAction) {
         const self = this;
         // Optimistic UI Update
         const isCurrentlyActive = btn.classList.contains('active');
@@ -65,6 +88,11 @@ window.AlgWishlist = {
         data.append('action', 'alg_add_to_wishlist');
         data.append('product_id', productId);
         data.append('nonce', AlgWishlistSettings.nonce);
+
+        // F6: Forward forced action (add/remove/toggle) to AJAX
+        if (forcedAction && forcedAction !== 'toggle') {
+            data.append('todo', forcedAction);
+        }
 
         const ajaxUrl = AlgWishlistSettings.ajax_url;
 
@@ -98,9 +126,9 @@ window.AlgWishlist = {
                     console.error('Wishlist Error:', response);
                     // Revert optimistic update on failure
                     if (isCurrentlyActive) {
-                        this.markAsActive(productId);
+                        self.markAsActive(productId);
                     } else {
-                        this.markAsInactive(productId);
+                        self.markAsInactive(productId);
                     }
                 }
             })
@@ -110,11 +138,116 @@ window.AlgWishlist = {
                 btn.style.opacity = '1';
                 // Revert optimistic update on failure
                 if (isCurrentlyActive) {
-                    this.markAsActive(productId);
+                    self.markAsActive(productId);
                 } else {
-                    this.markAsInactive(productId);
+                    self.markAsInactive(productId);
                 }
             });
+    },
+
+    /**
+     * BUG 2 fix: Remove item from wishlist page (handles .alg-remove-btn clicks).
+     * Sends AJAX with todo=remove, animates the card out, and updates count.
+     */
+    removeItem: function (btn) {
+        const self = this;
+        const productId = btn.getAttribute('data-product-id');
+        if (!productId) return;
+
+        const card = btn.closest('.alg-wishlist-card');
+
+        // Visual feedback
+        btn.classList.add('loading');
+        if (card) {
+            card.style.opacity = '0.5';
+            card.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+        }
+
+        const data = new FormData();
+        data.append('action', 'alg_add_to_wishlist');
+        data.append('product_id', productId);
+        data.append('todo', 'remove');
+        data.append('nonce', AlgWishlistSettings.nonce);
+
+        fetch(AlgWishlistSettings.ajax_url, {
+            method: 'POST',
+            body: data
+        })
+            .then(response => response.json())
+            .then(response => {
+                if (response.success) {
+                    self.markAsInactive(productId);
+
+                    // Animate card out
+                    if (card) {
+                        card.style.opacity = '0';
+                        card.style.transform = 'scale(0.9)';
+                        setTimeout(() => {
+                            card.remove();
+
+                            // Check if grid is now empty
+                            const grid = document.querySelector('.alg-wishlist-grid');
+                            if (grid && grid.querySelectorAll('.alg-wishlist-card').length === 0) {
+                                grid.innerHTML = '<div class="alg-wishlist-empty"><p>' +
+                                    (AlgWishlistSettings.i18n && AlgWishlistSettings.i18n.empty_wishlist
+                                        ? AlgWishlistSettings.i18n.empty_wishlist
+                                        : 'Your wishlist is currently empty.') +
+                                    '</p></div>';
+                            }
+                        }, 300);
+                    }
+
+                    // Update badge count
+                    if (response.data.count !== undefined) {
+                        self.updateCount(response.data.count);
+                    }
+
+                    if (AlgWishlistSettings.i18n && AlgWishlistSettings.i18n.removed) {
+                        self.showToast(AlgWishlistSettings.i18n.removed);
+                    }
+                } else {
+                    console.error('Wishlist Remove Error:', response);
+                    btn.classList.remove('loading');
+                    if (card) card.style.opacity = '1';
+                }
+            })
+            .catch(error => {
+                console.error('Wishlist Remove Failed:', error);
+                btn.classList.remove('loading');
+                if (card) card.style.opacity = '1';
+            });
+    },
+
+    /**
+     * Share feature: Copy wishlist share link to clipboard.
+     */
+    copyShareLink: function (btn) {
+        const url = btn.getAttribute('data-url');
+        if (!url) return;
+
+        const self = this;
+        navigator.clipboard.writeText(url).then(() => {
+            self.showToast(
+                AlgWishlistSettings.i18n && AlgWishlistSettings.i18n.link_copied
+                    ? AlgWishlistSettings.i18n.link_copied
+                    : 'Link copied!'
+            );
+        }).catch(() => {
+            // Fallback for older browsers
+            const textarea = document.createElement('textarea');
+            textarea.value = url;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            self.showToast(
+                AlgWishlistSettings.i18n && AlgWishlistSettings.i18n.link_copied
+                    ? AlgWishlistSettings.i18n.link_copied
+                    : 'Link copied!'
+            );
+        });
     },
 
     updateUI: function () {
@@ -286,7 +419,14 @@ window.AlgWishlist = {
 
     updateCount: function (count) {
         const badges = document.querySelectorAll('.alg-wishlist-count');
-        badges.forEach(el => el.textContent = count);
+        badges.forEach(el => {
+            el.textContent = count;
+            if (count > 0) {
+                el.classList.remove('hidden');
+            } else {
+                el.classList.add('hidden');
+            }
+        });
     }
 };
 

@@ -2,6 +2,23 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.6.2] - 2026-03-10
+
+### Bug Fixes
+
+- Various bug fixes and improvements
+
+---
+
+## [1.6.1] - 2026-03-08
+
+### Bug Fixes
+
+- Replaced wishlist shortcodes with Native Bricks Elements
+- Resolved plugin activation error
+
+---
+
 ## [1.6.0] - 2026-02-26
 
 ### 🔒 Security — Full Plugin Audit (v1 + v2)

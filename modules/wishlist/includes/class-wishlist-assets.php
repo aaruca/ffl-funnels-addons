@@ -33,7 +33,9 @@ class Alg_Wishlist_Assets
                 'added' => __('Added to Wishlist', 'algenib-wishlist'),
                 'removed' => __('Removed from Wishlist', 'algenib-wishlist'),
                 'text_add' => __('Add to wishlist', 'algenib-wishlist'),
-                'text_remove' => __('Remove from wishlist', 'algenib-wishlist')
+                'text_remove' => __('Remove from wishlist', 'algenib-wishlist'),
+                'link_copied' => __('Link copied to clipboard!', 'algenib-wishlist'),
+                'empty_wishlist' => __('Your wishlist is currently empty.', 'algenib-wishlist'),
             )
         ));
 
