@@ -1,11 +1,9 @@
 /**
- * FFL Checkout — Mapbox Search Box Autocomplete.
+ * FFL Checkout — Mapbox Address Autocomplete.
  *
- * Initialises a Mapbox SearchBox on the WooCommerce billing and shipping
- * address_1 fields. When the customer picks a suggestion the city, state,
- * postcode, and country fields are filled automatically.
- *
- * Requires: Mapbox Search Box JS (CDN), injected token via wp_localize_script.
+ * Uses the Mapbox Searchbox REST API (/suggest + /retrieve) to provide
+ * address autocomplete on WooCommerce billing and shipping address fields.
+ * No web component dependency — works with any WooCommerce checkout theme.
  *
  * @package FFL_Funnels_Addons
  */
@@ -19,6 +17,9 @@
     }
 
     var ACCESS_TOKEN = fflCheckoutMapbox.accessToken;
+
+    var SUGGEST_URL  = 'https://api.mapbox.com/search/searchbox/v1/suggest';
+    var RETRIEVE_URL = 'https://api.mapbox.com/search/searchbox/v1/retrieve/';
 
     /* ── Field mapping config ─────────────────────────────────────── */
 
@@ -43,11 +44,24 @@
         },
     ];
 
-    /* ── Helper: set a WooCommerce field value and fire change events ─ */
+    /* ── Session token (required for Mapbox Searchbox billing) ─────── */
+
+    var _sessionToken = null;
+    function getSessionToken() {
+        if (!_sessionToken) {
+            _sessionToken = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                var r = (Math.random() * 16) | 0;
+                return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+            });
+        }
+        return _sessionToken;
+    }
+
+    /* ── Helper: set a WooCommerce field and fire change events ──────- */
 
     function setFieldValue(selector, value) {
         var el = document.querySelector(selector);
-        if (!el || value == null) return;
+        if (!el || value == null || value === '') return;
 
         if (el.tagName === 'SELECT') {
             var opts = el.options;
@@ -72,144 +86,54 @@
         }
     }
 
-    /* ── Parse a Mapbox feature into WC fields ────────────────────── */
+    /* ── Fill WC fields from a Mapbox feature ─────────────────────── */
 
     /**
-     * Mapbox Search Box returns a GeoJSON Feature with a `properties` object.
-     * The relevant properties are:
-     *   full_address, place_formatted, name,
-     *   address_line1, address_line2,
-     *   context.place.name        → city
+     * Mapbox Searchbox retrieve response has a GeoJSON Feature with `properties`:
+     *   name, full_address, address_line1, address_line2,
+     *   context.place.name       → city
      *   context.region.region_code → state abbreviation
-     *   context.region.name       → state full name
-     *   context.postcode.name     → postcode
+     *   context.postcode.name    → postcode
      *   context.country.country_code → ISO 2-letter country
      */
     function fillFieldsFromFeature(group, feature) {
         var p   = feature.properties || {};
-        var ctx = p.context || {};
+        var ctx = p.context           || {};
 
-        // ── Street address ────────────────────────────────────────────
+        // Street.
         var street = p.address_line1 || p.name || '';
-        if (street) {
-            setFieldValue(group.address1, street);
-        }
+        if (street) setFieldValue(group.address1, street);
 
-        // ── Address line 2 ────────────────────────────────────────────
-        if (p.address_line2) {
-            setFieldValue(group.address2, p.address_line2);
-        }
+        // Unit / apt.
+        if (p.address_line2) setFieldValue(group.address2, p.address_line2);
 
-        // ── City ──────────────────────────────────────────────────────
-        var city = (ctx.place && ctx.place.name) || '';
+        // City.
+        var city = (ctx.place   && ctx.place.name)                        || '';
         if (city) setFieldValue(group.city, city);
 
-        // ── State ─────────────────────────────────────────────────────
+        // State — prefer abbreviation.
         var state = (ctx.region && (ctx.region.region_code || ctx.region.name)) || '';
         if (state) setFieldValue(group.state, state);
 
-        // ── Postcode ──────────────────────────────────────────────────
+        // Postcode.
         var postcode = (ctx.postcode && ctx.postcode.name) || '';
         if (postcode) setFieldValue(group.postcode, postcode);
 
-        // ── Country ───────────────────────────────────────────────────
+        // Country — ISO 2-letter.
         var country = (ctx.country && ctx.country.country_code) || '';
         if (country) setFieldValue(group.country, country.toUpperCase());
 
-        // Trigger WooCommerce totals recalculation.
+        // Tell WooCommerce to recalculate totals.
         if (typeof jQuery !== 'undefined') {
             jQuery(document.body).trigger('update_checkout');
         }
     }
 
-    /* ── Mount a SearchBox on one address group ───────────────────── */
+    /* ── Retrieve full feature from a suggestion's mapbox_id ─────── */
 
-    function mountSearchBox(group) {
-        var input = document.querySelector(group.address1);
-        if (!input || input.dataset.mbxInited) return;
-        input.dataset.mbxInited = '1';
-
-        // Mapbox Search Box web component (available on window after the CDN script loads).
-        var SearchBox = (window.mapboxsearch && window.mapboxsearch.SearchBox) ||
-                        (window.MapboxSearchBox)                               ||
-                        null;
-
-        if (SearchBox) {
-            mountViaSearchBoxComponent(group, input, SearchBox);
-        } else {
-            mountViaGeocoderFetch(group, input);
-        }
-    }
-
-    /* ── Path A: Mapbox SearchBox web component ───────────────────── */
-
-    function mountViaSearchBoxComponent(group, input, SearchBox) {
-        var sb = new SearchBox();
-        sb.accessToken = ACCESS_TOKEN;
-        sb.options = {
-            language: 'en',
-            country:  'US',
-            types:    'address',
-        };
-
-        // Replace the plain input with the SearchBox component.
-        // The SearchBox component wraps itself around the input it is given.
-        sb.bindTo(input);
-
-        sb.addEventListener('retrieve', function (e) {
-            var feature = e.detail &&
-                          e.detail.features &&
-                          e.detail.features[0];
-            if (feature) fillFieldsFromFeature(group, feature);
-        });
-    }
-
-    /* ── Path B: Geocoder Fetch API fallback (no web component) ───── */
-
-    function mountViaGeocoderFetch(group, input) {
-        var debounceTimer;
-        var dropdownId = 'ffl-mbx-suggestions-' + group.prefix;
-
-        input.setAttribute('autocomplete', 'off');
-
-        input.addEventListener('input', function () {
-            clearTimeout(debounceTimer);
-            var q = input.value.trim();
-
-            if (q.length < 3) {
-                removeSuggestions(dropdownId);
-                return;
-            }
-
-            debounceTimer = setTimeout(function () {
-                fetch(
-                    'https://api.mapbox.com/search/searchbox/v1/suggest' +
-                    '?q=' + encodeURIComponent(q) +
-                    '&access_token=' + encodeURIComponent(ACCESS_TOKEN) +
-                    '&session_token=' + getSessionToken() +
-                    '&types=address' +
-                    '&country=US' +
-                    '&language=en'
-                )
-                .then(function (r) { return r.json(); })
-                .then(function (data) {
-                    var suggestions = (data && data.suggestions) || [];
-                    showSuggestions(input, group, suggestions, dropdownId);
-                })
-                .catch(function () { /* silent */ });
-            }, 220);
-        });
-
-        input.addEventListener('blur', function () {
-            setTimeout(function () { removeSuggestions(dropdownId); }, 200);
-        });
-    }
-
-    /* Retrieve a full feature from the Searchbox retrieve endpoint. */
     function retrieveFeature(mapboxId, callback) {
         fetch(
-            'https://api.mapbox.com/search/searchbox/v1/retrieve/' +
-            encodeURIComponent(mapboxId) +
+            RETRIEVE_URL + encodeURIComponent(mapboxId) +
             '?access_token=' + encodeURIComponent(ACCESS_TOKEN) +
             '&session_token=' + getSessionToken()
         )
@@ -218,42 +142,53 @@
             var feature = data && data.features && data.features[0];
             if (feature) callback(feature);
         })
-        .catch(function () { /* silent */ });
+        .catch(function (err) {
+            console.warn('[FFL Mapbox] retrieve error:', err);
+        });
     }
+
+    /* ── Suggestion dropdown ──────────────────────────────────────── */
 
     function showSuggestions(input, group, suggestions, dropdownId) {
         removeSuggestions(dropdownId);
         if (!suggestions.length) return;
 
         var ul = document.createElement('ul');
-        ul.id = dropdownId;
-        ul.className = 'ffl-checkout-mbx-suggestions';
+        ul.id            = dropdownId;
+        ul.className     = 'ffl-checkout-mbx-suggestions';
         ul.style.cssText =
-            'position:absolute;z-index:9999;background:#fff;border:1px solid #ddd;' +
+            'position:absolute;z-index:99999;background:#fff;border:1px solid #ddd;' +
             'border-radius:6px;max-height:240px;overflow-y:auto;padding:0;margin:4px 0 0;' +
             'list-style:none;width:100%;box-shadow:0 4px 16px rgba(0,0,0,.12);';
 
         suggestions.forEach(function (s) {
             var li = document.createElement('li');
-            li.style.cssText = 'padding:9px 14px;cursor:pointer;font-size:14px;line-height:1.4;border-bottom:1px solid #f0f0f0;';
+            li.style.cssText =
+                'padding:9px 14px;cursor:pointer;font-size:14px;line-height:1.4;' +
+                'border-bottom:1px solid #f4f4f4;';
 
             var nameEl = document.createElement('span');
-            nameEl.textContent = s.name || s.full_address || '';
+            nameEl.textContent  = s.name || '';
             nameEl.style.fontWeight = '500';
 
-            var placeEl = document.createElement('span');
-            placeEl.textContent = s.place_formatted ? ' — ' + s.place_formatted : '';
-            placeEl.style.cssText = 'color:#888;font-size:12px;';
+            var descEl = document.createElement('span');
+            descEl.textContent = s.place_formatted ? '  ' + s.place_formatted : '';
+            descEl.style.cssText = 'color:#888;font-size:12px;';
 
             li.appendChild(nameEl);
-            li.appendChild(placeEl);
+            li.appendChild(descEl);
+
+            li.addEventListener('mouseover', function () { li.style.background = '#f5f7ff'; });
+            li.addEventListener('mouseout',  function () { li.style.background = '#fff';    });
 
             li.addEventListener('mousedown', function (e) {
                 e.preventDefault();
-                input.value = s.name || '';
+
+                // Pre-fill address line 1 immediately so the user sees feedback.
+                setFieldValue(group.address1, s.name || '');
                 removeSuggestions(dropdownId);
 
-                // Retrieve full feature to fill remaining fields.
+                // Retrieve full feature to fill the rest of the fields.
                 if (s.mapbox_id) {
                     retrieveFeature(s.mapbox_id, function (feature) {
                         fillFieldsFromFeature(group, feature);
@@ -269,6 +204,16 @@
             wrapper.style.position = 'relative';
             wrapper.appendChild(ul);
         }
+
+        // Close on outside click.
+        setTimeout(function () {
+            document.addEventListener('click', function handler(e) {
+                if (!ul.contains(e.target) && e.target !== input) {
+                    removeSuggestions(dropdownId);
+                    document.removeEventListener('click', handler);
+                }
+            });
+        }, 0);
     }
 
     function removeSuggestions(dropdownId) {
@@ -276,23 +221,57 @@
         if (el) el.remove();
     }
 
-    /* ── Session token (required by Mapbox Searchbox API billing) ─── */
+    /* ── Mount on a single address group ─────────────────────────── */
 
-    var _sessionToken = null;
-    function getSessionToken() {
-        if (!_sessionToken) {
-            _sessionToken = 'xxxx-xxxx-4xxx-yxxx'.replace(/[xy]/g, function (c) {
-                var r = (Math.random() * 16) | 0;
-                return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-            });
-        }
-        return _sessionToken;
+    function mountAutocomplete(group) {
+        var input = document.querySelector(group.address1);
+        if (!input || input.dataset.mbxInited) return;
+        input.dataset.mbxInited = '1';
+        input.setAttribute('autocomplete', 'off');
+
+        var debounceTimer;
+        var dropdownId = 'ffl-mbx-' + group.prefix;
+
+        input.addEventListener('input', function () {
+            clearTimeout(debounceTimer);
+            var q = input.value.trim();
+
+            if (q.length < 3) {
+                removeSuggestions(dropdownId);
+                return;
+            }
+
+            debounceTimer = setTimeout(function () {
+                fetch(
+                    SUGGEST_URL +
+                    '?q='             + encodeURIComponent(q) +
+                    '&access_token='  + encodeURIComponent(ACCESS_TOKEN) +
+                    '&session_token=' + getSessionToken() +
+                    '&types=address' +
+                    '&country=US' +
+                    '&language=en' +
+                    '&limit=6'
+                )
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    var suggestions = (data && data.suggestions) || [];
+                    showSuggestions(input, group, suggestions, dropdownId);
+                })
+                .catch(function (err) {
+                    console.warn('[FFL Mapbox] suggest error:', err);
+                });
+            }, 220);
+        });
+
+        input.addEventListener('blur', function () {
+            setTimeout(function () { removeSuggestions(dropdownId); }, 200);
+        });
     }
 
     /* ── Bootstrap ─────────────────────────────────────────────────── */
 
     function bootstrap() {
-        ADDRESS_GROUPS.forEach(mountSearchBox);
+        ADDRESS_GROUPS.forEach(mountAutocomplete);
     }
 
     if (typeof jQuery !== 'undefined') {
