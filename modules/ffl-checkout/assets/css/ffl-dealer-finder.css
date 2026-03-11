@@ -85,14 +85,31 @@
     text-align: left;
 }
 
+/* ── Required notice ─────────────────────────────────────────────────── */
+
+.ffl-required-notice {
+    background: #f8d7da;
+    border-left: 4px solid #dc3545;
+    padding: 10px;
+    margin-bottom: 10px;
+    color: #721c24;
+    font-size: inherit;
+    font-weight: normal;
+    font-family: inherit;
+    text-align: left;
+}
+
 /* ── Checkout notice / messages ────────────────────────────────────────── */
 
 .ffl_checkout_notice {
     text-align: left;
     padding: 10px;
-    margin-bottom: 0;
+    margin-bottom: 10px;
     border-radius: 4px;
     display: none;
+    background-color: var(--ffl-notice-bg, #FFFFF0);
+    color: var(--ffl-notice-color, #000000);
+    border-left: 4px solid var(--ffl-notice-bg, #FFFFF0);
 }
 
 /* ── Columns layout ───────────────────────────────────────────────────── */
@@ -100,7 +117,7 @@
 .ffl_checkout_columns {
     display: flex;
     justify-content: center;
-    padding-bottom: 5px !important;
+    padding-bottom: 5px;
 }
 
 .ffl_checkout_column {
@@ -118,14 +135,12 @@
 
 /* ── Shared input base styles ─────────────────────────────────────────── */
 
-#ffl-zip-code,
-#ffl-name-search,
-#ffl-radius {
+.ffl-input {
     -webkit-appearance: none;
     -moz-appearance: none;
     appearance: none;
     box-shadow: inset 0 1px 1px #ebebeb;
-    border: 1px solid !important;
+    border: 1px solid;
     display: block;
     -webkit-font-smoothing: antialiased;
     height: 45px;
@@ -136,17 +151,14 @@
     border-radius: 0px;
 }
 
-/* ── Search / action buttons (readonly inputs styled as buttons) ────── */
+/* ── Action buttons (readonly inputs styled as buttons) ────────────── */
 
-#ffl-search,
-#ffl-favorite-search,
-#ffl-candr-override,
-#ffl-local-pickup-search {
+.ffl-action-btn {
     -webkit-appearance: none;
     -moz-appearance: none;
     appearance: none;
     box-shadow: inset 0 1px 1px #ebebeb;
-    border: 1px solid !important;
+    border: 1px solid;
     display: block;
     -webkit-font-smoothing: antialiased;
     height: 45px;
@@ -155,10 +167,10 @@
     width: 100%;
     border-radius: 5px;
     outline: none;
-    background-color: #2f2727 !important;
-    color: #EEEEEE !important;
-    font-weight: bold !important;
-    text-align: center !important;
+    background-color: #2f2727;
+    color: #EEEEEE;
+    font-weight: bold;
+    text-align: center;
     cursor: pointer;
 }
 
@@ -171,22 +183,22 @@
 /* ── Selected FFL highlight ───────────────────────────────────────────── */
 
 .selectedFFLDivButton {
-    border: solid #ba102d 1px !important;
-    background: #09fa003d !important;
-    color: #000 !important;
+    border: solid #ba102d 1px;
+    background: #09fa003d;
+    color: #000;
 }
 
 /* ── Click instructions bar ───────────────────────────────────────────── */
 
-#ffl-click-instructions {
+.ffl-click-instructions {
     width: 100%;
     background: #f8d7da;
     border-left: 4px solid #dc3545;
-    color: #721c24 !important;
-    font-weight: normal !important;
-    text-align: left !important;
-    margin-bottom: 10px !important;
-    padding: 10px !important;
+    color: #721c24;
+    font-weight: normal;
+    text-align: left;
+    margin-bottom: 10px;
+    padding: 10px;
     font-size: inherit;
     font-family: inherit;
 }
@@ -205,7 +217,7 @@
     overflow-y: scroll;
     scroll-behavior: auto;
     overflow-x: hidden;
-    padding: 0 5px 0 0 !important;
+    padding: 0 5px 0 0;
     margin: 0 0 10px 0;
     width: 100%;
     list-style: none;
@@ -228,8 +240,9 @@
     background-color: #333;
 }
 
-#ffl-list div button,
-.ffl-list-div {
+/* ── Dealer cards ────────────────────────────────────────────────────── */
+
+.ffl-dealer-card {
     line-height: 20px;
     font-weight: normal;
     padding: 5px;
@@ -240,8 +253,34 @@
     width: 100%;
     border-radius: 4px;
     text-align: left;
-    margin-bottom: 3px !important;
+    margin-bottom: 3px;
     cursor: pointer;
+}
+
+/* ── C&R Section ─────────────────────────────────────────────────────── */
+
+.ffl-candr-section {
+    margin-bottom: 20px;
+    padding: 5px;
+    border: solid 2px;
+    background: #EEEEEE;
+}
+
+.ffl-candr-inner {
+    padding: 5px;
+    border: solid 2px;
+    background-color: white;
+}
+
+.ffl-candr-label-left {
+    text-align: left;
+    color: black;
+}
+
+.ffl-candr-label-right {
+    width: 100%;
+    text-align: right;
+    font-style: italic;
 }
 
 /* ── Map ──────────────────────────────────────────────────────────────── */
@@ -310,8 +349,7 @@
         float: left;
     }
 
-    #ffl-list div button,
-    .ffl-list-div {
+    .ffl-dealer-card {
         background: #fff;
         color: #333;
         display: block;
@@ -322,12 +360,12 @@
         border-radius: 4px;
         text-align: left;
         outline: none;
-        margin-bottom: 3px !important;
+        margin-bottom: 3px;
     }
 
     #ffl-list {
         width: 100%;
-        padding: 0 5px 0 0 !important;
+        padding: 0 5px 0 0;
     }
 
     .ffl_checkout_columns {

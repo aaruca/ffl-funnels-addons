@@ -380,7 +380,7 @@
             var name  = getDisplayName(ffl);
 
             var html = '<div id="' + escAttr(ffl.license_number) + '">' +
-                '<button type="button" class="ffl-list-div" data-marker-id="' + escAttr(ffl.license_number) + '">' +
+                '<button type="button" class="ffl-list-div ffl-dealer-card" data-marker-id="' + escAttr(ffl.license_number) + '">' +
                 '<b>' + escHtml(name) + '</b>' +
                 (ffl.ffl_on_file
                     ? ' <span style="color:#09bb00;font-size:0.85em;">[FFL On File]</span>'
