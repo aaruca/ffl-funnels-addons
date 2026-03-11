@@ -1,312 +1,356 @@
 /**
  * FFL Dealer Finder — Widget Styles.
  *
- * Scoped to .ffl-dealer-finder.
- * Relies on CSS custom properties so themes can override colours easily.
+ * Ported from g-ffl-checkout widget CSS for cockpit parity.
  *
  * @package FFL_Funnels_Addons
  */
 
-/* ── Custom properties (overrideable per-instance via Bricks CSS) ───────── */
+/* ── Loading spinner ──────────────────────────────────────────────────── */
 
-.ffl-dealer-finder {
-    --ffl-primary:       #1a56db;
-    --ffl-primary-dark:  #1245b0;
-    --ffl-green:         #0e7c3a;
-    --ffl-green-bg:      #eafbf0;
-    --ffl-border:        #e2e8f0;
-    --ffl-bg:            #ffffff;
-    --ffl-result-bg:     #f8fafc;
-    --ffl-result-hover:  #f0f4ff;
-    --ffl-selected-bg:   #eafbf0;
-    --ffl-text:          #1e293b;
-    --ffl-muted:         #64748b;
-    --ffl-radius:        8px;
-    --ffl-shadow:        0 1px 3px rgba(0,0,0,.08);
-    --ffl-transition:    150ms ease;
-
-    box-sizing: border-box;
-    font-family: inherit;
-    color: var(--ffl-text);
-    background: var(--ffl-bg);
+#floatingBarsG {
+    position: relative;
+    width: 60px;
+    height: 75px;
+    margin: auto;
+    margin-bottom: 15px;
 }
 
-.ffl-dealer-finder *,
-.ffl-dealer-finder *::before,
-.ffl-dealer-finder *::after {
-    box-sizing: inherit;
+.blockG {
+    position: absolute;
+    background-color: rgb(255, 255, 255);
+    width: 10px;
+    height: 23px;
+    border-radius: 8px 8px 0 0;
+    transform: scale(0.4);
+    animation-name: fadeG;
+    animation-duration: 1.2s;
+    animation-iteration-count: infinite;
+    animation-direction: normal;
 }
 
-/* ── Inactive / hidden state ─────────────────────────────────────────────── */
+#rotateG_01 { left: 0;    top: 27px;   animation-delay: 0.45s; transform: rotate(-90deg);  }
+#rotateG_02 { left: 8px;  top: 10px;   animation-delay: 0.6s;  transform: rotate(-45deg);  }
+#rotateG_03 { left: 25px; top: 3px;    animation-delay: 0.75s; transform: rotate(0deg);    }
+#rotateG_04 { right: 8px; top: 10px;   animation-delay: 0.9s;  transform: rotate(45deg);   }
+#rotateG_05 { right: 0;   top: 27px;   animation-delay: 1.05s; transform: rotate(90deg);   }
+#rotateG_06 { right: 8px; bottom: 7px; animation-delay: 1.2s;  transform: rotate(135deg);  }
+#rotateG_07 { bottom: 0;  left: 25px;  animation-delay: 1.35s; transform: rotate(180deg);  }
+#rotateG_08 { left: 8px;  bottom: 7px; animation-delay: 1.5s;  transform: rotate(-135deg); }
 
-.ffl-dealer-finder--inactive {
-    padding: 12px 16px;
-    border: 1px dashed #d1d5db;
-    border-radius: var(--ffl-radius);
-    color: var(--ffl-muted);
-    font-size: .875rem;
+@keyframes fadeG {
+    0%   { background-color: rgb(0, 0, 0); }
+    100% { background-color: rgb(255, 255, 255); }
 }
 
-.ffl-dealer-finder--hidden {
+/* ── Hide utility ─────────────────────────────────────────────────────── */
+
+.ffl-hide {
+    display: none;
+}
+
+/* ── Container ────────────────────────────────────────────────────────── */
+
+#ffl_container,
+.ffl-container {
+    background-color: #fff;
+    margin-top: 20px;
+}
+
+.ffl-container--hidden {
     display: none !important;
 }
 
-/* ── Search bar ──────────────────────────────────────────────────────────── */
-
-.ffl-dealer-finder__search {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 16px;
-}
-
-.ffl-dealer-finder__input {
-    flex: 1;
-    padding: 10px 14px;
-    font-size: 1rem;
-    border: 1px solid var(--ffl-border);
-    border-radius: var(--ffl-radius);
-    outline: none;
-    transition: border-color var(--ffl-transition), box-shadow var(--ffl-transition);
-    color: var(--ffl-text);
-    background: var(--ffl-bg);
-}
-
-.ffl-dealer-finder__input:focus {
-    border-color: var(--ffl-primary);
-    box-shadow: 0 0 0 3px rgba(26, 86, 219, .15);
-}
-
-.ffl-dealer-finder__input--error {
-    border-color: #e53e3e;
-    box-shadow: 0 0 0 3px rgba(229, 62, 62, .15);
-    animation: ffl-shake .3s ease;
-}
-
-@keyframes ffl-shake {
-    0%, 100% { transform: translateX(0); }
-    25%       { transform: translateX(-4px); }
-    75%       { transform: translateX(4px); }
-}
-
-.ffl-dealer-finder__btn {
-    padding: 10px 20px;
-    font-size: .9375rem;
-    font-weight: 600;
-    background: var(--ffl-primary);
-    color: #fff;
-    border: none;
-    border-radius: var(--ffl-radius);
-    cursor: pointer;
-    white-space: nowrap;
-    transition: background var(--ffl-transition), transform var(--ffl-transition);
-}
-
-.ffl-dealer-finder__btn:hover:not(:disabled) {
-    background: var(--ffl-primary-dark);
-}
-
-.ffl-dealer-finder__btn:active:not(:disabled) {
-    transform: scale(.98);
-}
-
-.ffl-dealer-finder__btn:disabled {
-    opacity: .55;
-    cursor: not-allowed;
-}
-
-/* ── Loading spinner ─────────────────────────────────────────────────────── */
-
-.ffl-dealer-finder__loading {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 16px 0;
-    color: var(--ffl-muted);
-    font-size: .875rem;
-}
-
-.ffl-dealer-finder__spinner {
-    width: 20px;
-    height: 20px;
-    border: 3px solid var(--ffl-border);
-    border-top-color: var(--ffl-primary);
-    border-radius: 50%;
-    animation: ffl-spin .7s linear infinite;
-    flex-shrink: 0;
-}
-
-@keyframes ffl-spin {
-    to { transform: rotate(360deg); }
-}
-
-/* ── Selected dealer banner ──────────────────────────────────────────────── */
-
-.ffl-dealer-finder__selected-banner {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-    padding: 10px 14px;
-    margin-bottom: 14px;
-    background: var(--ffl-green-bg);
-    border: 1px solid #bbf7d0;
-    border-radius: var(--ffl-radius);
-    font-size: .9rem;
-}
-
-.ffl-dealer-finder__selected-label {
-    font-weight: 600;
-    color: var(--ffl-green);
-}
-
-.ffl-dealer-finder__selected-name {
-    font-weight: 500;
-    flex: 1;
-}
-
-.ffl-dealer-finder__change-btn {
-    padding: 4px 12px;
-    font-size: .8125rem;
-    background: transparent;
-    color: var(--ffl-primary);
-    border: 1px solid var(--ffl-primary);
+.ffl-container--inactive {
+    padding: 12px 16px;
+    border: 1px dashed #d1d5db;
     border-radius: 4px;
-    cursor: pointer;
-    transition: background var(--ffl-transition), color var(--ffl-transition);
+    color: #6b7280;
+    font-size: 0.875rem;
 }
 
-.ffl-dealer-finder__change-btn:hover {
-    background: var(--ffl-primary);
-    color: #fff;
-}
+/* ── Content area ─────────────────────────────────────────────────────── */
 
-/* ── Results list ────────────────────────────────────────────────────────── */
-
-.ffl-dealer-finder__results {
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.ffl-dealer-finder__result {
-    padding: 14px 16px;
-    background: var(--ffl-result-bg);
-    border: 1px solid var(--ffl-border);
-    border-radius: var(--ffl-radius);
-    box-shadow: var(--ffl-shadow);
-    transition: background var(--ffl-transition), border-color var(--ffl-transition);
-}
-
-.ffl-dealer-finder__result:hover {
-    background: var(--ffl-result-hover);
-    border-color: var(--ffl-primary);
-}
-
-.ffl-dealer-finder__result--selected {
-    background: var(--ffl-selected-bg) !important;
-    border-color: var(--ffl-green) !important;
-}
-
-/* ── Result card internals ───────────────────────────────────────────────── */
-
-.ffl-dealer-finder__result-header {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 4px;
-}
-
-.ffl-dealer-finder__result-name {
-    font-weight: 600;
-    font-size: 1rem;
-    line-height: 1.4;
-}
-
-.ffl-dealer-finder__result-distance {
-    font-size: .8125rem;
-    color: var(--ffl-muted);
-    white-space: nowrap;
-}
-
-.ffl-dealer-finder__result-address {
-    font-size: .875rem;
-    color: var(--ffl-muted);
-    margin-bottom: 6px;
-}
-
-.ffl-dealer-finder__result-meta {
-    font-size: .8125rem;
-    color: var(--ffl-muted);
-    margin-bottom: 2px;
-}
-
-/* ── Select button ───────────────────────────────────────────────────────── */
-
-.ffl-dealer-finder__select-btn {
-    margin-top: 10px;
-    padding: 7px 16px;
-    font-size: .875rem;
-    font-weight: 500;
-    background: var(--ffl-primary);
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: background var(--ffl-transition), transform var(--ffl-transition);
-}
-
-.ffl-dealer-finder__select-btn:hover:not(:disabled) {
-    background: var(--ffl-primary-dark);
-}
-
-.ffl-dealer-finder__select-btn:disabled {
-    opacity: .55;
-    cursor: not-allowed;
-}
-
-.ffl-dealer-finder__select-btn--selected {
-    background: var(--ffl-green);
-}
-
-.ffl-dealer-finder__select-btn--selected:hover:not(:disabled) {
-    background: var(--ffl-green);
-}
-
-/* ── No results message ──────────────────────────────────────────────────── */
-
-.ffl-dealer-finder__no-results {
-    padding: 24px;
+.content {
+    margin: 0 auto;
+    max-width: 100%;
+    margin-bottom: 5px;
+    line-height: 1.6em;
     text-align: center;
-    color: var(--ffl-muted);
-    font-size: .9375rem;
-    border: 1px dashed var(--ffl-border);
-    border-radius: var(--ffl-radius);
 }
 
-/* ── Builder preview ─────────────────────────────────────────────────────── */
+/* ── Heading ──────────────────────────────────────────────────────────── */
 
-.ffl-dealer-finder--preview .ffl-dealer-finder__input,
-.ffl-dealer-finder--preview .ffl-dealer-finder__btn,
-.ffl-dealer-finder--preview .ffl-dealer-finder__select-btn {
-    opacity: .7;
-    cursor: not-allowed;
+.ffl-dealer-heading {
+    text-align: left;
 }
 
-/* ── Responsive ──────────────────────────────────────────────────────────── */
+/* ── Checkout notice / messages ────────────────────────────────────────── */
 
-@media (max-width: 480px) {
-    .ffl-dealer-finder__search {
-        flex-direction: column;
-    }
+.ffl_checkout_notice {
+    text-align: left;
+    padding: 10px;
+    margin-bottom: 0;
+    border-radius: 4px;
+    display: none;
+}
 
-    .ffl-dealer-finder__btn {
+/* ── Columns layout ───────────────────────────────────────────────────── */
+
+.ffl_checkout_columns {
+    display: flex;
+    justify-content: center;
+    padding-bottom: 5px !important;
+}
+
+.ffl_checkout_column {
+    flex: 1;
+    margin: 2px;
+}
+
+.ffl_checkout_column:first-child {
+    margin-left: 0;
+}
+
+.ffl_checkout_column:last-child {
+    margin-right: 0;
+}
+
+/* ── Shared input base styles ─────────────────────────────────────────── */
+
+#ffl-zip-code,
+#ffl-name-search,
+#ffl-radius {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    box-shadow: inset 0 1px 1px #ebebeb;
+    border: 1px solid !important;
+    display: block;
+    -webkit-font-smoothing: antialiased;
+    height: 45px;
+    margin: 0;
+    padding: 10px;
+    transition: all 100ms ease-out;
+    width: 100%;
+    border-radius: 0px;
+}
+
+/* ── Search / action buttons (readonly inputs styled as buttons) ────── */
+
+#ffl-search,
+#ffl-favorite-search,
+#ffl-candr-override,
+#ffl-local-pickup-search {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    box-shadow: inset 0 1px 1px #ebebeb;
+    border: 1px solid !important;
+    display: block;
+    -webkit-font-smoothing: antialiased;
+    height: 45px;
+    margin: 0;
+    transition: all 100ms ease-out;
+    width: 100%;
+    border-radius: 5px;
+    outline: none;
+    background-color: #2f2727 !important;
+    color: #EEEEEE !important;
+    font-weight: bold !important;
+    text-align: center !important;
+    cursor: pointer;
+}
+
+/* ── Disabled search state ────────────────────────────────────────────── */
+
+.dsbSearch {
+    pointer-events: none;
+}
+
+/* ── Selected FFL highlight ───────────────────────────────────────────── */
+
+.selectedFFLDivButton {
+    border: solid #ba102d 1px !important;
+    background: #09fa003d !important;
+    color: #000 !important;
+}
+
+/* ── Click instructions bar ───────────────────────────────────────────── */
+
+#ffl-click-instructions {
+    width: 100%;
+    background: #f8d7da;
+    border-left: 4px solid #dc3545;
+    color: #721c24 !important;
+    font-weight: normal !important;
+    text-align: left !important;
+    margin-bottom: 10px !important;
+    padding: 10px !important;
+    font-size: inherit;
+    font-family: inherit;
+}
+
+/* ── Results list ─────────────────────────────────────────────────────── */
+
+.ffl-list-container {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    width: 100%;
+}
+
+#ffl-list {
+    max-height: 300px;
+    overflow-y: scroll;
+    scroll-behavior: auto;
+    overflow-x: hidden;
+    padding: 0 5px 0 0 !important;
+    margin: 0 0 10px 0;
+    width: 100%;
+    list-style: none;
+}
+
+#ffl-list::-webkit-scrollbar-track {
+    -webkit-box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.3);
+    border-radius: 10px;
+    background-color: #F5F5F5;
+}
+
+#ffl-list::-webkit-scrollbar {
+    width: 12px;
+    background-color: #F5F5F5;
+}
+
+#ffl-list::-webkit-scrollbar-thumb {
+    border-radius: 10px;
+    -webkit-box-shadow: inset 0 0 6px rgba(0, 0, 0, .3);
+    background-color: #333;
+}
+
+#ffl-list div button,
+.ffl-list-div {
+    line-height: 20px;
+    font-weight: normal;
+    padding: 5px;
+    border: solid gray 0.2px;
+    background: #fff;
+    color: #333;
+    display: block;
+    width: 100%;
+    border-radius: 4px;
+    text-align: left;
+    margin-bottom: 3px !important;
+    cursor: pointer;
+}
+
+/* ── Map ──────────────────────────────────────────────────────────────── */
+
+#ffl-map {
+    height: 35vh;
+    margin-top: 0px;
+    margin-bottom: 0px;
+    width: 100%;
+}
+
+.ffl-map-resize {
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+/* ── Mapbox overrides ─────────────────────────────────────────────────── */
+
+.mapboxgl-popup {
+    text-align: left !important;
+    max-width: 325px !important;
+}
+
+.mapboxgl-ctrl-attrib-button {
+    display: none !important;
+}
+
+.mapboxgl-ctrl-bottom-right {
+    display: none !important;
+}
+
+/* ── Attribution line ─────────────────────────────────────────────────── */
+
+.mapbox-attribution {
+    font-weight: normal !important;
+    font-size: 8pt !important;
+    color: gray !important;
+    padding: 0px !important;
+    margin-bottom: 5px;
+    float: right !important;
+    width: 100%;
+}
+
+/* ── Popup image (legacy cockpit) ─────────────────────────────────────── */
+
+.popup-img {
+    width: 280px;
+    margin: 30px auto;
+    display: block;
+}
+
+/* ── WooCommerce payment section clear ────────────────────────────────── */
+
+#add_payment_method #payment,
+.woocommerce-cart #payment,
+.woocommerce-checkout #payment {
+    clear: both;
+}
+
+/* ── Responsive ───────────────────────────────────────────────────────── */
+
+@media (min-width: 320px) and (max-width: 480px) {
+    #ffl-map {
         width: 100%;
+        float: left;
     }
 
-    .ffl-dealer-finder__result-header {
-        flex-direction: column;
-        align-items: flex-start;
+    #ffl-list div button,
+    .ffl-list-div {
+        background: #fff;
+        color: #333;
+        display: block;
+        margin: 1px;
+        width: 100%;
+        padding: 15px 10px;
+        border: 1px solid rgb(204, 204, 204);
+        border-radius: 4px;
+        text-align: left;
+        outline: none;
+        margin-bottom: 3px !important;
     }
+
+    #ffl-list {
+        width: 100%;
+        padding: 0 5px 0 0 !important;
+    }
+
+    .ffl_checkout_columns {
+        flex-direction: column;
+    }
+}
+
+@media (min-width: 481px) and (max-width: 767px) {
+    .ffl-map-resize {
+        width: 91%;
+    }
+}
+
+@media (min-width: 768px) and (max-width: 1024px) {
+    .ffl-map-resize {
+        width: 69%;
+    }
+}
+
+/* ── Builder preview ──────────────────────────────────────────────────── */
+
+.ffl-container--preview input,
+.ffl-container--preview select,
+.ffl-container--preview button {
+    pointer-events: none;
 }

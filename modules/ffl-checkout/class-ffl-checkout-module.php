@@ -2,8 +2,8 @@
 /**
  * FFL Checkout Module — Entry Point.
  *
- * Extends FFLA_Module. Integrates Radar.com address autocomplete
- * into the WooCommerce checkout.
+ * Extends FFLA_Module. Integrates Mapbox address autocomplete
+ * and FFL Dealer Finder into the WooCommerce checkout.
  *
  * @package FFL_Funnels_Addons
  */
@@ -29,7 +29,7 @@ class FFL_Checkout_Module extends FFLA_Module
 
     public function get_description(): string
     {
-        return __('Radar.com address autocomplete for WooCommerce checkout — auto-fills city, state, zip, and country.', 'ffl-funnels-addons');
+        return __('FFL Dealer Finder and Mapbox address autocomplete for WooCommerce checkout.', 'ffl-funnels-addons');
     }
 
     public function get_icon_svg(): string
@@ -47,6 +47,10 @@ class FFL_Checkout_Module extends FFLA_Module
         require_once $base . 'includes/class-ffl-checkout-assets.php';
         FFL_Checkout_Assets::init();
 
+        // AJAX handlers (search dealers, Mapbox token, C&R upload).
+        require_once $base . 'includes/class-ffl-checkout-ajax.php';
+        FFL_Checkout_Ajax::init();
+
         // Admin settings page.
         if (is_admin()) {
             require_once $base . 'admin/class-ffl-checkout-admin.php';
@@ -55,17 +59,14 @@ class FFL_Checkout_Module extends FFLA_Module
         }
 
         // ── Bricks Builder Integration ─────────────────────────────────────
-        // Must be deferred to plugins_loaded (priority 20) so BRICKS_VERSION
-        // and G_FFL_COCKPIT_VERSION are already defined.
-        $module_path = $base;
-        add_action('plugins_loaded', function () use ($module_path) {
-            if (!defined('BRICKS_VERSION') || !defined('G_FFL_COCKPIT_VERSION')) {
-                return;
-            }
-            require_once $module_path . 'frontend/class-ffl-checkout-bricks.php';
-            $bricks = new FFL_Checkout_Bricks($module_path);
+        // boot() fires during `init` priority 0, so both BRICKS_VERSION
+        // (theme) and G_FFL_COCKPIT_VERSION (plugin) are already defined.
+        // We register the element at `init` priority 11 (Bricks convention).
+        if (defined('BRICKS_VERSION') && defined('G_FFL_COCKPIT_VERSION')) {
+            require_once $base . 'frontend/class-ffl-checkout-bricks.php';
+            $bricks = new FFL_Checkout_Bricks($base);
             $bricks->init();
-        }, 20);
+        }
 
         // ── Save selected FFL dealer to order meta ─────────────────────────
         // Mirrors g-ffl-cockpit's approach: dealer data is posted via the

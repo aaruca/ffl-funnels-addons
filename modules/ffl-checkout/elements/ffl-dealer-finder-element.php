@@ -2,10 +2,11 @@
 /**
  * FFL Dealer Finder — Bricks Element.
  *
- * Renders the Garidium FFL dealer-finder widget on the WooCommerce checkout page.
- * Reads the g-ffl-cockpit API key from the `g_ffl_cockpit_key` option and passes
- * it safely via wp_localize_script — no key is ever exposed to or stored in the
- * Bricks element settings.
+ * Renders the full FFL dealer finder widget on the WooCommerce checkout page,
+ * including Mapbox map, radius search, FFL list, local pickup, favorites,
+ * and C&R upload — matching the g-ffl-checkout plugin's output.
+ *
+ * API key is never exposed to the browser; all calls go through WP-AJAX.
  *
  * @package FFL_Funnels_Addons
  */
@@ -18,32 +19,18 @@ if (!defined('ABSPATH')) {
 
 class FFL_Dealer_Finder_Element extends \Bricks\Element
 {
-    /** Sidebar group label shown in the Bricks panel. */
     public $category = 'FFL Checkout';
-
-    /** Unique element slug (kebab-case). */
-    public $name = 'ffl-dealer-finder';
-
-    /** Themify icon shown in the sidebar. */
-    public $icon = 'ti-map-alt';
-
-    /** Default HTML wrapper tag. */
-    public $tag = 'div';
-
-    /**
-     * JS handle(s) used by Bricks to auto-init the element in the builder.
-     * Must match the handle registered in enqueue_scripts().
-     */
-    public $scripts = ['fflDealerFinder'];
-
-    // ── Labels / metadata ────────────────────────────────────────────────────
+    public $name     = 'ffl-dealer-finder';
+    public $icon     = 'ti-map-alt';
+    public $tag      = 'div';
+    public $scripts  = ['fflDealerFinder'];
 
     public function get_label(): string
     {
         return esc_html__('FFL Dealer Finder', 'ffl-funnels-addons');
     }
 
-    // ── Control groups ──────────────────────────────────────────────────────
+    // ── Control Groups ─────────────────────────────────────────────────────
 
     public function set_control_groups(): void
     {
@@ -63,113 +50,94 @@ class FFL_Dealer_Finder_Element extends \Bricks\Element
         ];
     }
 
-    // ── Controls ─────────────────────────────────────────────────────────────
+    // ── Controls ───────────────────────────────────────────────────────────
 
     public function set_controls(): void
     {
-        // ── Content: Widget Settings ──────────────────────────────────────────
+        // ── Content: Widget Settings ────────────────────────────────────
 
         $this->controls['map_height'] = [
-            'group'    => 'ffl_widget',
-            'tab'      => 'content',
-            'label'    => esc_html__('Widget Height', 'ffl-funnels-addons'),
-            'type'     => 'number',
-            'units'    => true,
-            'default'  => '500px',
-            'css'      => [
-                [
-                    'property' => 'height',
-                    'selector' => '.ffl-dealer-finder__results',
-                ],
-            ],
+            'group'   => 'ffl_widget',
+            'tab'     => 'content',
+            'label'   => esc_html__('Map Height', 'ffl-funnels-addons'),
+            'type'    => 'number',
+            'units'   => true,
+            'default' => '35vh',
+            'css'     => [['property' => 'height', 'selector' => '.ffl-map']],
         ];
 
-        $this->controls['results_per_page'] = [
-            'group'       => 'ffl_widget',
-            'tab'         => 'content',
-            'label'       => esc_html__('Results Per Page', 'ffl-funnels-addons'),
-            'type'        => 'number',
-            'default'     => 10,
-            'min'         => 1,
-            'max'         => 50,
-            'placeholder' => '10',
+        $this->controls['list_height'] = [
+            'group'   => 'ffl_widget',
+            'tab'     => 'content',
+            'label'   => esc_html__('Results List Height', 'ffl-funnels-addons'),
+            'type'    => 'number',
+            'units'   => true,
+            'default' => '300px',
+            'css'     => [['property' => 'max-height', 'selector' => '.ffl-list']],
         ];
 
-        $this->controls['radius_miles'] = [
-            'group'       => 'ffl_widget',
-            'tab'         => 'content',
-            'label'       => esc_html__('Search Radius (miles)', 'ffl-funnels-addons'),
-            'type'        => 'number',
-            'default'     => 50,
-            'min'         => 5,
-            'max'         => 500,
-            'placeholder' => '50',
+        // ── Content: Labels ─────────────────────────────────────────────
+
+        $this->controls['heading_text'] = [
+            'group'   => 'ffl_text',
+            'tab'     => 'content',
+            'label'   => esc_html__('Heading', 'ffl-funnels-addons'),
+            'type'    => 'text',
+            'default' => esc_html__('Select your preferred FFL Dealer', 'ffl-funnels-addons'),
+            'inline'  => true,
         ];
 
-        // ── Content: Labels ───────────────────────────────────────────────────
-
-        $this->controls['placeholder_text'] = [
-            'group'       => 'ffl_text',
-            'tab'         => 'content',
-            'label'       => esc_html__('ZIP Code Placeholder', 'ffl-funnels-addons'),
-            'type'        => 'text',
-            'default'     => esc_html__('Enter your ZIP code', 'ffl-funnels-addons'),
-            'inline'      => true,
-        ];
-
-        $this->controls['button_text'] = [
+        $this->controls['search_button_text'] = [
             'group'   => 'ffl_text',
             'tab'     => 'content',
             'label'   => esc_html__('Search Button Text', 'ffl-funnels-addons'),
             'type'    => 'text',
-            'default' => esc_html__('Find FFL Dealers', 'ffl-funnels-addons'),
+            'default' => esc_html__('FIND FFL', 'ffl-funnels-addons'),
             'inline'  => true,
         ];
 
-        $this->controls['no_results_text'] = [
+        $this->controls['local_pickup_text'] = [
             'group'   => 'ffl_text',
             'tab'     => 'content',
-            'label'   => esc_html__('No Results Text', 'ffl-funnels-addons'),
+            'label'   => esc_html__('Local Pickup Button Text', 'ffl-funnels-addons'),
             'type'    => 'text',
-            'default' => esc_html__('No FFL dealers found near that ZIP code. Try expanding your search radius.', 'ffl-funnels-addons'),
+            'default' => esc_html__('CLICK HERE FOR IN STORE PICKUP', 'ffl-funnels-addons'),
             'inline'  => true,
         ];
 
-        $this->controls['select_button_text'] = [
+        $this->controls['favorite_button_text'] = [
             'group'   => 'ffl_text',
             'tab'     => 'content',
-            'label'   => esc_html__('Select Dealer Button Text', 'ffl-funnels-addons'),
+            'label'   => esc_html__('Favorite Button Text', 'ffl-funnels-addons'),
             'type'    => 'text',
-            'default' => esc_html__('Select This Dealer', 'ffl-funnels-addons'),
+            'default' => esc_html__('FIND THE LAST FFL YOU USED', 'ffl-funnels-addons'),
             'inline'  => true,
         ];
 
-        // ── Style: Widget ─────────────────────────────────────────────────────
+        // ── Style: Widget ───────────────────────────────────────────────
 
         $this->controls['widget_bg'] = [
             'group' => 'ffl_style_group',
             'tab'   => 'style',
             'label' => esc_html__('Widget Background', 'ffl-funnels-addons'),
             'type'  => 'color',
-            'css'   => [
-                [
-                    'property' => 'background-color',
-                    'selector' => '.ffl-dealer-finder',
-                ],
-            ],
+            'css'   => [['property' => 'background-color', 'selector' => '.ffl-container']],
         ];
 
-        $this->controls['result_hover_bg'] = [
+        $this->controls['search_btn_bg'] = [
             'group' => 'ffl_style_group',
             'tab'   => 'style',
-            'label' => esc_html__('Result Hover Background', 'ffl-funnels-addons'),
+            'label' => esc_html__('Search Button Background', 'ffl-funnels-addons'),
             'type'  => 'color',
-            'css'   => [
-                [
-                    'property' => 'background-color',
-                    'selector' => '.ffl-dealer-finder__result:hover',
-                ],
-            ],
+            'css'   => [['property' => 'background-color', 'selector' => '.ffl-search-btn']],
+        ];
+
+        $this->controls['search_btn_color'] = [
+            'group' => 'ffl_style_group',
+            'tab'   => 'style',
+            'label' => esc_html__('Search Button Text Color', 'ffl-funnels-addons'),
+            'type'  => 'color',
+            'css'   => [['property' => 'color', 'selector' => '.ffl-search-btn']],
         ];
 
         $this->controls['selected_bg'] = [
@@ -177,22 +145,37 @@ class FFL_Dealer_Finder_Element extends \Bricks\Element
             'tab'   => 'style',
             'label' => esc_html__('Selected Dealer Background', 'ffl-funnels-addons'),
             'type'  => 'color',
-            'css'   => [
-                [
-                    'property' => 'background-color',
-                    'selector' => '.ffl-dealer-finder__result--selected',
-                ],
-            ],
+            'css'   => [['property' => 'background-color', 'selector' => '.selectedFFLDivButton']],
         ];
     }
 
-    // ── Asset loading ─────────────────────────────────────────────────────────
+    // ── Asset Loading ──────────────────────────────────────────────────────
 
     public function enqueue_scripts(): void
     {
         $module_url = FFLA_URL . 'modules/ffl-checkout/';
+        $settings   = wp_parse_args(get_option('ffl_checkout_settings', []), [
+            'include_map' => '1',
+        ]);
 
-        // CSS.
+        // Mapbox GL JS + CSS (only when map is enabled).
+        if ($settings['include_map'] === '1') {
+            wp_enqueue_style(
+                'mapbox-gl',
+                'https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css',
+                [],
+                '3.3.0'
+            );
+            wp_enqueue_script(
+                'mapbox-gl',
+                'https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js',
+                [],
+                '3.3.0',
+                false // Load in head so it's available before our widget.
+            );
+        }
+
+        // Widget CSS.
         wp_enqueue_style(
             'ffl-dealer-finder',
             $module_url . 'assets/css/ffl-dealer-finder.css',
@@ -200,188 +183,249 @@ class FFL_Dealer_Finder_Element extends \Bricks\Element
             FFLA_VERSION
         );
 
-        // JS widget.
+        // Widget JS.
         wp_enqueue_script(
             'fflDealerFinder',
             $module_url . 'assets/js/ffl-dealer-finder.js',
-            [],
+            $settings['include_map'] === '1' ? ['mapbox-gl'] : [],
             FFLA_VERSION,
             true
         );
 
-        // Pass settings + API key to the JS layer.
-        // The API key never appears in element HTML — it's accessed only here via PHP.
-        $api_key = get_option('g_ffl_cockpit_key', '');
-
+        // Pass AJAX config (NO API key exposed).
         wp_localize_script('fflDealerFinder', 'fflDealerFinderConfig', [
-            'apiUrl'           => 'https://ffl-api.garidium.com',
-            'apiKey'           => $api_key,
-            'nonce'            => wp_create_nonce('ffl_dealer_finder_save'),
-            'ajaxUrl'          => admin_url('admin-ajax.php'),
-            'cartHasFflItems'  => $this->cart_has_ffl_items() ? '1' : '0',
-            'isBuilder'        => \Bricks\Database::$is_builder_call ? '1' : '0',
+            'ajaxUrl'        => admin_url('admin-ajax.php'),
+            'nonce'          => wp_create_nonce('ffl_checkout_nonce'),
+            'includeMap'     => $settings['include_map'],
+            'isBuilder'      => \Bricks\Database::$is_builder_call ? '1' : '0',
+            'cartHasFflItems' => $this->cart_has_ffl_items() ? '1' : '0',
+            'localPickupLicense' => $settings['local_pickup_license'] ?? '',
+            'candrEnabled'   => $settings['candr_enabled'] ?? '0',
+            'blacklist'      => array_keys(get_option('ffl_blacklist', [])),
         ]);
     }
 
-    // ── Render ────────────────────────────────────────────────────────────────
+    // ── Render ─────────────────────────────────────────────────────────────
 
     public function render(): void
     {
-        $settings = $this->settings;
-
-        // Extract settings with defaults.
-        $placeholder      = $settings['placeholder_text']   ?? esc_html__('Enter your ZIP code', 'ffl-funnels-addons');
-        $btn_text         = $settings['button_text']         ?? esc_html__('Find FFL Dealers', 'ffl-funnels-addons');
-        $no_results_text  = $settings['no_results_text']     ?? esc_html__('No FFL dealers found near that ZIP code.', 'ffl-funnels-addons');
-        $select_btn_text  = $settings['select_button_text']  ?? esc_html__('Select This Dealer', 'ffl-funnels-addons');
-        $results_per_page = absint($settings['results_per_page'] ?? 10);
-        $radius_miles     = absint($settings['radius_miles']     ?? 50);
+        $el_settings = $this->settings;
+        $settings    = wp_parse_args(get_option('ffl_checkout_settings', []), [
+            'include_map'                 => '1',
+            'checkout_message'            => '<b>Federal law dictates that your online firearms purchase must be delivered to a federally licensed firearms dealer (FFL) before you can take possession.</b> This process is called a Transfer. Enter your zip code, radius, and FFL name (optional), then click the Find button to get a list of FFL dealers in your area. Select the FFL dealer you want the firearm shipped to. <b><u>Before Checking Out, Contact your selected FFL dealer to confirm they are currently accepting transfers</u></b>. You can also confirm transfer costs.',
+            'ammo_checkout_message'       => '',
+            'required_notice_text'        => 'REQUIRED: You must search for and select an FFL dealer to complete your order',
+            'local_pickup_license'        => '',
+            'candr_enabled'               => '0',
+            'checkout_message_bg_color'   => '#FFFFF0',
+            'checkout_message_text_color' => '#000000',
+        ]);
 
         // Require g-ffl-cockpit to be active.
         if (!defined('G_FFL_COCKPIT_VERSION')) {
-            echo '<div class="ffl-dealer-finder ffl-dealer-finder--inactive">';
+            echo '<div class="ffl-container ffl-container--inactive">';
             echo '<p>' . esc_html__('[FFL Dealer Finder: g-FFL Cockpit plugin is not active]', 'ffl-funnels-addons') . '</p>';
             echo '</div>';
             return;
         }
 
-        // Builder preview: show placeholder instead of a live widget.
+        // Builder preview.
         if ($this->is_builder_context()) {
-            $this->render_builder_preview();
+            $this->render_builder_preview($el_settings, $settings);
             return;
         }
 
-        // Cart doesn't contain any FFL products: hide widget.
+        // Cart doesn't contain FFL products — hide widget.
         if (!$this->cart_has_ffl_items()) {
-            // Render a hidden container so JS can re-check if cart changes dynamically.
-            echo '<div class="ffl-dealer-finder ffl-dealer-finder--hidden" style="display:none;" '
-                . 'data-ffl-empty-cart="1"></div>';
+            echo '<div class="ffl-container ffl-container--hidden" style="display:none;" data-ffl-empty-cart="1"></div>';
             return;
         }
 
-        // Render the full widget.
-        $this->set_attribute('_root', 'class', 'ffl-dealer-finder');
-        $this->set_attribute('_root', 'data-results-per-page', $results_per_page);
-        $this->set_attribute('_root', 'data-radius-miles', $radius_miles);
+        $heading       = $el_settings['heading_text'] ?? $settings['required_notice_text'];
+        $search_btn    = $el_settings['search_button_text'] ?? 'FIND FFL';
+        $pickup_text   = $el_settings['local_pickup_text'] ?? 'CLICK HERE FOR IN STORE PICKUP';
+        $favorite_text = $el_settings['favorite_button_text'] ?? 'FIND THE LAST FFL YOU USED';
+        $msg_bg        = $settings['checkout_message_bg_color'];
+        $msg_color     = $settings['checkout_message_text_color'];
+
+        $this->set_attribute('_root', 'class', 'ffl-container');
+        $this->set_attribute('_root', 'id', 'ffl_container');
 
         echo '<div ' . $this->render_attributes('_root') . '>';
 
-            // Hidden field that WooCommerce checkout reads on order save.
-            echo '<input type="hidden" id="ffl_selected_dealer" name="ffl_selected_dealer" value="" />';
-            echo '<input type="hidden" id="ffl_selected_dealer_name" name="ffl_selected_dealer_name" value="" />';
+        // ── Hidden checkout fields ──
+        echo '<input type="hidden" id="ffl_selected_dealer" name="ffl_selected_dealer" value="" />';
+        echo '<input type="hidden" id="ffl_selected_dealer_name" name="ffl_selected_dealer_name" value="" />';
+        echo '<input type="hidden" name="shipping_fflno" id="shipping_fflno" value="" />';
+        echo '<input type="hidden" name="shipping_fflexp" id="shipping_fflexp" value="" />';
+        echo '<input type="hidden" name="shipping_ffl_onfile" id="shipping_ffl_onfile" value="" />';
+        echo '<input type="hidden" name="shipping_ffl_name" id="shipping_ffl_name" value="" />';
+        echo '<input type="hidden" name="shipping_ffl_phone" id="shipping_ffl_phone" value="" />';
 
-            // Search bar.
-            echo '<div class="ffl-dealer-finder__search">';
-                echo '<input type="text" id="ffl-zip-input" class="ffl-dealer-finder__input"'
-                    . ' placeholder="' . esc_attr($placeholder) . '"'
-                    . ' maxlength="10" inputmode="numeric" />';
-                echo '<button type="button" id="ffl-search-btn" class="ffl-dealer-finder__btn">'
-                    . esc_html($btn_text) . '</button>';
+        echo '<div class="content">';
+
+        // ── Heading ──
+        echo '<h3 class="ffl-dealer-heading">' . esc_html($heading) . '</h3>';
+
+        // ── Required notice ──
+        echo '<div id="ffl-required-notice" style="background:#f8d7da; border-left:4px solid #dc3545; padding:10px; margin-bottom:10px; color:#721c24; font-size:inherit; font-weight:normal; font-family:inherit; text-align:left;">'
+            . esc_html($settings['required_notice_text'])
+            . '</div>';
+
+        // ── Checkout message ──
+        echo '<p id="ffl_checkout_notice" class="ffl_checkout_notice" style="margin-bottom:10px !important; background-color:'
+            . esc_attr($msg_bg) . '; color:' . esc_attr($msg_color)
+            . '; display:block; border-left:4px solid ' . esc_attr($msg_bg) . '; padding-left:10px;">'
+            . wp_kses_post($settings['checkout_message'])
+            . '</p>';
+
+        // ── Ammo notice (hidden by default, JS shows if needed) ──
+        echo '<p id="ffl_checkout_notice_ammo" style="margin-bottom:10px !important; display:none;" class="ffl_checkout_notice"></p>';
+
+        // ── C&R Section ──
+        if ($settings['candr_enabled'] === '1') {
+            echo '<div id="ffl-candr-section" style="margin-bottom:20px; padding:5px; border:solid 2px; background:#EEEEEE; display:none;">';
+            echo '<div class="ffl_checkout_columns">';
+            echo '<div class="ffl_checkout_column" style="text-align:left;color:black;">' . esc_html__('Have a C&R?', 'ffl-funnels-addons') . '</div>';
+            echo '<div class="ffl_checkout_column" style="width:100%;text-align:right;font-style:italic;">' . esc_html__('Upload your C&R', 'ffl-funnels-addons') . '</div>';
             echo '</div>';
-
-            // Loading spinner.
-            echo '<div class="ffl-dealer-finder__loading" style="display:none;">';
-                echo '<div class="ffl-dealer-finder__spinner"></div>';
-                echo '<span>' . esc_html__('Searching for nearby FFL dealers…', 'ffl-funnels-addons') . '</span>';
+            echo '<div class="ffl_checkout_columns" id="ffl-candr-inner-section" style="padding:5px;border:solid 2px;background-color:white;">';
+            echo '<div class="ffl_checkout_column" id="candr_upload_section">';
+            echo '<input type="file" id="candr_upload_filename" style="display:none;" accept=".pdf,.jpg,.jpeg,.png,.gif">';
+            echo '<label style="width:100%;" id="candrUploadLable" for="candr_upload_filename" class="button alt">' . esc_html__('SELECT C&R', 'ffl-funnels-addons') . '</label>';
             echo '</div>';
-
-            // Selected dealer banner.
-            echo '<div class="ffl-dealer-finder__selected-banner" style="display:none;">';
-                echo '<span class="ffl-dealer-finder__selected-label">'
-                    . esc_html__('Selected Dealer:', 'ffl-funnels-addons') . '</span>';
-                echo '<span class="ffl-dealer-finder__selected-name"></span>';
-                echo '<button type="button" class="ffl-dealer-finder__change-btn">'
-                    . esc_html__('Change', 'ffl-funnels-addons') . '</button>';
+            echo '<div class="ffl_checkout_column">';
+            echo '<input style="width:100%;" autocomplete="off" type="text" id="candr_license_number" placeholder="' . esc_attr__('Enter Full C&R License#', 'ffl-funnels-addons') . '" value="">';
             echo '</div>';
+            echo '<div class="ffl_checkout_column">';
+            echo '<input style="width:100%;" readonly id="ffl-candr-override" value="UPLOAD">';
+            echo '</div>';
+            echo '</div>';
+            echo '</div>';
+        }
 
-            // Results list.
-            echo '<div class="ffl-dealer-finder__results" role="list">'
-                // JS fills this in.
-                . '</div>';
-
-            // No-results message (hidden by default, shown by JS).
-            echo '<div class="ffl-dealer-finder__no-results" style="display:none;">'
-                . esc_html($no_results_text)
-                . '</div>';
-
-            // Pass runtime strings to the JS so we avoid hardcoding them there.
-            echo '<script type="application/json" id="ffl-dealer-finder-strings">'
-                . wp_json_encode([
-                    'selectBtn'  => $select_btn_text,
-                    'noResults'  => $no_results_text,
-                    'miles'      => esc_html__('mi', 'ffl-funnels-addons'),
-                    'license'    => esc_html__('License:', 'ffl-funnels-addons'),
-                    'phone'      => esc_html__('Phone:', 'ffl-funnels-addons'),
-                    'email'      => esc_html__('Email:', 'ffl-funnels-addons'),
-                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
-                . '</script>';
-
+        // ── Local Pickup ──
+        echo '<div id="ffl-local-pickup-section" style="display:none; margin-bottom:10px;">';
+        echo '<div><input readonly id="ffl-local-pickup-search" value="' . esc_attr($pickup_text) . '"></div>';
         echo '</div>';
+
+        // ── Favorites ──
+        echo '<div id="ffl-favorite-section" style="display:none;">';
+        echo '<div><input readonly id="ffl-favorite-search" value="' . esc_attr($favorite_text) . '"></div>';
+        echo '</div>';
+
+        // ── Search Fields ──
+        echo '<div id="ffl_search_fields">';
+        echo '<div class="ffl_checkout_columns">';
+        echo '<div class="ffl_checkout_column"><input autocomplete="off" type="text" id="ffl-zip-code" placeholder="' . esc_attr__('Zip Code', 'ffl-funnels-addons') . '" value=""></div>';
+        echo '<div class="ffl_checkout_column">';
+        echo '<select id="ffl-radius">';
+        echo '<option value="5" selected>' . esc_html__('within 5 Miles', 'ffl-funnels-addons') . '</option>';
+        echo '<option value="10">' . esc_html__('Within 10 Miles', 'ffl-funnels-addons') . '</option>';
+        echo '<option value="25">' . esc_html__('Within 25 Miles', 'ffl-funnels-addons') . '</option>';
+        echo '<option value="50">' . esc_html__('Within 50 Miles', 'ffl-funnels-addons') . '</option>';
+        echo '</select>';
+        echo '</div>';
+        echo '<div class="ffl_checkout_column"><input readonly id="ffl-search" class="ffl-search-btn" value="' . esc_attr($search_btn) . '"></div>';
+        echo '</div>';
+
+        echo '<div class="ffl_checkout_columns">';
+        echo '<div class="ffl_checkout_column"><input autocomplete="off" type="text" id="ffl-name-search" placeholder="' . esc_attr__('FFL Name (optional)', 'ffl-funnels-addons') . '"></div>';
+        echo '</div>';
+        echo '</div>'; // end search fields
+
+        echo '</div>'; // end .content
+
+        // ── Click instructions ──
+        echo '<div id="ffl-click-instructions" class="ffl-hide">' . esc_html__('Click on FFL to Confirm the Pickup Location', 'ffl-funnels-addons') . '</div>';
+
+        // ── Results list + loading spinner ──
+        echo '<div class="ffl-list-container">';
+        echo '<ul id="ffl-list" class="ffl-hide"></ul>';
+        echo '<div id="floatingBarsG" style="display:none;">';
+        for ($i = 1; $i <= 8; $i++) {
+            echo '<div class="blockG" id="rotateG_0' . $i . '"></div>';
+        }
+        echo '</div>';
+        echo '</div>';
+
+        // ── Mapbox Map ──
+        if ($settings['include_map'] === '1') {
+            echo '<div id="ffl-map" class="ffl-map ffl-map-resize"></div>';
+            echo '<span id="mapbox-attribution-line" class="mapbox-attribution">'
+                . '&copy; <a style="color:gray !important;" target="_blank" href="https://www.mapbox.com/about/maps/">Mapbox</a> '
+                . '&copy; <a style="color:gray !important;" target="_blank" href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> '
+                . '&copy; <a style="color:gray !important;" target="_blank" href="http://www.maxar.com">Maxar</a>'
+                . '<strong> | <a style="color:gray !important;" href="https://www.mapbox.com/map-feedback/" target="_blank">Improve this map</a></strong>'
+                . '</span><br>';
+        }
+
+        echo '</div>'; // end ffl_container
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── Builder Preview ────────────────────────────────────────────────────
 
-    /**
-     * Return true when we are inside the Bricks visual editor.
-     */
+    private function render_builder_preview(array $el_settings, array $settings): void
+    {
+        $this->set_attribute('_root', 'class', 'ffl-container ffl-container--preview');
+
+        echo '<div ' . $this->render_attributes('_root') . '>';
+        echo '<div class="content">';
+        echo '<h3 class="ffl-dealer-heading">' . esc_html($el_settings['heading_text'] ?? 'Select your preferred FFL Dealer') . '</h3>';
+
+        echo '<div style="background:#f8d7da; border-left:4px solid #dc3545; padding:10px; margin-bottom:10px; color:#721c24; text-align:left;">'
+            . esc_html($settings['required_notice_text'] ?? 'REQUIRED: You must search for and select an FFL dealer to complete your order')
+            . '</div>';
+
+        // Search form preview.
+        echo '<div class="ffl_checkout_columns">';
+        echo '<div class="ffl_checkout_column"><input type="text" placeholder="Zip Code" disabled></div>';
+        echo '<div class="ffl_checkout_column"><select disabled><option>within 5 Miles</option></select></div>';
+        echo '<div class="ffl_checkout_column"><input readonly class="ffl-search-btn" value="FIND FFL" disabled></div>';
+        echo '</div>';
+        echo '<div class="ffl_checkout_columns">';
+        echo '<div class="ffl_checkout_column"><input type="text" placeholder="FFL Name (optional)" disabled></div>';
+        echo '</div>';
+
+        // Sample results.
+        echo '<ul style="list-style:none; padding:0; margin:10px 0; max-height:200px; overflow-y:auto;">';
+        for ($i = 1; $i <= 3; $i++) {
+            echo '<li style="padding:5px; border:1px solid #ccc; border-radius:4px; margin-bottom:3px; text-align:left;">';
+            echo '<b>Sample FFL Dealer ' . $i . '</b><br>123 Main St, City, ST 12345<br>(555) 555-000' . $i;
+            echo '</li>';
+        }
+        echo '</ul>';
+
+        // Map placeholder.
+        if ($settings['include_map'] === '1') {
+            echo '<div style="height:35vh; background:#e5e7eb; display:flex; align-items:center; justify-content:center; color:#6b7280; border-radius:4px;">';
+            echo '<span>' . esc_html__('Mapbox Map Preview', 'ffl-funnels-addons') . '</span>';
+            echo '</div>';
+        }
+
+        echo '</div></div>';
+    }
+
+    // ── Helpers ─────────────────────────────────────────────────────────────
+
     private function is_builder_context(): bool
     {
         return bricks_is_builder_call() || bricks_is_builder();
     }
 
-    /**
-     * Render a static placeholder in the Bricks builder so the user can see
-     * the element without making live API calls.
-     */
-    private function render_builder_preview(): void
-    {
-        $this->set_attribute('_root', 'class', 'ffl-dealer-finder ffl-dealer-finder--preview');
-
-        echo '<div ' . $this->render_attributes('_root') . '>';
-            echo '<div class="ffl-dealer-finder__search">';
-                echo '<input type="text" class="ffl-dealer-finder__input" placeholder="12345" disabled />';
-                echo '<button type="button" class="ffl-dealer-finder__btn" disabled>'
-                    . esc_html__('Find FFL Dealers', 'ffl-funnels-addons') . '</button>';
-            echo '</div>';
-
-            echo '<div class="ffl-dealer-finder__results">';
-                // Sample preview rows.
-                for ($i = 1; $i <= 3; $i++) {
-                    echo '<div class="ffl-dealer-finder__result">';
-                        echo '<div class="ffl-dealer-finder__result-header">';
-                            echo '<span class="ffl-dealer-finder__result-name">'
-                                . sprintf(esc_html__('Sample FFL Dealer %d', 'ffl-funnels-addons'), $i) . '</span>';
-                            echo '<span class="ffl-dealer-finder__result-distance">'
-                                . ($i * 5) . ' ' . esc_html__('mi', 'ffl-funnels-addons') . '</span>';
-                        echo '</div>';
-                        echo '<div class="ffl-dealer-finder__result-address">123 Main St, City, ST 12345</div>';
-                        echo '<button type="button" class="ffl-dealer-finder__select-btn" disabled>'
-                            . esc_html__('Select This Dealer', 'ffl-funnels-addons') . '</button>';
-                    echo '</div>';
-                }
-            echo '</div>';
-        echo '</div>';
-    }
-
-    /**
-     * Check whether the current cart contains at least one FFL product.
-     *
-     * A product is considered an FFL product when it has the `automated_listing`
-     * post meta set (matching g-ffl-cockpit's own detection logic).
-     *
-     * @return bool
-     */
     private function cart_has_ffl_items(): bool
     {
         if (!function_exists('WC') || !WC()->cart) {
-            // Cart is not available (e.g. during admin/builder requests).
-            // Return true so the widget is visible in those contexts.
-            return true;
+            return true; // Assume yes during admin/builder.
         }
 
         foreach (WC()->cart->get_cart() as $item) {
             $product_id = absint($item['product_id'] ?? 0);
             if ($product_id && get_post_meta($product_id, 'automated_listing', true)) {
+                return true;
+            }
+            // Also check the cockpit's _firearm_product meta.
+            if ($product_id && get_post_meta($product_id, '_firearm_product', true) === 'yes') {
                 return true;
             }
         }
