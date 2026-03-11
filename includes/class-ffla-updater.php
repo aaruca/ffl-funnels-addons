@@ -409,12 +409,20 @@ class FFLA_Updater
      */
     public function source_selection(string $source, string $remote_source, object $upgrader, array $hook_extra = []): string
     {
-        // Only trigger this for our plugin update
-        if (!isset($hook_extra['plugin']) || $hook_extra['plugin'] !== $this->plugin_basename) {
-            return $source;
+        global $wp_filesystem;
+
+        // Check if this is an update specifically targeted at our plugin (e.g., auto-updates from "Check for updates")
+        $is_targeted_update = isset($hook_extra['plugin']) && $hook_extra['plugin'] === $this->plugin_basename;
+
+        // Check if this is a manual zip upload or a new installation that contains our plugin file
+        $contains_our_plugin = false;
+        if ($wp_filesystem) {
+            $contains_our_plugin = $wp_filesystem->exists(trailingslashit($source) . basename($this->plugin_basename));
         }
 
-        global $wp_filesystem;
+        if (!$is_targeted_update && !$contains_our_plugin) {
+            return $source;
+        }
 
         // The path where WP has extracted the files (e.g. /wp-content/upgrade/...)
         $upgrader_temp_dir = trailingslashit($remote_source);
