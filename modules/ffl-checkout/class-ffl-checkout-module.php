@@ -59,10 +59,9 @@ class FFL_Checkout_Module extends FFLA_Module
         }
 
         // ── Bricks Builder Integration ─────────────────────────────────────
-        // boot() fires during `init` priority 0, so both BRICKS_VERSION
-        // (theme) and G_FFL_COCKPIT_VERSION (plugin) are already defined.
-        // We register the element at `init` priority 11 (Bricks convention).
-        if (defined('BRICKS_VERSION') && defined('G_FFL_COCKPIT_VERSION')) {
+        // Register the element at `init` priority 11 (Bricks convention).
+        // The element's render() gracefully handles missing g-ffl-cockpit.
+        if (defined('BRICKS_VERSION')) {
             require_once $base . 'frontend/class-ffl-checkout-bricks.php';
             $bricks = new FFL_Checkout_Bricks($base);
             $bricks->init();

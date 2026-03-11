@@ -45,8 +45,13 @@ class FFL_Checkout_Bricks
      */
     public function register_elements(): void
     {
-        \Bricks\Elements::register_element(
-            $this->module_path . 'elements/ffl-dealer-finder-element.php'
-        );
+        if (!class_exists('\Bricks\Elements')) {
+            return;
+        }
+
+        $file = $this->module_path . 'elements/ffl-dealer-finder-element.php';
+        if (file_exists($file)) {
+            \Bricks\Elements::register_element($file);
+        }
     }
 }

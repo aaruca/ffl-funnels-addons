@@ -33,16 +33,20 @@ class FFLA_Wishlist_Count extends \Bricks\Element
             'title' => esc_html__('Counter', 'ffl-funnels-addons'),
             'tab' => 'content',
         ];
+        $this->control_groups['icon'] = [
+            'title' => esc_html__('Icon', 'ffl-funnels-addons'),
+            'tab' => 'content',
+        ];
         $this->control_groups['styling'] = [
             'title' => esc_html__('Styling', 'ffl-funnels-addons'),
-            'tab' => 'style',
+            'tab' => 'content',
         ];
     }
 
     public function set_controls()
     {
 
-        // ── Content ────────────────────────────────────────────────
+        // ── Content Tab: Counter ──────────────────────────────────
 
         $this->controls['wishlistPage'] = [
             'group' => 'counter',
@@ -85,22 +89,24 @@ class FFLA_Wishlist_Count extends \Bricks\Element
             'default' => true,
         ];
 
-        // F3: Custom icon (raw SVG)
+        // ── Content Tab: Icon ─────────────────────────────────────
+
+        // Icon picker — supports icon libraries (Font Awesome, Themify, Ionicons)
+        // and custom SVG uploads from the media library.
         $this->controls['customIcon'] = [
-            'group' => 'counter',
+            'group' => 'icon',
             'tab' => 'content',
-            'label' => esc_html__('Custom icon (SVG)', 'ffl-funnels-addons'),
-            'type' => 'textarea',
-            'hasDynamicData' => false,
-            'description' => esc_html__('Paste a custom SVG to replace the default heart icon.', 'ffl-funnels-addons'),
+            'label' => esc_html__('Custom icon', 'ffl-funnels-addons'),
+            'type' => 'icon',
+            'description' => esc_html__('Leave empty for the default heart icon.', 'ffl-funnels-addons'),
             'required' => ['showIcon', '=', true],
         ];
 
-        // ── Style ──────────────────────────────────────────────────
+        // ── Style Tab: Styling ────────────────────────────────────
 
         $this->controls['iconColor'] = [
             'group' => 'styling',
-            'tab' => 'style',
+            'tab' => 'content',
             'label' => esc_html__('Icon color', 'ffl-funnels-addons'),
             'type' => 'color',
             'css' => [['property' => 'color', 'selector' => '']],
@@ -108,20 +114,21 @@ class FFLA_Wishlist_Count extends \Bricks\Element
 
         $this->controls['iconSize'] = [
             'group' => 'styling',
-            'tab' => 'style',
+            'tab' => 'content',
             'label' => esc_html__('Icon size', 'ffl-funnels-addons'),
             'type' => 'number',
             'units' => true,
             'css' => [
                 ['property' => 'width', 'selector' => '.ffla-count-icon'],
-                ['property' => 'height', 'selector' => '.ffla-count-icon']
+                ['property' => 'height', 'selector' => '.ffla-count-icon'],
+                ['property' => 'font-size', 'selector' => '.ffla-count-icon i'],
             ],
             'default' => 20,
         ];
 
         $this->controls['badgeBg'] = [
             'group' => 'styling',
-            'tab' => 'style',
+            'tab' => 'content',
             'label' => esc_html__('Badge background', 'ffl-funnels-addons'),
             'type' => 'color',
             'css' => [['property' => 'background-color', 'selector' => '.alg-wishlist-count']],
@@ -129,7 +136,7 @@ class FFLA_Wishlist_Count extends \Bricks\Element
 
         $this->controls['badgeColor'] = [
             'group' => 'styling',
-            'tab' => 'style',
+            'tab' => 'content',
             'label' => esc_html__('Badge text color', 'ffl-funnels-addons'),
             'type' => 'color',
             'css' => [['property' => 'color', 'selector' => '.alg-wishlist-count']],
@@ -137,7 +144,7 @@ class FFLA_Wishlist_Count extends \Bricks\Element
 
         $this->controls['badgeTypo'] = [
             'group' => 'styling',
-            'tab' => 'style',
+            'tab' => 'content',
             'label' => esc_html__('Badge typography', 'ffl-funnels-addons'),
             'type' => 'typography',
             'css' => [['property' => 'typography', 'selector' => '.alg-wishlist-count']],
@@ -145,20 +152,11 @@ class FFLA_Wishlist_Count extends \Bricks\Element
     }
 
     /**
-     * Allowed SVG tags for wp_kses sanitization.
+     * Default heart SVG icon (used when no custom icon is selected).
      */
-    private function get_svg_allowed_tags()
+    private function get_default_icon_svg(): string
     {
-        return [
-            'svg'      => ['xmlns' => true, 'viewBox' => true, 'width' => true, 'height' => true, 'fill' => true, 'stroke' => true, 'stroke-width' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'class' => true],
-            'path'     => ['d' => true, 'fill' => true, 'stroke' => true],
-            'circle'   => ['cx' => true, 'cy' => true, 'r' => true, 'fill' => true, 'stroke' => true],
-            'rect'     => ['x' => true, 'y' => true, 'width' => true, 'height' => true, 'rx' => true, 'ry' => true, 'fill' => true, 'stroke' => true],
-            'line'     => ['x1' => true, 'y1' => true, 'x2' => true, 'y2' => true, 'stroke' => true],
-            'polyline' => ['points' => true, 'fill' => true, 'stroke' => true],
-            'polygon'  => ['points' => true, 'fill' => true, 'stroke' => true],
-            'g'        => ['fill' => true, 'stroke' => true, 'transform' => true],
-        ];
+        return '<svg class="ffla-count-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>';
     }
 
     public function render()
@@ -195,13 +193,16 @@ class FFLA_Wishlist_Count extends \Bricks\Element
         // F2: Show icon toggle (default = true for backwards compat).
         $show_icon = !isset($settings['showIcon']) || !empty($settings['showIcon']);
 
-        // F3: Custom icon SVG.
-        $icon_svg = '';
+        // Build icon markup — use Bricks native icon if set, otherwise default heart.
+        $icon_html = '';
         if ($show_icon) {
-            if (!empty($settings['customIcon']) && strpos($settings['customIcon'], '<svg') !== false) {
-                $icon_svg = wp_kses($settings['customIcon'], $this->get_svg_allowed_tags());
+            $icon_data = $settings['customIcon'] ?? '';
+            if (!empty($icon_data)) {
+                ob_start();
+                self::render_icon($icon_data, ['ffla-count-icon']);
+                $icon_html = ob_get_clean();
             } else {
-                $icon_svg = '<svg class="ffla-count-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>';
+                $icon_html = $this->get_default_icon_svg();
             }
         }
 
@@ -211,7 +212,7 @@ class FFLA_Wishlist_Count extends \Bricks\Element
         }
 
         $output = "<{$this->tag} {$this->render_attributes('_root')}>";
-        $output .= $icon_svg;
+        $output .= $icon_html;
         $output .= '<span class="' . esc_attr($badge_class) . '">0</span>';
         $output .= "</{$this->tag}>";
 
