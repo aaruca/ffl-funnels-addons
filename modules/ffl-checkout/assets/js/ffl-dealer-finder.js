@@ -353,6 +353,7 @@
     }
 
     function normalizeResults(response) {
+        if (!response) return [];
         if (response && response.data && Array.isArray(response.data)) return response.data;
         if (response && response.ffls && Array.isArray(response.ffls)) return response.ffls;
         if (Array.isArray(response)) return response;

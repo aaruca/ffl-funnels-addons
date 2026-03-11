@@ -108,15 +108,23 @@ class FFL_Checkout_Ajax
         }
 
         $data = json_decode($body, true);
-        if (!is_array($data)) {
-            wp_send_json_error('Invalid API response.');
-        }
+            if (empty($data)) {
+                error_log('FFL Checkout AJAX - Invalid API response body: ' . print_r($body, true));
+                wp_send_json_error(['message' => 'Invalid response from API.']);
+            }
 
-        // Normalise: the API may return dealers under different keys.
-        $dealers = $data['dealers'] ?? $data['data'] ?? $data['ffls'] ?? [];
-        if (!is_array($dealers) && is_array($data) && isset($data[0])) {
-            $dealers = $data; // Plain array response.
-        }
+            error_log('FFL Checkout AJAX - API Response for ZIP ' . $zipcode . ': ' . print_r($data, true));
+
+            // The API might return the data in a 'dealers' key, 'data' key, or just as the root array
+            $dealers = $data['dealers'] ?? $data['data'] ?? $data['ffls'] ?? null;
+            
+            if (empty($dealers) && isset($data[0])) {
+                $dealers = $data; // Top-level array fallback
+            } elseif (!is_array($dealers)) {
+                $dealers = [];
+            }
+            
+            error_log('FFL Checkout AJAX - Dealers found: ' . count($dealers));
 
         wp_send_json_success(['data' => $dealers]);
     }

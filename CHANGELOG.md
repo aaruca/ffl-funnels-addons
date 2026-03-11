@@ -2,6 +2,17 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.6.3] - 2026-03-10
+
+### Features
+- Replaced Radar.com with Mapbox address autocomplete in FFL Checkout
+- Added new FFL Dealer Finder Bricks element
+
+### Fixes & Refactoring
+- Removed Mapbox web component in favor of REST API to prevent bindTo errors
+- Guarded `bricks_is_builder()` and Database calls to prevent fatal errors in standard WooCommerce checkout
+- Refactored wishlist controls by moving them to the Content tab and using native Bricks icon controls
+
 ## [1.6.2] - 2026-03-10
 
 ### Bug Fixes
