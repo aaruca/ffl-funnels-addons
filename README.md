@@ -26,7 +26,19 @@ A lightweight wishlist implementation optimized for performance.
 *   Guest wishlist support.
 *   Doofinder shadow DOM integration.
 
-### 3. Doofinder Sync
+### 3. FFL Checkout Module
+A smart, compliance-focused checkout flow for firearms.
+*   **Mapbox Integration:** Replaces default address fields with ultra-fast Mapbox address autocomplete.
+*   **Dealer Selection:** Specialized FFL Dealer selection step injected into the standard WooCommerce checkout.
+*   **Conditional Logic:** Automatically shows or hides FFL-specific checkout steps based on what is in the user's cart.
+
+### 4. FFL Dealer Finder (Bricks Element)
+A visual element for Bricks Builder to help customers locate nearby FFL dealers before checkout.
+*   **Interactive Search:** Search by Zip Code or City to find registered FFL dealers nearby.
+*   **Extensive Customization:** 10+ control groups for typography, colors, layouts, icons, and more.
+*   **Dynamic Data:** Fetches live dealer data points to display in a customized interface.
+
+### 5. Doofinder Sync
 *   Automatically injects product metadata for Doofinder search indexing.
 *   Ensures your search engine always has the latest product data.
 
