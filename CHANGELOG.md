@@ -2,6 +2,18 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.6.4] - 2026-03-11
+
+### Features
+- Added 10 new control groups for FFL Dealer Finder Bricks element
+- Added CSS variables (`--ffl-notice-bg`, `--ffl-notice-color`) for checkout notice styling
+
+### Fixes & Refactoring
+- Refactored FFL Dealer Finder CSS to use class-based rules (`.ffl-required-notice`, etc.) and removed `!important` flags
+- Updated responsive media queries to use new class names
+- Updated FFL Dealer Finder element render method to use classes instead of inline styles
+- Added `ffl-dealer-card` class to dynamically created dealer buttons
+
 ## [1.6.3] - 2026-03-10
 
 ### Features
