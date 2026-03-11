@@ -197,7 +197,7 @@ class FFL_Dealer_Finder_Element extends \Bricks\Element
             'ajaxUrl'        => admin_url('admin-ajax.php'),
             'nonce'          => wp_create_nonce('ffl_checkout_nonce'),
             'includeMap'     => $settings['include_map'],
-            'isBuilder'      => \Bricks\Database::$is_builder_call ? '1' : '0',
+            'isBuilder'      => (class_exists('\Bricks\Database') && !empty(\Bricks\Database::$is_builder_call)) ? '1' : '0',
             'cartHasFflItems' => $this->cart_has_ffl_items() ? '1' : '0',
             'localPickupLicense' => $settings['local_pickup_license'] ?? '',
             'candrEnabled'   => $settings['candr_enabled'] ?? '0',
@@ -410,7 +410,17 @@ class FFL_Dealer_Finder_Element extends \Bricks\Element
 
     private function is_builder_context(): bool
     {
-        return bricks_is_builder_call() || bricks_is_builder();
+        if (function_exists('bricks_is_builder_call') && bricks_is_builder_call()) {
+            return true;
+        }
+        if (function_exists('bricks_is_builder') && bricks_is_builder()) {
+            return true;
+        }
+        // Fallback: check Bricks' own static flag.
+        if (class_exists('\Bricks\Database') && !empty(\Bricks\Database::$is_builder_call)) {
+            return true;
+        }
+        return false;
     }
 
     private function cart_has_ffl_items(): bool
