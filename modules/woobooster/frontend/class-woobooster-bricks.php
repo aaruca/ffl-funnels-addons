@@ -76,6 +76,25 @@ class WooBooster_Bricks
 
         // 2. Add controls to this group.
 
+        // Specific Rule (pin this loop to a specific rule).
+        $rule_options = array('' => esc_html__('Auto (first matching rule)', 'woobooster'));
+        $rules = WooBooster_Rule::get_all(array('status' => 1, 'limit' => 200, 'orderby' => 'name', 'order' => 'ASC'));
+        if (!empty($rules)) {
+            foreach ($rules as $r) {
+                $rule_options[$r->id] = sprintf('%s (ID: %d)', $r->name, $r->id);
+            }
+        }
+
+        $controls['woobooster_rule_id'] = array(
+            'tab'         => 'content',
+            'label'       => esc_html__('Specific Rule', 'woobooster'),
+            'type'        => 'select',
+            'options'     => $rule_options,
+            'default'     => '',
+            'description' => esc_html__('Pin this loop to a specific rule. Use "Auto" for normal priority matching.', 'woobooster'),
+            'required'    => array('query.objectType', '=', self::QUERY_TYPE),
+        );
+
         // Product Source.
         $controls['woobooster_source'] = array(
             'tab' => 'content',
@@ -162,10 +181,19 @@ class WooBooster_Bricks
 
         // Get recommendations via the Matcher engine.
         $matcher = new WooBooster_Matcher();
-        $product_ids = $matcher->get_recommendations($product_id, array(
+        $query_args = array(
             'limit' => !empty($settings['woobooster_limit']) ? absint($settings['woobooster_limit']) : null,
             'exclude_outofstock' => isset($settings['woobooster_exclude_outofstock']) ? $settings['woobooster_exclude_outofstock'] : true,
-        ));
+        );
+
+        // Check if a specific rule is pinned to this loop.
+        $specific_rule_id = !empty($settings['woobooster_rule_id']) ? absint($settings['woobooster_rule_id']) : 0;
+
+        if ($specific_rule_id) {
+            $product_ids = $matcher->get_recommendations_by_rule($specific_rule_id, $product_id, $query_args);
+        } else {
+            $product_ids = $matcher->get_recommendations($product_id, $query_args);
+        }
 
         // Register recommendation context for analytics tracking.
         if (!empty($product_ids) && WooBooster_Matcher::$last_matched_rule) {

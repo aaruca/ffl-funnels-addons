@@ -159,6 +159,110 @@ class WooBooster_Matcher
     }
 
     /**
+     * Get recommendations by executing a specific rule (bypass condition matching).
+     *
+     * Used when a Bricks query loop is pinned to a specific rule,
+     * e.g. Bronze / Silver / Gold bundles for the same product.
+     *
+     * @param int   $rule_id    The rule to execute.
+     * @param int   $product_id The source product ID.
+     * @param array $args       Optional overrides: limit, exclude_outofstock.
+     * @return array Array of product IDs.
+     */
+    public function get_recommendations_by_rule($rule_id, $product_id, $args = array())
+    {
+        self::$last_matched_rule = null;
+
+        $rule_id    = absint($rule_id);
+        $product_id = absint($product_id);
+
+        if (!$rule_id || !$product_id) {
+            return array();
+        }
+
+        if ('1' !== woobooster_get_option('enabled', '1')) {
+            return array();
+        }
+
+        // Cache check (distinct key from auto-match).
+        $args_hash = md5(wp_json_encode($args));
+        $cache_key = 'woobooster_rule_' . $rule_id . '_' . $product_id . '_' . $args_hash;
+        $cached    = wp_cache_get($cache_key, 'woobooster');
+
+        if (false !== $cached) {
+            $this->debug_log("Cache hit for rule #{$rule_id}, product {$product_id}");
+            return $cached;
+        }
+
+        $start_time = microtime(true);
+
+        // Load and validate the rule.
+        $rule = WooBooster_Rule::get($rule_id);
+
+        if (!$rule || empty($rule->status)) {
+            $this->debug_log("Rule #{$rule_id} not found or disabled");
+            return array();
+        }
+
+        // Check scheduling dates.
+        $now = current_time('mysql', true);
+        if (!empty($rule->start_date) && $now < $rule->start_date) {
+            return array();
+        }
+        if (!empty($rule->end_date) && $now > $rule->end_date) {
+            return array();
+        }
+
+        self::$last_matched_rule = $rule;
+        $this->debug_log("Executing specific rule #{$rule->id} ({$rule->name}) for product {$product_id}");
+
+        // Get product terms (needed by execute_query for attribute resolution).
+        $terms = $this->get_product_terms($product_id);
+
+        // Execute actions — same logic as get_recommendations().
+        $all_product_ids = array();
+        $action_groups   = WooBooster_Rule::get_actions($rule_id);
+
+        if (!empty($action_groups)) {
+            foreach ($action_groups as $group_id => $actions) {
+                if (empty($actions)) {
+                    continue;
+                }
+
+                $group_product_ids = array();
+                $first_in_group    = true;
+
+                foreach ($actions as $action) {
+                    $ids = $this->execute_query($product_id, $action, $args, $terms);
+                    if ($first_in_group) {
+                        $group_product_ids = $ids;
+                        $first_in_group    = false;
+                    } else {
+                        $group_product_ids = array_intersect($group_product_ids, $ids);
+                    }
+                }
+
+                if (!empty($group_product_ids)) {
+                    $all_product_ids = array_merge($all_product_ids, $group_product_ids);
+                }
+            }
+        }
+
+        $all_product_ids = array_values(array_unique($all_product_ids));
+
+        if (isset($args['limit']) && $args['limit'] > 0) {
+            $all_product_ids = array_slice($all_product_ids, 0, absint($args['limit']));
+        }
+
+        wp_cache_set($cache_key, $all_product_ids, 'woobooster', HOUR_IN_SECONDS);
+
+        $elapsed = round((microtime(true) - $start_time) * 1000, 2);
+        $this->debug_log("Specific rule #{$rule_id} for product {$product_id}: {$elapsed}ms, returned " . count($all_product_ids) . ' products');
+
+        return $all_product_ids;
+    }
+
+    /**
      * Get all taxonomy terms for a product in a single query.
      *
      * @param int $product_id Product ID.

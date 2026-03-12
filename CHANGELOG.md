@@ -2,6 +2,20 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.6.5] - 2026-03-11
+
+### Features
+- **WooBooster:** Added "Specific Rule" selector to Bricks query loop — pin each loop to a specific rule for Bronze/Silver/Gold-style bundles
+- **FFL Dealer Finder:** Added 10 style control groups (~40 controls) on Content tab for full Bricks styling
+
+### Bug Fixes
+- **FFL Dealer Finder:** Fixed "No FFLs found" false alert when g-ffl-checkout plugin is also active (scoped all JS DOM queries to Bricks container)
+- **FFL Dealer Finder:** Fixed JS not loading on Bricks native checkout (removed hard Mapbox CDN dependency, added fallback asset enqueuing via Bricks template detection)
+
+### Refactoring
+- Refactored FFL Dealer Finder CSS from ID-based to class-based selectors, removed `!important` overrides
+- Replaced inline styles with CSS classes in FFL Dealer Finder render method
+
 ## [1.6.4] - 2026-03-11
 
 ### Features

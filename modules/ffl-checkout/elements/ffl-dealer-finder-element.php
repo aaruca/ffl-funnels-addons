@@ -568,11 +568,11 @@ class FFL_Dealer_Finder_Element extends \Bricks\Element
             FFLA_VERSION
         );
 
-        // Widget JS.
+        // Widget JS — no hard dependency on mapbox-gl so search works even if CDN is blocked.
         wp_enqueue_script(
             'fflDealerFinder',
             $module_url . 'assets/js/ffl-dealer-finder.js',
-            $settings['include_map'] === '1' ? ['mapbox-gl'] : [],
+            [],
             FFLA_VERSION,
             true
         );
@@ -635,6 +635,7 @@ class FFL_Dealer_Finder_Element extends \Bricks\Element
 
         $this->set_attribute('_root', 'class', 'ffl-container');
         $this->set_attribute('_root', 'id', 'ffl_container');
+        $this->set_attribute('_root', 'data-ffl-bricks', '1');
         $this->set_attribute('_root', 'style', sprintf(
             '--ffl-notice-bg:%s;--ffl-notice-color:%s;',
             esc_attr($msg_bg),

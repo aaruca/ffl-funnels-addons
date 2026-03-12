@@ -4,6 +4,9 @@
  * Full-parity port of the g-ffl-checkout widget adapted for Bricks Builder.
  * All API calls go through the WordPress AJAX proxy — no API key in the browser.
  *
+ * All DOM queries are scoped to the Bricks container (via [data-ffl-bricks])
+ * to avoid conflicts with the old g-ffl-checkout plugin which uses the same IDs.
+ *
  * Config object `fflDealerFinderConfig` is injected via wp_localize_script:
  *   ajaxUrl, nonce, includeMap, isBuilder, cartHasFflItems,
  *   localPickupLicense, candrEnabled, blacklist
@@ -20,17 +23,26 @@
 
     /* ── State ─────────────────────────────────────────────────────────── */
 
+    var ROOT          = null; // Scoped container element
     var mapInstance   = null;
     var markers       = {};
     var markersList   = [];
     var isLocalPickup = false;
 
+    /* ── Scoped DOM helper ─────────────────────────────────────────────── */
+
+    function $(selector) {
+        return ROOT ? ROOT.querySelector(selector) : null;
+    }
+
     /* ── Boot ──────────────────────────────────────────────────────────── */
 
     function boot() {
-        var container = document.getElementById('ffl_container');
+        var container = document.querySelector('[data-ffl-bricks]');
         if (!container || container.dataset.fflInited === '1') return;
         container.dataset.fflInited = '1';
+
+        ROOT = container;
 
         // Builder preview or empty cart — nothing to do.
         if (CFG.isBuilder === '1' || container.dataset.fflEmptyCart === '1') return;
@@ -122,14 +134,14 @@
     }
 
     function hideMap() {
-        var el = document.getElementById('ffl-map');
+        var el = $('#ffl-map');
         if (el) el.style.display = 'none';
-        var attr = document.getElementById('mapbox-attribution-line');
+        var attr = $('#mapbox-attribution-line');
         if (attr) attr.style.display = 'none';
     }
 
     function initMapbox() {
-        var el = document.getElementById('ffl-map');
+        var el = $('#ffl-map');
         if (!el) return;
 
         // If mapboxgl is already loaded and has a token, create map directly.
@@ -168,9 +180,12 @@
 
     function createMap() {
         if (mapInstance) return;
+        var mapEl = $('#ffl-map');
+        if (!mapEl) return;
+
         try {
             mapInstance = new mapboxgl.Map({
-                container: 'ffl-map',
+                container: mapEl,
                 style: 'mapbox://styles/garidium/clds8orfo000q01udg0o23pp5',
                 center: [-78.16847, 38.21885],
                 zoom: 4
@@ -178,14 +193,13 @@
             mapInstance.addControl(new mapboxgl.FullscreenControl());
 
             // Resize when container becomes visible (Bricks accordion, tabs, etc.)
-            if ('IntersectionObserver' in window) {
+            if ('IntersectionObserver' in window && ROOT) {
                 var obs = new IntersectionObserver(function (entries) {
                     entries.forEach(function (e) {
                         if (e.isIntersecting && mapInstance) mapInstance.resize();
                     });
                 }, { threshold: 0.1 });
-                var c = document.getElementById('ffl_container');
-                if (c) obs.observe(c);
+                obs.observe(ROOT);
             }
         } catch (err) {
             console.error('[FFL] Map init error:', err);
@@ -261,10 +275,10 @@
     /* ── Search ────────────────────────────────────────────────────────── */
 
     function initSearchFunctionality() {
-        var searchBtn = document.getElementById('ffl-search');
-        var zipInput  = document.getElementById('ffl-zip-code');
-        var nameInput = document.getElementById('ffl-name-search');
-        var radiusEl  = document.getElementById('ffl-radius');
+        var searchBtn = $('#ffl-search');
+        var zipInput  = $('#ffl-zip-code');
+        var nameInput = $('#ffl-name-search');
+        var radiusEl  = $('#ffl-radius');
 
         if (!searchBtn) return;
 
@@ -283,10 +297,10 @@
     }
 
     function performSearch() {
-        var zipInput  = document.getElementById('ffl-zip-code');
-        var radiusEl  = document.getElementById('ffl-radius');
-        var nameInput = document.getElementById('ffl-name-search');
-        var searchBtn = document.getElementById('ffl-search');
+        var zipInput  = $('#ffl-zip-code');
+        var radiusEl  = $('#ffl-radius');
+        var nameInput = $('#ffl-name-search');
+        var searchBtn = $('#ffl-search');
 
         if (!zipInput || !radiusEl) return;
 
@@ -369,7 +383,7 @@
     /* ── Display Results ───────────────────────────────────────────────── */
 
     function displayFFLResults(ffls) {
-        var list = document.getElementById('ffl-list');
+        var list = $('#ffl-list');
         if (!list) return;
 
         list.innerHTML = '';
@@ -406,7 +420,7 @@
         addMarkersAndFitBounds(ffls);
 
         // Click instructions.
-        var instr = document.getElementById('ffl-click-instructions');
+        var instr = $('#ffl-click-instructions');
         if (instr) {
             instr.textContent = 'Click on an FFL dealer below to select them for your order';
             instr.classList.remove('ffl-hide');
@@ -498,7 +512,7 @@
         enablePlaceOrder();
 
         // Update required notice.
-        var notice = document.getElementById('ffl-required-notice');
+        var notice = $('#ffl-required-notice');
         if (notice) {
             notice.style.background = '#d4edda';
             notice.style.borderColor = '#28a745';
@@ -510,18 +524,22 @@
     }
 
     function highlightSelectedFFL(license) {
-        var all = document.querySelectorAll('.ffl-list-div');
-        all.forEach(function (b) { b.classList.remove('selectedFFLDivButton'); });
+        // Only clear highlights within our scoped container
+        if (ROOT) {
+            var all = ROOT.querySelectorAll('.ffl-list-div');
+            all.forEach(function (b) { b.classList.remove('selectedFFLDivButton'); });
 
-        var sel = document.querySelector('[data-marker-id="' + license + '"]');
-        if (sel) sel.classList.add('selectedFFLDivButton');
+            var sel = ROOT.querySelector('[data-marker-id="' + license + '"]');
+            if (sel) sel.classList.add('selectedFFLDivButton');
+        }
 
-        var instr = document.getElementById('ffl-click-instructions');
+        var instr = $('#ffl-click-instructions');
         if (instr) instr.classList.add('ffl-hide');
     }
 
     function scrollToFFL(license) {
-        var el = document.getElementById(license);
+        if (!ROOT) return;
+        var el = ROOT.querySelector('#' + CSS.escape(license));
         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
@@ -529,8 +547,8 @@
 
     function initSpecialButtons() {
         // Local Pickup.
-        var pickupSection = document.getElementById('ffl-local-pickup-section');
-        var pickupBtn     = document.getElementById('ffl-local-pickup-search');
+        var pickupSection = $('#ffl-local-pickup-section');
+        var pickupBtn     = $('#ffl-local-pickup-search');
         var pickupLicense = CFG.localPickupLicense || '';
 
         if (pickupSection && pickupLicense.length === 20) {
@@ -548,8 +566,8 @@
         }
 
         // Favorites.
-        var favSection = document.getElementById('ffl-favorite-section');
-        var favBtn     = document.getElementById('ffl-favorite-search');
+        var favSection = $('#ffl-favorite-section');
+        var favBtn     = $('#ffl-favorite-search');
         var favLicense = getCookie('g_ffl_checkout_favorite_ffl') || '';
 
         if (favSection && favLicense.length === 20) {
@@ -567,24 +585,23 @@
         }
 
         // C&R section visibility.
-        var candrSection = document.getElementById('ffl-candr-section');
+        var candrSection = $('#ffl-candr-section');
         if (candrSection) {
             candrSection.style.display = (CFG.candrEnabled === '1') ? 'block' : 'none';
         }
 
         // If C&R already selected via cookie, hide entire widget.
         if (getCookie('g_ffl_checkout_candr_override') === 'Yes') {
-            var c = document.getElementById('ffl_container');
-            if (c) c.style.display = 'none';
+            if (ROOT) ROOT.style.display = 'none';
         }
     }
 
     /* ── C&R ───────────────────────────────────────────────────────────── */
 
     function initCandrFunctionality() {
-        var uploadBtn   = document.getElementById('ffl-candr-override');
-        var licenseIn   = document.getElementById('candr_license_number');
-        var fileIn      = document.getElementById('candr_upload_filename');
+        var uploadBtn   = $('#ffl-candr-override');
+        var licenseIn   = $('#candr_license_number');
+        var fileIn      = $('#candr_upload_filename');
         var uploading   = false;
 
         // Restore license from cookie.
@@ -597,7 +614,7 @@
         // File input label update.
         if (fileIn) {
             fileIn.addEventListener('change', function () {
-                var label = document.getElementById('candrUploadLable');
+                var label = $('#candrUploadLable');
                 if (label && this.files && this.files[0]) {
                     label.textContent = this.files[0].name.substring(0, 15);
                 }
@@ -675,8 +692,8 @@
 
             if (!saved) return;
 
-            var hidden     = document.getElementById('ffl_selected_dealer');
-            var hiddenName = document.getElementById('ffl_selected_dealer_name');
+            var hidden     = $('#ffl_selected_dealer');
+            var hiddenName = $('#ffl_selected_dealer_name');
 
             if (hidden)     hidden.value     = saved;
             if (hiddenName) hiddenName.value  = savedName || '';
@@ -693,26 +710,27 @@
     /* ── Loading ───────────────────────────────────────────────────────── */
 
     function showLoading() {
-        var el = document.getElementById('floatingBarsG');
+        var el = $('#floatingBarsG');
         if (el) el.style.display = '';
 
-        var list = document.getElementById('ffl-list');
+        var list = $('#ffl-list');
         if (list) { list.classList.add('ffl-hide'); list.innerHTML = ''; }
 
-        var instr = document.getElementById('ffl-click-instructions');
+        var instr = $('#ffl-click-instructions');
         if (instr) instr.classList.add('ffl-hide');
 
         clearMarkers();
     }
 
     function hideLoading() {
-        var el = document.getElementById('floatingBarsG');
+        var el = $('#floatingBarsG');
         if (el) el.style.display = 'none';
     }
 
     /* ── Local Pickup Shipping ─────────────────────────────────────────── */
 
     function selectLocalPickupShipping() {
+        // Shipping radios are outside our container — use document
         var radios = document.querySelectorAll('input[type="radio"][name^="shipping_method"]');
         for (var i = 0; i < radios.length; i++) {
             var r = radios[i];
@@ -741,6 +759,7 @@
             removeFFLRequiredMessage();
         }
 
+        // Place order button is outside our container — use document
         var btn = document.getElementById('place_order');
         if (btn) {
             btn.disabled = false;
@@ -757,7 +776,8 @@
     /* ── Utility ───────────────────────────────────────────────────────── */
 
     function setField(id, value) {
-        var el = document.getElementById(id);
+        // Try scoped first (our hidden fields), then fall back to document (WooCommerce fields)
+        var el = (ROOT ? ROOT.querySelector('#' + CSS.escape(id)) : null) || document.getElementById(id);
         if (!el) return;
         el.value = value || '';
         el.dispatchEvent(new Event('change', { bubbles: true }));
