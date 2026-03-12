@@ -157,7 +157,7 @@
         ul.id            = dropdownId;
         ul.className     = 'ffl-checkout-mbx-suggestions';
         ul.style.cssText =
-            'position:absolute;z-index:99999;background:#fff;border:1px solid #ddd;' +
+            'position:absolute;z-index:99999;background:#fff;color:#333;border:1px solid #ddd;' +
             'border-radius:6px;max-height:240px;overflow-y:auto;padding:0;margin:4px 0 0;' +
             'list-style:none;width:100%;box-shadow:0 4px 16px rgba(0,0,0,.12);';
 
@@ -165,7 +165,7 @@
             var li = document.createElement('li');
             li.style.cssText =
                 'padding:9px 14px;cursor:pointer;font-size:14px;line-height:1.4;' +
-                'border-bottom:1px solid #f4f4f4;';
+                'color:#333;background:#fff;border-bottom:1px solid #f4f4f4;';
 
             var nameEl = document.createElement('span');
             nameEl.textContent  = s.name || '';

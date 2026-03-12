@@ -2,6 +2,11 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.6.6] - 2026-03-11
+
+### Bug Fixes
+- Fixed address autocomplete suggestion dropdown showing white text on white background — added explicit text/background colors to prevent theme inheritance
+
 ## [1.6.5] - 2026-03-11
 
 ### Features
