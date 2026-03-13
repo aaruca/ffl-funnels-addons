@@ -1,0 +1,199 @@
+/**
+ * WooBooster Bundle — Base Structural CSS.
+ * Visual styling is handled by Bricks controls.
+ */
+
+.wb-bundle {
+    width: 100%;
+}
+
+.wb-bundle-heading {
+    margin: 0 0 16px;
+}
+
+/* Items container */
+.wb-bundle-items {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.wb-bundle-items--horizontal {
+    flex-direction: row;
+}
+
+.wb-bundle-items--vertical {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.wb-bundle-items--grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+
+/* Item card */
+.wb-bundle-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 12px;
+    position: relative;
+    flex: 1;
+    min-width: 0;
+}
+
+.wb-bundle-items--vertical .wb-bundle-item {
+    flex-direction: row;
+    text-align: left;
+    gap: 12px;
+}
+
+/* Checkbox */
+.wb-bundle-item__checkbox {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 1;
+    cursor: pointer;
+}
+
+.wb-bundle-item__checkbox input[type="checkbox"] {
+    cursor: pointer;
+    width: 18px;
+    height: 18px;
+}
+
+/* Image */
+.wb-bundle-item__image {
+    margin-bottom: 8px;
+}
+
+.wb-bundle-item__image img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+}
+
+.wb-bundle-items--vertical .wb-bundle-item__image {
+    margin-bottom: 0;
+    flex-shrink: 0;
+}
+
+/* Info */
+.wb-bundle-item__info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.wb-bundle-item__name {
+    font-weight: 500;
+}
+
+.wb-bundle-item__price del {
+    opacity: 0.6;
+}
+
+.wb-bundle-item__price ins {
+    text-decoration: none;
+    font-weight: 600;
+}
+
+/* Discount badge */
+.wb-bundle-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    background: #ef4444;
+    color: #fff;
+    border-radius: 4px;
+    margin-top: 4px;
+}
+
+/* Plus separator */
+.wb-bundle-separator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    font-weight: 300;
+    color: #9ca3af;
+    flex-shrink: 0;
+}
+
+.wb-bundle-items--vertical .wb-bundle-separator {
+    justify-content: center;
+    padding: 4px 0;
+}
+
+.wb-bundle-items--grid .wb-bundle-separator {
+    display: none;
+}
+
+/* Total section */
+.wb-bundle-total {
+    margin-top: 16px;
+    padding: 12px 16px;
+    border-top: 1px solid #e5e7eb;
+}
+
+.wb-bundle-total__row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.wb-bundle-total__label {
+    font-weight: 600;
+}
+
+.wb-bundle-total__original {
+    opacity: 0.6;
+}
+
+.wb-bundle-total__discounted {
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.wb-bundle-total__savings {
+    color: #16a34a;
+    font-weight: 500;
+}
+
+/* Add to Cart button */
+.wb-bundle-add-to-cart {
+    display: block;
+    width: 100%;
+    margin-top: 12px;
+    padding: 12px 24px;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    text-align: center;
+    background: #2563eb;
+    color: #fff;
+    border-radius: 6px;
+    transition: background-color 0.2s, opacity 0.2s;
+}
+
+.wb-bundle-add-to-cart:hover {
+    opacity: 0.9;
+}
+
+.wb-bundle-add-to-cart:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Placeholder (builder preview) */
+.wb-bundle--placeholder {
+    opacity: 0.7;
+    pointer-events: none;
+}

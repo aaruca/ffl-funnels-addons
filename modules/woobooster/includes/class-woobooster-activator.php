@@ -113,11 +113,90 @@ class WooBooster_Activator
 			KEY rule_id (rule_id)
 		) $charset_collate;";
 
+        // ── Bundle Tables ──────────────────────────────────────────────
+
+        $bundles_table     = $wpdb->prefix . 'woobooster_bundles';
+        $bundle_items      = $wpdb->prefix . 'woobooster_bundle_items';
+        $bundle_actions    = $wpdb->prefix . 'woobooster_bundle_actions';
+        $bundle_conditions = $wpdb->prefix . 'woobooster_bundle_conditions';
+        $bundle_index      = $wpdb->prefix . 'woobooster_bundle_index';
+
+        $sql_bundles = "CREATE TABLE $bundles_table (
+			id bigint(20) NOT NULL AUTO_INCREMENT,
+			name varchar(255) NOT NULL,
+			priority int(11) NOT NULL DEFAULT 10,
+			status tinyint(1) NOT NULL DEFAULT 1,
+			discount_type varchar(20) NOT NULL DEFAULT 'none',
+			discount_value decimal(10,2) NOT NULL DEFAULT 0,
+			start_date datetime DEFAULT NULL,
+			end_date datetime DEFAULT NULL,
+			created_at datetime DEFAULT CURRENT_TIMESTAMP,
+			updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			PRIMARY KEY  (id),
+			KEY status (status)
+		) $charset_collate;";
+
+        $sql_bundle_items = "CREATE TABLE $bundle_items (
+			id bigint(20) NOT NULL AUTO_INCREMENT,
+			bundle_id bigint(20) NOT NULL,
+			product_id bigint(20) NOT NULL,
+			sort_order int(11) NOT NULL DEFAULT 0,
+			is_optional tinyint(1) NOT NULL DEFAULT 0,
+			PRIMARY KEY  (id),
+			KEY bundle_id (bundle_id)
+		) $charset_collate;";
+
+        $sql_bundle_actions = "CREATE TABLE $bundle_actions (
+			id bigint(20) NOT NULL AUTO_INCREMENT,
+			bundle_id bigint(20) NOT NULL,
+			group_id int(11) NOT NULL DEFAULT 0,
+			action_source varchar(50) NOT NULL,
+			action_value longtext NOT NULL,
+			action_limit int(11) NOT NULL DEFAULT 4,
+			action_orderby varchar(50) NOT NULL DEFAULT 'rand',
+			include_children tinyint(1) NOT NULL DEFAULT 0,
+			action_products longtext DEFAULT NULL,
+			exclude_categories longtext DEFAULT NULL,
+			exclude_products longtext DEFAULT NULL,
+			exclude_price_min decimal(10,2) DEFAULT NULL,
+			exclude_price_max decimal(10,2) DEFAULT NULL,
+			PRIMARY KEY  (id),
+			KEY bundle_id (bundle_id)
+		) $charset_collate;";
+
+        $sql_bundle_conditions = "CREATE TABLE $bundle_conditions (
+			id bigint(20) NOT NULL AUTO_INCREMENT,
+			bundle_id bigint(20) NOT NULL,
+			group_id int(11) NOT NULL DEFAULT 0,
+			condition_attribute varchar(255) NOT NULL,
+			condition_operator varchar(50) NOT NULL DEFAULT 'equals',
+			condition_value longtext NOT NULL,
+			include_children tinyint(1) NOT NULL DEFAULT 0,
+			PRIMARY KEY  (id),
+			KEY bundle_id (bundle_id),
+			KEY group_id (group_id)
+		) $charset_collate;";
+
+        $sql_bundle_index = "CREATE TABLE $bundle_index (
+			id bigint(20) NOT NULL AUTO_INCREMENT,
+			condition_key varchar(355) NOT NULL,
+			bundle_id bigint(20) NOT NULL,
+			priority int(11) NOT NULL DEFAULT 10,
+			PRIMARY KEY  (id),
+			KEY condition_key (condition_key),
+			KEY bundle_id (bundle_id)
+		) $charset_collate;";
+
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql_rules);
         dbDelta($sql_conditions);
         dbDelta($sql_actions);
         dbDelta($sql_index);
+        dbDelta($sql_bundles);
+        dbDelta($sql_bundle_items);
+        dbDelta($sql_bundle_actions);
+        dbDelta($sql_bundle_conditions);
+        dbDelta($sql_bundle_index);
     }
 
     /**

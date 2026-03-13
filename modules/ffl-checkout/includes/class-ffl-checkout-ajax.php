@@ -2,8 +2,7 @@
 /**
  * FFL Checkout — AJAX Handlers.
  *
- * Proxies API calls to ffl-api.garidium.com through WordPress AJAX
- * so the API key is never exposed to the browser.
+ * Provides the Mapbox token and vendor selection endpoints via AJAX.
  *
  * @package FFL_Funnels_Addons
  */
@@ -14,125 +13,27 @@ if (!defined('ABSPATH')) {
 
 class FFL_Checkout_Ajax
 {
-    /** Garidium API base URL. */
-    const API_URL = 'https://ffl-api.garidium.com';
-
     /**
      * Register AJAX hooks.
      */
     public static function init(): void
     {
-        // FFL dealer search (proxy).
-        add_action('wp_ajax_ffl_search_dealers', [__CLASS__, 'search_dealers']);
-        add_action('wp_ajax_nopriv_ffl_search_dealers', [__CLASS__, 'search_dealers']);
-
-        // Mapbox token retrieval (keeps token server-side).
+        // Mapbox token.
         add_action('wp_ajax_ffl_get_mapbox_token', [__CLASS__, 'get_mapbox_token']);
         add_action('wp_ajax_nopriv_ffl_get_mapbox_token', [__CLASS__, 'get_mapbox_token']);
 
-        // C&R document upload (proxy).
-        add_action('wp_ajax_ffl_upload_candr', [__CLASS__, 'upload_candr']);
-        add_action('wp_ajax_nopriv_ffl_upload_candr', [__CLASS__, 'upload_candr']);
+        // Vendor selector.
+        add_action('wp_ajax_ffl_get_vendor_options', [__CLASS__, 'get_vendor_options']);
+        add_action('wp_ajax_nopriv_ffl_get_vendor_options', [__CLASS__, 'get_vendor_options']);
+
+        add_action('wp_ajax_ffl_update_cart_vendor', [__CLASS__, 'update_cart_vendor']);
+        add_action('wp_ajax_nopriv_ffl_update_cart_vendor', [__CLASS__, 'update_cart_vendor']);
     }
 
-    /* ── Search Dealers ─────────────────────────────────────────────────── */
+    /* ── Mapbox Token ────────────────────────────────────────────────── */
 
     /**
-     * Proxy FFL dealer search to the Garidium API.
-     *
-     * Accepts POST params: search_type, zipcode, radius, ffl_name, license_number.
-     */
-    public static function search_dealers(): void
-    {
-        check_ajax_referer('ffl_checkout_nonce', 'security');
-
-        $api_key = get_option('g_ffl_cockpit_key', '');
-        if (empty($api_key)) {
-            wp_send_json_error('API key not configured.');
-        }
-
-        // phpcs:disable WordPress.Security.NonceVerification.Missing
-        $search_type    = sanitize_text_field($_POST['search_type'] ?? 'location');
-        $zipcode        = sanitize_text_field($_POST['zipcode'] ?? '');
-        $radius         = absint($_POST['radius'] ?? 25);
-        $ffl_name       = sanitize_text_field($_POST['ffl_name'] ?? '');
-        $license_number = sanitize_text_field($_POST['license_number'] ?? '');
-        // phpcs:enable
-
-        if ($search_type === 'license' && !empty($license_number)) {
-            $payload = [
-                'action' => 'get_ffl_by_license',
-                'data'   => [
-                    'api_key'        => $api_key,
-                    'license_number' => $license_number,
-                ],
-            ];
-        } else {
-            if (empty($zipcode) || strlen($zipcode) < 5) {
-                wp_send_json_error('Invalid ZIP code.');
-            }
-
-            $payload = [
-                'action' => 'get_nearby_ffl_dealers',
-                'data'   => [
-                    'api_key'      => $api_key,
-                    'zip_code'     => $zipcode,
-                    'radius_miles' => $radius,
-                ],
-            ];
-
-            if (!empty($ffl_name)) {
-                $payload['data']['ffl_name'] = $ffl_name;
-            }
-        }
-
-        $response = wp_remote_post(self::API_URL, [
-            'timeout' => 30,
-            'headers' => [
-                'Content-Type' => 'application/json',
-                'Accept'       => 'application/json',
-                'x-api-key'    => $api_key,
-            ],
-            'body' => wp_json_encode($payload),
-        ]);
-
-        if (is_wp_error($response)) {
-            wp_send_json_error('API request failed: ' . $response->get_error_message());
-        }
-
-        $code = wp_remote_retrieve_response_code($response);
-        $body = wp_remote_retrieve_body($response);
-
-        if ($code !== 200) {
-            wp_send_json_error('API returned status ' . $code);
-        }
-
-        $data = json_decode($body, true);
-            if (empty($data)) {
-                error_log('FFL Checkout AJAX - Invalid API response body: ' . print_r($body, true));
-                wp_send_json_error(['message' => 'Invalid response from API.']);
-            }
-
-            error_log('FFL Checkout AJAX - API Response for ZIP ' . $zipcode . ': ' . print_r($data, true));
-
-            // The API might return the data in a 'dealers' key, 'data' key, or just as the root array
-            $dealers = $data['dealers'] ?? $data['data'] ?? $data['ffls'] ?? null;
-            
-            if (empty($dealers) && isset($data[0])) {
-                $dealers = $data; // Top-level array fallback
-            } elseif (!is_array($dealers)) {
-                $dealers = [];
-            }
-            
-            error_log('FFL Checkout AJAX - Dealers found: ' . count($dealers));
-
-        wp_send_json_success(['data' => $dealers]);
-    }
-
-    /* ── Mapbox Token ───────────────────────────────────────────────────── */
-
-    /**
-     * Return the Mapbox public token via AJAX so it never appears in page source.
+     * Return the Mapbox public token via AJAX.
      */
     public static function get_mapbox_token(): void
     {
@@ -148,90 +49,125 @@ class FFL_Checkout_Ajax
         wp_send_json_success($token);
     }
 
-    /* ── C&R Upload ─────────────────────────────────────────────────────── */
+    /* ── Vendor Options ──────────────────────────────────────────────── */
 
     /**
-     * Proxy C&R document upload to the Garidium API.
+     * Fetch warehouse options for a product via the Garidium API.
      */
-    public static function upload_candr(): void
+    public static function get_vendor_options(): void
     {
         check_ajax_referer('ffl_checkout_nonce', 'security');
 
-        $api_key = get_option('g_ffl_cockpit_key', '');
-        if (empty($api_key)) {
-            wp_send_json_error(['message' => 'API key not configured.']);
-        }
-
         // phpcs:ignore WordPress.Security.NonceVerification.Missing
-        $license_number = sanitize_text_field($_POST['license_number'] ?? '');
-        if (empty($license_number)) {
-            wp_send_json_error(['message' => 'License number is required.']);
+        $product_id = absint($_POST['product_id'] ?? 0);
+
+        if (!$product_id) {
+            wp_send_json_error('Missing product ID.');
         }
 
-        if (!isset($_FILES['document']) || $_FILES['document']['error'] !== UPLOAD_ERR_OK) {
-            wp_send_json_error(['message' => 'No file uploaded or upload error.']);
+        if (!FFL_Checkout_Vendor_Api::is_eligible($product_id)) {
+            wp_send_json_error('Product is not eligible for vendor selection.');
         }
 
-        $file = $_FILES['document'];
-
-        // Validate file type.
-        $allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/gif'];
-        $finfo   = finfo_open(FILEINFO_MIME_TYPE);
-        $mime    = finfo_file($finfo, $file['tmp_name']);
-        finfo_close($finfo);
-
-        if (!in_array($mime, $allowed, true)) {
-            wp_send_json_error(['message' => 'Invalid file type.']);
+        $upc = FFL_Checkout_Vendor_Api::get_upc_for_product($product_id);
+        if (empty($upc)) {
+            wp_send_json_error('Product UPC not found.');
         }
 
-        // Build multipart request to Garidium.
-        $boundary = wp_generate_password(24, false);
-        $body     = '';
+        $options = FFL_Checkout_Vendor_Api::get_warehouse_options($upc);
 
-        // API key field.
-        $body .= "--{$boundary}\r\n";
-        $body .= "Content-Disposition: form-data; name=\"api_key\"\r\n\r\n";
-        $body .= $api_key . "\r\n";
-
-        // License number field.
-        $body .= "--{$boundary}\r\n";
-        $body .= "Content-Disposition: form-data; name=\"license_number\"\r\n\r\n";
-        $body .= $license_number . "\r\n";
-
-        // Action field.
-        $body .= "--{$boundary}\r\n";
-        $body .= "Content-Disposition: form-data; name=\"action\"\r\n\r\n";
-        $body .= "upload_candr_document\r\n";
-
-        // File field.
-        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
-        $file_contents = file_get_contents($file['tmp_name']);
-        $body .= "--{$boundary}\r\n";
-        $body .= 'Content-Disposition: form-data; name="document"; filename="' . sanitize_file_name($file['name']) . "\"\r\n";
-        $body .= "Content-Type: {$mime}\r\n\r\n";
-        $body .= $file_contents . "\r\n";
-        $body .= "--{$boundary}--\r\n";
-
-        $response = wp_remote_post(self::API_URL, [
-            'timeout' => 60,
-            'headers' => [
-                'Content-Type' => 'multipart/form-data; boundary=' . $boundary,
-                'x-api-key'    => $api_key,
-            ],
-            'body' => $body,
-        ]);
-
-        if (is_wp_error($response)) {
-            wp_send_json_error(['message' => 'Upload failed: ' . $response->get_error_message()]);
+        if (is_wp_error($options)) {
+            wp_send_json_error($options->get_error_message());
         }
 
-        $code     = wp_remote_retrieve_response_code($response);
-        $res_body = json_decode(wp_remote_retrieve_body($response), true);
+        wp_send_json_success($options);
+    }
 
-        if ($code !== 200) {
-            wp_send_json_error(['message' => $res_body['message'] ?? 'Upload failed (status ' . $code . ').']);
+    /* ── Update Cart Vendor ──────────────────────────────────────────── */
+
+    /**
+     * Update a cart item's vendor selection.
+     *
+     * Validates the submitted data against actual API options to prevent
+     * price manipulation.
+     */
+    public static function update_cart_vendor(): void
+    {
+        check_ajax_referer('ffl_checkout_nonce', 'security');
+
+        if (!function_exists('WC') || !WC()->cart) {
+            wp_send_json_error('Cart not available.');
         }
 
-        wp_send_json_success($res_body);
+        // phpcs:disable WordPress.Security.NonceVerification.Missing
+        $cart_item_key = sanitize_text_field($_POST['cart_item_key'] ?? '');
+        $warehouse_id  = sanitize_text_field($_POST['warehouse_id'] ?? '');
+        $price         = floatval($_POST['price'] ?? 0);
+        $sku           = sanitize_text_field($_POST['sku'] ?? '');
+        $shipping_class = sanitize_text_field($_POST['shipping_class'] ?? '');
+        // phpcs:enable
+
+        if (empty($cart_item_key) || empty($warehouse_id)) {
+            wp_send_json_error('Missing required fields.');
+        }
+
+        // Validate the cart item exists.
+        $cart_contents = WC()->cart->get_cart();
+        if (!isset($cart_contents[$cart_item_key])) {
+            wp_send_json_error('Cart item not found.');
+        }
+
+        $cart_item  = $cart_contents[$cart_item_key];
+        $product_id = $cart_item['product_id'] ?? 0;
+
+        if (!FFL_Checkout_Vendor_Api::is_eligible($product_id)) {
+            wp_send_json_error('Product is not eligible.');
+        }
+
+        // ── Security: verify the submitted values match a real API option ──
+        $upc = FFL_Checkout_Vendor_Api::get_upc_for_product($product_id);
+        if (empty($upc)) {
+            wp_send_json_error('Product UPC not found.');
+        }
+
+        $options = FFL_Checkout_Vendor_Api::get_warehouse_options($upc);
+        if (is_wp_error($options) || empty($options)) {
+            wp_send_json_error('Could not verify vendor options.');
+        }
+
+        $valid = false;
+        foreach ($options as $option) {
+            if (
+                ($option['warehouse_id'] ?? '') === $warehouse_id
+                && abs(floatval($option['price'] ?? 0) - $price) < 0.01
+                && ($option['sku'] ?? '') === $sku
+            ) {
+                $valid = true;
+                break;
+            }
+        }
+
+        if (!$valid) {
+            wp_send_json_error('Invalid vendor selection.');
+        }
+
+        // ── Resolve shipping class name → term ID ──
+        $shipping_class_id = FFL_Checkout_Vendor_Api::resolve_shipping_class_id($shipping_class);
+
+        // ── Update cart item data ──
+        WC()->cart->cart_contents[$cart_item_key]['custom_product_option']                = $warehouse_id;
+        WC()->cart->cart_contents[$cart_item_key]['custom_product_option_price']           = $price;
+        WC()->cart->cart_contents[$cart_item_key]['custom_product_option_sku']             = $sku;
+        WC()->cart->cart_contents[$cart_item_key]['custom_product_option_shipping_class']  = $shipping_class_id;
+
+        // Apply to the product object.
+        WC()->cart->cart_contents[$cart_item_key]['data']->set_price($price);
+        WC()->cart->cart_contents[$cart_item_key]['data']->set_sku($sku);
+        WC()->cart->cart_contents[$cart_item_key]['data']->set_shipping_class_id($shipping_class_id);
+
+        // Persist to session.
+        WC()->cart->set_session();
+
+        wp_send_json_success(['message' => 'Vendor updated.']);
     }
 }

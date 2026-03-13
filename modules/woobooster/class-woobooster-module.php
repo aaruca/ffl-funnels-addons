@@ -48,6 +48,9 @@ class WooBooster_Module extends FFLA_Module
         require_once $path . 'includes/class-woobooster-copurchase.php';
         require_once $path . 'includes/class-woobooster-trending.php';
         require_once $path . 'includes/class-woobooster-coupon.php';
+        require_once $path . 'includes/class-woobooster-bundle.php';
+        require_once $path . 'includes/class-woobooster-bundle-matcher.php';
+        require_once $path . 'includes/class-woobooster-bundle-cart.php';
 
         // Admin.
         if (is_admin()) {
@@ -57,6 +60,8 @@ class WooBooster_Module extends FFLA_Module
             require_once $path . 'admin/class-woobooster-rule-form.php';
             require_once $path . 'admin/class-woobooster-rule-list.php';
             require_once $path . 'admin/class-woobooster-rule-tester.php';
+            require_once $path . 'admin/class-woobooster-bundle-form.php';
+            require_once $path . 'admin/class-woobooster-bundle-list.php';
 
             $this->admin = new WooBooster_Admin();
             $this->admin->init();
@@ -83,6 +88,9 @@ class WooBooster_Module extends FFLA_Module
         $coupon = new WooBooster_Coupon();
         $coupon->init();
 
+        // Bundle cart discount engine.
+        WooBooster_Bundle_Cart::init();
+
         // Cron — register event handlers and schedules.
         $cron = new WooBooster_Cron();
         $cron->init();
@@ -95,6 +103,15 @@ class WooBooster_Module extends FFLA_Module
         if (defined('BRICKS_VERSION')) {
             $bricks = new WooBooster_Bricks();
             $bricks->init();
+
+            // Register bundle element.
+            add_action('init', function () use ($path) {
+                if (class_exists('\Bricks\Elements')) {
+                    \Bricks\Elements::register_element(
+                        $path . 'frontend/class-woobooster-bundle-element.php'
+                    );
+                }
+            }, 11);
         }
     }
 
@@ -121,6 +138,11 @@ class WooBooster_Module extends FFLA_Module
             [
                 'slug' => 'ffla-woobooster-rules',
                 'title' => __('WB Rules', 'ffl-funnels-addons'),
+                'icon' => WooBooster_Icons::get('rules'),
+            ],
+            [
+                'slug' => 'ffla-woobooster-bundles',
+                'title' => __('Products Bundles', 'ffl-funnels-addons'),
                 'icon' => WooBooster_Icons::get('rules'),
             ],
             [
@@ -155,6 +177,10 @@ class WooBooster_Module extends FFLA_Module
 
             case 'ffla-woobooster-rules':
                 $this->admin->render_rules_content();
+                break;
+
+            case 'ffla-woobooster-bundles':
+                $this->admin->render_bundles_content();
                 break;
 
             case 'ffla-woobooster-diagnostics':

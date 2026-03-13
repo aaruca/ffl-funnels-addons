@@ -16,9 +16,10 @@ class WooBooster_Bricks
 {
 
     /**
-     * The custom query type identifier.
+     * The custom query type identifiers.
      */
     const QUERY_TYPE = 'woobooster_recommendations';
+    const BUNDLE_QUERY_TYPE = 'woobooster_bundles';
 
     /**
      * Initialize all Bricks hooks.
@@ -51,6 +52,7 @@ class WooBooster_Bricks
     public function register_query_type($control_options)
     {
         $control_options['queryTypes'][self::QUERY_TYPE] = esc_html__('WooBooster Recommendations', 'woobooster');
+        $control_options['queryTypes'][self::BUNDLE_QUERY_TYPE] = esc_html__('WooBooster Bundles', 'woobooster');
         return $control_options;
     }
 
@@ -154,6 +156,55 @@ class WooBooster_Bricks
             'required' => array('query.objectType', '=', self::QUERY_TYPE),
         );
 
+        // ── Bundle Query Controls ──
+
+        $controls['woobooster_bundle_settings_group'] = array(
+            'tab' => 'content',
+            'type' => 'separator',
+            'label' => esc_html__('WooBooster Bundle Settings', 'woobooster'),
+            'required' => array('query.objectType', '=', self::BUNDLE_QUERY_TYPE),
+        );
+
+        $bundle_options = array('' => esc_html__('Auto (first matching bundle)', 'woobooster'));
+        $bundles = WooBooster_Bundle::get_all(array('status' => 1, 'limit' => 200, 'orderby' => 'name', 'order' => 'ASC'));
+        if (!empty($bundles)) {
+            foreach ($bundles as $b) {
+                $bundle_options[$b->id] = sprintf('%s (ID: %d)', $b->name, $b->id);
+            }
+        }
+
+        $controls['woobooster_bundle_id'] = array(
+            'tab'         => 'content',
+            'label'       => esc_html__('Specific Bundle', 'woobooster'),
+            'type'        => 'select',
+            'options'     => $bundle_options,
+            'default'     => '',
+            'description' => esc_html__('Pin this loop to a specific bundle. Use "Auto" for condition-based matching.', 'woobooster'),
+            'required'    => array('query.objectType', '=', self::BUNDLE_QUERY_TYPE),
+        );
+
+        $controls['woobooster_bundle_source'] = array(
+            'tab' => 'content',
+            'label' => esc_html__('Product Source', 'woobooster'),
+            'type' => 'select',
+            'options' => array(
+                'current' => esc_html__('Current Product (auto-detect)', 'woobooster'),
+                'manual' => esc_html__('Manual Product ID', 'woobooster'),
+            ),
+            'default' => 'current',
+            'required' => array('query.objectType', '=', self::BUNDLE_QUERY_TYPE),
+        );
+
+        $controls['woobooster_bundle_product_id'] = array(
+            'tab' => 'content',
+            'label' => esc_html__('Product ID', 'woobooster'),
+            'type' => 'number',
+            'required' => array(
+                array('query.objectType', '=', self::BUNDLE_QUERY_TYPE),
+                array('woobooster_bundle_source', '=', 'manual'),
+            ),
+        );
+
         return $controls;
     }
 
@@ -168,6 +219,11 @@ class WooBooster_Bricks
      */
     public function run_query($results, $query_obj)
     {
+        // Handle bundle query type.
+        if ($query_obj->object_type === self::BUNDLE_QUERY_TYPE) {
+            return $this->run_bundle_query($query_obj);
+        }
+
         if ($query_obj->object_type !== self::QUERY_TYPE) {
             return $results;
         }
@@ -233,7 +289,7 @@ class WooBooster_Bricks
      */
     public function set_loop_object($loop_object, $loop_key, $query_obj)
     {
-        if ($query_obj->object_type !== self::QUERY_TYPE) {
+        if ($query_obj->object_type !== self::QUERY_TYPE && $query_obj->object_type !== self::BUNDLE_QUERY_TYPE) {
             return $loop_object;
         }
 
@@ -271,7 +327,7 @@ class WooBooster_Bricks
      */
     public function set_loop_object_id($object_id, $loop_object, $query_obj)
     {
-        if (!is_object($query_obj) || $query_obj->object_type !== self::QUERY_TYPE) {
+        if (!is_object($query_obj) || ($query_obj->object_type !== self::QUERY_TYPE && $query_obj->object_type !== self::BUNDLE_QUERY_TYPE)) {
             return $object_id;
         }
 
@@ -293,10 +349,53 @@ class WooBooster_Bricks
      */
     public function after_loop($query_obj)
     {
-        if (!is_object($query_obj) || $query_obj->object_type !== self::QUERY_TYPE) {
+        if (!is_object($query_obj) || ($query_obj->object_type !== self::QUERY_TYPE && $query_obj->object_type !== self::BUNDLE_QUERY_TYPE)) {
             return;
         }
         wp_reset_postdata();
+    }
+
+    /**
+     * Execute the bundle query — returns bundle item products as WP_Post[].
+     *
+     * @param object $query_obj Bricks query object.
+     * @return array Array of WP_Post objects.
+     */
+    private function run_bundle_query($query_obj)
+    {
+        $settings = $query_obj->settings;
+
+        // Resolve product ID using bundle-specific settings.
+        $source = isset($settings['woobooster_bundle_source']) ? $settings['woobooster_bundle_source'] : 'current';
+        $bundle_settings = array(
+            'woobooster_source'     => $source,
+            'woobooster_product_id' => isset($settings['woobooster_bundle_product_id']) ? $settings['woobooster_bundle_product_id'] : 0,
+        );
+        $product_id = $this->resolve_product_id($bundle_settings);
+
+        $matcher = new WooBooster_Bundle_Matcher();
+        $specific_bundle_id = !empty($settings['woobooster_bundle_id']) ? absint($settings['woobooster_bundle_id']) : 0;
+
+        $product_ids = array();
+
+        if ($specific_bundle_id) {
+            $bundle = $matcher->get_bundle_by_id($specific_bundle_id, $product_id);
+            if ($bundle && !empty($bundle->resolved_items)) {
+                $product_ids = $bundle->resolved_items;
+            }
+        } elseif ($product_id) {
+            $bundles = $matcher->get_bundles_for_product($product_id);
+            if (!empty($bundles)) {
+                // Use the first matching bundle's items.
+                $product_ids = $bundles[0]->resolved_items;
+            }
+        }
+
+        if (empty($product_ids)) {
+            return array();
+        }
+
+        return array_filter(array_map('get_post', $product_ids));
     }
 
     /**

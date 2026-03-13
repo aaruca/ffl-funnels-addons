@@ -13,6 +13,10 @@ class WooBooster_Ajax
         add_action('wp_ajax_woobooster_search_products', array($this, 'search_products'));
         add_action('wp_ajax_woobooster_search_coupons', array($this, 'search_coupons'));
         add_action('wp_ajax_woobooster_resolve_product_names', array($this, 'resolve_product_names'));
+
+        // Bundle AJAX handlers.
+        add_action('wp_ajax_woobooster_toggle_bundle', array($this, 'toggle_bundle'));
+        add_action('wp_ajax_woobooster_delete_bundle', array($this, 'delete_bundle'));
     }
 
     public function search_terms()
@@ -191,6 +195,50 @@ class WooBooster_Ajax
             'coupons' => $results,
             'total' => $query->found_posts,
         ));
+    }
+
+    /**
+     * AJAX: Toggle bundle status.
+     */
+    public function toggle_bundle()
+    {
+        check_ajax_referer('woobooster_admin', 'nonce');
+        if (!current_user_can('manage_woocommerce')) {
+            wp_send_json_error(array('message' => 'Permission denied.'));
+        }
+        $bundle_id = isset($_POST['bundle_id']) ? absint($_POST['bundle_id']) : 0;
+        if (!$bundle_id) {
+            wp_send_json_error(array('message' => 'Invalid bundle ID.'));
+        }
+        $result = WooBooster_Bundle::toggle_status($bundle_id);
+        if ($result) {
+            $bundle = WooBooster_Bundle::get($bundle_id);
+            wp_send_json_success(array(
+                'status' => $bundle->status,
+                'label' => $bundle->status ? 'Active' : 'Inactive',
+            ));
+        }
+        wp_send_json_error(array('message' => 'Failed to toggle bundle.'));
+    }
+
+    /**
+     * AJAX: Delete a bundle.
+     */
+    public function delete_bundle()
+    {
+        check_ajax_referer('woobooster_admin', 'nonce');
+        if (!current_user_can('manage_woocommerce')) {
+            wp_send_json_error(array('message' => 'Permission denied.'));
+        }
+        $bundle_id = isset($_POST['bundle_id']) ? absint($_POST['bundle_id']) : 0;
+        if (!$bundle_id) {
+            wp_send_json_error(array('message' => 'Invalid bundle ID.'));
+        }
+        $result = WooBooster_Bundle::delete($bundle_id);
+        if ($result) {
+            wp_send_json_success(array('message' => 'Bundle deleted.'));
+        }
+        wp_send_json_error(array('message' => 'Failed to delete bundle.'));
     }
 
     /**

@@ -312,6 +312,42 @@ class WooBooster_Admin
     /**
      * Render the Rule Manager page content.
      */
+    /**
+     * Render the Bundles page (list or form).
+     */
+    public function render_bundles_content()
+    {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $action = isset($_GET['action']) ? sanitize_key($_GET['action']) : 'list';
+
+        switch ($action) {
+            case 'add':
+            case 'edit':
+                $form = new WooBooster_Bundle_Form();
+                $form->render();
+                break;
+            default:
+                $list = new WooBooster_Bundle_List();
+                $list->prepare_items();
+
+                echo '<div class="wb-card">';
+                echo '<div class="wb-card__header">';
+                echo '<h2>' . esc_html__('Bundles', 'ffl-funnels-addons') . '</h2>';
+                $add_url = admin_url('admin.php?page=ffla-woobooster-bundles&action=add');
+                echo '<div class="wb-card__actions">';
+                echo '<a href="' . esc_url($add_url) . '" class="wb-btn wb-btn--primary wb-btn--sm">' . esc_html__('Add Bundle', 'ffl-funnels-addons') . '</a>';
+                echo '</div>';
+                echo '</div>';
+                echo '<div class="wb-card__section">';
+                echo '<form method="post">';
+                $list->display();
+                echo '</form>';
+                echo '</div>';
+                echo '</div>';
+                break;
+        }
+    }
+
     public function render_rules_content()
     {
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
