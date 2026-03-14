@@ -13,7 +13,17 @@ document.addEventListener('DOMContentLoaded', function () {
     const suggestionBtns = document.querySelectorAll('.wb-ai-suggestion-btn');
     const submitBtn = document.getElementById('wb-ai-submit-btn');
 
-    const HISTORY_KEY = 'wb_ai_chat_history';
+    // Detect mode from hidden input.
+    const modeInput = document.getElementById('wb-ai-mode');
+    const MODE = modeInput ? modeInput.value : 'rule';
+    const IS_BUNDLE = MODE === 'bundle';
+
+    const HISTORY_KEY = IS_BUNDLE ? 'wb_ai_bundle_history' : 'wb_ai_chat_history';
+    const BLOCK_TAG = IS_BUNDLE ? 'BUNDLE' : 'RULE';
+    const CREATE_ACTION = IS_BUNDLE ? 'woobooster_ai_create_bundle' : 'woobooster_ai_create_rule';
+    const DATA_PARAM = IS_BUNDLE ? 'bundle_data' : 'rule_data';
+    const ENTITY_LABEL = IS_BUNDLE ? 'Bundle' : 'Rule';
+
     let messages = [];
 
     // ── History ────────────────────────────────────────────────────
@@ -126,6 +136,7 @@ document.addEventListener('DOMContentLoaded', function () {
             formData.append('action', 'woobooster_ai_generate');
             formData.append('nonce', wooboosterAdmin.nonce);
             formData.append('chat_history', JSON.stringify(messages.slice(-10)));
+            formData.append('mode', MODE);
 
             var response = await fetch(wooboosterAdmin.ajaxUrl, {
                 method: 'POST',
@@ -147,8 +158,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     messages.push({ role: 'assistant', content: result.data.message });
                     saveHistory();
 
-                    // Show success + redirect to rule editor.
-                    appendSystemMessage('success', 'Rule created! Opening editor...');
+                    appendSystemMessage('success', ENTITY_LABEL + ' created! Opening editor...');
 
                     if (result.data.edit_url && result.data.edit_url.startsWith(window.location.origin)) {
                         setTimeout(function () {
@@ -180,7 +190,8 @@ document.addEventListener('DOMContentLoaded', function () {
      * Append a chat message. User content is text-only (no HTML injection).
      * Assistant content allows safe HTML (already escaped server-side with wp_kses_post).
      *
-     * Special handling: If message contains [RULE]...[/RULE], extract rule data and show "Create Rule" button.
+     * Special handling: If message contains [RULE]...[/RULE] or [BUNDLE]...[/BUNDLE],
+     * extract data and show "Create" button.
      */
     function appendMessage(role, content, scroll) {
         if (emptyState) emptyState.style.display = 'none';
@@ -191,19 +202,18 @@ document.addEventListener('DOMContentLoaded', function () {
         var bubble = document.createElement('div');
         bubble.className = 'wb-ai-message__content';
 
-        // Check if assistant message contains rule data.
-        var ruleMatch = role === 'assistant' ? content.match(/\[RULE\](.*?)\[\/RULE\]/s) : null;
+        // Check if assistant message contains a data block.
+        var blockRegex = new RegExp('\\[' + BLOCK_TAG + '\\](.*?)\\[\\/' + BLOCK_TAG + '\\]', 's');
+        var blockMatch = role === 'assistant' ? content.match(blockRegex) : null;
         var displayContent = content;
-        var ruleData = null;
+        var blockData = null;
 
-        if (ruleMatch) {
-            // Extract rule JSON and remove it from display content.
+        if (blockMatch) {
             try {
-                ruleData = JSON.parse(ruleMatch[1].trim());
-                displayContent = content.replace(/\[RULE\].*?\[\/RULE\]/s, '').trim();
+                blockData = JSON.parse(blockMatch[1].trim());
+                displayContent = content.replace(blockRegex, '').trim();
             } catch (e) {
-                // If parsing fails, just show content as-is.
-                ruleData = null;
+                blockData = null;
             }
         }
 
@@ -214,8 +224,8 @@ document.addEventListener('DOMContentLoaded', function () {
             // Assistant messages: pre-escaped by server (wp_kses_post).
             bubble.innerHTML = formatMarkdown(displayContent);
 
-            // If we extracted rule data, append a "Create Rule" button.
-            if (ruleData) {
+            // If we extracted data, append a "Create" button.
+            if (blockData) {
                 var buttonDiv = document.createElement('div');
                 buttonDiv.className = 'wb-ai-rule-action';
                 buttonDiv.style.marginTop = '12px';
@@ -223,11 +233,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 var btn = document.createElement('button');
                 btn.type = 'button';
                 btn.className = 'wb-ai-create-rule-btn';
-                btn.textContent = 'Create This Rule';
-                btn.dataset.ruleData = JSON.stringify(ruleData);
+                btn.textContent = 'Create This ' + ENTITY_LABEL;
+                btn.dataset.ruleData = JSON.stringify(blockData);
 
                 btn.addEventListener('click', function () {
-                    createRuleFromAI(ruleData);
+                    createEntityFromAI(blockData);
                 });
 
                 buttonDiv.appendChild(btn);
@@ -242,30 +252,29 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     /**
-     * Handle "Create Rule" button click from AI suggestion.
+     * Handle "Create" button click from AI suggestion.
      */
-    function createRuleFromAI(ruleData) {
-        if (!ruleData || !ruleData.name) {
-            alert('Invalid rule data. Please try again.');
+    function createEntityFromAI(data) {
+        if (!data || !data.name) {
+            alert('Invalid data. Please try again.');
             return;
         }
 
-        // Show loading state.
-        appendSystemMessage('info', 'Creating rule...');
+        appendSystemMessage('info', 'Creating ' + ENTITY_LABEL.toLowerCase() + '...');
 
         fetch(wooboosterAdmin.ajaxUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: buildParams({
-                action: 'woobooster_ai_create_rule',
+                action: CREATE_ACTION,
                 nonce: wooboosterAdmin.nonce,
-                rule_data: JSON.stringify(ruleData)
+                [DATA_PARAM]: JSON.stringify(data)
             })
         })
             .then(function (r) { return r.json(); })
             .then(function (result) {
                 if (result.success) {
-                    appendSystemMessage('success', 'Rule created! Opening editor...');
+                    appendSystemMessage('success', ENTITY_LABEL + ' created! Opening editor...');
                     if (result.data.edit_url && result.data.edit_url.startsWith(window.location.origin)) {
                         setTimeout(function () {
                             window.location.href = result.data.edit_url;
@@ -276,7 +285,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         }, 1500);
                     }
                 } else {
-                    appendSystemMessage('error', result.data ? result.data.message : 'Failed to create rule');
+                    appendSystemMessage('error', result.data ? result.data.message : 'Failed to create ' + ENTITY_LABEL.toLowerCase());
                 }
             })
             .catch(function () {
@@ -346,9 +355,11 @@ document.addEventListener('DOMContentLoaded', function () {
             case 'search_web':
                 return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
             case 'get_rules':
+            case 'get_bundles':
                 return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>';
             case 'create_rule':
             case 'update_rule':
+            case 'create_bundle':
                 return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
             default:
                 return '';
@@ -377,7 +388,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
     /**
      * Show animated loading indicator with animated dots.
-     * Useful for long-running operations to show the system is still working.
      */
     function showLoadingMessage(text) {
         removeLoadingMessage();

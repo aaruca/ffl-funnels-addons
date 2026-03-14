@@ -1577,4 +1577,914 @@
       }
     });
   }
+
+  /* ════════════════════════════════════════════════════════════════════
+   *  BUNDLE ADMIN — Toggle, Delete, Form logic
+   * ════════════════════════════════════════════════════════════════════ */
+
+  /* ── Bundle Toggle (list page) ─────────────────────────────────────── */
+
+  function initBundleToggles() {
+    document.querySelectorAll('.wb-toggle-bundle').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var bundleId = btn.dataset.bundleId;
+        var fd = new FormData();
+        fd.append('action', 'woobooster_toggle_bundle');
+        fd.append('nonce', cfg.nonce);
+        fd.append('bundle_id', bundleId);
+
+        fetch(cfg.ajaxUrl, { method: 'POST', body: fd })
+          .then(function (r) { return r.json(); })
+          .then(function (res) {
+            if (res.success) { location.reload(); }
+          });
+      });
+    });
+  }
+
+  /* ── Bundle Delete Confirmation ─────────────────────────────────────── */
+
+  function initBundleDeleteConfirm() {
+    document.querySelectorAll('.wb-delete-bundle').forEach(function (link) {
+      link.addEventListener('click', function (e) {
+        if (!confirm('Are you sure you want to delete this bundle?')) {
+          e.preventDefault();
+        }
+      });
+    });
+  }
+
+  /* ── Bundle Discount Type Toggle ───────────────────────────────────── */
+
+  function initBundleDiscountToggle() {
+    var select = document.getElementById('wb-discount-type');
+    if (!select) return;
+
+    var valueRow = document.querySelector('.wb-discount-value-row');
+    if (!valueRow) return;
+
+    select.addEventListener('change', function () {
+      valueRow.style.display = select.value === 'none' ? 'none' : '';
+    });
+  }
+
+  /* ── Bundle Product Search (static items) ──────────────────────────── */
+
+  function initBundleProductSearch() {
+    var searchInput = document.querySelector('.wb-bundle-product-search__input');
+    var dropdown = document.querySelector('.wb-bundle-product-search .wb-autocomplete__dropdown');
+    var itemsList = document.getElementById('wb-bundle-items-list');
+    if (!searchInput || !dropdown || !itemsList) return;
+
+    var debounceTimer;
+
+    searchInput.addEventListener('input', function () {
+      clearTimeout(debounceTimer);
+      var term = searchInput.value.trim();
+      if (term.length < 2) {
+        dropdown.style.display = 'none';
+        return;
+      }
+      debounceTimer = setTimeout(function () {
+        var fd = new FormData();
+        fd.append('action', 'woobooster_search_products');
+        fd.append('nonce', cfg.nonce);
+        fd.append('search', term);
+
+        fetch(cfg.ajaxUrl, { method: 'POST', body: fd })
+          .then(function (r) { return r.json(); })
+          .then(function (res) {
+            dropdown.innerHTML = '';
+            if (!res.success || !res.data.products.length) {
+              dropdown.style.display = 'none';
+              return;
+            }
+            res.data.products.forEach(function (p) {
+              // Skip already-added products.
+              if (itemsList.querySelector('[data-product-id="' + p.id + '"]')) return;
+
+              var item = document.createElement('div');
+              item.className = 'wb-autocomplete__item';
+              item.textContent = p.name + (p.sku ? ' (' + p.sku + ')' : '');
+              item.addEventListener('click', function () {
+                addBundleItem(p.id, p.name);
+                dropdown.style.display = 'none';
+                searchInput.value = '';
+              });
+              dropdown.appendChild(item);
+            });
+            dropdown.style.display = dropdown.children.length ? 'block' : 'none';
+          });
+      }, 300);
+    });
+
+    // Close dropdown on outside click.
+    document.addEventListener('click', function (e) {
+      if (!e.target.closest('.wb-bundle-product-search')) {
+        dropdown.style.display = 'none';
+      }
+    });
+  }
+
+  function addBundleItem(productId, productName) {
+    var list = document.getElementById('wb-bundle-items-list');
+    if (!list) return;
+
+    var idx = list.children.length;
+
+    var div = document.createElement('div');
+    div.className = 'wb-bundle-item';
+    div.setAttribute('data-product-id', productId);
+
+    div.innerHTML =
+      '<span class="wb-bundle-item__drag">&#9776;</span>' +
+      '<span class="wb-bundle-item__name">' + escapeHtml(productName) + '</span>' +
+      '<span class="wb-bundle-item__price"></span>' +
+      '<label class="wb-checkbox wb-bundle-item__optional">' +
+        '<input type="checkbox" name="bundle_items[' + idx + '][is_optional]" value="1">' +
+        'Optional' +
+      '</label>' +
+      '<input type="hidden" name="bundle_items[' + idx + '][product_id]" value="' + productId + '">' +
+      '<input type="hidden" name="bundle_items[' + idx + '][sort_order]" value="' + idx + '" class="wb-bundle-item__sort">' +
+      '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-remove-bundle-item" title="Remove">&times;</button>';
+
+    list.appendChild(div);
+  }
+
+  function escapeHtml(text) {
+    var d = document.createElement('div');
+    d.textContent = text;
+    return d.innerHTML;
+  }
+
+  /* ── Remove Bundle Item ────────────────────────────────────────────── */
+
+  function initBundleItemRemove() {
+    var list = document.getElementById('wb-bundle-items-list');
+    if (!list) return;
+
+    list.addEventListener('click', function (e) {
+      if (e.target.classList.contains('wb-remove-bundle-item') || e.target.closest('.wb-remove-bundle-item')) {
+        var item = e.target.closest('.wb-bundle-item');
+        if (item) {
+          item.remove();
+          reindexBundleItems();
+        }
+      }
+    });
+  }
+
+  function reindexBundleItems() {
+    var list = document.getElementById('wb-bundle-items-list');
+    if (!list) return;
+
+    Array.from(list.children).forEach(function (item, i) {
+      item.querySelectorAll('[name]').forEach(function (field) {
+        field.name = field.name.replace(/bundle_items\[\d+\]/, 'bundle_items[' + i + ']');
+      });
+      var sortInput = item.querySelector('.wb-bundle-item__sort');
+      if (sortInput) sortInput.value = i;
+    });
+  }
+
+  /* ── Bundle Condition Groups ───────────────────────────────────────── */
+
+  function initBundleConditionRepeater() {
+    var container = document.getElementById('wb-bundle-condition-groups');
+    var addGroupBtn = document.getElementById('wb-add-bundle-condition-group');
+    if (!container || !addGroupBtn) return;
+
+    // Init existing rows.
+    container.querySelectorAll('.wb-condition-row').forEach(function (row) {
+      initBundleConditionTypeToggle(row);
+      initBundleConditionAutocomplete(row);
+    });
+
+    addGroupBtn.addEventListener('click', function () {
+      var groupIdx = container.querySelectorAll('.wb-condition-group').length;
+
+      var orDivider = document.createElement('div');
+      orDivider.className = 'wb-or-divider';
+      orDivider.textContent = '— OR —';
+      container.appendChild(orDivider);
+
+      var group = document.createElement('div');
+      group.className = 'wb-condition-group';
+      group.setAttribute('data-group', groupIdx);
+
+      group.innerHTML =
+        '<div class="wb-condition-group__header">' +
+          '<span class="wb-condition-group__label">Condition Group ' + (groupIdx + 1) + '</span>' +
+          '<button type="button" class="wb-btn wb-btn--danger wb-btn--xs wb-remove-bundle-cond-group" title="Remove Group">&times;</button>' +
+        '</div>';
+
+      container.appendChild(group);
+      addBundleConditionToGroup(group);
+
+      var addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'wb-btn wb-btn--subtle wb-btn--sm wb-add-bundle-condition';
+      addBtn.textContent = '+ AND Condition';
+      group.appendChild(addBtn);
+    });
+
+    // Delegate clicks.
+    container.addEventListener('click', function (e) {
+      if (e.target.classList.contains('wb-add-bundle-condition')) {
+        addBundleConditionToGroup(e.target.closest('.wb-condition-group'));
+      }
+      if (e.target.classList.contains('wb-remove-condition') || e.target.closest('.wb-remove-condition')) {
+        var row = e.target.closest('.wb-condition-row');
+        if (row) row.remove();
+      }
+      if (e.target.classList.contains('wb-remove-bundle-cond-group') || e.target.closest('.wb-remove-bundle-cond-group')) {
+        var group = e.target.closest('.wb-condition-group');
+        if (group) {
+          var prev = group.previousElementSibling;
+          if (prev && prev.classList.contains('wb-or-divider')) prev.remove();
+          group.remove();
+        }
+      }
+    });
+
+    function addBundleConditionToGroup(group) {
+      var groupIdx = parseInt(group.getAttribute('data-group'), 10);
+      var condIdx = group.querySelectorAll('.wb-condition-row').length;
+      var prefix = 'bundle_conditions[' + groupIdx + '][' + condIdx + ']';
+
+      var attrTaxOptions = '';
+      var attrSelect = document.querySelector('.wb-condition-attr-taxonomy');
+      if (attrSelect) {
+        attrTaxOptions = attrSelect.innerHTML;
+      }
+
+      var row = document.createElement('div');
+      row.className = 'wb-condition-row';
+      row.setAttribute('data-condition', condIdx);
+
+      row.innerHTML =
+        '<select class="wb-select wb-select--inline wb-condition-type" required>' +
+          '<option value="">Type\u2026</option>' +
+          '<option value="category">Category</option>' +
+          '<option value="tag">Tag</option>' +
+          '<option value="attribute">Attribute</option>' +
+          '<option value="specific_product">Specific Product</option>' +
+        '</select>' +
+        '<select class="wb-select wb-select--inline wb-condition-attr-taxonomy" style="display:none;">' +
+          attrTaxOptions +
+        '</select>' +
+        '<input type="hidden" name="' + prefix + '[attribute]" class="wb-condition-attr" value="">' +
+        '<select name="' + prefix + '[operator]" class="wb-select wb-select--operator wb-condition-operator">' +
+          '<option value="equals">is</option>' +
+          '<option value="not_equals">is not</option>' +
+        '</select>' +
+        '<div class="wb-autocomplete wb-condition-value-wrap">' +
+          '<input type="text" class="wb-input wb-autocomplete__input wb-condition-value-display" placeholder="Value\u2026" autocomplete="off">' +
+          '<input type="hidden" name="' + prefix + '[value]" class="wb-condition-value-hidden" value="">' +
+          '<div class="wb-autocomplete__dropdown"></div>' +
+          '<div class="wb-condition-product-chips wb-chips" style="display:none;"></div>' +
+        '</div>' +
+        '<label class="wb-checkbox wb-condition-children-label" style="display:none;">' +
+          '<input type="checkbox" name="' + prefix + '[include_children]" value="1"> + Children' +
+        '</label>' +
+        '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-remove-condition" title="Remove">&times;</button>';
+
+      var addBtn = group.querySelector('.wb-add-bundle-condition');
+      if (addBtn) {
+        group.insertBefore(row, addBtn);
+      } else {
+        group.appendChild(row);
+      }
+
+      initBundleConditionTypeToggle(row);
+      initBundleConditionAutocomplete(row);
+    }
+  }
+
+  function initBundleConditionTypeToggle(row) {
+    var typeSelect = row.querySelector('.wb-condition-type');
+    var attrTaxSelect = row.querySelector('.wb-condition-attr-taxonomy');
+    var hiddenAttr = row.querySelector('.wb-condition-attr');
+    var childrenLabel = row.querySelector('.wb-condition-children-label');
+    var chipsContainer = row.querySelector('.wb-condition-product-chips');
+
+    if (!typeSelect) return;
+
+    function update() {
+      var val = typeSelect.value;
+
+      if (attrTaxSelect) attrTaxSelect.style.display = val === 'attribute' ? '' : 'none';
+      if (childrenLabel) childrenLabel.style.display = (val === 'category' || val === 'tag') ? '' : 'none';
+      if (chipsContainer) chipsContainer.style.display = val === 'specific_product' ? '' : 'none';
+
+      if (hiddenAttr) {
+        switch (val) {
+          case 'category': hiddenAttr.value = 'product_cat'; break;
+          case 'tag': hiddenAttr.value = 'product_tag'; break;
+          case 'specific_product': hiddenAttr.value = 'specific_product'; break;
+          case 'attribute':
+            hiddenAttr.value = attrTaxSelect ? attrTaxSelect.value : '';
+            break;
+          default: hiddenAttr.value = '';
+        }
+      }
+    }
+
+    typeSelect.addEventListener('change', update);
+    if (attrTaxSelect) {
+      attrTaxSelect.addEventListener('change', function () {
+        if (hiddenAttr) hiddenAttr.value = attrTaxSelect.value;
+      });
+    }
+  }
+
+  function initBundleConditionAutocomplete(row) {
+    var displayInput = row.querySelector('.wb-condition-value-display');
+    var hiddenInput = row.querySelector('.wb-condition-value-hidden');
+    var dropdown = row.querySelector('.wb-autocomplete__dropdown');
+    var typeSelect = row.querySelector('.wb-condition-type');
+    var attrTaxSelect = row.querySelector('.wb-condition-attr-taxonomy');
+    var chipsContainer = row.querySelector('.wb-condition-product-chips');
+
+    if (!displayInput || !hiddenInput || !dropdown) return;
+
+    var debounce;
+
+    displayInput.addEventListener('input', function () {
+      clearTimeout(debounce);
+      var term = displayInput.value.trim();
+      if (term.length < 2) { dropdown.style.display = 'none'; return; }
+
+      debounce = setTimeout(function () {
+        var type = typeSelect ? typeSelect.value : '';
+
+        if (type === 'specific_product') {
+          searchProductsForChips(term, hiddenInput, chipsContainer, dropdown);
+          return;
+        }
+
+        var taxonomy = 'product_cat';
+        if (type === 'tag') taxonomy = 'product_tag';
+        else if (type === 'attribute' && attrTaxSelect) taxonomy = attrTaxSelect.value;
+        else if (type === 'category') taxonomy = 'product_cat';
+
+        if (!taxonomy) { dropdown.style.display = 'none'; return; }
+
+        var fd = new FormData();
+        fd.append('action', 'woobooster_search_terms');
+        fd.append('nonce', cfg.nonce);
+        fd.append('taxonomy', taxonomy);
+        fd.append('search', term);
+
+        fetch(cfg.ajaxUrl, { method: 'POST', body: fd })
+          .then(function (r) { return r.json(); })
+          .then(function (res) {
+            dropdown.innerHTML = '';
+            if (!res.success || !res.data.terms.length) {
+              dropdown.style.display = 'none';
+              return;
+            }
+            res.data.terms.forEach(function (t) {
+              var item = document.createElement('div');
+              item.className = 'wb-autocomplete__item';
+              item.textContent = t.name + ' (' + t.count + ')';
+              item.addEventListener('click', function () {
+                displayInput.value = t.name;
+                hiddenInput.value = t.slug;
+                dropdown.style.display = 'none';
+              });
+              dropdown.appendChild(item);
+            });
+            dropdown.style.display = 'block';
+          });
+      }, 300);
+    });
+
+    document.addEventListener('click', function (e) {
+      if (!e.target.closest('.wb-condition-value-wrap')) {
+        dropdown.style.display = 'none';
+      }
+    });
+  }
+
+  /* ── Bundle Action Groups ──────────────────────────────────────────── */
+
+  function initBundleActionRepeater() {
+    var container = document.getElementById('wb-bundle-action-groups');
+    var addGroupBtn = document.getElementById('wb-add-bundle-action-group');
+    if (!container || !addGroupBtn) return;
+
+    // Init existing rows.
+    container.querySelectorAll('.wb-action-row').forEach(function (row) {
+      initBundleActionRowToggle(row);
+      initBundleActionRowAutocomplete(row);
+    });
+
+    // Init existing exclusion toggles.
+    container.querySelectorAll('.wb-toggle-exclusions').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var body = btn.nextElementSibling;
+        if (body) {
+          var visible = body.style.display !== 'none';
+          body.style.display = visible ? 'none' : '';
+          btn.innerHTML = (visible ? '&#9654;' : '&#9660;') + ' Exclusions';
+        }
+      });
+    });
+
+    addGroupBtn.addEventListener('click', function () {
+      var groupIdx = container.querySelectorAll('.wb-action-group').length;
+
+      var orDivider = document.createElement('div');
+      orDivider.className = 'wb-or-divider';
+      orDivider.textContent = '— OR —';
+      container.appendChild(orDivider);
+
+      var group = document.createElement('div');
+      group.className = 'wb-action-group';
+      group.setAttribute('data-group', groupIdx);
+
+      group.innerHTML =
+        '<div class="wb-action-group__header">' +
+          '<span class="wb-action-group__label">Source Group ' + (groupIdx + 1) + '</span>' +
+          '<button type="button" class="wb-btn wb-btn--danger wb-btn--xs wb-remove-bundle-action-group" title="Remove Group">&times;</button>' +
+        '</div>';
+
+      container.appendChild(group);
+      addBundleActionToGroup(group);
+
+      var addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'wb-btn wb-btn--subtle wb-btn--sm wb-add-bundle-action';
+      addBtn.textContent = '+ AND Source';
+      group.appendChild(addBtn);
+    });
+
+    // Delegate clicks.
+    container.addEventListener('click', function (e) {
+      if (e.target.classList.contains('wb-add-bundle-action')) {
+        addBundleActionToGroup(e.target.closest('.wb-action-group'));
+      }
+      if (e.target.classList.contains('wb-remove-action') || e.target.closest('.wb-remove-action')) {
+        var row = e.target.closest('.wb-action-row');
+        // Also remove the AND divider before/after.
+        if (row) {
+          var prev = row.previousElementSibling;
+          if (prev && prev.classList.contains('wb-action-logic-divider')) prev.remove();
+          // Remove any following exclusion/specific products panels.
+          var next = row.nextElementSibling;
+          while (next && !next.classList.contains('wb-action-row') && !next.classList.contains('wb-action-logic-divider') && !next.classList.contains('wb-add-bundle-action')) {
+            var toRemove = next;
+            next = next.nextElementSibling;
+            toRemove.remove();
+          }
+          row.remove();
+        }
+      }
+      if (e.target.classList.contains('wb-remove-bundle-action-group') || e.target.closest('.wb-remove-bundle-action-group')) {
+        var group = e.target.closest('.wb-action-group');
+        if (group) {
+          var prevDiv = group.previousElementSibling;
+          if (prevDiv && prevDiv.classList.contains('wb-or-divider')) prevDiv.remove();
+          group.remove();
+        }
+      }
+      if (e.target.classList.contains('wb-toggle-exclusions')) {
+        var body = e.target.nextElementSibling;
+        if (body) {
+          var vis = body.style.display !== 'none';
+          body.style.display = vis ? 'none' : '';
+          e.target.innerHTML = (vis ? '&#9654;' : '&#9660;') + ' Exclusions';
+        }
+      }
+    });
+
+    function addBundleActionToGroup(group) {
+      var groupIdx = parseInt(group.getAttribute('data-group'), 10);
+      var actionIdx = group.querySelectorAll('.wb-action-row').length;
+      var prefix = 'bundle_action_groups[' + groupIdx + '][actions][' + actionIdx + ']';
+
+      var attrTaxOptions = '';
+      var existing = document.querySelector('.wb-action-attr-taxonomy');
+      if (existing) attrTaxOptions = existing.innerHTML;
+
+      if (actionIdx > 0) {
+        var andDivider = document.createElement('div');
+        andDivider.className = 'wb-action-logic-divider';
+        andDivider.innerHTML = '<span class="wb-and-divider">AND</span>';
+        var addBtn = group.querySelector('.wb-add-bundle-action');
+        group.insertBefore(andDivider, addBtn);
+      }
+
+      var row = document.createElement('div');
+      row.className = 'wb-action-row';
+      row.setAttribute('data-index', actionIdx);
+
+      row.innerHTML =
+        '<select name="' + prefix + '[action_source]" class="wb-select wb-select--inline wb-action-source">' +
+          '<option value="category">Category</option>' +
+          '<option value="tag">Tag</option>' +
+          '<option value="attribute">Same Attribute</option>' +
+          '<option value="attribute_value">Attribute</option>' +
+          '<option value="copurchase">Bought Together</option>' +
+          '<option value="trending">Trending</option>' +
+          '<option value="recently_viewed">Recently Viewed</option>' +
+          '<option value="similar">Similar Products</option>' +
+          '<option value="specific_products">Specific Products</option>' +
+        '</select>' +
+        '<select class="wb-select wb-select--inline wb-action-attr-taxonomy" style="display:none;">' +
+          attrTaxOptions +
+        '</select>' +
+        '<div class="wb-autocomplete wb-action-value-wrap">' +
+          '<input type="text" class="wb-input wb-autocomplete__input wb-action-value-display" placeholder="Value\u2026" autocomplete="off">' +
+          '<input type="hidden" name="' + prefix + '[action_value]" class="wb-action-value-hidden" value="">' +
+          '<div class="wb-autocomplete__dropdown"></div>' +
+        '</div>' +
+        '<label class="wb-checkbox wb-action-children-label" style="display:none;">' +
+          '<input type="checkbox" name="' + prefix + '[include_children]" value="1"> + Children' +
+        '</label>' +
+        '<select name="' + prefix + '[action_orderby]" class="wb-select wb-select--inline" title="Order By">' +
+          '<option value="rand">Random</option>' +
+          '<option value="date">Newest</option>' +
+          '<option value="price">Price (Low to High)</option>' +
+          '<option value="price_desc">Price (High to Low)</option>' +
+          '<option value="bestselling">Bestselling</option>' +
+          '<option value="rating">Rating</option>' +
+        '</select>' +
+        '<input type="number" name="' + prefix + '[action_limit]" value="4" min="1" class="wb-input wb-input--sm wb-input--w70" title="Limit">' +
+        '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-remove-action" title="Remove">&times;</button>';
+
+      var addActionBtn = group.querySelector('.wb-add-bundle-action');
+      group.insertBefore(row, addActionBtn);
+
+      // Specific products panel.
+      var spPanel = document.createElement('div');
+      spPanel.className = 'wb-action-products-panel wb-sub-panel';
+      spPanel.style.display = 'none';
+      spPanel.innerHTML =
+        '<label class="wb-field__label">Select Products</label>' +
+        '<div class="wb-autocomplete wb-autocomplete--md wb-product-search">' +
+          '<input type="text" class="wb-input wb-product-search__input" placeholder="Search products by name\u2026" autocomplete="off">' +
+          '<input type="hidden" name="' + prefix + '[action_products]" class="wb-product-search__ids" value="">' +
+          '<div class="wb-autocomplete__dropdown"></div>' +
+          '<div class="wb-product-chips wb-chips"></div>' +
+        '</div>';
+      group.insertBefore(spPanel, addActionBtn);
+
+      // Exclusion panel.
+      var exPanel = document.createElement('div');
+      exPanel.className = 'wb-exclusion-panel wb-sub-panel';
+      exPanel.innerHTML =
+        '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-exclusions">&#9654; Exclusions</button>' +
+        '<div class="wb-exclusion-body" style="display:none;">' +
+          '<div class="wb-field">' +
+            '<label class="wb-field__label">Exclude Categories</label>' +
+            '<div class="wb-autocomplete wb-autocomplete--md wb-exclude-cats-search">' +
+              '<input type="text" class="wb-input wb-exclude-cats__input" placeholder="Search categories\u2026" autocomplete="off">' +
+              '<input type="hidden" name="' + prefix + '[exclude_categories]" class="wb-exclude-cats__ids" value="">' +
+              '<div class="wb-autocomplete__dropdown"></div>' +
+              '<div class="wb-exclude-cats-chips wb-chips"></div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="wb-field">' +
+            '<label class="wb-field__label">Exclude Products</label>' +
+            '<div class="wb-autocomplete wb-autocomplete--md wb-exclude-prods-search">' +
+              '<input type="text" class="wb-input wb-exclude-prods__input" placeholder="Search products\u2026" autocomplete="off">' +
+              '<input type="hidden" name="' + prefix + '[exclude_products]" class="wb-exclude-prods__ids" value="">' +
+              '<div class="wb-autocomplete__dropdown"></div>' +
+              '<div class="wb-exclude-prods-chips wb-chips"></div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="wb-field">' +
+            '<label class="wb-field__label">Price Range Filter</label>' +
+            '<div class="wb-price-range">' +
+              '<input type="number" name="' + prefix + '[exclude_price_min]" class="wb-input wb-input--sm wb-input--w100" placeholder="Min $" step="0.01" min="0">' +
+              '<span>—</span>' +
+              '<input type="number" name="' + prefix + '[exclude_price_max]" class="wb-input wb-input--sm wb-input--w100" placeholder="Max $" step="0.01" min="0">' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      group.insertBefore(exPanel, addActionBtn);
+
+      initBundleActionRowToggle(row);
+      initBundleActionRowAutocomplete(row);
+      initBundleActionProductSearch(spPanel);
+      initBundleExclusionAutocomplete(exPanel, prefix);
+    }
+  }
+
+  function initBundleActionRowToggle(row) {
+    var sourceSelect = row.querySelector('.wb-action-source');
+    var attrTaxSelect = row.querySelector('.wb-action-attr-taxonomy');
+    var childrenLabel = row.querySelector('.wb-action-children-label');
+    var valueWrap = row.querySelector('.wb-action-value-wrap');
+
+    if (!sourceSelect) return;
+
+    function update() {
+      var val = sourceSelect.value;
+      var needsValue = ['category', 'tag', 'attribute_value'].indexOf(val) >= 0;
+      var needsAttr = val === 'attribute_value';
+      var needsChildren = val === 'category';
+      var isSpecific = val === 'specific_products';
+
+      if (attrTaxSelect) attrTaxSelect.style.display = needsAttr ? '' : 'none';
+      if (childrenLabel) childrenLabel.style.display = needsChildren ? '' : 'none';
+      if (valueWrap) valueWrap.style.display = needsValue ? '' : 'none';
+
+      // Toggle specific products panel.
+      var spPanel = row.nextElementSibling;
+      while (spPanel && !spPanel.classList.contains('wb-action-products-panel') && !spPanel.classList.contains('wb-action-row') && !spPanel.classList.contains('wb-add-bundle-action')) {
+        spPanel = spPanel.nextElementSibling;
+      }
+      if (spPanel && spPanel.classList.contains('wb-action-products-panel')) {
+        spPanel.style.display = isSpecific ? '' : 'none';
+      }
+    }
+
+    sourceSelect.addEventListener('change', update);
+    update();
+  }
+
+  function initBundleActionRowAutocomplete(row) {
+    var displayInput = row.querySelector('.wb-action-value-display');
+    var hiddenInput = row.querySelector('.wb-action-value-hidden');
+    var dropdown = row.querySelector('.wb-autocomplete__dropdown');
+    var sourceSelect = row.querySelector('.wb-action-source');
+    var attrTaxSelect = row.querySelector('.wb-action-attr-taxonomy');
+
+    if (!displayInput || !hiddenInput || !dropdown) return;
+
+    var debounce;
+
+    displayInput.addEventListener('input', function () {
+      clearTimeout(debounce);
+      var term = displayInput.value.trim();
+      if (term.length < 2) { dropdown.style.display = 'none'; return; }
+
+      debounce = setTimeout(function () {
+        var source = sourceSelect ? sourceSelect.value : '';
+        var taxonomy = 'product_cat';
+        if (source === 'tag') taxonomy = 'product_tag';
+        else if (source === 'attribute_value' && attrTaxSelect) taxonomy = attrTaxSelect.value;
+
+        if (!taxonomy) { dropdown.style.display = 'none'; return; }
+
+        var fd = new FormData();
+        fd.append('action', 'woobooster_search_terms');
+        fd.append('nonce', cfg.nonce);
+        fd.append('taxonomy', taxonomy);
+        fd.append('search', term);
+
+        fetch(cfg.ajaxUrl, { method: 'POST', body: fd })
+          .then(function (r) { return r.json(); })
+          .then(function (res) {
+            dropdown.innerHTML = '';
+            if (!res.success || !res.data.terms.length) {
+              dropdown.style.display = 'none';
+              return;
+            }
+            res.data.terms.forEach(function (t) {
+              var item = document.createElement('div');
+              item.className = 'wb-autocomplete__item';
+              item.textContent = t.name + ' (' + t.count + ')';
+              item.addEventListener('click', function () {
+                displayInput.value = t.name;
+                if (source === 'attribute_value' && attrTaxSelect && attrTaxSelect.value) {
+                  hiddenInput.value = attrTaxSelect.value + ':' + t.slug;
+                } else {
+                  hiddenInput.value = t.slug;
+                }
+                dropdown.style.display = 'none';
+              });
+              dropdown.appendChild(item);
+            });
+            dropdown.style.display = 'block';
+          });
+      }, 300);
+    });
+
+    document.addEventListener('click', function (e) {
+      if (!e.target.closest('.wb-action-value-wrap')) {
+        dropdown.style.display = 'none';
+      }
+    });
+  }
+
+  /* ── Product Search for Chips (shared for conditions & actions) ───── */
+
+  function searchProductsForChips(term, hiddenInput, chipsContainer, dropdown) {
+    var fd = new FormData();
+    fd.append('action', 'woobooster_search_products');
+    fd.append('nonce', cfg.nonce);
+    fd.append('search', term);
+
+    fetch(cfg.ajaxUrl, { method: 'POST', body: fd })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        dropdown.innerHTML = '';
+        if (!res.success || !res.data.products.length) {
+          dropdown.style.display = 'none';
+          return;
+        }
+        res.data.products.forEach(function (p) {
+          var item = document.createElement('div');
+          item.className = 'wb-autocomplete__item';
+          item.textContent = p.name + (p.sku ? ' (' + p.sku + ')' : '');
+          item.addEventListener('click', function () {
+            addChip(hiddenInput, chipsContainer, p.id, p.name);
+            dropdown.style.display = 'none';
+          });
+          dropdown.appendChild(item);
+        });
+        dropdown.style.display = 'block';
+      });
+  }
+
+  function addChip(hiddenInput, container, id, label) {
+    if (!container) return;
+    // Skip if already added.
+    var current = hiddenInput.value ? hiddenInput.value.split(',') : [];
+    if (current.indexOf(String(id)) >= 0) return;
+
+    current.push(id);
+    hiddenInput.value = current.join(',');
+
+    var chip = document.createElement('span');
+    chip.className = 'wb-chip';
+    chip.innerHTML = escapeHtml(label) + ' <button type="button" class="wb-chip__remove">&times;</button>';
+    chip.querySelector('.wb-chip__remove').addEventListener('click', function () {
+      var vals = hiddenInput.value.split(',').filter(function (v) { return v !== String(id); });
+      hiddenInput.value = vals.join(',');
+      chip.remove();
+    });
+    container.appendChild(chip);
+  }
+
+  /* ── Bundle Action Product Search (specific_products panel) ─────── */
+
+  function initBundleActionProductSearch(panel) {
+    var input = panel.querySelector('.wb-product-search__input');
+    var hiddenIds = panel.querySelector('.wb-product-search__ids');
+    var dropdown = panel.querySelector('.wb-autocomplete__dropdown');
+    var chips = panel.querySelector('.wb-product-chips');
+
+    if (!input || !hiddenIds || !dropdown) return;
+
+    // Load existing chips.
+    if (hiddenIds.value) {
+      var fd = new FormData();
+      fd.append('action', 'woobooster_resolve_product_names');
+      fd.append('nonce', cfg.nonce);
+      fd.append('ids', hiddenIds.value);
+
+      fetch(cfg.ajaxUrl, { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          if (res.success && res.data.names) {
+            Object.keys(res.data.names).forEach(function (pid) {
+              addChip(hiddenIds, chips, pid, res.data.names[pid]);
+            });
+          }
+        });
+    }
+
+    var debounce;
+    input.addEventListener('input', function () {
+      clearTimeout(debounce);
+      var term = input.value.trim();
+      if (term.length < 2) { dropdown.style.display = 'none'; return; }
+
+      debounce = setTimeout(function () {
+        searchProductsForChips(term, hiddenIds, chips, dropdown);
+      }, 300);
+    });
+
+    document.addEventListener('click', function (e) {
+      if (!e.target.closest('.wb-product-search')) {
+        dropdown.style.display = 'none';
+      }
+    });
+  }
+
+  /* ── Bundle Exclusion Autocomplete ──────────────────────────────── */
+
+  function initBundleExclusionAutocomplete(panel) {
+    // Categories exclusion.
+    var catInput = panel.querySelector('.wb-exclude-cats__input');
+    var catIds = panel.querySelector('.wb-exclude-cats__ids');
+    var catDropdown = panel.querySelector('.wb-exclude-cats-search .wb-autocomplete__dropdown');
+    var catChips = panel.querySelector('.wb-exclude-cats-chips');
+
+    if (catInput && catIds && catDropdown) {
+      var catDebounce;
+      catInput.addEventListener('input', function () {
+        clearTimeout(catDebounce);
+        var term = catInput.value.trim();
+        if (term.length < 2) { catDropdown.style.display = 'none'; return; }
+        catDebounce = setTimeout(function () {
+          var fd = new FormData();
+          fd.append('action', 'woobooster_search_terms');
+          fd.append('nonce', cfg.nonce);
+          fd.append('taxonomy', 'product_cat');
+          fd.append('search', term);
+          fetch(cfg.ajaxUrl, { method: 'POST', body: fd })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+              catDropdown.innerHTML = '';
+              if (!res.success || !res.data.terms.length) { catDropdown.style.display = 'none'; return; }
+              res.data.terms.forEach(function (t) {
+                var item = document.createElement('div');
+                item.className = 'wb-autocomplete__item';
+                item.textContent = t.name + ' (' + t.count + ')';
+                item.addEventListener('click', function () {
+                  addChip(catIds, catChips, t.slug, t.name);
+                  catDropdown.style.display = 'none';
+                  catInput.value = '';
+                });
+                catDropdown.appendChild(item);
+              });
+              catDropdown.style.display = 'block';
+            });
+        }, 300);
+      });
+    }
+
+    // Products exclusion.
+    var prodInput = panel.querySelector('.wb-exclude-prods__input');
+    var prodIds = panel.querySelector('.wb-exclude-prods__ids');
+    var prodDropdown = panel.querySelector('.wb-exclude-prods-search .wb-autocomplete__dropdown');
+    var prodChips = panel.querySelector('.wb-exclude-prods-chips');
+
+    if (prodInput && prodIds && prodDropdown) {
+      var prodDebounce;
+      prodInput.addEventListener('input', function () {
+        clearTimeout(prodDebounce);
+        var term = prodInput.value.trim();
+        if (term.length < 2) { prodDropdown.style.display = 'none'; return; }
+        prodDebounce = setTimeout(function () {
+          searchProductsForChips(term, prodIds, prodChips, prodDropdown);
+        }, 300);
+      });
+    }
+  }
+
+  /* ── Init existing bundle action panels on page load ───────────────── */
+
+  function initExistingBundleActionPanels() {
+    document.querySelectorAll('#wb-bundle-action-groups .wb-action-products-panel').forEach(function (panel) {
+      initBundleActionProductSearch(panel);
+    });
+    document.querySelectorAll('#wb-bundle-action-groups .wb-exclusion-panel').forEach(function (panel) {
+      initBundleExclusionAutocomplete(panel);
+    });
+  }
+
+  /* ── Init existing bundle condition product chips on page load ───── */
+
+  function initExistingBundleConditionChips() {
+    document.querySelectorAll('#wb-bundle-condition-groups .wb-condition-row').forEach(function (row) {
+      var typeSelect = row.querySelector('.wb-condition-type');
+      var hiddenInput = row.querySelector('.wb-condition-value-hidden');
+      var chipsContainer = row.querySelector('.wb-condition-product-chips');
+
+      if (typeSelect && typeSelect.value === 'specific_product' && hiddenInput && hiddenInput.value && chipsContainer) {
+        var fd = new FormData();
+        fd.append('action', 'woobooster_resolve_product_names');
+        fd.append('nonce', cfg.nonce);
+        fd.append('ids', hiddenInput.value);
+
+        fetch(cfg.ajaxUrl, { method: 'POST', body: fd })
+          .then(function (r) { return r.json(); })
+          .then(function (res) {
+            if (res.success && res.data.names) {
+              Object.keys(res.data.names).forEach(function (pid) {
+                addChip(hiddenInput, chipsContainer, pid, res.data.names[pid]);
+              });
+            }
+          });
+      }
+    });
+  }
+
+  /* ── Bundle Boot ───────────────────────────────────────────────────── */
+
+  function initBundleAdmin() {
+    initBundleToggles();
+    initBundleDeleteConfirm();
+    initBundleDiscountToggle();
+    initBundleProductSearch();
+    initBundleItemRemove();
+    initBundleConditionRepeater();
+    initBundleActionRepeater();
+    initExistingBundleActionPanels();
+    initExistingBundleConditionChips();
+  }
+
+  // Add to DOMContentLoaded.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initBundleAdmin);
+  } else {
+    initBundleAdmin();
+  }
 })();

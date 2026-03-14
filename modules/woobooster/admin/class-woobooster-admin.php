@@ -30,6 +30,7 @@ class WooBooster_Admin
         add_action('wp_ajax_woobooster_delete_all_rules', array($this, 'ajax_delete_all_rules'));
         add_action('wp_ajax_woobooster_ai_generate', array($this, 'ajax_ai_generate'));
         add_action('wp_ajax_woobooster_ai_create_rule', array($this, 'ajax_ai_create_rule'));
+        add_action('wp_ajax_woobooster_ai_create_bundle', array($this, 'ajax_ai_create_bundle'));
     }
 
     /**
@@ -335,6 +336,13 @@ class WooBooster_Admin
                 echo '<h2>' . esc_html__('Bundles', 'ffl-funnels-addons') . '</h2>';
                 $add_url = admin_url('admin.php?page=ffla-woobooster-bundles&action=add');
                 echo '<div class="wb-card__actions">';
+
+                // AI Generator Button.
+                echo '<button type="button" id="wb-open-ai-modal" class="wb-btn wb-btn--sm" style="margin-right: 8px; background: linear-gradient(135deg, #a855f7, #7e22ce); color: white; border: none;">';
+                echo '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>';
+                echo esc_html__('Generate with AI', 'ffl-funnels-addons');
+                echo '</button>';
+
                 echo '<a href="' . esc_url($add_url) . '" class="wb-btn wb-btn--primary wb-btn--sm">' . esc_html__('Add Bundle', 'ffl-funnels-addons') . '</a>';
                 echo '</div>';
                 echo '</div>';
@@ -344,6 +352,9 @@ class WooBooster_Admin
                 echo '</form>';
                 echo '</div>';
                 echo '</div>';
+
+                // Render AI Modal.
+                $this->render_ai_chat_modal('bundle');
                 break;
         }
     }
@@ -394,7 +405,7 @@ class WooBooster_Admin
                 echo '</div></div>';
 
                 // Render AI Modal Structure
-                $this->render_ai_chat_modal();
+                $this->render_ai_chat_modal('rule');
                 break;
         }
     }
@@ -770,12 +781,20 @@ class WooBooster_Admin
             wp_send_json_error(array('message' => __('OpenAI API Key is required. Please add it in WooBooster General Settings.', 'ffl-funnels-addons')));
         }
 
+        // Detect mode: 'rule' (default) or 'bundle'.
+        $mode = isset($_POST['mode']) ? sanitize_key($_POST['mode']) : 'rule';
+
         // Build system prompt with full domain context.
-        $system_prompt = $this->build_ai_system_prompt($tavily_key);
+        if ('bundle' === $mode) {
+            $system_prompt = $this->build_ai_bundle_system_prompt($tavily_key);
+            $tools = $this->get_ai_bundle_tools($tavily_key);
+        } else {
+            $system_prompt = $this->build_ai_system_prompt($tavily_key);
+            $tools = $this->get_ai_tools($tavily_key);
+        }
         array_unshift($chat_history, array('role' => 'system', 'content' => $system_prompt));
 
         $api_url = 'https://api.openai.com/v1/chat/completions';
-        $tools = $this->get_ai_tools($tavily_key);
         $headers = array(
             'Content-Type' => 'application/json',
             'Authorization' => 'Bearer ' . trim($api_key),
@@ -844,6 +863,11 @@ class WooBooster_Admin
                     case 'get_rules':
                         $steps[] = array('tool' => 'get_rules', 'label' => __('Checking existing rules...', 'ffl-funnels-addons'));
                         $tool_result = $this->ai_tool_get_rules();
+                        break;
+
+                    case 'get_bundles':
+                        $steps[] = array('tool' => 'get_bundles', 'label' => __('Checking existing bundles...', 'ffl-funnels-addons'));
+                        $tool_result = $this->ai_tool_get_bundles();
                         break;
 
                     default:
@@ -1411,9 +1435,280 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
         }
     }
 
-    private function render_ai_chat_modal()
+    // ── AI Bundle Methods ──────────────────────────────────────────
+
+    /**
+     * Build the AI system prompt for bundle creation.
+     */
+    private function build_ai_bundle_system_prompt(string $tavily_key): string
     {
+        $has_web = !empty($tavily_key);
+        $web_instruction = $has_web
+            ? "- Use `search_web` to find product compatibility data (e.g. \"best accessories for Glock 19\", \"what goes with AR-15\"). This is very powerful — use it whenever the user asks about compatibility or \"best sellers\"."
+            : "- Web search is not available (no Tavily API key configured). Rely on store search and your own knowledge.";
+
+        return "You are a product bundling specialist for an FFL (Federal Firearms Licensed) WooCommerce store. You help store owners create WooBooster product bundles — \"Frequently Bought Together\" style groupings that appear on product pages.
+
+## How WooBooster Bundles Work
+A bundle has THREE parts:
+1. **Items** — The specific products in the bundle (by product ID)
+2. **Conditions** — WHEN to show the bundle (on which product pages)
+3. **Discount** (optional) — A percentage or fixed discount when buying the bundle
+
+### Condition Attributes (use these exact values):
+- `product_cat` — Product category (use the slug, e.g. \"handguns\", \"rifles\")
+- `product_tag` — Product tag (use the slug)
+- `pa_*` — Product attribute taxonomy (e.g. `pa_caliber`, `pa_brand`)
+- `specific_product` — A specific product by ID
+
+### Condition Operators:
+- `equals` — Exact match (most common)
+- `not_equals` — Everything except this
+
+### Discount Types:
+- `none` — No discount (default)
+- `percentage` — Percentage off each item (e.g. 10 = 10% off)
+- `fixed` — Fixed amount off each item (e.g. 5 = \$5 off each)
+
+## Your Workflow (INTERACTIVE — always confirm before creating)
+
+### Golden rules:
+- **NEVER ask the user for IDs, slugs, or technical data** — always use \`search_store\` yourself to find them.
+- **NEVER generate a [BUNDLE] block until the user confirms** the products they want.
+- **NEVER create bundles automatically** — always wait for explicit approval.
+- Only use IDs and slugs obtained from \`search_store\` results. Never invent or guess them.
+
+### Step-by-step process:
+
+**Step 1 — Understand the request**
+Ask clarifying questions if the intent is vague. Once clear, proceed.
+
+**Step 2 — Find the bundle items**
+- Call \`search_store\` yourself for each product the user wants in the bundle.
+- {$web_instruction}
+- After any web search, always call \`search_store\` to verify which of those products actually exist in the store.
+- Present them and ask for confirmation:
+  > I found these products for the bundle. Should I use all of them, or remove any?
+  > 1. Glock 19 Gen 5 (ID: 1042)
+  > 2. Safariland Holster (ID: 204600)
+  > 3. Hoppe's Cleaning Kit (ID: 5023)
+
+**Step 3 — Determine the condition (trigger)**
+- Ask the user: \"Which product pages should show this bundle?\"
+- Use \`search_store\` to find the trigger product or category.
+- Default: use `specific_product` with the first/main product in the bundle.
+
+**Step 4 — Propose and create**
+Only after the user confirms both items and condition, describe the bundle in plain text and then emit the [BUNDLE] block.
+
+CRITICAL RULES for the [BUNDLE] block:
+- Do NOT wrap it in markdown code fences (no triple backticks). Emit it directly in your message.
+- The JSON must contain ALL confirmed product IDs in the items array.
+- Use ONLY real IDs from search_store results. Never use placeholder values.
+
+Format (emit exactly like this, no code fences):
+
+[BUNDLE]{\"name\":\"Glock 19 Starter Kit\",\"items\":[1042,204600,5023],\"condition_attribute\":\"specific_product\",\"condition_value\":\"1042\",\"discount_type\":\"percentage\",\"discount_value\":10}[/BUNDLE]
+
+Category condition example:
+
+[BUNDLE]{\"name\":\"Handgun Essentials\",\"items\":[204600,5023,3044],\"condition_attribute\":\"product_cat\",\"condition_value\":\"handguns\",\"discount_type\":\"none\",\"discount_value\":0}[/BUNDLE]
+
+After emitting the [BUNDLE] block, ask: \"Shall I create this bundle?\"
+
+## FFL Store Context
+Common product types: firearms (handguns, rifles, shotguns), ammunition, holsters, optics/scopes, red dots, magazines, cleaning kits, gun cases, safes, ear protection, eye protection, grips, stocks, lights, lasers, bipods, slings, targets, range gear, reloading equipment, and tactical accessories.";
+    }
+
+    /**
+     * Define the AI tool schemas for bundle mode.
+     */
+    private function get_ai_bundle_tools(string $tavily_key): array
+    {
+        $tools = array(
+            array(
+                'type' => 'function',
+                'function' => array(
+                    'name' => 'search_store',
+                    'description' => 'Search the WooCommerce catalog for products, categories, tags, or attributes. Returns IDs and slugs needed for bundle creation.',
+                    'parameters' => array(
+                        'type' => 'object',
+                        'properties' => array(
+                            'type' => array('type' => 'string', 'enum' => array('product', 'category', 'tag', 'attribute'), 'description' => 'Entity type to search'),
+                            'query' => array('type' => 'string', 'description' => 'Search term (e.g. "Glock 19", "holsters", "9mm")'),
+                        ),
+                        'required' => array('type', 'query'),
+                    ),
+                ),
+            ),
+            array(
+                'type' => 'function',
+                'function' => array(
+                    'name' => 'get_bundles',
+                    'description' => 'List existing WooBooster bundles to avoid duplicates or understand current setup.',
+                    'parameters' => array(
+                        'type' => 'object',
+                        'properties' => new \stdClass(),
+                    ),
+                ),
+            ),
+        );
+
+        if (!empty($tavily_key)) {
+            $tools[] = array(
+                'type' => 'function',
+                'function' => array(
+                    'name' => 'search_web',
+                    'description' => 'Search the web for product compatibility, best-sellers, or general firearms knowledge. Use for questions like "what accessories go with X" or "best bundle for Y".',
+                    'parameters' => array(
+                        'type' => 'object',
+                        'properties' => array(
+                            'query' => array('type' => 'string', 'description' => 'Search query'),
+                        ),
+                        'required' => array('query'),
+                    ),
+                ),
+            );
+        }
+
+        return $tools;
+    }
+
+    /**
+     * Tool: Get all existing bundles.
+     */
+    private function ai_tool_get_bundles(): string
+    {
+        require_once WOOBOOSTER_PATH . 'includes/class-woobooster-bundle.php';
+        $bundles = WooBooster_Bundle::get_all();
+        $summary = array();
+
+        foreach ($bundles as $bundle) {
+            $items = WooBooster_Bundle::get_items($bundle->id);
+            $item_ids = array_map(function ($item) {
+                return absint($item->product_id);
+            }, $items);
+
+            $summary[] = array(
+                'id' => $bundle->id,
+                'name' => $bundle->name,
+                'priority' => $bundle->priority,
+                'status' => $bundle->status ? 'active' : 'inactive',
+                'discount' => $bundle->discount_type . ':' . $bundle->discount_value,
+                'items' => $item_ids,
+            );
+        }
+
+        return empty($summary) ? 'No bundles exist yet.' : wp_json_encode($summary);
+    }
+
+    /**
+     * Tool: Create a new bundle.
+     *
+     * @return array{success: bool, message: string, bundle_id?: int, edit_url?: string}
+     */
+    private function ai_tool_create_bundle(array $args): array
+    {
+        require_once WOOBOOSTER_PATH . 'includes/class-woobooster-bundle.php';
+
+        $bundle_data = array(
+            'name' => sanitize_text_field($args['name'] ?? ''),
+            'priority' => absint($args['priority'] ?? 10),
+            'status' => 0, // Inactive — let owner review first.
+            'discount_type' => sanitize_key($args['discount_type'] ?? 'none'),
+            'discount_value' => floatval($args['discount_value'] ?? 0),
+        );
+
+        $bundle_id = WooBooster_Bundle::create($bundle_data);
+
+        if (!$bundle_id) {
+            return array('success' => false, 'message' => 'Failed to save bundle to database.');
+        }
+
+        // Save static items.
+        $items = isset($args['items']) ? (array) $args['items'] : array();
+        $bundle_items = array();
+        foreach ($items as $sort => $product_id) {
+            $pid = absint($product_id);
+            if ($pid) {
+                $bundle_items[] = array(
+                    'product_id' => $pid,
+                    'sort_order' => $sort,
+                    'is_optional' => 0,
+                );
+            }
+        }
+        if (!empty($bundle_items)) {
+            WooBooster_Bundle::save_items($bundle_id, $bundle_items);
+        }
+
+        // Save condition (if provided).
+        $cond_attr = sanitize_key($args['condition_attribute'] ?? '');
+        $cond_val = sanitize_text_field($args['condition_value'] ?? '');
+        if ($cond_attr && $cond_val) {
+            WooBooster_Bundle::save_conditions($bundle_id, array(
+                array( // Group 0
+                    array(
+                        'condition_attribute' => $cond_attr,
+                        'condition_operator' => sanitize_key($args['condition_operator'] ?? 'equals'),
+                        'condition_value' => $cond_val,
+                        'include_children' => 1,
+                    ),
+                ),
+            ));
+        }
+
+        $edit_url = admin_url('admin.php?page=ffla-woobooster-bundles&action=edit&bundle_id=' . $bundle_id);
+
+        return array(
+            'success' => true,
+            'message' => sprintf('Bundle #%d "%s" created successfully (inactive). Edit URL: %s', $bundle_id, $bundle_data['name'], $edit_url),
+            'bundle_id' => $bundle_id,
+            'edit_url' => $edit_url,
+        );
+    }
+
+    /**
+     * AJAX: Create a bundle from AI chat suggestion.
+     * Called when user clicks "Create This Bundle" button.
+     */
+    public function ajax_ai_create_bundle()
+    {
+        check_ajax_referer('woobooster_admin', 'nonce');
+
+        if (!current_user_can('manage_woocommerce')) {
+            wp_send_json_error(array('message' => __('Permission denied.', 'ffl-funnels-addons')));
+        }
+
+        $bundle_data = isset($_POST['bundle_data']) ? wp_unslash($_POST['bundle_data']) : '';
+        if (empty($bundle_data)) {
+            wp_send_json_error(array('message' => __('No bundle data provided.', 'ffl-funnels-addons')));
+        }
+
+        $data = json_decode($bundle_data, true);
+        if (!is_array($data)) {
+            wp_send_json_error(array('message' => __('Invalid bundle data format.', 'ffl-funnels-addons')));
+        }
+
+        $result = $this->ai_tool_create_bundle($data);
+
+        if ($result['success']) {
+            wp_send_json_success(array(
+                'message' => $result['message'],
+                'bundle_id' => $result['bundle_id'],
+                'edit_url' => $result['edit_url'],
+            ));
+        } else {
+            wp_send_json_error(array('message' => $result['message']));
+        }
+    }
+
+    private function render_ai_chat_modal(string $mode = 'rule')
+    {
+        $is_bundle = 'bundle' === $mode;
+        $arrow_icon = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>';
         ?>
+                <input type="hidden" id="wb-ai-mode" value="<?php echo esc_attr($mode); ?>">
                 <div id="wb-ai-modal-overlay" class="wb-ai-modal-overlay">
                     <div class="wb-ai-modal" role="dialog" aria-modal="true" aria-labelledby="wb-ai-modal-title">
 
@@ -1450,6 +1745,33 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
                                     <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
                                     <path d="M19 3v4"/><path d="M21 5h-4"/>
                                 </svg>
+                                <?php if ($is_bundle) : ?>
+                                <h4><?php esc_html_e('What bundle do you want to create?', 'ffl-funnels-addons'); ?></h4>
+                                <p><?php esc_html_e('Describe the products you want to bundle together. The AI will search your catalog, find matching products, and create a "Frequently Bought Together" bundle.', 'ffl-funnels-addons'); ?></p>
+
+                                <div class="wb-ai-suggestions">
+                                    <button type="button" class="wb-ai-suggestion-btn"
+                                        data-prompt="Create a bundle for the Glock 19 with a compatible holster, extra magazine, and cleaning kit">
+                                        <?php esc_html_e('Glock 19 starter bundle', 'ffl-funnels-addons'); ?>
+                                        <?php echo $arrow_icon; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                                    </button>
+                                    <button type="button" class="wb-ai-suggestion-btn"
+                                        data-prompt="Bundle AR-15 rifles with compatible optics, slings, and cleaning kits from my store">
+                                        <?php esc_html_e('AR-15 accessories bundle', 'ffl-funnels-addons'); ?>
+                                        <?php echo $arrow_icon; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                                    </button>
+                                    <button type="button" class="wb-ai-suggestion-btn"
+                                        data-prompt="Create a range day essentials bundle with ear protection, eye protection, targets, and a range bag">
+                                        <?php esc_html_e('Range day essentials bundle', 'ffl-funnels-addons'); ?>
+                                        <?php echo $arrow_icon; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                                    </button>
+                                    <button type="button" class="wb-ai-suggestion-btn"
+                                        data-prompt="Bundle 9mm ammo with magazines and a cleaning kit, show it on all 9mm handgun pages">
+                                        <?php esc_html_e('9mm ammo + accessories bundle', 'ffl-funnels-addons'); ?>
+                                        <?php echo $arrow_icon; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                                    </button>
+                                </div>
+                                <?php else : ?>
                                 <h4><?php esc_html_e('What kind of rule do you need?', 'ffl-funnels-addons'); ?></h4>
                                 <p><?php esc_html_e('Describe your cross-sell or upsell goal. The AI will search your store catalog, look up product compatibility on the web, and create the rule for you.', 'ffl-funnels-addons'); ?></p>
 
@@ -1457,24 +1779,25 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
                                     <button type="button" class="wb-ai-suggestion-btn"
                                         data-prompt="Find the best-selling holsters for the Glock 19 and recommend them when someone views that gun">
                                         <?php esc_html_e('Recommend holsters for the Glock 19', 'ffl-funnels-addons'); ?>
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                                        <?php echo $arrow_icon; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
                                     </button>
                                     <button type="button" class="wb-ai-suggestion-btn"
                                         data-prompt="When someone looks at any 9mm ammo, show them eye and ear protection from my store">
                                         <?php esc_html_e('Cross-sell safety gear with 9mm ammo', 'ffl-funnels-addons'); ?>
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                                        <?php echo $arrow_icon; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
                                     </button>
                                     <button type="button" class="wb-ai-suggestion-btn"
                                         data-prompt="Show compatible optics and red dots when a customer views any AR-15 rifle">
                                         <?php esc_html_e('Suggest optics for AR-15 rifles', 'ffl-funnels-addons'); ?>
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                                        <?php echo $arrow_icon; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
                                     </button>
                                     <button type="button" class="wb-ai-suggestion-btn"
                                         data-prompt="When viewing any shotgun, recommend cleaning kits and cases that fit">
                                         <?php esc_html_e('Cleaning kits & cases for shotguns', 'ffl-funnels-addons'); ?>
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                                        <?php echo $arrow_icon; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
                                     </button>
                                 </div>
+                                <?php endif; ?>
                             </div>
 
                             <!-- Typing Indicator -->
@@ -1491,7 +1814,7 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
                         <div class="wb-ai-modal__footer">
                             <form id="wb-ai-chat-form" class="wb-ai-input-group">
                                 <textarea id="wb-ai-input" class="wb-ai-input"
-                                    placeholder="<?php esc_attr_e('Describe a recommendation rule...', 'ffl-funnels-addons'); ?>"
+                                    placeholder="<?php echo esc_attr($is_bundle ? __('Describe a product bundle...', 'ffl-funnels-addons') : __('Describe a recommendation rule...', 'ffl-funnels-addons')); ?>"
                                     rows="1"></textarea>
                                 <button type="submit" id="wb-ai-submit-btn" class="wb-ai-submit" disabled
                                     aria-label="<?php esc_attr_e('Send message', 'ffl-funnels-addons'); ?>">
