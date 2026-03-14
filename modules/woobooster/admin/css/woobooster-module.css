@@ -237,10 +237,108 @@
 /* ── Section Visual Distinction ──────────────────────────────────── */
 
 #wb-conditions-section,
-#wb-actions-section {
+#wb-actions-section,
+#wb-bundle-items-section,
+#wb-bundle-actions-section,
+#wb-bundle-conditions-section {
   border: 1px solid var(--wb-color-neutral-stroke-2);
   border-radius: var(--wb-radius-md);
   background: var(--wb-color-neutral-background-1);
+}
+
+/* ── Section Spacing (between form sections) ───────────────────── */
+
+.wb-form .wb-card__section {
+  margin-bottom: var(--wb-spacing-lg);
+}
+
+.wb-form .wb-card__section:last-of-type {
+  margin-bottom: 0;
+}
+
+/* ── Bundle Items (Admin Sortable List) ────────────────────────── */
+
+.wb-sortable-list {
+  margin-top: var(--wb-spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--wb-spacing-xs);
+}
+
+.wb-form .wb-bundle-item {
+  display: flex;
+  align-items: center;
+  gap: var(--wb-spacing-md);
+  padding: var(--wb-spacing-sm) var(--wb-spacing-md);
+  background: var(--wb-color-neutral-background-2);
+  border: 1px solid transparent;
+  border-radius: var(--wb-radius-sm);
+  transition: all var(--wb-duration-fast);
+}
+
+.wb-form .wb-bundle-item:hover {
+  border-color: var(--wb-color-neutral-stroke-1);
+  background: #fff;
+  box-shadow: var(--wb-shadow-1);
+}
+
+.wb-bundle-item__drag {
+  cursor: grab;
+  color: var(--wb-color-neutral-foreground-3);
+  font-size: 16px;
+  flex-shrink: 0;
+  user-select: none;
+  padding: 0 var(--wb-spacing-xs);
+}
+
+.wb-bundle-item__drag:active {
+  cursor: grabbing;
+}
+
+.wb-bundle-item__name {
+  flex: 1;
+  font-weight: var(--wb-font-weight-medium);
+  font-size: var(--wb-font-size-base);
+  color: var(--wb-color-neutral-foreground-1);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-bundle-item__price {
+  font-size: var(--wb-font-size-sm);
+  color: var(--wb-color-neutral-foreground-2);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.wb-bundle-item__price del {
+  opacity: 0.5;
+}
+
+.wb-bundle-item__price ins {
+  text-decoration: none;
+  font-weight: var(--wb-font-weight-semibold);
+}
+
+.wb-bundle-item__optional {
+  flex-shrink: 0;
+  font-size: var(--wb-font-size-sm);
+}
+
+.wb-remove-bundle-item {
+  flex-shrink: 0;
+}
+
+/* ── Bundle Product Search ─────────────────────────────────────── */
+
+.wb-bundle-product-search {
+  max-width: 500px;
+}
+
+.wb-bundle-product-search__input {
+  width: 100%;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
