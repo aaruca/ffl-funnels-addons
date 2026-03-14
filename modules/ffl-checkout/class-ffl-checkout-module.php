@@ -56,6 +56,15 @@ class FFL_Checkout_Module extends FFLA_Module
         require_once $base . 'includes/class-ffl-checkout-dealer-bridge.php';
         FFL_Checkout_Dealer_Bridge::init();
 
+        // Dealer Finder Bricks element.
+        add_action('init', function () use ($base) {
+            if (class_exists('\Bricks\Elements')) {
+                \Bricks\Elements::register_element(
+                    $base . 'frontend/class-ffl-dealer-finder-element.php'
+                );
+            }
+        }, 11);
+
         // Vendor API proxy.
         require_once $base . 'includes/class-ffl-checkout-vendor-api.php';
 
