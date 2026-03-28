@@ -2,6 +2,26 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.7.3] - 2026-03-28
+
+### Features
+- **Woo Sheets Sync:** Nuevo módulo para sincronización bidireccional entre WooCommerce y Google Sheets.
+- Conexión OAuth 2.0 via proxy stateless (HMAC-signed).
+- **Sheet→Woo:** Edita precios, stock, SKU directamente desde Google Sheets.
+- **Woo→Sheet:** Escribe datos actuales de WooCommerce al sheet para mantenerlo actualizado.
+- Crear productos simples desde el sheet (product_id=0, variation_id=0).
+- Crear variaciones con combinación de atributos desde la columna D (ej. Color: Red | Size: L).
+- Protección contra SKU duplicados al crear productos.
+- Layout de 12 columnas optimizado con columna de atributos legible.
+- Cron diario automático + botón "Sync Now" manual en el panel de administración.
+- Dashboard admin con sync log, selector de productos, y link por taxonomía o categoría.
+- Página de documentación in-app en inglés para clientes.
+- Metabox por producto para activar/desactivar la sincronización individualmente.
+
+### Bug Fixes
+- **Woo Sheets Sync:** Se solucionó el error al asignar atributos a nuevas variaciones mediante `update_post_meta`.
+- **Woo Sheets Sync:** Registro dinámico automático de términos de taxonomía y opciones de atributos locales en el producto padre al crear la variación.
+
 ## [1.6.6] - 2026-03-11
 
 ### Bug Fixes

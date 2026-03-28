@@ -18,3 +18,4 @@ wp-config.php
 # Dev files
 generate_rules.py
 woobooster-rules-import.json
+modules/woo-sheets-sync/proxy/

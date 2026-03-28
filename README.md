@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.7.2-blue.svg)
+![Version](https://img.shields.io/badge/version-1.7.3-blue.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -41,6 +41,12 @@ A visual element for Bricks Builder to help customers locate nearby FFL dealers 
 ### 5. Doofinder Sync
 *   Automatically injects product metadata for Doofinder search indexing.
 *   Ensures your search engine always has the latest product data.
+
+### 6. Woo Sheets Sync
+*   Bidirectional synchronization between WooCommerce inventory and Google Sheets.
+*   OAuth 2.0 connection.
+*   Edit prices, stock, and SKU directly from Google Sheets.
+*   Create simple products and variations from the sheet.
 
 ## Installation
 
@@ -82,6 +88,17 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.7.3
+*   Bug Fix: Se solucionó el error al asignar atributos a nuevas variaciones mediante update_post_meta.
+*   Bug Fix: Registro dinámico automático de términos de taxonomía de atributos en el producto padre al crear la variación.
+*   Feature: Nuevo módulo Woo Sheets Sync con sincronización bidireccional entre WooCommerce y Google Sheets.
+*   Feature: Conexión OAuth 2.0 via proxy stateless (HMAC-signed).
+*   Feature: Sheet→Woo para editar precios, stock, SKU directamente desde Google Sheets.
+*   Feature: Woo→Sheet para escribir datos actuales de WooCommerce al sheet.
+*   Feature: Crear productos simples y variaciones (combinando atributos) desde el sheet.
+*   Feature: Protección contra SKU duplicados.
+*   Feature: Cron diario automático y botón Sync Now manual.
 
 ### v1.6.4
 *   Feature: Added 10 new control groups for FFL Dealer Finder Bricks element.
