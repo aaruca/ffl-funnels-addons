@@ -125,8 +125,8 @@ class Tax_Rates_Importer
      */
     private static function search_tax_rates(string $state_name, string $state_code, string $depth, string $tavily_key): string
     {
-        $year  = date('Y');
-        $month = date('F');
+        $year  = wp_date('Y');
+        $month = wp_date('F');
 
         if ($depth === 'county') {
             $query = "{$state_name} sales tax rates by county {$month} {$year} current official";

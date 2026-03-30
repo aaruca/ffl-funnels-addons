@@ -1036,26 +1036,28 @@ class WooBooster_Matcher
             );
 
             // Step 4: Execute actions.
-            $actions = WooBooster_Rule::get_actions($rule->id);
-            foreach ($actions as $action) {
-                $resolved = $this->resolve_action($action, $terms);
+            $action_groups = WooBooster_Rule::get_actions($rule->id);
+            foreach ($action_groups as $group_actions) {
+                foreach ($group_actions as $action) {
+                    $resolved = $this->resolve_action($action, $terms);
 
-                $action_debug = array(
-                    'source' => $action->action_source,
-                    'value' => $action->action_value,
-                    'limit' => $action->action_limit,
-                    'orderby' => $action->action_orderby,
-                    'resolved_query' => $resolved,
-                    'results' => array()
-                );
+                    $action_debug = array(
+                        'source' => $action->action_source,
+                        'value' => $action->action_value,
+                        'limit' => $action->action_limit,
+                        'orderby' => $action->action_orderby,
+                        'resolved_query' => $resolved,
+                        'results' => array()
+                    );
 
-                if ($resolved) {
-                    $ids = $this->execute_query($product_id, $action, array(), $terms);
-                    $action_debug['results'] = $ids;
-                    $result['product_ids'] = array_merge($result['product_ids'], $ids); // Accumulate all
+                    if ($resolved) {
+                        $ids = $this->execute_query($product_id, $action, array(), $terms);
+                        $action_debug['results'] = $ids;
+                        $result['product_ids'] = array_merge($result['product_ids'], $ids); // Accumulate all
+                    }
+
+                    $result['actions'][] = $action_debug;
                 }
-
-                $result['actions'][] = $action_debug;
             }
 
             $result['product_ids'] = array_unique($result['product_ids']);

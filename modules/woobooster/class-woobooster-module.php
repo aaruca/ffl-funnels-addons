@@ -124,6 +124,8 @@ class WooBooster_Module extends FFLA_Module
 
     public function deactivate(): void
     {
+        $path = $this->get_path();
+        require_once $path . 'includes/class-woobooster-cron.php';
         WooBooster_Cron::unschedule();
     }
 

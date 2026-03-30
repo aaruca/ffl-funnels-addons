@@ -19,3 +19,6 @@ wp-config.php
 generate_rules.py
 woobooster-rules-import.json
 modules/woo-sheets-sync/proxy/
+
+# Test artifacts
+test_dir/

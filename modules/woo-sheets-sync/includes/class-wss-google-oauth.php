@@ -29,11 +29,17 @@ class WSS_Google_OAuth
     private const PROXY_URL = 'https://alearuca.com/wss-proxy/';
 
     /**
-     * Shared secret between the proxy and the plugin.
-     * Must match WSS_PROXY_SECRET in wss-oauth-proxy.php.
-     * CHANGE THIS to match your proxy deployment.
+     * Get the shared secret between the proxy and the plugin.
+     * Define WSS_PROXY_SECRET in wp-config.php to override.
      */
-    private const PROXY_SECRET = '50420637e8a7472b5215101a107d3185fcd09cca2a8a6a827fbcb9f56288629e';
+    private static function get_proxy_secret(): string
+    {
+        if (defined('WSS_PROXY_SECRET') && WSS_PROXY_SECRET !== '') {
+            return WSS_PROXY_SECRET;
+        }
+        // Fallback — rotate this value immediately and move to wp-config.php.
+        return '50420637e8a7472b5215101a107d3185fcd09cca2a8a6a827fbcb9f56288629e';
+    }
 
     /**
      * Get the Client ID — stored in wss_settings after proxy callback.
@@ -138,16 +144,16 @@ class WSS_Google_OAuth
             return new WP_Error('wss_oauth', __('Invalid token data from proxy.', 'ffl-funnels-addons'));
         }
 
-        // Store tokens (non-autoloaded).
+        // Store tokens encrypted (non-autoloaded).
         $tokens = [
-            'access_token'  => $data['access_token'],
-            'refresh_token' => $data['refresh_token'],
+            'access_token'  => self::encrypt($data['access_token']),
+            'refresh_token' => self::encrypt($data['refresh_token']),
             'expires_at'    => time() + (int) ($data['expires_in'] ?? 3600),
             'user_email'    => $data['user_email'] ?? '',
         ];
 
         update_option(self::TOKEN_OPTION, $tokens, false);
-        self::debug_log("handle_proxy_callback: Tokens saved. Email=" . ($data['user_email'] ?? ''));
+        self::debug_log("handle_proxy_callback: Tokens saved.");
 
         // Store credentials encrypted in wss_settings so refresh_token works without proxy.
         if (!empty($data['client_id']) && !empty($data['client_secret'])) {
@@ -166,14 +172,23 @@ class WSS_Google_OAuth
      */
     private static function debug_log(string $message): void
     {
-        $line = '[WSS OAuth ' . gmdate('Y-m-d H:i:s') . '] ' . $message;
-
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log($line);
+        if (!defined('WP_DEBUG') || !WP_DEBUG) {
+            return;
         }
 
+        $line = '[WSS OAuth ' . gmdate('Y-m-d H:i:s') . '] ' . $message;
+        error_log($line);
+
+        // Write to a log file in the private uploads dir, only in debug mode.
         $upload_dir = wp_upload_dir();
-        $log_file   = $upload_dir['basedir'] . '/wss-oauth-debug.log';
+        $log_dir    = $upload_dir['basedir'] . '/wss-logs';
+        if (!is_dir($log_dir)) {
+            wp_mkdir_p($log_dir);
+            // Protect directory from public access.
+            @file_put_contents($log_dir . '/.htaccess', 'deny from all'); // phpcs:ignore WordPress.WP.AlternativeFunctions
+            @file_put_contents($log_dir . '/index.php', '<?php // Silence is golden.'); // phpcs:ignore WordPress.WP.AlternativeFunctions
+        }
+        $log_file = $log_dir . '/wss-oauth-debug.log';
         file_put_contents($log_file, $line . "\n", FILE_APPEND | LOCK_EX); // phpcs:ignore WordPress.WP.AlternativeFunctions
     }
 
@@ -199,7 +214,7 @@ class WSS_Google_OAuth
             $tokens = get_option(self::TOKEN_OPTION, []);
         }
 
-        return $tokens['access_token'];
+        return self::decrypt($tokens['access_token']);
     }
 
     /**
@@ -226,7 +241,7 @@ class WSS_Google_OAuth
             'body' => [
                 'client_id'     => $client_id,
                 'client_secret' => $client_secret,
-                'refresh_token' => $tokens['refresh_token'],
+                'refresh_token' => self::decrypt($tokens['refresh_token']),
                 'grant_type'    => 'refresh_token',
             ],
             'timeout' => 30,
@@ -243,12 +258,12 @@ class WSS_Google_OAuth
             return new WP_Error('wss_oauth', $error_msg);
         }
 
-        $tokens['access_token'] = $body['access_token'];
+        $tokens['access_token'] = self::encrypt($body['access_token']);
         $tokens['expires_at']   = time() + (int) ($body['expires_in'] ?? 3600);
 
         // Google may issue a new refresh token.
         if (!empty($body['refresh_token'])) {
-            $tokens['refresh_token'] = $body['refresh_token'];
+            $tokens['refresh_token'] = self::encrypt($body['refresh_token']);
         }
 
         update_option(self::TOKEN_OPTION, $tokens, false);
@@ -264,10 +279,13 @@ class WSS_Google_OAuth
         $tokens = get_option(self::TOKEN_OPTION, []);
 
         if (!empty($tokens['access_token'])) {
-            wp_remote_post(self::REVOKE_ENDPOINT, [
-                'body'    => ['token' => $tokens['access_token']],
-                'timeout' => 10,
-            ]);
+            $plain_token = self::decrypt($tokens['access_token']);
+            if ($plain_token !== '') {
+                wp_remote_post(self::REVOKE_ENDPOINT, [
+                    'body'    => ['token' => $plain_token],
+                    'timeout' => 10,
+                ]);
+            }
         }
 
         delete_option(self::TOKEN_OPTION);
@@ -305,7 +323,7 @@ class WSS_Google_OAuth
      */
     private static function proxy_decrypt(string $encoded): string
     {
-        $key  = hash('sha256', self::PROXY_SECRET, true);
+        $key  = hash('sha256', self::get_proxy_secret(), true);
         // Restore URL-safe base64: replace -_ back to +/ and add padding.
         $encoded = strtr($encoded, '-_', '+/');
         $pad     = strlen($encoded) % 4;

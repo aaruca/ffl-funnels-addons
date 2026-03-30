@@ -431,9 +431,14 @@ class FFLA_Updater
         $proper_folder_name = trailingslashit($this->plugin_slug);
         $proper_destination = $upgrader_temp_dir . $proper_folder_name;
 
+        // Normalize paths for comparison, especially important on Windows.
+        $normalized_source      = wp_normalize_path(trailingslashit($source));
+        $normalized_destination = wp_normalize_path(trailingslashit($proper_destination));
+
         // If it's already extracted to the perfect folder name, we do nothing.
-        // This is important because our custom CI-built zips are already structured correctly.
-        if (trailingslashit($source) === $proper_destination) {
+        // This is important because our custom CI-built zips are already structured correctly
+        // and attempting to move a folder to itself can result in deletion of the files.
+        if ($normalized_source === $normalized_destination) {
             return $source;
         }
 

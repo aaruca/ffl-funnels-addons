@@ -65,7 +65,9 @@ class Alg_Wishlist_Core
         if (is_user_logged_in()) {
             return array('field' => 'user_id', 'value' => get_current_user_id());
         } else {
-            $session_id = isset($_COOKIE[self::$session_cookie_name]) ? $_COOKIE[self::$session_cookie_name] : '';
+            $session_id = isset($_COOKIE[self::$session_cookie_name])
+                ? sanitize_text_field(wp_unslash($_COOKIE[self::$session_cookie_name]))
+                : '';
             return array('field' => 'session_id', 'value' => $session_id);
         }
     }
@@ -224,7 +226,7 @@ class Alg_Wishlist_Core
         if (!isset($_COOKIE[self::$session_cookie_name]))
             return;
 
-        $session_id = $_COOKIE[self::$session_cookie_name];
+        $session_id = sanitize_text_field(wp_unslash($_COOKIE[self::$session_cookie_name]));
         global $wpdb;
         $table = $wpdb->prefix . 'alg_wishlists';
 

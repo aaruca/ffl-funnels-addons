@@ -82,13 +82,21 @@ class Doofinder_Core
      */
     public static function inject_dynamic_meta($value, $post_id, $meta_key, $single)
     {
+        static $in_filter = false;
+
+        if ($in_filter) {
+            return $value;
+        }
+
         if (get_post_type($post_id) !== 'product') {
             return $value;
         }
 
         $cfg = self::dynamic_meta_config();
         if (isset($cfg[$meta_key])) {
+            $in_filter = true;
             $val = self::get_dynamic_meta_value($post_id, $cfg[$meta_key]);
+            $in_filter = false;
             return $single ? $val : [$val];
         }
 
@@ -307,6 +315,10 @@ class Doofinder_Core
      */
     public static function add_price_structure_fix(): void
     {
+        if (!is_product()) {
+            return;
+        }
+
         wp_enqueue_script(
             'doofinder-price-fix',
             plugin_dir_url(dirname(__FILE__)) . 'assets/js/price-structure-fix.js',

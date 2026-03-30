@@ -17,7 +17,15 @@ jobs:
       - name: Build plugin ZIP
         run: |
           mkdir -p /tmp/ffl-funnels-addons
-          rsync -a --exclude='.git' --exclude='.github' --exclude='.DS_Store' ./ /tmp/ffl-funnels-addons/
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.DS_Store' \
+            --exclude='test_dir' \
+            --exclude='generate_rules.py' \
+            --exclude='woobooster-rules-import.json' \
+            --exclude='*.log' \
+            ./ /tmp/ffl-funnels-addons/
           cd /tmp
           zip -r ffl-funnels-addons-${{ github.event.release.tag_name }}.zip ffl-funnels-addons/
 

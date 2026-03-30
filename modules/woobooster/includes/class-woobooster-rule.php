@@ -296,13 +296,16 @@ class WooBooster_Rule
         global $wpdb;
         self::init_tables();
 
-        // Check if group_id column exists to avoid SQL errors on un-migrated DBs.
-        $has_group_id = $wpdb->get_results($wpdb->prepare(
-            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'group_id'",
-            DB_NAME,
-            self::$conditions_table
-        ));
-        $order_clause = !empty($has_group_id) ? 'ORDER BY group_id ASC, id ASC' : 'ORDER BY id ASC';
+        // Check if group_id column exists (cached to avoid repeated INFORMATION_SCHEMA queries).
+        static $has_group_id_conditions = null;
+        if ($has_group_id_conditions === null) {
+            $has_group_id_conditions = (bool) $wpdb->get_results($wpdb->prepare(
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'group_id'",
+                DB_NAME,
+                self::$conditions_table
+            ));
+        }
+        $order_clause = $has_group_id_conditions ? 'ORDER BY group_id ASC, id ASC' : 'ORDER BY id ASC';
 
         $rows = $wpdb->get_results(
             $wpdb->prepare(
@@ -352,13 +355,16 @@ class WooBooster_Rule
         global $wpdb;
         self::init_tables();
 
-        // Check if group_id column exists to avoid SQL errors on un-migrated DBs.
-        $has_group_id = $wpdb->get_results($wpdb->prepare(
-            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'group_id'",
-            DB_NAME,
-            self::$actions_table
-        ));
-        $order_clause = !empty($has_group_id) ? 'ORDER BY group_id ASC, id ASC' : 'ORDER BY id ASC';
+        // Check if group_id column exists (cached to avoid repeated INFORMATION_SCHEMA queries).
+        static $has_group_id_actions = null;
+        if ($has_group_id_actions === null) {
+            $has_group_id_actions = (bool) $wpdb->get_results($wpdb->prepare(
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'group_id'",
+                DB_NAME,
+                self::$actions_table
+            ));
+        }
+        $order_clause = $has_group_id_actions ? 'ORDER BY group_id ASC, id ASC' : 'ORDER BY id ASC';
 
         $rows = $wpdb->get_results(
             $wpdb->prepare(
