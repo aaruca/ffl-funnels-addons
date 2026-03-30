@@ -110,6 +110,19 @@ class FFLA_Wishlist_Count extends \Bricks\Element
             'default' => 'right',
         ];
 
+        $this->controls['labelDisplay'] = [
+            'group' => 'counter',
+            'tab' => 'content',
+            'label' => esc_html__('Show label', 'ffl-funnels-addons'),
+            'type' => 'select',
+            'options' => [
+                'inline' => esc_html__('Show', 'ffl-funnels-addons'),
+                'none'   => esc_html__('Hide', 'ffl-funnels-addons'),
+            ],
+            'css' => [['property' => 'display', 'selector' => '.ffla-count-label']],
+            'responsive' => true,
+        ];
+
         // ── Content Tab: Icon ─────────────────────────────────────
 
         // Icon picker — supports icon libraries (Font Awesome, Themify, Ionicons)

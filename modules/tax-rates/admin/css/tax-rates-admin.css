@@ -1,0 +1,87 @@
+/* Tax Rates Admin — supplemental styles */
+
+/* State selector grid */
+.ffla-tax-states-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: var(--wb-spacing-sm);
+}
+
+.ffla-tax-state-item {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--wb-spacing-sm);
+    padding: var(--wb-spacing-sm) var(--wb-spacing-md);
+    border-radius: var(--wb-radius-sm);
+    cursor: pointer;
+    transition: background var(--wb-duration-fast) var(--wb-easing-standard);
+}
+
+.ffla-tax-state-item:hover {
+    background: var(--wb-color-neutral-background-2);
+}
+
+.ffla-tax-state-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.ffla-tax-state-name {
+    font-size: var(--wb-font-size-sm);
+    font-weight: var(--wb-font-weight-medium);
+    color: var(--wb-color-neutral-foreground-1);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ffla-tax-state-status {
+    font-size: var(--wb-font-size-xs);
+}
+
+.ffla-tax-state-status--ok {
+    color: var(--wb-color-neutral-foreground-3);
+}
+
+.ffla-tax-state-status--error {
+    color: #c53030;
+}
+
+.ffla-tax-state-status--none {
+    color: var(--wb-color-neutral-foreground-3);
+    font-style: italic;
+}
+
+/* Progress bar */
+.ffla-tax-progress-bar-wrap {
+    background: var(--wb-color-neutral-background-3);
+    border-radius: var(--wb-radius-round);
+    height: 8px;
+    overflow: hidden;
+}
+
+.ffla-tax-progress-bar {
+    background: var(--wb-color-brand-background);
+    height: 100%;
+    width: 0%;
+    transition: width 0.4s var(--wb-easing-standard);
+}
+
+/* Log container */
+.ffla-tax-log {
+    margin-top: var(--wb-spacing-lg);
+    max-height: 200px;
+    overflow-y: auto;
+    font-size: var(--wb-font-size-sm);
+    font-family: var(--wb-font-family);
+    line-height: 1.6;
+}
+
+/* Progress counter */
+.ffla-tax-count {
+    margin-top: var(--wb-spacing-sm);
+    font-size: var(--wb-font-size-sm);
+    color: var(--wb-color-neutral-foreground-3);
+}

@@ -3,7 +3,7 @@
  * Plugin Name:       FFL Funnels Addons
  * Plugin URI:        https://github.com/aaruca/ffl-funnels-addons
  * Description:       Modular WooCommerce toolkit — WooBooster, Wishlist, and Doofinder Sync in a single unified plugin.
- * Version:           1.7.4
+ * Version:           1.8.0-beta.1
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants.
-define('FFLA_VERSION', '1.7.4');
+define('FFLA_VERSION', '1.8.0-beta.1');
 define('FFLA_FILE', __FILE__);
 define('FFLA_PATH', plugin_dir_path(__FILE__));
 define('FFLA_URL', plugin_dir_url(__FILE__));
@@ -82,6 +82,7 @@ if (!class_exists('FFL_Funnels_Addons')):
             require_once FFLA_PATH . 'modules/doofinder-sync/class-doofinder-module.php';
             require_once FFLA_PATH . 'modules/ffl-checkout/class-ffl-checkout-module.php';
             require_once FFLA_PATH . 'modules/woo-sheets-sync/class-woo-sheets-module.php';
+            require_once FFLA_PATH . 'modules/tax-rates/class-tax-rates-module.php';
         }
 
         /**
@@ -95,6 +96,7 @@ if (!class_exists('FFL_Funnels_Addons')):
             $this->registry->register(new Doofinder_Module());
             $this->registry->register(new FFL_Checkout_Module());
             $this->registry->register(new WooSheets_Module());
+        $this->registry->register(new Tax_Rates_Module());
         }
 
         /**
