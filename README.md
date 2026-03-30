@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.7.3-blue.svg)
+![Version](https://img.shields.io/badge/version-1.7.4-blue.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -88,6 +88,12 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.7.4
+*   Enhancement: Wishlist Counter badge rediseñado — ahora aparece arriba a la derecha del icono (estilo notificación).
+*   Feature: Nuevo control **Label text** en el elemento Wishlist Counter — texto opcional junto al icono.
+*   Feature: Nuevo control **Label position** — elige si el texto aparece a la izquierda o derecha del icono.
+*   Feature: Nuevo control **Show label** con soporte por breakpoint — muestra u oculta el texto en cada dispositivo.
 
 ### v1.7.3
 *   Bug Fix: Se solucionó el error al asignar atributos a nuevas variaciones mediante update_post_meta.
