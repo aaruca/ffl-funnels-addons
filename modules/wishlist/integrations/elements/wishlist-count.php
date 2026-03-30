@@ -89,6 +89,27 @@ class FFLA_Wishlist_Count extends \Bricks\Element
             'default' => true,
         ];
 
+        $this->controls['labelText'] = [
+            'group' => 'counter',
+            'tab' => 'content',
+            'label' => esc_html__('Label text', 'ffl-funnels-addons'),
+            'type' => 'text',
+            'placeholder' => esc_html__('e.g. Wishlist', 'ffl-funnels-addons'),
+            'description' => esc_html__('Optional text label next to the icon.', 'ffl-funnels-addons'),
+        ];
+
+        $this->controls['labelPosition'] = [
+            'group' => 'counter',
+            'tab' => 'content',
+            'label' => esc_html__('Label position', 'ffl-funnels-addons'),
+            'type' => 'select',
+            'options' => [
+                'left'  => esc_html__('Left of icon', 'ffl-funnels-addons'),
+                'right' => esc_html__('Right of icon', 'ffl-funnels-addons'),
+            ],
+            'default' => 'right',
+        ];
+
         // ── Content Tab: Icon ─────────────────────────────────────
 
         // Icon picker — supports icon libraries (Font Awesome, Themify, Ionicons)
@@ -211,9 +232,25 @@ class FFLA_Wishlist_Count extends \Bricks\Element
             $badge_class .= ' hidden';
         }
 
-        $output = "<{$this->tag} {$this->render_attributes('_root')}>";
-        $output .= $icon_html;
-        $output .= '<span class="' . esc_attr($badge_class) . '">0</span>';
+        // Label text + position.
+        $label_text     = isset($settings['labelText']) ? trim($settings['labelText']) : '';
+        $label_position = isset($settings['labelPosition']) ? $settings['labelPosition'] : 'right';
+        $label_html     = $label_text !== '' ? '<span class="ffla-count-label">' . esc_html($label_text) . '</span>' : '';
+
+        // Wrap icon + badge so the badge positions relative to the icon.
+        if ($show_icon) {
+            $icon_wrap  = '<span class="ffla-count-icon-wrap">';
+            $icon_wrap .= $icon_html;
+            $icon_wrap .= '<span class="' . esc_attr($badge_class) . '">0</span>';
+            $icon_wrap .= '</span>';
+        } else {
+            $icon_wrap = '<span class="' . esc_attr($badge_class) . '">0</span>';
+        }
+
+        $output  = "<{$this->tag} {$this->render_attributes('_root')}>";
+        $output .= ($label_position === 'left') ? $label_html : '';
+        $output .= $icon_wrap;
+        $output .= ($label_position !== 'left') ? $label_html : '';
         $output .= "</{$this->tag}>";
 
         echo $output;
