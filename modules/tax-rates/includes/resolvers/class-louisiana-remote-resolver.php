@@ -19,6 +19,72 @@ class Louisiana_Remote_Resolver extends Tax_Resolver_Base
     const STATE_RETURN_CODE = '19';
     const CACHE_TTL = 21600; // 6 hours.
     const REQUEST_TIMEOUT = 20;
+    const PARISH_FIPS = [
+        '001' => 'Acadia Parish',
+        '003' => 'Allen Parish',
+        '005' => 'Ascension Parish',
+        '007' => 'Assumption Parish',
+        '009' => 'Avoyelles Parish',
+        '011' => 'Beauregard Parish',
+        '013' => 'Bienville Parish',
+        '015' => 'Bossier Parish',
+        '017' => 'Caddo Parish',
+        '019' => 'Calcasieu Parish',
+        '021' => 'Caldwell Parish',
+        '023' => 'Cameron Parish',
+        '025' => 'Catahoula Parish',
+        '027' => 'Claiborne Parish',
+        '029' => 'Concordia Parish',
+        '031' => 'DeSoto Parish',
+        '033' => 'East Baton Rouge Parish',
+        '035' => 'East Carroll Parish',
+        '037' => 'East Feliciana Parish',
+        '039' => 'Evangeline Parish',
+        '041' => 'Franklin Parish',
+        '043' => 'Grant Parish',
+        '045' => 'Iberia Parish',
+        '047' => 'Iberville Parish',
+        '049' => 'Jackson Parish',
+        '051' => 'Jefferson Parish',
+        '053' => 'Jefferson Davis Parish',
+        '055' => 'Lafayette Parish',
+        '057' => 'Lafourche Parish',
+        '059' => 'LaSalle Parish',
+        '061' => 'Lincoln Parish',
+        '063' => 'Livingston Parish',
+        '065' => 'Madison Parish',
+        '067' => 'Morehouse Parish',
+        '069' => 'Natchitoches Parish',
+        '071' => 'Orleans Parish',
+        '073' => 'Ouachita Parish',
+        '075' => 'Plaquemines Parish',
+        '077' => 'Pointe Coupee Parish',
+        '079' => 'Rapides Parish',
+        '081' => 'Red River Parish',
+        '083' => 'Richland Parish',
+        '085' => 'Sabine Parish',
+        '087' => 'St. Bernard Parish',
+        '089' => 'St. Charles Parish',
+        '091' => 'St. Helena Parish',
+        '093' => 'St. James Parish',
+        '095' => 'St. John the Baptist Parish',
+        '097' => 'St. Landry Parish',
+        '099' => 'St. Martin Parish',
+        '101' => 'St. Mary Parish',
+        '103' => 'St. Tammany Parish',
+        '105' => 'Tangipahoa Parish',
+        '107' => 'Tensas Parish',
+        '109' => 'Terrebonne Parish',
+        '111' => 'Union Parish',
+        '113' => 'Vermilion Parish',
+        '115' => 'Vernon Parish',
+        '117' => 'Washington Parish',
+        '119' => 'Webster Parish',
+        '121' => 'West Baton Rouge Parish',
+        '123' => 'West Carroll Parish',
+        '125' => 'West Feliciana Parish',
+        '127' => 'Winn Parish',
+    ];
 
     public function get_id(): string
     {
@@ -451,6 +517,11 @@ class Louisiana_Remote_Resolver extends Tax_Resolver_Base
 
         if (!empty($geocode['raw']['geographies']['Counties'][0]['NAME'])) {
             return $geocode['raw']['geographies']['Counties'][0]['NAME'];
+        }
+
+        $county_fips = (string) ($geocode['countyFips'] ?? '');
+        if ($county_fips !== '' && isset(self::PARISH_FIPS[$county_fips])) {
+            return self::PARISH_FIPS[$county_fips];
         }
 
         return null;
