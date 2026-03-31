@@ -216,8 +216,8 @@ class Tax_Quote_Engine
                 'tax_rate_state'    => $state_code,
                 'tax_rate'          => number_format($rate_pct, 4, '.', ''),
                 'tax_rate_name'     => 'FFLA_' . $rate['jurisdiction_type'] . '_' . $rate['jurisdiction_name'],
-                'tax_rate_priority' => ($rate['jurisdiction_type'] === 'state') ? 1 : 2,
-                'tax_rate_compound' => ($rate['jurisdiction_type'] !== 'state') ? 1 : 0,
+                'tax_rate_priority' => self::get_wc_tax_priority($rate, $order),
+                'tax_rate_compound' => 0,
                 'tax_rate_shipping' => 1,
                 'tax_rate_order'    => $order,
                 'tax_rate_class'    => '',
@@ -239,6 +239,26 @@ class Tax_Quote_Engine
         }
 
         return $count;
+    }
+
+    /**
+     * WooCommerce applies only the first matching rate per priority.
+     * Give each additive jurisdiction row its own ascending priority so
+     * state/county/city/special rates can all participate without using
+     * compound math, which is not appropriate for US sales tax layers.
+     */
+    private static function get_wc_tax_priority(array $rate, int $order): int
+    {
+        $type_base = [
+            'state'   => 1,
+            'county'  => 1000,
+            'city'    => 2000,
+            'special' => 3000,
+        ];
+
+        $base = $type_base[$rate['jurisdiction_type'] ?? 'special'] ?? 4000;
+
+        return $base + $order;
     }
 
     /**

@@ -24,7 +24,11 @@ class Tax_WooCommerce_Integration
         }
 
         add_filter('woocommerce_matched_tax_rates', [__CLASS__, 'filter_matched_tax_rates'], 20, 6);
+        add_filter('woocommerce_rate_label', [__CLASS__, 'filter_runtime_rate_label'], 10, 2);
+        add_filter('woocommerce_rate_code', [__CLASS__, 'filter_runtime_rate_code'], 10, 2);
+        add_filter('woocommerce_rate_compound', [__CLASS__, 'filter_runtime_rate_compound'], 10, 2);
         add_action('woocommerce_checkout_create_order', [__CLASS__, 'store_order_tax_quote'], 10, 2);
+        add_action('woocommerce_checkout_create_order_tax_item', [__CLASS__, 'decorate_runtime_order_tax_item'], 10, 3);
     }
 
     /**
@@ -98,10 +102,12 @@ class Tax_WooCommerce_Integration
         }
 
         if ($quote->outcomeCode === Tax_Quote_Result::OUTCOME_NO_SALES_TAX) {
+            self::store_runtime_tax_meta([]);
             return [];
         }
 
         if (!$quote->is_success()) {
+            self::store_runtime_tax_meta([]);
             return $matched_tax_rates;
         }
 
@@ -123,6 +129,55 @@ class Tax_WooCommerce_Integration
             $order->update_meta_data('_ffla_tax_query_id', $quote['queryId'] ?? '');
             $order->update_meta_data('_ffla_tax_source', $quote['source'] ?? '');
         }
+    }
+
+    /**
+     * Override tax labels for runtime-only tax IDs.
+     */
+    public static function filter_runtime_rate_label(string $label, $tax_rate_id): string
+    {
+        $runtime_rate = self::get_runtime_rate_meta($tax_rate_id);
+        return $runtime_rate['label'] ?? $label;
+    }
+
+    /**
+     * Provide non-empty tax codes for runtime-only tax IDs.
+     */
+    public static function filter_runtime_rate_code(string $code, $tax_rate_id): string
+    {
+        $runtime_rate = self::get_runtime_rate_meta($tax_rate_id);
+        return $runtime_rate['code'] ?? $code;
+    }
+
+    /**
+     * Respect the runtime compound flag when Woo asks about the tax rate ID.
+     */
+    public static function filter_runtime_rate_compound(bool $compound, $tax_rate_id): bool
+    {
+        $runtime_rate = self::get_runtime_rate_meta($tax_rate_id);
+        if (!isset($runtime_rate['compound'])) {
+            return $compound;
+        }
+
+        return (bool) $runtime_rate['compound'];
+    }
+
+    /**
+     * Populate order tax items with the runtime tax metadata Woo can't fetch from DB.
+     */
+    public static function decorate_runtime_order_tax_item($item, $tax_rate_id, $order): void
+    {
+        $runtime_rate = self::get_runtime_rate_meta($tax_rate_id);
+        if (empty($runtime_rate)) {
+            return;
+        }
+
+        $item->set_props([
+            'rate_code'    => $runtime_rate['code'] ?? '',
+            'label'        => $runtime_rate['label'] ?? '',
+            'compound'     => !empty($runtime_rate['compound']),
+            'rate_percent' => isset($runtime_rate['rate']) ? (float) $runtime_rate['rate'] : 0.0,
+        ]);
     }
 
     /**
@@ -235,27 +290,32 @@ class Tax_WooCommerce_Integration
     private static function build_wc_rates_from_quote(Tax_Quote_Result $quote, string $tax_class): array
     {
         $rates = [];
+        $runtime_meta = [];
 
         foreach ($quote->breakdown as $index => $item) {
             $rate_id = 990000 + $index;
             $label   = self::build_rate_label($item);
+            $code    = self::build_rate_code($quote->state, $rate_id, $item);
 
             $rates[$rate_id] = [
-                'tax_rate_id'       => $rate_id,
-                'tax_rate_country'  => 'US',
-                'tax_rate_state'    => $quote->state,
-                'tax_rate'          => number_format(((float) $item['rate']) * 100, 4, '.', ''),
-                'tax_rate_name'     => $label,
-                'tax_rate_priority' => 1,
-                'tax_rate_compound' => 0,
-                'tax_rate_shipping' => 1,
-                'tax_rate_order'    => $index,
-                'tax_rate_class'    => $tax_class,
-                'label'             => $label,
-                'shipping'          => 'yes',
-                'compound'          => 'no',
+                'rate'     => (float) number_format(((float) $item['rate']) * 100, 4, '.', ''),
+                'label'    => $label,
+                'shipping' => 'yes',
+                'compound' => 'no',
+            ];
+
+            $runtime_meta[(string) $rate_id] = [
+                'id'       => $rate_id,
+                'label'    => $label,
+                'code'     => $code,
+                'rate'     => (float) number_format(((float) $item['rate']) * 100, 4, '.', ''),
+                'compound' => false,
+                'state'    => $quote->state,
+                'type'     => (string) ($item['type'] ?? 'tax'),
             ];
         }
+
+        self::store_runtime_tax_meta($runtime_meta);
 
         return $rates;
     }
@@ -269,5 +329,47 @@ class Tax_WooCommerce_Integration
         $jurisdiction = (string) ($item['jurisdiction'] ?? 'Tax');
 
         return 'FFLA ' . $type . ': ' . $jurisdiction;
+    }
+
+    /**
+     * Build a Woo-compatible rate code for runtime-generated rates.
+     */
+    private static function build_rate_code(string $state, int $rate_id, array $item): string
+    {
+        $type = strtoupper(preg_replace('/[^A-Z0-9]+/', '', (string) ($item['type'] ?? 'TAX')));
+        $suffix = strtoupper(substr(md5(wp_json_encode($item) . '|' . $rate_id), 0, 6));
+
+        return sprintf('US-%s-FFLA-%s-%s', strtoupper($state), $type ?: 'TAX', $suffix);
+    }
+
+    /**
+     * Store runtime-only tax metadata for later cart/order presentation hooks.
+     */
+    private static function store_runtime_tax_meta(array $runtime_meta): void
+    {
+        if (function_exists('WC') && WC()->session) {
+            WC()->session->set('ffla_runtime_tax_rates', $runtime_meta);
+        }
+    }
+
+    /**
+     * Get runtime-only tax metadata for a specific synthetic tax rate ID.
+     */
+    private static function get_runtime_rate_meta($tax_rate_id): array
+    {
+        if (!function_exists('WC') || !WC()->session) {
+            return [];
+        }
+
+        $runtime_rates = WC()->session->get('ffla_runtime_tax_rates');
+        if (!is_array($runtime_rates)) {
+            return [];
+        }
+
+        $key = (string) $tax_rate_id;
+
+        return isset($runtime_rates[$key]) && is_array($runtime_rates[$key])
+            ? $runtime_rates[$key]
+            : [];
     }
 }
