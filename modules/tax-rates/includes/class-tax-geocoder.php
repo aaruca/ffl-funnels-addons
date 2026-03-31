@@ -105,21 +105,26 @@ class Tax_Geocoder
         // Geographies — the Census API nests these under 'geographies'.
         $geos = $match['geographies'] ?? [];
 
-        // State and county from Census Tracts data.
+        // State and county codes from Census Tracts data.
         if (!empty($geos['Census Tracts'])) {
             $tract_data = $geos['Census Tracts'][0];
             $result['stateFips']  = $tract_data['STATE'] ?? null;
             $result['countyFips'] = $tract_data['COUNTY'] ?? null;
             $result['tract']      = $tract_data['TRACT'] ?? null;
-            $result['countyName'] = $tract_data['BASENAME'] ?? null;
         }
 
-        // Fallback to Counties data if tracts aren't available.
-        if (empty($result['countyFips']) && !empty($geos['Counties'])) {
+        // Prefer Counties geography for the actual county/parish name.
+        if (!empty($geos['Counties'])) {
             $county_data = $geos['Counties'][0];
-            $result['stateFips']  = $county_data['STATE'] ?? null;
-            $result['countyFips'] = $county_data['COUNTY'] ?? null;
-            $result['countyName'] = $county_data['BASENAME'] ?? null;
+            if (empty($result['stateFips'])) {
+                $result['stateFips'] = $county_data['STATE'] ?? null;
+            }
+            if (empty($result['countyFips'])) {
+                $result['countyFips'] = $county_data['COUNTY'] ?? null;
+            }
+            $result['countyName'] = $county_data['NAME']
+                ?? $county_data['BASENAME']
+                ?? $result['countyName'];
         }
 
         // Tiger Line ID for precise geographic matching.
