@@ -23,7 +23,7 @@ class Tax_WooCommerce_Integration
             return;
         }
 
-        add_filter('woocommerce_matched_tax_rates', [__CLASS__, 'filter_matched_tax_rates'], 20, 7);
+        add_filter('woocommerce_matched_tax_rates', [__CLASS__, 'filter_matched_tax_rates'], 20, 6);
         add_action('woocommerce_checkout_create_order', [__CLASS__, 'store_order_tax_quote'], 10, 2);
     }
 
@@ -31,28 +31,35 @@ class Tax_WooCommerce_Integration
      * Override WooCommerce matched rates for supported US destinations.
      *
      * @param  array  $matched_tax_rates Rates from WooCommerce core.
-     * @param  array  $tax_rates         Raw tax rate rows.
-     * @param  string $country           Country code.
-     * @param  string $state             State code.
-     * @param  string $postcode          Postal code.
-     * @param  string $city              City.
-     * @param  string $tax_class         Tax class slug.
+     * @param  string $country  Country code.
+     * @param  string $state    State code.
+     * @param  string $postcode Postal code.
+     * @param  string $city     City.
+     * @param  string $tax_class Tax class slug.
      * @return array
      */
     public static function filter_matched_tax_rates(
-        array $matched_tax_rates,
-        array $tax_rates,
-        string $country,
-        string $state,
-        string $postcode,
-        string $city,
-        string $tax_class
+        $matched_tax_rates,
+        $country,
+        $state,
+        $postcode,
+        $city,
+        $tax_class
     ): array {
-        if (strtoupper($country) !== 'US') {
+        if (!is_array($matched_tax_rates)) {
+            return [];
+        }
+
+        $country = strtoupper((string) $country);
+        $state = strtoupper((string) $state);
+        $postcode = (string) $postcode;
+        $city = (string) $city;
+        $tax_class = (string) $tax_class;
+
+        if ($country !== 'US') {
             return $matched_tax_rates;
         }
 
-        $state = strtoupper($state);
         if ($state === '') {
             return $matched_tax_rates;
         }
@@ -71,7 +78,20 @@ class Tax_WooCommerce_Integration
             return $matched_tax_rates;
         }
 
-        $quote = Tax_Quote_Engine::quote($input);
+        try {
+            $quote = Tax_Quote_Engine::quote($input);
+        } catch (\Throwable $e) {
+            if (function_exists('ffla_tax_log')) {
+                ffla_tax_log('error', 'WooCommerce tax override failed', [
+                    'state'   => $state,
+                    'city'    => $city,
+                    'zip'     => $postcode,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+
+            return $matched_tax_rates;
+        }
 
         if (function_exists('WC') && WC()->session) {
             WC()->session->set('ffla_last_tax_quote', $quote->to_array());
