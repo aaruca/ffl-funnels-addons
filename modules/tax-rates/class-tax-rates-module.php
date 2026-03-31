@@ -66,11 +66,21 @@ class Tax_Rates_Module extends FFLA_Module
         // Resolvers.
         require_once $base . 'includes/resolvers/class-tax-resolver-base.php';
         require_once $base . 'includes/resolvers/class-sst-resolver.php';
+        require_once $base . 'includes/resolvers/class-official-statewide-rate-resolver.php';
+        require_once $base . 'includes/resolvers/class-official-state-floor-resolver.php';
+        require_once $base . 'includes/resolvers/class-hawaii-get-resolver.php';
+        require_once $base . 'includes/resolvers/class-pennsylvania-official-resolver.php';
+        require_once $base . 'includes/resolvers/class-virginia-official-resolver.php';
         require_once $base . 'includes/resolvers/class-louisiana-remote-resolver.php';
         require_once $base . 'includes/resolvers/class-texas-rate-file-resolver.php';
 
         // Register resolvers.
         Tax_Resolver_Router::register(new SST_Resolver());
+        Tax_Resolver_Router::register(new Official_Statewide_Rate_Resolver());
+        Tax_Resolver_Router::register(new Official_State_Floor_Resolver());
+        Tax_Resolver_Router::register(new Hawaii_GET_Resolver());
+        Tax_Resolver_Router::register(new Pennsylvania_Official_Resolver());
+        Tax_Resolver_Router::register(new Virginia_Official_Resolver());
         Tax_Resolver_Router::register(new Louisiana_Remote_Resolver());
         Tax_Resolver_Router::register(new Texas_Rate_File_Resolver());
 
@@ -95,6 +105,64 @@ class Tax_Rates_Module extends FFLA_Module
             'la_remote',
             'Resolved through the official Louisiana Parish E-File lookup.'
         );
+
+        foreach ([
+            'CT' => 'Connecticut Department of Revenue Services statewide general rate (6.35%) with no local general sales tax.',
+            'DC' => 'District of Columbia general sales tax remains 6.0% through September 30, 2026, per the Oct. 1, 2025 OTR notice.',
+            'MA' => 'Massachusetts Department of Revenue statewide general rate (6.25%) with no local general sales tax.',
+            'MD' => 'Maryland Comptroller statewide general sales and use tax rate (6%) with no local general sales tax.',
+            'ME' => 'Maine Revenue Services statewide general sales tax rate (5.5%) with no local general sales tax.',
+            'MS' => 'Mississippi Department of Revenue statewide general retail sales tax rate (7%).',
+        ] as $state_code => $note) {
+            Tax_Coverage::update_state(
+                $state_code,
+                Tax_Coverage::SUPPORTED_ADDRESS_RATE,
+                'official_statewide',
+                $note
+            );
+        }
+
+        Tax_Coverage::update_state(
+            'PA',
+            Tax_Coverage::SUPPORTED_ADDRESS_RATE,
+            'pa_official',
+            'Pennsylvania Department of Revenue statewide rate plus official local add-ons for Allegheny County and Philadelphia.'
+        );
+
+        Tax_Coverage::update_state(
+            'HI',
+            Tax_Coverage::SUPPORTED_ADDRESS_RATE,
+            'hi_get',
+            'Hawaii general excise tax modeled from the official 4.0% state GET plus the current 0.5% county surcharge schedule.'
+        );
+
+        Tax_Coverage::update_state(
+            'VA',
+            Tax_Coverage::SUPPORTED_ADDRESS_RATE,
+            'va_official',
+            'Virginia Tax locality groups for 5.3%, 6.0%, 6.3%, and 7.0% general retail sales tax rates.'
+        );
+
+        foreach ([
+            'AL' => 'Official Alabama statewide floor rate (4%) with local taxes still to be layered in.',
+            'AZ' => 'Official Arizona statewide TPT/use-tax floor rate (5.6%) with county and city taxes still to be layered in.',
+            'CA' => 'Official California statewide base rate (7.25%) with district taxes still to be layered in.',
+            'CO' => 'Official Colorado statewide floor rate (2.9%) with local and district taxes still to be layered in.',
+            'FL' => 'Official Florida statewide floor rate (6%) with county discretionary surtax still to be layered in.',
+            'ID' => 'Official Idaho statewide floor rate (6%) with local resort taxes still to be layered in.',
+            'IL' => 'Official Illinois statewide floor rate (6.25%) with local occupation taxes still to be layered in.',
+            'MO' => 'Official Missouri statewide floor rate (4.225%) with local rates still to be layered in.',
+            'NM' => 'Official New Mexico statewide floor rate (4.875%) with county and municipal gross receipts taxes still to be layered in.',
+            'NY' => 'Official New York statewide floor rate (4%) with local taxes and MCTD still to be layered in.',
+            'SC' => 'Official South Carolina statewide floor rate (6%) with county and municipal taxes still to be layered in.',
+        ] as $state_code => $note) {
+            Tax_Coverage::update_state(
+                $state_code,
+                Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED,
+                'official_state_floor',
+                $note
+            );
+        }
 
         Tax_Coverage::update_state(
             'TX',

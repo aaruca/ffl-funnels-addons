@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.8.0--beta.4-orange.svg)
+![Version](https://img.shields.io/badge/version-1.8.0--beta.5-orange.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -88,6 +88,12 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.8.0-beta.5
+*   Feature: Cobertura nacional del resolver fiscal completada para los 50 estados + DC.
+*   Feature: Nuevos resolvers oficiales exactos para CT, DC, HI, MA, MD, ME, MS, PA y VA.
+*   Feature: Nuevos resolvers conservadores de tasa base estatal para AL, AZ, CA, CO, FL, ID, IL, MO, NM, NY y SC.
+*   Enhancement: Las respuestas ahora distinguen mejor entre tasas exactas por direcci&oacute;n y tasas base oficiales cuando a&uacute;n faltan capas locales.
 
 ### v1.8.0-beta.4
 *   Fix: El checkout usa ahora la direcci&oacute;n viva posteada por WooCommerce para cotizar impuestos, evitando c&aacute;lculos en `0` por datos desincronizados.
