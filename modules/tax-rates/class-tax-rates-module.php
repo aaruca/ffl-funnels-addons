@@ -2,9 +2,13 @@
 /**
  * Tax Rates Module — Entry Point.
  *
- * Imports US state/county sales tax rates into WooCommerce using
- * Tavily (web search) + OpenAI (data structuring). Rates are stored
- * natively in WooCommerce and refreshed monthly via WP-Cron.
+ * Official Tax Address Resolver for US sales tax by address.
+ * Uses hybrid model with official free government sources:
+ *   - SST Rate/Boundary files for member states
+ *   - Census Bureau Geocoder for address validation
+ *   - Individual state resolvers for non-SST states
+ *
+ * No paid APIs, no AI, no scraping — only official sources.
  *
  * @package FFL_Funnels_Addons
  */
@@ -25,12 +29,15 @@ class Tax_Rates_Module extends FFLA_Module
 
     public function get_name(): string
     {
-        return 'US Tax Rates';
+        return 'Tax Address Resolver';
     }
 
     public function get_description(): string
     {
-        return __('Automatically imports US sales tax rates into WooCommerce by state/county using AI-powered web research. Refreshes monthly.', 'ffl-funnels-addons');
+        return __(
+            'US sales tax resolver using official government sources. Geocodes addresses, resolves jurisdictions, and syncs rates to WooCommerce — no paid APIs, fully auditable.',
+            'ffl-funnels-addons'
+        );
     }
 
     public function get_icon_svg(): string
@@ -44,15 +51,40 @@ class Tax_Rates_Module extends FFLA_Module
     {
         $base = $this->get_path();
 
-        // Importer (handles AJAX + WC rate insertion).
-        require_once $base . 'includes/class-tax-rates-importer.php';
-        Tax_Rates_Importer::init();
+        // Core classes.
+        require_once $base . 'includes/class-tax-resolver-db.php';
+        require_once $base . 'includes/class-tax-coverage.php';
+        require_once $base . 'includes/class-tax-address-normalizer.php';
+        require_once $base . 'includes/class-tax-quote-result.php';
+        require_once $base . 'includes/class-tax-geocoder.php';
+        require_once $base . 'includes/class-tax-resolver-router.php';
+        require_once $base . 'includes/class-tax-quote-engine.php';
+        require_once $base . 'includes/class-tax-dataset-pipeline.php';
+        require_once $base . 'includes/class-tax-rest-api.php';
 
-        // Monthly cron refresh.
+        // Resolvers.
+        require_once $base . 'includes/resolvers/class-tax-resolver-base.php';
+        require_once $base . 'includes/resolvers/class-sst-resolver.php';
+
+        // Register resolvers.
+        Tax_Resolver_Router::register(new SST_Resolver());
+
+        // Register REST API routes.
+        add_action('rest_api_init', ['Tax_REST_API', 'register_routes']);
+
+        // Cron.
         require_once $base . 'includes/class-tax-rates-cron.php';
         Tax_Rates_Cron::init();
 
-        // Admin settings page.
+        // Check if DB needs upgrade.
+        if (Tax_Resolver_DB::needs_upgrade()) {
+            Tax_Resolver_DB::install();
+        }
+
+        $settings = get_option('ffla_tax_resolver_settings', []);
+        Tax_Quote_Engine::set_cache_ttl((int) ($settings['cache_ttl'] ?? 86400));
+
+        // Admin UI.
         if (is_admin()) {
             require_once $base . 'admin/class-tax-rates-admin.php';
             $this->admin = new Tax_Rates_Admin();
@@ -64,17 +96,32 @@ class Tax_Rates_Module extends FFLA_Module
 
     public function activate(): void
     {
-        if (false === get_option('ffl_tax_rates_settings')) {
-            update_option('ffl_tax_rates_settings', [
-                'rate_depth'    => 'county',
-                'auto_refresh'  => '1',
+        $base = $this->get_path();
+
+        // Ensure DB class is loaded.
+        if (!class_exists('Tax_Resolver_DB')) {
+            require_once $base . 'includes/class-tax-resolver-db.php';
+        }
+
+        // Create custom tables.
+        Tax_Resolver_DB::install();
+
+        // Default settings.
+        if (false === get_option('ffla_tax_resolver_settings')) {
+            update_option('ffla_tax_resolver_settings', [
+                'cache_ttl'       => 86400,    // 24 hours
+                'auto_sync'       => '1',
+                'sync_schedule'   => 'quarterly',
+                'wc_auto_sync'    => '1',
             ]);
         }
     }
 
     public function deactivate(): void
     {
-        wp_clear_scheduled_hook('ffla_tax_rates_refresh');
+        wp_clear_scheduled_hook('ffla_tax_dataset_sync');
+        wp_clear_scheduled_hook('ffla_tax_cache_cleanup');
+        wp_clear_scheduled_hook('ffla_tax_audit_purge');
     }
 
     /* ── Admin Pages ───────────────────────────────────────────────── */
@@ -84,7 +131,7 @@ class Tax_Rates_Module extends FFLA_Module
         return [
             [
                 'slug'  => 'ffla-tax-rates',
-                'title' => __('US Tax Rates', 'ffl-funnels-addons'),
+                'title' => __('Tax Resolver', 'ffl-funnels-addons'),
                 'icon'  => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
             ],
         ];

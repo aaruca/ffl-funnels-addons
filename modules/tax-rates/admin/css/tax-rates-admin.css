@@ -1,148 +1,384 @@
-/* Tax Rates Admin — supplemental styles */
+/* Tax Address Resolver — Admin Styles */
 
-/* State selector grid */
-.ffla-tax-states-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-    gap: var(--wb-spacing-sm);
+/* ── Tab Navigation ──────────────────────────────────────────────── */
+.ffla-tax-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid var(--wb-color-neutral-stroke-2);
+    margin-bottom: var(--wb-spacing-xl);
 }
 
-/* ── Individual state item ─────────────────────────────────────────── */
-.ffla-tax-state-item {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--wb-spacing-md);
-    padding: var(--wb-spacing-md) var(--wb-spacing-lg);
-    border-radius: var(--wb-radius-md);
-    border: 1px solid var(--wb-color-neutral-stroke-2);
-    background: var(--wb-color-neutral-background-1);
-    cursor: pointer;
+.ffla-tax-tabs__tab {
+    padding: var(--wb-spacing-md) var(--wb-spacing-xl);
+    font-size: var(--wb-font-size-sm);
+    font-weight: var(--wb-font-weight-semibold);
+    color: var(--wb-color-neutral-foreground-3);
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
     transition: all var(--wb-duration-fast) var(--wb-easing-standard);
 }
 
-.ffla-tax-state-item:hover {
+.ffla-tax-tabs__tab:hover {
+    color: var(--wb-color-neutral-foreground-1);
     background: var(--wb-color-neutral-background-2);
-    border-color: var(--wb-color-neutral-stroke-1);
-    box-shadow: var(--wb-shadow-1);
 }
 
-/* Selected / checked state */
-.ffla-tax-state-item:has(input:checked) {
-    border-color: var(--wb-color-brand-background);
-    background: rgba(15, 108, 189, 0.04);
-    box-shadow: 0 0 0 1px var(--wb-color-brand-background);
+.ffla-tax-tabs__tab--active {
+    color: var(--wb-color-brand-foreground);
+    border-bottom-color: var(--wb-color-brand-background);
 }
 
-.ffla-tax-state-item:has(input:checked):hover {
-    background: rgba(15, 108, 189, 0.08);
+/* ── Quote Lookup Layout ─────────────────────────────────────────── */
+.ffla-tax-lookup-layout {
+    display: flex;
+    flex-direction: column;
+    gap: var(--wb-spacing-xl);
 }
 
-/* ── Checkbox styling override ─────────────────────────────────────── */
-.ffla-tax-state-item .wb-checkbox {
-    flex-shrink: 0;
-    margin-top: 1px;
+.ffla-tax-lookup-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--wb-spacing-lg);
 }
 
-.ffla-tax-state-item .wb-checkbox input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    margin: 0;
-    accent-color: var(--wb-color-brand-background);
-    cursor: pointer;
-    border-radius: var(--wb-radius-sm);
+.ffla-tax-row {
+    display: flex;
+    gap: var(--wb-spacing-lg);
 }
 
-/* Hide the empty indicator span (checkbox alone is enough) */
-.ffla-tax-state-item .wb-checkbox__indicator {
-    display: none;
+.ffla-tax-field--city { flex: 3; }
+.ffla-tax-field--state { flex: 1; min-width: 80px; }
+.ffla-tax-field--zip { flex: 1.5; min-width: 100px; }
+
+/* ── Quote Result ────────────────────────────────────────────────── */
+.ffla-tax-result--success { }
+.ffla-tax-result--error { }
+
+.ffla-tax-result__total {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--wb-spacing-xl) 0;
+    margin-bottom: var(--wb-spacing-lg);
+    border-bottom: 1px solid var(--wb-color-neutral-stroke-2);
 }
 
-/* ── State info ────────────────────────────────────────────────────── */
-.ffla-tax-state-info {
+.ffla-tax-result__rate {
+    font-size: 42px;
+    font-weight: 700;
+    color: var(--wb-color-brand-foreground);
+    line-height: 1;
+    letter-spacing: -1px;
+}
+
+.ffla-tax-result__label {
+    font-size: var(--wb-font-size-sm);
+    color: var(--wb-color-neutral-foreground-3);
+    margin-top: var(--wb-spacing-sm);
+}
+
+.ffla-tax-result__matched {
+    padding: var(--wb-spacing-md) var(--wb-spacing-lg);
+    background: var(--wb-color-neutral-background-2);
+    border-radius: var(--wb-radius-md);
+    font-size: var(--wb-font-size-sm);
+    margin-bottom: var(--wb-spacing-lg);
+}
+
+/* Breakdown table */
+.ffla-tax-breakdown-table {
+    margin-bottom: var(--wb-spacing-lg) !important;
+}
+
+.ffla-tax-rate-cell {
+    font-family: 'SF Mono', 'Consolas', monospace;
+    font-weight: var(--wb-font-weight-semibold);
+    text-align: right;
+}
+
+.ffla-tax-jtype {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: var(--wb-radius-round);
+    font-size: 11px;
+    font-weight: var(--wb-font-weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.ffla-tax-jtype--state {
+    background: rgba(15, 108, 189, 0.1);
+    color: var(--wb-color-brand-foreground);
+}
+.ffla-tax-jtype--county {
+    background: rgba(39, 103, 73, 0.1);
+    color: var(--wb-color-success-foreground, #276749);
+}
+.ffla-tax-jtype--city {
+    background: rgba(197, 48, 48, 0.1);
+    color: var(--wb-color-danger-foreground, #c53030);
+}
+.ffla-tax-jtype--special {
+    background: rgba(214, 158, 46, 0.1);
+    color: #b7791f;
+}
+
+/* Metadata grid */
+.ffla-tax-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--wb-spacing-lg);
+    padding: var(--wb-spacing-lg) 0;
+    border-top: 1px solid var(--wb-color-neutral-stroke-2);
+    margin-bottom: var(--wb-spacing-md);
+}
+
+.ffla-tax-meta__item {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    min-width: 0;
-    flex: 1;
+    min-width: 100px;
 }
 
-.ffla-tax-state-name {
-    font-size: var(--wb-font-size-sm);
+.ffla-tax-meta__label {
+    font-size: 11px;
     font-weight: var(--wb-font-weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--wb-color-neutral-foreground-3);
+}
+
+.ffla-tax-meta__value {
+    font-size: var(--wb-font-size-sm);
     color: var(--wb-color-neutral-foreground-1);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    word-break: break-word;
 }
 
-.ffla-tax-state-status {
+/* Trace bar */
+.ffla-tax-trace {
+    padding: var(--wb-spacing-sm) var(--wb-spacing-md);
+    background: var(--wb-color-neutral-background-3);
+    border-radius: var(--wb-radius-sm);
+    font-size: 11px;
+    font-family: 'SF Mono', 'Consolas', monospace;
+    color: var(--wb-color-neutral-foreground-3);
+    margin-bottom: var(--wb-spacing-md);
+}
+
+/* Limitations */
+.ffla-tax-limitations {
     font-size: var(--wb-font-size-xs);
-    line-height: 1.4;
+    color: var(--wb-color-neutral-foreground-3);
+    padding-top: var(--wb-spacing-md);
+    border-top: 1px solid var(--wb-color-neutral-stroke-2);
 }
 
-.ffla-tax-state-status--ok {
-    color: var(--wb-color-success-foreground, #276749);
+.ffla-tax-limitations ul {
+    margin: var(--wb-spacing-xs) 0 0 var(--wb-spacing-lg);
+    padding: 0;
 }
 
-/* Let the imported state inherit white text when it's styled green */
-.ffla-tax-state-item--imported .ffla-tax-state-status--ok {
-    color: #ffffff;
+.ffla-tax-limitations li {
+    margin-bottom: 2px;
 }
 
-.ffla-tax-state-status--error {
+/* Error display */
+.ffla-tax-error,
+.ffla-tax-error-detail {
+    padding: var(--wb-spacing-lg);
     color: var(--wb-color-danger-foreground, #c53030);
 }
 
-/* ── Imported State Selection Override ─────────────────────────────── */
-.ffla-tax-state-item.ffla-tax-state-item--imported {
-    background-color: var(--wb-color-success-foreground, #276749);
-    border-color: #1e4e37;
-    color: #ffffff;
+.ffla-tax-error-code {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: var(--wb-radius-sm);
+    background: rgba(197, 48, 48, 0.1);
+    font-size: var(--wb-font-size-xs);
+    font-weight: var(--wb-font-weight-semibold);
+    font-family: monospace;
+    margin-bottom: var(--wb-spacing-md);
 }
 
-.ffla-tax-state-item.ffla-tax-state-item--imported:hover {
-    background-color: #1e4e37;
-    border-color: #143826;
+/* ── Coverage Grid ───────────────────────────────────────────────── */
+.ffla-tax-coverage-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: var(--wb-spacing-sm);
 }
 
-.ffla-tax-state-item.ffla-tax-state-item--imported .ffla-tax-state-name {
-    color: #ffffff;
+.ffla-tax-coverage-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: var(--wb-spacing-md) var(--wb-spacing-sm);
+    border-radius: var(--wb-radius-md);
+    border: 1px solid var(--wb-color-neutral-stroke-2);
+    text-align: center;
+    transition: all var(--wb-duration-fast) var(--wb-easing-standard);
+    cursor: default;
+    position: relative;
 }
 
-.ffla-tax-state-status--none {
-    color: var(--wb-color-neutral-foreground-3);
-    font-style: italic;
+.ffla-tax-coverage-cell:hover {
+    box-shadow: var(--wb-shadow-2);
+    transform: translateY(-1px);
 }
 
-/* ── Progress bar ──────────────────────────────────────────────────── */
-.ffla-tax-progress-bar-wrap {
-    background: var(--wb-color-neutral-background-3);
-    border-radius: var(--wb-radius-round);
-    height: 8px;
+.ffla-tax-coverage-cell__code {
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.ffla-tax-coverage-cell__badge {
+    font-size: 11px;
+    line-height: 1;
+}
+
+.ffla-tax-coverage-cell__name {
+    font-size: 9px;
+    color: inherit;
+    opacity: 0.7;
+    line-height: 1.2;
+    white-space: nowrap;
     overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
 }
 
-.ffla-tax-progress-bar {
-    background: var(--wb-color-brand-background);
-    height: 100%;
-    width: 0%;
-    border-radius: var(--wb-radius-round);
-    transition: width 0.4s var(--wb-easing-standard);
+.ffla-tax-coverage-cell__resolver {
+    font-size: 8px;
+    color: inherit;
+    opacity: 0.5;
 }
 
-/* ── Log container ─────────────────────────────────────────────────── */
-.ffla-tax-log {
-    margin-top: var(--wb-spacing-lg);
-    max-height: 200px;
-    overflow-y: auto;
-    font-size: var(--wb-font-size-sm);
-    font-family: var(--wb-font-family);
-    line-height: 1.6;
+/* Coverage status colors */
+.ffla-tax-coverage-cell--supported {
+    background: rgba(39, 103, 73, 0.08);
+    border-color: rgba(39, 103, 73, 0.3);
+    color: var(--wb-color-success-foreground, #276749);
 }
 
-/* ── Progress counter ──────────────────────────────────────────────── */
-.ffla-tax-count {
-    margin-top: var(--wb-spacing-sm);
+.ffla-tax-coverage-cell--remote {
+    background: rgba(15, 108, 189, 0.08);
+    border-color: rgba(15, 108, 189, 0.3);
+    color: var(--wb-color-brand-foreground);
+}
+
+.ffla-tax-coverage-cell--no-tax {
+    background: var(--wb-color-neutral-background-3);
+    color: var(--wb-color-neutral-foreground-3);
+}
+
+.ffla-tax-coverage-cell--degraded {
+    background: rgba(214, 158, 46, 0.08);
+    border-color: rgba(214, 158, 46, 0.3);
+    color: #b7791f;
+}
+
+.ffla-tax-coverage-cell--unsupported {
+    background: var(--wb-color-neutral-background-1);
+    color: var(--wb-color-neutral-foreground-3);
+    opacity: 0.6;
+}
+
+/* ── Stats Cards ─────────────────────────────────────────────────── */
+.ffla-tax-stats {
+    display: flex;
+    gap: var(--wb-spacing-lg);
+    margin-bottom: var(--wb-spacing-xl);
+}
+
+.ffla-tax-stat {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--wb-spacing-xl) var(--wb-spacing-lg);
+    border-radius: var(--wb-radius-lg);
+    border: 1px solid var(--wb-color-neutral-stroke-2);
+}
+
+.ffla-tax-stat__value {
+    font-size: 36px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.ffla-tax-stat__label {
     font-size: var(--wb-font-size-sm);
     color: var(--wb-color-neutral-foreground-3);
+    margin-top: var(--wb-spacing-sm);
+}
+
+.ffla-tax-stat--supported .ffla-tax-stat__value {
+    color: var(--wb-color-success-foreground, #276749);
+}
+
+.ffla-tax-stat--no-tax .ffla-tax-stat__value {
+    color: var(--wb-color-neutral-foreground-3);
+}
+
+.ffla-tax-stat--unsupported .ffla-tax-stat__value {
+    color: var(--wb-color-danger-foreground, #c53030);
+}
+
+/* ── Legend ───────────────────────────────────────────────────────── */
+.ffla-tax-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--wb-spacing-lg);
+    margin-top: var(--wb-spacing-lg);
+    font-size: var(--wb-font-size-sm);
+    color: var(--wb-color-neutral-foreground-3);
+}
+
+.ffla-tax-legend__item {
+    display: flex;
+    align-items: center;
+    gap: var(--wb-spacing-xs);
+}
+
+.ffla-tax-legend__dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.ffla-tax-legend__dot--supported { background: var(--wb-color-success-foreground, #276749); }
+.ffla-tax-legend__dot--remote { background: var(--wb-color-brand-foreground); }
+.ffla-tax-legend__dot--no-tax { background: var(--wb-color-neutral-foreground-3); }
+.ffla-tax-legend__dot--degraded { background: #b7791f; }
+.ffla-tax-legend__dot--unsupported { background: var(--wb-color-neutral-stroke-2); }
+
+/* ── Upload Status ───────────────────────────────────────────────── */
+.ffla-tax-upload-status {
+    margin-top: var(--wb-spacing-lg);
+    padding: var(--wb-spacing-md) var(--wb-spacing-lg);
+    background: var(--wb-color-neutral-background-2);
+    border-radius: var(--wb-radius-md);
+    font-size: var(--wb-font-size-sm);
+}
+
+/* ── Responsive ──────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .ffla-tax-row {
+        flex-direction: column;
+    }
+
+    .ffla-tax-stats {
+        flex-direction: column;
+    }
+
+    .ffla-tax-coverage-grid {
+        grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+    }
+
+    .ffla-tax-meta {
+        flex-direction: column;
+        gap: var(--wb-spacing-md);
+    }
 }

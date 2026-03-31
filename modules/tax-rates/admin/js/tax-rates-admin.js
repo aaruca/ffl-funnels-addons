@@ -1,128 +1,236 @@
-/* Tax Rates Admin JS */
+/* Tax Address Resolver — Admin JS */
 (function ($) {
     'use strict';
 
     $(function () {
-        var importing = false;
+        /* ── Quote Lookup ──────────────────────────────────────────── */
+        var $lookupBtn = $('#ffla-tax-lookup-btn');
+        var $resultCard = $('#ffla-tax-result-card');
+        var $resultBody = $('#ffla-tax-result-body');
 
-        // ── Select All / Deselect All ──────────────────────────────────
-        $('#ffla-tax-select-all').on('click', function () {
-            $('.ffla-tax-state-checkbox').prop('checked', true);
-        });
+        $lookupBtn.on('click', function () {
+            var street = $('#ffla-tax-street').val().trim();
+            var city   = $('#ffla-tax-city').val().trim();
+            var state  = $('#ffla-tax-state').val().trim().toUpperCase();
+            var zip    = $('#ffla-tax-zip').val().trim();
 
-        $('#ffla-tax-deselect-all').on('click', function () {
-            $('.ffla-tax-state-checkbox').prop('checked', false);
-        });
-
-        // ── Import Button ──────────────────────────────────────────────
-        $('#ffla-tax-import-btn').on('click', function () {
-            if (importing) return;
-
-            var states = [];
-            $('.ffla-tax-state-checkbox:checked').each(function () {
-                states.push({ code: $(this).val(), name: $(this).data('name') });
-            });
-
-            if (states.length === 0) {
-                alert(FflataxRates.i18n.noStates);
+            if (!state) {
+                alert('Please enter a state code.');
                 return;
             }
 
-            startImport(states);
+            $lookupBtn.prop('disabled', true).text('Looking up…');
+            $resultCard.show();
+            $resultBody.html('<div class="wb-ai-loading-message"><span>Resolving address</span><span class="wb-ai-dots"><span></span><span></span><span></span></span></div>');
+
+            $.post(FflaTaxResolver.ajaxUrl, {
+                action: 'ffla_tax_quote_lookup',
+                security: FflaTaxResolver.nonce,
+                street: street,
+                city: city,
+                state: state,
+                zip: zip
+            })
+            .done(function (res) {
+                if (res.success) {
+                    renderQuoteResult(res.data);
+                } else {
+                    $resultBody.html('<div class="ffla-tax-error">' + escHtml(res.data || 'Request failed.') + '</div>');
+                }
+            })
+            .fail(function () {
+                $resultBody.html('<div class="ffla-tax-error">Request failed. Check console for details.</div>');
+            })
+            .always(function () {
+                $lookupBtn.prop('disabled', false).text('Look Up Tax Rate');
+            });
         });
 
-        // ── Core Import Loop ───────────────────────────────────────────
-        function startImport(states) {
-            importing = true;
+        // Allow Enter key to trigger lookup.
+        $('#ffla-tax-lookup-form input').on('keypress', function (e) {
+            if (e.which === 13) {
+                e.preventDefault();
+                $lookupBtn.click();
+            }
+        });
 
-            var $btn      = $('#ffla-tax-import-btn');
-            var $progress = $('#ffla-tax-progress');
-            var $bar      = $('#ffla-tax-bar');
-            var $label    = $('#ffla-tax-current-label');
-            var $log      = $('#ffla-tax-log');
-            var $count    = $('#ffla-tax-count');
-            var $title    = $('#ffla-tax-progress-title');
-            var depth     = $btn.data('depth');
-            var total     = states.length;
-            var done      = 0;
+        function renderQuoteResult(data) {
+            var html = '';
 
-            $btn.prop('disabled', true).text(FflataxRates.i18n.researching + '...');
-            $progress.show();
-            $log.empty();
-            $bar.css('width', '0%');
-            $title.text('Importing Tax Rates');
-            $count.text('0 ' + FflataxRates.i18n.of + ' ' + total + ' ' + FflataxRates.i18n.states);
+            // Header with outcome.
+            var isSuccess = (data.outcomeCode === 'SUCCESS' || data.outcomeCode === 'NO_SALES_TAX');
+            var statusClass = isSuccess ? 'ffla-tax-result--success' : 'ffla-tax-result--error';
 
-            function importNext() {
-                if (done >= total) {
-                    finishImport();
-                    return;
+            html += '<div class="ffla-tax-result ' + statusClass + '">';
+
+            if (isSuccess) {
+                // Total rate.
+                var ratePct = data.totalRate !== null ? (data.totalRate * 100).toFixed(2) + '%' : '0.00%';
+                html += '<div class="ffla-tax-result__total">';
+                html += '<span class="ffla-tax-result__rate">' + ratePct + '</span>';
+                html += '<span class="ffla-tax-result__label">Total Sales Tax Rate</span>';
+                html += '</div>';
+
+                // Matched address.
+                if (data.matchedAddress) {
+                    html += '<div class="ffla-tax-result__matched">';
+                    html += '<strong>Matched:</strong> ' + escHtml(data.matchedAddress);
+                    html += '</div>';
                 }
 
-                var state = states[done];
-                $label.html(FflataxRates.i18n.researching + ' <strong>' + state.name + '</strong>...');
-
-                $.post(FflataxRates.ajaxUrl, {
-                    action:   'ffla_import_tax_state',
-                    security: FflataxRates.nonce,
-                    state:    state.code,
-                    depth:    depth,
-                })
-                .done(function (res) {
-                    done++;
-                    var pct = Math.round((done / total) * 100);
-                    $bar.css('width', pct + '%');
-                    $count.text(done + ' ' + FflataxRates.i18n.of + ' ' + total + ' ' + FflataxRates.i18n.states);
-
-                    if (res.success) {
-                        appendLog(state.code, state.name, 'ok', res.data.count + ' ' + FflataxRates.i18n.imported);
-                    } else {
-                        appendLog(state.code, state.name, 'error', res.data || FflataxRates.i18n.failed);
+                // Breakdown table.
+                if (data.breakdown && data.breakdown.length > 0) {
+                    html += '<table class="wb-table ffla-tax-breakdown-table">';
+                    html += '<thead><tr><th>Jurisdiction</th><th>Type</th><th>Rate</th></tr></thead>';
+                    html += '<tbody>';
+                    for (var i = 0; i < data.breakdown.length; i++) {
+                        var b = data.breakdown[i];
+                        var bRate = (b.rate * 100).toFixed(4) + '%';
+                        html += '<tr>';
+                        html += '<td>' + escHtml(b.jurisdiction) + '</td>';
+                        html += '<td><span class="ffla-tax-jtype ffla-tax-jtype--' + b.type + '">' + escHtml(b.type) + '</span></td>';
+                        html += '<td class="ffla-tax-rate-cell">' + bRate + '</td>';
+                        html += '</tr>';
                     }
-                })
-                .fail(function () {
-                    done++;
-                    appendLog(state.code, state.name, 'error', FflataxRates.i18n.failed);
-                })
-                .always(function () {
-                    importNext();
-                });
+                    html += '</tbody></table>';
+                }
+
+                // Metadata.
+                html += '<div class="ffla-tax-meta">';
+                html += metaItem('Coverage', data.coverageStatus);
+                html += metaItem('Source', data.source || '—');
+                html += metaItem('Version', data.sourceVersion || '—');
+                html += metaItem('Confidence', data.confidence || '—');
+                html += metaItem('Scope', data.determinationScope || '—');
+                html += metaItem('Mode', data.resolutionMode || '—');
+                html += '</div>';
+
+                // Trace.
+                if (data.trace) {
+                    html += '<div class="ffla-tax-trace">';
+                    html += 'Resolver: ' + escHtml(data.trace.resolver || '—');
+                    html += ' · Geocode: ' + (data.trace.geocodeUsed ? 'Yes' : 'No');
+                    html += ' · Cache: ' + (data.trace.cacheHit ? 'Hit' : 'Miss');
+                    html += ' · ' + (data.trace.durationMs || 0) + 'ms';
+                    html += '</div>';
+                }
+
+                // Limitations.
+                if (data.limitations && data.limitations.length > 0) {
+                    html += '<div class="ffla-tax-limitations">';
+                    html += '<strong>Limitations:</strong>';
+                    html += '<ul>';
+                    for (var j = 0; j < data.limitations.length; j++) {
+                        html += '<li>' + escHtml(data.limitations[j]) + '</li>';
+                    }
+                    html += '</ul></div>';
+                }
+            } else {
+                // Error state.
+                html += '<div class="ffla-tax-error-detail">';
+                html += '<span class="ffla-tax-error-code">' + escHtml(data.outcomeCode) + '</span>';
+                html += '<p>' + escHtml(data.error || 'Unknown error.') + '</p>';
+                if (data.state) {
+                    html += '<p>State: <strong>' + escHtml(data.state) + '</strong></p>';
+                }
+                html += '</div>';
             }
 
-            importNext();
+            html += '</div>';
+
+            $resultBody.html(html);
         }
 
-        function finishImport() {
-            importing = false;
-            var $btn   = $('#ffla-tax-import-btn');
-            var $label = $('#ffla-tax-current-label');
-            var $title = $('#ffla-tax-progress-title');
-            var $dots  = $('#ffla-tax-progress .wb-ai-dots');
-
-            $title.text('\u2713 ' + FflataxRates.i18n.done);
-            $label.text('\u2713 ' + FflataxRates.i18n.done);
-            $dots.hide();
-            $('#ffla-tax-bar').css('width', '100%');
-
-            $btn.prop('disabled', false).text('Research & Import Selected States');
-
-            // Reload after 2 s to refresh the state grid & log table.
-            setTimeout(function () {
-                window.location.reload();
-            }, 2000);
+        function metaItem(label, value) {
+            return '<span class="ffla-tax-meta__item"><span class="ffla-tax-meta__label">' + label + '</span><span class="ffla-tax-meta__value">' + escHtml(value) + '</span></span>';
         }
 
-        function appendLog(code, name, status, message) {
-            var $log  = $('#ffla-tax-log');
-            var color = status === 'ok'
-                ? 'var(--wb-color-neutral-foreground-2)'
-                : 'var(--wb-color-danger-foreground, #c53030)';
-            var icon  = status === 'ok' ? '\u2713' : '\u2715';
-            var line  = $('<div style="padding: 2px 0; color:' + color + ';">')
-                .text(icon + ' ' + code + ' \u2014 ' + name + ': ' + message);
-            $log.append(line);
-            $log.scrollTop($log[0].scrollHeight);
-        }
-    }); // end $(document).ready
+        /* ── CSV Upload ────────────────────────────────────────────── */
+        $('#ffla-csv-upload-btn').on('click', function () {
+            var stateCode = $('#ffla-csv-state').val().trim().toUpperCase();
+            var fileInput = document.getElementById('ffla-csv-file');
+            var $status   = $('#ffla-upload-status');
 
+            if (!stateCode || stateCode.length !== 2) {
+                alert('Enter a valid 2-letter state code.');
+                return;
+            }
+            if (!fileInput.files || !fileInput.files[0]) {
+                alert('Select a CSV file to upload.');
+                return;
+            }
+
+            var formData = new FormData();
+            formData.append('action', 'ffla_tax_upload_csv');
+            formData.append('security', FflaTaxResolver.nonce);
+            formData.append('state_code', stateCode);
+            formData.append('csv_file', fileInput.files[0]);
+
+            $status.show().html('<span style="color:var(--wb-color-brand-foreground)">Uploading and importing…</span>');
+
+            $.ajax({
+                url: FflaTaxResolver.ajaxUrl,
+                type: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+            })
+            .done(function (res) {
+                if (res.success) {
+                    $status.html('<span style="color:var(--wb-color-success-foreground)">✓ ' + escHtml(res.data.message) + '</span>');
+                    setTimeout(function () { location.reload(); }, 1500);
+                } else {
+                    $status.html('<span style="color:var(--wb-color-danger-foreground)">✗ ' + escHtml(res.data || 'Upload failed.') + '</span>');
+                }
+            })
+            .fail(function () {
+                $status.html('<span style="color:var(--wb-color-danger-foreground)">✗ Request failed.</span>');
+            });
+        });
+
+        /* ── Sync Buttons ──────────────────────────────────────────── */
+        $('#ffla-sync-btn').on('click', function () {
+            var $btn = $(this);
+            $btn.prop('disabled', true).text('Syncing…');
+
+            $.post(FflaTaxResolver.ajaxUrl, {
+                action: 'ffla_tax_run_sync',
+                security: FflaTaxResolver.nonce,
+            })
+            .done(function (res) {
+                alert(res.success ? 'Sync completed.' : (res.data || 'Sync failed.'));
+                location.reload();
+            })
+            .fail(function () { alert('Request failed.'); })
+            .always(function () { $btn.prop('disabled', false).text('Sync Datasets'); });
+        });
+
+        $('#ffla-wc-sync-all-btn').on('click', function () {
+            var $btn = $(this);
+            $btn.prop('disabled', true).text('Syncing to WooCommerce…');
+
+            $.post(FflaTaxResolver.ajaxUrl, {
+                action: 'ffla_tax_sync_wc',
+                security: FflaTaxResolver.nonce,
+            })
+            .done(function (res) {
+                if (res.success) {
+                    alert(res.data.message);
+                } else {
+                    alert(res.data || 'Sync failed.');
+                }
+                location.reload();
+            })
+            .fail(function () { alert('Request failed.'); })
+            .always(function () { $btn.prop('disabled', false).text('Sync All to WooCommerce'); });
+        });
+
+        /* ── Helpers ───────────────────────────────────────────────── */
+        function escHtml(str) {
+            if (!str) return '';
+            var div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+    });
 }(jQuery));
