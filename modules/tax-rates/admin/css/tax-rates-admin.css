@@ -3,30 +3,44 @@
 /* ── Tab Navigation ──────────────────────────────────────────────── */
 .ffla-tax-tabs {
     display: flex;
-    gap: 0;
-    border-bottom: 2px solid var(--wb-color-neutral-stroke-2);
+    flex-wrap: wrap;
+    gap: var(--wb-spacing-sm);
+    padding: var(--wb-spacing-xs);
+    border: 1px solid var(--wb-color-neutral-stroke-2);
+    border-radius: var(--wb-radius-lg);
+    background: var(--wb-color-neutral-background-2);
     margin-bottom: var(--wb-spacing-xl);
 }
 
 .ffla-tax-tabs__tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 38px;
     padding: var(--wb-spacing-md) var(--wb-spacing-xl);
     font-size: var(--wb-font-size-sm);
     font-weight: var(--wb-font-weight-semibold);
-    color: var(--wb-color-neutral-foreground-3);
+    line-height: 1.2;
+    color: var(--wb-color-neutral-foreground-2);
     text-decoration: none;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -2px;
+    border: 1px solid transparent;
+    border-radius: var(--wb-radius-md);
+    white-space: nowrap;
+    background: transparent;
     transition: all var(--wb-duration-fast) var(--wb-easing-standard);
 }
 
 .ffla-tax-tabs__tab:hover {
     color: var(--wb-color-neutral-foreground-1);
-    background: var(--wb-color-neutral-background-2);
+    background: var(--wb-color-neutral-background-1);
+    border-color: var(--wb-color-neutral-stroke-2);
 }
 
 .ffla-tax-tabs__tab--active {
     color: var(--wb-color-brand-foreground);
-    border-bottom-color: var(--wb-color-brand-background);
+    background: #fff;
+    border-color: rgba(15, 108, 189, 0.25);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
 /* ── Quote Lookup Layout ─────────────────────────────────────────── */
@@ -44,6 +58,13 @@
 }
 
 .ffla-tax-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--wb-spacing-lg);
+}
+
+.ffla-tax-lookup-form .ffla-tax-row {
     display: flex;
     flex-direction: column;
     gap: var(--wb-spacing-lg);
