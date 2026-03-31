@@ -427,7 +427,7 @@ class Tax_Rates_Admin
         echo '<div class="wb-card">';
         echo '<div class="wb-card__header"><h3>' . esc_html__('Upload Rate CSV', 'ffl-funnels-addons') . '</h3></div>';
         echo '<div class="wb-card__body">';
-        echo '<p class="wb-field__desc">' . esc_html__('Upload an official SST rate/boundary CSV file for a specific state.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('Upload a state CSV manually, or use Sync Datasets to download official SST rate files automatically.', 'ffl-funnels-addons') . '</p>';
 
         echo '<div class="ffla-tax-row" style="margin-top:var(--wb-spacing-lg)">';
         echo '<div class="wb-field ffla-tax-field--state">';
@@ -466,6 +466,7 @@ class Tax_Rates_Admin
         } else {
             echo '<table class="wb-table">';
             echo '<thead><tr>';
+            echo '<th>' . esc_html__('State', 'ffl-funnels-addons') . '</th>';
             echo '<th>' . esc_html__('Source', 'ffl-funnels-addons') . '</th>';
             echo '<th>' . esc_html__('Version', 'ffl-funnels-addons') . '</th>';
             echo '<th>' . esc_html__('Effective', 'ffl-funnels-addons') . '</th>';
@@ -481,6 +482,7 @@ class Tax_Rates_Admin
                 $fresh    = $age_days <= $policy;
 
                 echo '<tr>';
+                echo '<td><strong>' . esc_html($ds['state_code'] ?: '—') . '</strong></td>';
                 echo '<td><strong>' . esc_html($ds['source_code']) . '</strong></td>';
                 echo '<td>' . esc_html($ds['version_label']) . '</td>';
                 echo '<td>' . esc_html($ds['effective_date']) . '</td>';

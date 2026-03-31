@@ -24,6 +24,9 @@ if (!defined('ABSPATH')) {
 
 class Tax_Dataset_Pipeline
 {
+    const SST_RATES_INDEX = 'https://www.streamlinedsalestax.org/ratesandboundry/Rates/';
+    const DOWNLOAD_TIMEOUT = 45;
+
     /**
      * Directory for storing downloaded dataset files.
      */
@@ -70,10 +73,17 @@ class Tax_Dataset_Pipeline
      * @param  string $source_label Human-readable source label.
      * @return array  Import result.
      */
-    public static function import_csv(string $file_path, string $state_code, string $source_label = 'manual_upload'): array
+    public static function import_csv(
+        string $file_path,
+        string $state_code,
+        string $source_label = 'manual_upload',
+        ?string $version_label = null,
+        ?string $storage_uri = null
+    ): array
     {
         $result = [
             'success'     => false,
+            'skipped'     => false,
             'state'       => $state_code,
             'rows'        => 0,
             'version_id'  => null,
@@ -106,10 +116,10 @@ class Tax_Dataset_Pipeline
         $version_id = self::create_version(
             'sst_rate_boundary',
             $state_code,
-            $state_code . '-' . wp_date('Y-m-d'),
+            $version_label ?: pathinfo($file_path, PATHINFO_FILENAME),
             wp_date('Y-m-d'),
             $checksum,
-            $file_path,
+            $storage_uri ?: $file_path,
             count($rates)
         );
 
@@ -568,6 +578,11 @@ class Tax_Dataset_Pipeline
      */
     private static function sync_sst(): array
     {
+        $official_results = self::sync_sst_from_official_source();
+        if (!empty($official_results)) {
+            return $official_results;
+        }
+
         $dir     = self::get_storage_dir();
         $results = [];
 
@@ -595,6 +610,272 @@ class Tax_Dataset_Pipeline
         }
 
         return $results;
+    }
+
+    /**
+     * Sync SST datasets from the official public directory.
+     *
+     * @return array<string, array>
+     */
+    private static function sync_sst_from_official_source(): array
+    {
+        $files = self::discover_sst_rate_files();
+        if (empty($files)) {
+            return [];
+        }
+
+        $results = [];
+        foreach ($files as $state_code => $file) {
+            $results[$state_code] = self::download_and_import_sst_file(
+                $state_code,
+                $file['url'],
+                $file['filename']
+            );
+        }
+
+        return $results;
+    }
+
+    /**
+     * Discover official SST rate files from the public directory listing.
+     *
+     * @return array<string, array{filename:string,url:string}>
+     */
+    private static function discover_sst_rate_files(): array
+    {
+        $response = wp_remote_get(self::SST_RATES_INDEX, [
+            'timeout' => self::DOWNLOAD_TIMEOUT,
+            'headers' => ['Accept' => 'text/html'],
+        ]);
+
+        if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
+            return [];
+        }
+
+        $html = wp_remote_retrieve_body($response);
+        if (!is_string($html) || $html === '') {
+            return [];
+        }
+
+        preg_match_all('/href="([^"]+)"|href=([^\s>]+)/i', $html, $matches);
+
+        $files = [];
+        foreach (($matches[1] ?? []) as $index => $href_a) {
+            $href = $href_a ?: ($matches[2][$index] ?? '');
+            $href = trim($href, "\"' ");
+            $filename = basename($href);
+
+            if (!preg_match('/^([A-Z]{2})R.+\.(csv|zip)$/i', $filename, $file_match)) {
+                continue;
+            }
+
+            $state_code = strtoupper($file_match[1]);
+            $files[$state_code] = [
+                'filename' => $filename,
+                'url'      => self::build_official_file_url($href),
+            ];
+        }
+
+        return $files;
+    }
+
+    /**
+     * Download and import a single official SST file.
+     *
+     * @return array
+     */
+    private static function download_and_import_sst_file(string $state_code, string $url, string $filename): array
+    {
+        $result = [
+            'success'    => false,
+            'skipped'    => false,
+            'state'      => $state_code,
+            'rows'       => 0,
+            'version_id' => null,
+            'error'      => null,
+        ];
+
+        $downloaded = self::download_remote_file($url, $filename);
+        if (is_wp_error($downloaded)) {
+            $result['error'] = $downloaded->get_error_message();
+            return $result;
+        }
+
+        $source_path = $downloaded['path'];
+        $csv_path    = $source_path;
+
+        if (strtolower(pathinfo($filename, PATHINFO_EXTENSION)) === 'zip') {
+            $csv_path = self::extract_csv_from_zip($source_path, $state_code, $filename);
+            if (is_wp_error($csv_path)) {
+                $result['error'] = $csv_path->get_error_message();
+                return $result;
+            }
+        }
+
+        $checksum = hash_file('sha256', $csv_path);
+        if ($checksum && self::checksum_exists($checksum)) {
+            $result['success'] = true;
+            $result['skipped'] = true;
+            $result['error']   = 'No dataset changes detected.';
+            return $result;
+        }
+
+        return self::import_csv(
+            $csv_path,
+            $state_code,
+            'sst_auto_sync',
+            pathinfo($filename, PATHINFO_FILENAME),
+            $url
+        );
+    }
+
+    /**
+     * Download a remote file into the local dataset storage directory.
+     *
+     * @return array|WP_Error
+     */
+    private static function download_remote_file(string $url, string $filename)
+    {
+        if (!function_exists('download_url')) {
+            require_once ABSPATH . 'wp-admin/includes/file.php';
+        }
+
+        $tmp = download_url($url, self::DOWNLOAD_TIMEOUT);
+        if (is_wp_error($tmp)) {
+            return $tmp;
+        }
+
+        $storage_dir = self::get_storage_dir();
+        $target_path = $storage_dir . sanitize_file_name($filename);
+
+        if (!@copy($tmp, $target_path)) {
+            @unlink($tmp);
+            return new WP_Error('sst_download_copy_failed', 'Downloaded SST file could not be stored locally.');
+        }
+
+        @unlink($tmp);
+
+        return [
+            'path' => $target_path,
+            'url'  => $url,
+        ];
+    }
+
+    /**
+     * Extract the first CSV file from an SST zip archive.
+     *
+     * @return string|WP_Error
+     */
+    private static function extract_csv_from_zip(string $zip_path, string $state_code, string $filename)
+    {
+        $extract_dir = trailingslashit(self::get_storage_dir() . 'extract-' . strtolower($state_code));
+        self::delete_path($extract_dir);
+        wp_mkdir_p($extract_dir);
+
+        $extracted = false;
+
+        if (class_exists('ZipArchive')) {
+            $zip = new ZipArchive();
+            if ($zip->open($zip_path) === true) {
+                $extracted = $zip->extractTo($extract_dir);
+                $zip->close();
+            }
+        }
+
+        if (!$extracted) {
+            if (!function_exists('unzip_file')) {
+                require_once ABSPATH . 'wp-admin/includes/file.php';
+            }
+
+            $unzipped = unzip_file($zip_path, $extract_dir);
+            if (is_wp_error($unzipped) || !$unzipped) {
+                self::delete_path($extract_dir);
+                return new WP_Error('sst_zip_extract_failed', 'Official SST zip archive could not be extracted.');
+            }
+        }
+
+        $csv_path = self::find_first_csv($extract_dir);
+        if (!$csv_path) {
+            self::delete_path($extract_dir);
+            return new WP_Error(
+                'sst_zip_no_csv',
+                sprintf('No CSV file was found inside %s.', $filename)
+            );
+        }
+
+        $target_csv = self::get_storage_dir() . 'SST_' . strtoupper($state_code) . '.csv';
+        if (!@copy($csv_path, $target_csv)) {
+            self::delete_path($extract_dir);
+            return new WP_Error('sst_zip_copy_failed', 'Extracted SST CSV could not be stored locally.');
+        }
+
+        self::delete_path($extract_dir);
+
+        return $target_csv;
+    }
+
+    /**
+     * Build an absolute official SST file URL from a directory href.
+     */
+    private static function build_official_file_url(string $href): string
+    {
+        if (preg_match('#^https?://#i', $href)) {
+            return $href;
+        }
+
+        return trailingslashit(self::SST_RATES_INDEX) . ltrim($href, '/');
+    }
+
+    /**
+     * Find the first CSV file inside a directory tree.
+     */
+    private static function find_first_csv(string $directory): ?string
+    {
+        if (!is_dir($directory)) {
+            return null;
+        }
+
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS)
+        );
+
+        foreach ($iterator as $file) {
+            if ($file->isFile() && strtolower($file->getExtension()) === 'csv') {
+                return $file->getPathname();
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Delete a file or directory tree.
+     */
+    private static function delete_path(string $path): void
+    {
+        if (!file_exists($path)) {
+            return;
+        }
+
+        if (is_file($path)) {
+            @unlink($path);
+            return;
+        }
+
+        $items = scandir($path);
+        if (!is_array($items)) {
+            return;
+        }
+
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+
+            self::delete_path(trailingslashit($path) . $item);
+        }
+
+        @rmdir($path);
     }
 
     /**
