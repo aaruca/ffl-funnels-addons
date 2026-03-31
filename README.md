@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.8.0--beta.3-orange.svg)
+![Version](https://img.shields.io/badge/version-1.8.0--beta.4-orange.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -88,6 +88,11 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.8.0-beta.4
+*   Fix: El checkout usa ahora la direcci&oacute;n viva posteada por WooCommerce para cotizar impuestos, evitando c&aacute;lculos en `0` por datos desincronizados.
+*   Fix: Los quotes servidos desde cache ahora tambi&eacute;n se registran en el Audit Log.
+*   Fix: Integraci&oacute;n de impuestos runtime alineada con el comportamiento interno de WooCommerce para labels, rate codes, tax items y c&aacute;lculo no-compound.
 
 ### v1.8.0-beta.3
 *   Fix: Compatibilidad corregida con `woocommerce_matched_tax_rates` para evitar fatal errors en checkout/cart.
