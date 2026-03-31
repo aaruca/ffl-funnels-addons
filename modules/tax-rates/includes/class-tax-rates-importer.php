@@ -187,20 +187,21 @@ class Tax_Rates_Importer
 
         if ($depth === 'county') {
             $instructions = "Extract ALL county-level combined sales tax rates (state + county) for {$state_name} ({$state_code}).";
-            $format       = 'Each entry: {"county": "string", "city": null, "rate": 8.25, "zip_patterns": ["123*"]}. The rate field must be a float (percentage, e.g. 8.25 not 0.0825). zip_patterns is an array of WooCommerce postcode wildcards if you know them, otherwise an empty array.';
+            $format       = 'Return JSON exactly like: {"rates": [{"county": "Name", "city": "*", "rate": 8.25, "zip_patterns": ["320*", "321*"]}]}. zip_patterns MUST be an array of all relevant 3-digit WooCommerce wildcard zip codes for that county. DO NOT leave zip_patterns empty.';
         } else {
             $instructions = "Extract the single statewide sales tax rate for {$state_name} ({$state_code}).";
-            $format       = 'Return a single entry: [{"county": "Statewide", "city": null, "rate": 6.0, "zip_patterns": []}].';
+            $format       = 'Return JSON exactly like: {"rates": [{"county": "Statewide", "city": "*", "rate": 6.0, "zip_patterns": []}]}.';
         }
 
-        $system = "You are a US tax data expert. Today is {$month} {$year}. Extract structured sales tax data from the provided research content. Return ONLY a valid JSON array, no markdown, no explanation.";
+        $system = "You are a US tax data API. Today is {$month} {$year}. Extract structured sales tax data. You MUST return a valid JSON object containing the 'rates' array.";
 
         $user = "{$instructions}\n\nFormat: {$format}\n\nResearch content:\n\n{$search_content}";
 
         $response = wp_remote_post('https://api.openai.com/v1/chat/completions', [
             'body' => wp_json_encode([
-                'model'       => 'gpt-4o-mini',
-                'messages'    => [
+                'model'          => 'gpt-4o-mini',
+                'response_format'=> [ 'type' => 'json_object' ],
+                'messages'       => [
                     ['role' => 'system', 'content' => $system],
                     ['role' => 'user',   'content' => $user],
                 ],
@@ -210,11 +211,11 @@ class Tax_Rates_Importer
                 'Content-Type'  => 'application/json',
                 'Authorization' => 'Bearer ' . $openai_key,
             ],
-            'timeout' => 45,
+            'timeout' => 120, // Increased for large states like FL/TX
         ]);
 
         if (is_wp_error($response)) {
-            return new WP_Error('openai_error', 'OpenAI request failed: ' . $response->get_error_message());
+            return new WP_Error('openai_error', 'OpenAI request failed (Timeout / Error): ' . $response->get_error_message());
         }
 
         $data = json_decode(wp_remote_retrieve_body($response), true);
@@ -224,16 +225,13 @@ class Tax_Rates_Importer
         }
 
         $content = $data['choices'][0]['message']['content'] ?? '';
+        $parsed  = json_decode(trim($content), true);
 
-        // Strip markdown code fences if present.
-        $content = preg_replace('/^```(?:json)?\s*/i', '', trim($content));
-        $content = preg_replace('/\s*```$/', '', $content);
-
-        $rates = json_decode(trim($content), true);
-
-        if (!is_array($rates)) {
-            return new WP_Error('parse_error', 'Could not parse AI response as JSON.');
+        if (!is_array($parsed) || !isset($parsed['rates'])) {
+            return new WP_Error('parse_error', 'Could not parse AI response as valid JSON with rates array.');
         }
+
+        $rates = $parsed['rates'];
 
         // Validate and sanitize each entry.
         $clean = [];
@@ -249,9 +247,15 @@ class Tax_Rates_Importer
             if ($rate_val <= 0 || $rate_val > 20) {
                 continue;
             }
+            
+            $city = isset($r['city']) ? sanitize_text_field($r['city']) : null;
+            if ($city === '*' || $city === '') {
+                $city = null;
+            }
+
             $clean[] = [
                 'county'       => sanitize_text_field($r['county'] ?? 'Statewide'),
-                'city'         => isset($r['city']) && $r['city'] !== null ? sanitize_text_field($r['city']) : null,
+                'city'         => $city,
                 'rate'         => $rate_val,
                 'zip_patterns' => array_map('sanitize_text_field', (array) ($r['zip_patterns'] ?? [])),
             ];
