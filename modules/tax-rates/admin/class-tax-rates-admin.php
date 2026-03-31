@@ -199,10 +199,13 @@ class Tax_Rates_Admin
 
         echo '<div class="ffla-tax-states-grid">';
         foreach ($states as $code => $name) {
-            $log    = get_option('ffla_tax_import_' . $code, null);
-            $status = '';
+            $log         = get_option('ffla_tax_import_' . $code, null);
+            $status      = '';
+            $is_imported = false;
+
             if ($log !== null) {
                 if (($log['status'] ?? '') === 'ok') {
+                    $is_imported = true;
                     $date   = date_i18n(get_option('date_format'), strtotime($log['imported_at']));
                     $count  = intval($log['count'] ?? 0);
                     $status = '<span class="ffla-tax-state-status ffla-tax-state-status--ok">' . esc_html($date . ' — ' . $count . ' rates') . '</span>';
@@ -213,7 +216,12 @@ class Tax_Rates_Admin
                 $status = '<span class="ffla-tax-state-status ffla-tax-state-status--none">' . esc_html__('Not imported', 'ffl-funnels-addons') . '</span>';
             }
 
-            echo '<label class="ffla-tax-state-item">';
+            $item_class = 'ffla-tax-state-item';
+            if ($is_imported) {
+                $item_class .= ' ffla-tax-state-item--imported';
+            }
+
+            echo '<label class="' . esc_attr($item_class) . '">';
             echo '<span class="wb-checkbox">';
             echo '<input type="checkbox" class="ffla-tax-state-checkbox" value="' . esc_attr($code) . '" data-name="' . esc_attr($name) . '">';
             echo '<span class="wb-checkbox__indicator"></span>';

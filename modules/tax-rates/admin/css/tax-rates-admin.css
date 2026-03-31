@@ -84,8 +84,29 @@
     color: var(--wb-color-success-foreground, #276749);
 }
 
+/* Let the imported state inherit white text when it's styled green */
+.ffla-tax-state-item--imported .ffla-tax-state-status--ok {
+    color: #ffffff;
+}
+
 .ffla-tax-state-status--error {
     color: var(--wb-color-danger-foreground, #c53030);
+}
+
+/* ── Imported State Selection Override ─────────────────────────────── */
+.ffla-tax-state-item.ffla-tax-state-item--imported {
+    background-color: var(--wb-color-success-foreground, #276749);
+    border-color: #1e4e37;
+    color: #ffffff;
+}
+
+.ffla-tax-state-item.ffla-tax-state-item--imported:hover {
+    background-color: #1e4e37;
+    border-color: #143826;
+}
+
+.ffla-tax-state-item.ffla-tax-state-item--imported .ffla-tax-state-name {
+    color: #ffffff;
 }
 
 .ffla-tax-state-status--none {
