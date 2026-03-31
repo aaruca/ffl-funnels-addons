@@ -60,9 +60,14 @@ class Tax_Quote_Engine
         // Step 3: Check cache.
         $cached = self::get_cached($normalized['key']);
         if ($cached !== null) {
+            // Cached payloads keep the original query UUID, but every request
+            // still needs its own audit record and trace.
+            $cached->queryId                = wp_generate_uuid4();
+            $cached->inputAddress           = $input;
+            $cached->normalizedAddress      = $normalized;
             $cached->trace['cacheHit']    = true;
             $cached->trace['durationMs']  = self::elapsed($start_time);
-            return $cached;
+            return self::audit($cached, $start_time);
         }
 
         // Step 4: Check for no-sales-tax states early.
