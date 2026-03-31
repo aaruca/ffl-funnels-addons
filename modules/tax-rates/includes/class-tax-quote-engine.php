@@ -57,6 +57,12 @@ class Tax_Quote_Engine
 
         $state_code = $normalized['state'];
 
+        if (!Tax_Coverage::is_enabled_for_store($state_code)) {
+            $result = Tax_Quote_Result::disabled_state($state_code, $input, $normalized);
+            $result->trace['durationMs'] = self::elapsed($start_time);
+            return self::audit($result, $start_time);
+        }
+
         // Step 3: Check cache.
         $cached = self::get_cached($normalized['key']);
         if ($cached !== null) {
@@ -167,6 +173,10 @@ class Tax_Quote_Engine
 
         $state_code = strtoupper($state_code);
 
+        if (!Tax_Coverage::is_enabled_for_store($state_code)) {
+            return 0;
+        }
+
         // Get the active resolver for this state.
         $resolver = Tax_Resolver_Router::route($state_code);
         if (!$resolver) {
@@ -276,6 +286,9 @@ class Tax_Quote_Engine
                 Tax_Coverage::SUPPORTED_ADDRESS_RATE,
                 Tax_Coverage::SUPPORTED_WITH_REMOTE,
             ], true)) {
+                if (!Tax_Coverage::is_enabled_for_store($rule['state_code'])) {
+                    continue;
+                }
                 $results[$rule['state_code']] = self::sync_to_woocommerce($rule['state_code']);
             }
         }

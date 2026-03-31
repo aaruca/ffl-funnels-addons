@@ -73,6 +73,11 @@ class Tax_WooCommerce_Integration
             return $matched_tax_rates;
         }
 
+        if (!Tax_Coverage::is_enabled_for_store($state)) {
+            self::store_runtime_tax_meta([]);
+            return $matched_tax_rates;
+        }
+
         if (!Tax_Coverage::is_supported($state) && !Tax_Coverage::has_no_tax($state)) {
             return $matched_tax_rates;
         }

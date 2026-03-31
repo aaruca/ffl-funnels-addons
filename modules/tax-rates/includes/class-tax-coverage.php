@@ -14,6 +14,8 @@ if (!defined('ABSPATH')) {
 
 class Tax_Coverage
 {
+    const SETTINGS_KEY                = 'ffla_tax_resolver_settings';
+
     /* Coverage status constants. */
     const UNSUPPORTED                 = 'UNSUPPORTED';
     const SUPPORTED_ADDRESS_RATE      = 'SUPPORTED_ADDRESS_RATE';
@@ -21,6 +23,19 @@ class Tax_Coverage
     const SUPPORTED_CONTEXT_REQUIRED  = 'SUPPORTED_BUT_CONTEXT_REQUIRED';
     const DEGRADED                    = 'DEGRADED';
     const NO_SALES_TAX                = 'NO_SALES_TAX';
+
+    /**
+     * Canonical US state list including DC.
+     *
+     * @var string[]
+     */
+    const ALL_STATES = [
+        'AL','AK','AZ','AR','CA','CO','CT','DE','DC','FL',
+        'GA','HI','ID','IL','IN','IA','KS','KY','LA','ME',
+        'MD','MA','MI','MN','MS','MO','MT','NE','NV','NH',
+        'NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI',
+        'SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY',
+    ];
 
     /**
      * Get coverage rule for a single state.
@@ -74,6 +89,7 @@ class Tax_Coverage
                 'effectiveStart'  => $row['effective_start'],
                 'effectiveEnd'    => $row['effective_end'],
                 'notes'           => $row['notes'],
+                'enabledForStore' => self::is_enabled_for_store($row['state_code']),
             ];
         }
 
@@ -84,6 +100,8 @@ class Tax_Coverage
             'unsupported'    => 0,
             'no_sales_tax'   => 0,
             'degraded'       => 0,
+            'enabled_for_store'  => 0,
+            'disabled_for_store' => 0,
         ];
 
         foreach ($states as $s) {
@@ -102,12 +120,20 @@ class Tax_Coverage
                 default:
                     $counts['unsupported']++;
             }
+
+            if (!empty($s['enabledForStore'])) {
+                $counts['enabled_for_store']++;
+            } else {
+                $counts['disabled_for_store']++;
+            }
         }
 
         return [
-            'generatedAt' => current_time('c'),
-            'summary'     => $counts,
-            'states'      => $states,
+            'generatedAt'             => current_time('c'),
+            'summary'                 => $counts,
+            'stateFilterActive'       => self::has_state_filter(),
+            'enabledStatesConfigured' => self::get_enabled_states(),
+            'states'                  => $states,
         ];
     }
 
@@ -138,6 +164,61 @@ class Tax_Coverage
     {
         $rule = self::get_state($state_code);
         return $rule && $rule['coverage_status'] === self::NO_SALES_TAX;
+    }
+
+    /**
+     * Check whether the store is restricted to a selected subset of states.
+     */
+    public static function has_state_filter(): bool
+    {
+        $settings = get_option(self::SETTINGS_KEY, []);
+        return !empty($settings['restrict_states']) && (string) $settings['restrict_states'] === '1';
+    }
+
+    /**
+     * Get the configured list of enabled states for this store.
+     *
+     * @return string[]
+     */
+    public static function get_enabled_states(): array
+    {
+        $settings = get_option(self::SETTINGS_KEY, []);
+        $raw      = $settings['enabled_states'] ?? [];
+        $states   = [];
+
+        if (!is_array($raw)) {
+            return [];
+        }
+
+        foreach ($raw as $state_code) {
+            $state_code = strtoupper(sanitize_text_field(wp_unslash((string) $state_code)));
+            if (in_array($state_code, self::ALL_STATES, true)) {
+                $states[] = $state_code;
+            }
+        }
+
+        $states = array_values(array_unique($states));
+        sort($states);
+
+        return $states;
+    }
+
+    /**
+     * Check whether a state is enabled for active store use.
+     */
+    public static function is_enabled_for_store(string $state_code): bool
+    {
+        $state_code = strtoupper($state_code);
+
+        if (!in_array($state_code, self::ALL_STATES, true)) {
+            return false;
+        }
+
+        if (!self::has_state_filter()) {
+            return true;
+        }
+
+        return in_array($state_code, self::get_enabled_states(), true);
     }
 
     /**

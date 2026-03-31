@@ -74,18 +74,33 @@ class Tax_Rates_Admin
 
         check_admin_referer('ffla_tax_resolver_save', 'ffla_tax_nonce');
 
+        $enabled_states = [];
+        if (!empty($_POST['enabled_states']) && is_array($_POST['enabled_states'])) {
+            foreach (wp_unslash($_POST['enabled_states']) as $state_code) {
+                $state_code = strtoupper(sanitize_text_field((string) $state_code));
+                if (preg_match('/^[A-Z]{2}$/', $state_code)) {
+                    $enabled_states[] = $state_code;
+                }
+            }
+        }
+
+        $enabled_states = array_values(array_unique($enabled_states));
+        sort($enabled_states);
+
         $settings = [
             'cache_ttl'     => max(60, (int) ($_POST['cache_ttl'] ?? 86400)),
             'auto_sync'     => isset($_POST['auto_sync']) ? '1' : '0',
             'sync_schedule' => in_array($_POST['sync_schedule'] ?? '', ['monthly', 'quarterly'], true)
-                ? sanitize_text_field($_POST['sync_schedule']) : 'quarterly',
+                ? sanitize_text_field(wp_unslash($_POST['sync_schedule'])) : 'quarterly',
             'wc_auto_sync'  => isset($_POST['wc_auto_sync']) ? '1' : '0',
             'api_key_enabled' => isset($_POST['api_key_enabled']) ? '1' : '0',
+            'restrict_states' => isset($_POST['restrict_states']) ? '1' : '0',
+            'enabled_states'  => $enabled_states,
         ];
 
         // Handle API key.
         if (!empty($_POST['api_key'])) {
-            update_option('ffla_tax_api_key', sanitize_text_field($_POST['api_key']));
+            update_option('ffla_tax_api_key', sanitize_text_field(wp_unslash($_POST['api_key'])));
         }
 
         update_option(self::SETTINGS_KEY, $settings);
@@ -276,6 +291,9 @@ class Tax_Rates_Admin
 
     private function render_lookup_tab(): void
     {
+        $state_filter_active = Tax_Coverage::has_state_filter();
+        $enabled_states      = Tax_Coverage::get_enabled_states();
+
         echo '<div class="ffla-tax-lookup-layout">';
 
         // Input form.
@@ -286,12 +304,21 @@ class Tax_Rates_Admin
         echo esc_html__('Enter a US address to look up the applicable sales tax rate and jurisdictional breakdown.', 'ffl-funnels-addons');
         echo '</p>';
 
+        if ($state_filter_active) {
+            echo '<div class="wb-message wb-message--info" style="margin-bottom:var(--wb-spacing-lg)">';
+            echo '<span>' . esc_html(sprintf(
+                __('This store currently uses the resolver only for %d selected states. Lookups outside that list will be rejected until enabled in Settings.', 'ffl-funnels-addons'),
+                count($enabled_states)
+            )) . '</span>';
+            echo '</div>';
+        }
+
         echo '<div class="ffla-tax-lookup-form" id="ffla-tax-lookup-form">';
 
         echo '<div class="wb-field"><label class="wb-field__label" for="ffla-tax-street">' . esc_html__('Street', 'ffl-funnels-addons') . '</label>';
         echo '<div class="wb-field__control"><input type="text" id="ffla-tax-street" class="wb-input" placeholder="123 Main St"></div></div>';
 
-        echo '<div class="ffla-tax-row">';
+        echo '<div class="ffla-tax-row ffla-tax-row--stack">';
         echo '<div class="wb-field ffla-tax-field--city"><label class="wb-field__label" for="ffla-tax-city">' . esc_html__('City', 'ffl-funnels-addons') . '</label>';
         echo '<div class="wb-field__control"><input type="text" id="ffla-tax-city" class="wb-input" placeholder="Chicago"></div></div>';
 
@@ -328,11 +355,14 @@ class Tax_Rates_Admin
     private function render_coverage_tab(): void
     {
         $matrix = Tax_Coverage::get_matrix();
+        $state_filter_active = Tax_Coverage::has_state_filter();
 
         // Stats.
         $supported = 0;
         $unsupported = 0;
         $no_tax = 0;
+        $enabled_for_store = 0;
+        $disabled_for_store = 0;
         foreach ($matrix as $r) {
             switch ($r['coverage_status']) {
                 case Tax_Coverage::SUPPORTED_ADDRESS_RATE:
@@ -346,14 +376,29 @@ class Tax_Rates_Admin
                 default:
                     $unsupported++;
             }
+
+            if (Tax_Coverage::is_enabled_for_store($r['state_code'])) {
+                $enabled_for_store++;
+            } else {
+                $disabled_for_store++;
+            }
         }
 
         // Stats cards.
         echo '<div class="ffla-tax-stats">';
         echo '<div class="ffla-tax-stat ffla-tax-stat--supported"><span class="ffla-tax-stat__value">' . esc_html($supported) . '</span><span class="ffla-tax-stat__label">' . esc_html__('Supported', 'ffl-funnels-addons') . '</span></div>';
         echo '<div class="ffla-tax-stat ffla-tax-stat--no-tax"><span class="ffla-tax-stat__value">' . esc_html($no_tax) . '</span><span class="ffla-tax-stat__label">' . esc_html__('No Sales Tax', 'ffl-funnels-addons') . '</span></div>';
+        echo '<div class="ffla-tax-stat ffla-tax-stat--enabled"><span class="ffla-tax-stat__value">' . esc_html($enabled_for_store) . '</span><span class="ffla-tax-stat__label">' . esc_html__('Enabled For Store', 'ffl-funnels-addons') . '</span></div>';
+        echo '<div class="ffla-tax-stat ffla-tax-stat--disabled"><span class="ffla-tax-stat__value">' . esc_html($disabled_for_store) . '</span><span class="ffla-tax-stat__label">' . esc_html__('Disabled For Store', 'ffl-funnels-addons') . '</span></div>';
         echo '<div class="ffla-tax-stat ffla-tax-stat--unsupported"><span class="ffla-tax-stat__value">' . esc_html($unsupported) . '</span><span class="ffla-tax-stat__label">' . esc_html__('Not Yet Supported', 'ffl-funnels-addons') . '</span></div>';
         echo '</div>';
+
+        if ($state_filter_active) {
+            FFLA_Admin::render_notice(
+                'info',
+                __('State filtering is active. Cells marked Off are technically covered by the resolver but currently disabled for this store.', 'ffl-funnels-addons')
+            );
+        }
 
         // State grid.
         echo '<div class="wb-card">';
@@ -361,13 +406,13 @@ class Tax_Rates_Admin
         echo '<div class="wb-card__body">';
         echo '<div class="ffla-tax-coverage-grid">';
 
-        $state_names = Tax_Address_Normalizer::parse_freeform(''); // Dummy — we'll use our own map.
         $names = self::get_state_names();
 
         foreach ($matrix as $row) {
             $code   = $row['state_code'];
             $status = $row['coverage_status'];
             $name   = $names[$code] ?? $code;
+            $store_enabled = Tax_Coverage::is_enabled_for_store($code);
 
             $class = 'ffla-tax-coverage-cell';
             $badge = '';
@@ -375,31 +420,42 @@ class Tax_Rates_Admin
             switch ($status) {
                 case Tax_Coverage::SUPPORTED_ADDRESS_RATE:
                     $class .= ' ffla-tax-coverage-cell--supported';
-                    $badge = '✓';
+                    $badge = '+';
+                    break;
+                case Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED:
+                    $class .= ' ffla-tax-coverage-cell--context';
+                    $badge = '~';
                     break;
                 case Tax_Coverage::SUPPORTED_WITH_REMOTE:
                     $class .= ' ffla-tax-coverage-cell--remote';
-                    $badge = '⚡';
+                    $badge = 'R';
                     break;
                 case Tax_Coverage::NO_SALES_TAX:
                     $class .= ' ffla-tax-coverage-cell--no-tax';
-                    $badge = '—';
+                    $badge = '0';
                     break;
                 case Tax_Coverage::DEGRADED:
                     $class .= ' ffla-tax-coverage-cell--degraded';
-                    $badge = '⚠';
+                    $badge = '!';
                     break;
                 default:
                     $class .= ' ffla-tax-coverage-cell--unsupported';
                     $badge = '';
             }
 
-            echo '<div class="' . esc_attr($class) . '" title="' . esc_attr($name . ' — ' . $status) . '">';
+            if ($state_filter_active && !$store_enabled) {
+                $class .= ' ffla-tax-coverage-cell--store-disabled';
+            }
+
+            echo '<div class="' . esc_attr($class) . '" title="' . esc_attr($name . ' - ' . $status) . '">';
             echo '<span class="ffla-tax-coverage-cell__code">' . esc_html($code) . '</span>';
             echo '<span class="ffla-tax-coverage-cell__badge">' . esc_html($badge) . '</span>';
             echo '<span class="ffla-tax-coverage-cell__name">' . esc_html($name) . '</span>';
             if ($row['resolver_name']) {
                 echo '<span class="ffla-tax-coverage-cell__resolver">' . esc_html($row['resolver_name']) . '</span>';
+            }
+            if ($state_filter_active) {
+                echo '<span class="ffla-tax-coverage-cell__store">' . esc_html($store_enabled ? __('On', 'ffl-funnels-addons') : __('Off', 'ffl-funnels-addons')) . '</span>';
             }
             echo '</div>';
         }
@@ -410,10 +466,14 @@ class Tax_Rates_Admin
         // Legend.
         echo '<div class="ffla-tax-legend">';
         echo '<span class="ffla-tax-legend__item"><span class="ffla-tax-legend__dot ffla-tax-legend__dot--supported"></span> ' . esc_html__('Supported', 'ffl-funnels-addons') . '</span>';
+        echo '<span class="ffla-tax-legend__item"><span class="ffla-tax-legend__dot ffla-tax-legend__dot--context"></span> ' . esc_html__('Context / Dataset Required', 'ffl-funnels-addons') . '</span>';
         echo '<span class="ffla-tax-legend__item"><span class="ffla-tax-legend__dot ffla-tax-legend__dot--remote"></span> ' . esc_html__('Remote Lookup', 'ffl-funnels-addons') . '</span>';
         echo '<span class="ffla-tax-legend__item"><span class="ffla-tax-legend__dot ffla-tax-legend__dot--no-tax"></span> ' . esc_html__('No Sales Tax', 'ffl-funnels-addons') . '</span>';
         echo '<span class="ffla-tax-legend__item"><span class="ffla-tax-legend__dot ffla-tax-legend__dot--degraded"></span> ' . esc_html__('Degraded', 'ffl-funnels-addons') . '</span>';
         echo '<span class="ffla-tax-legend__item"><span class="ffla-tax-legend__dot ffla-tax-legend__dot--unsupported"></span> ' . esc_html__('Not Supported', 'ffl-funnels-addons') . '</span>';
+        if ($state_filter_active) {
+            echo '<span class="ffla-tax-legend__item"><span class="ffla-tax-legend__dot ffla-tax-legend__dot--disabled"></span> ' . esc_html__('Disabled For Store', 'ffl-funnels-addons') . '</span>';
+        }
         echo '</div>';
     }
 
@@ -429,7 +489,11 @@ class Tax_Rates_Admin
         echo '<div class="wb-card__body">';
         echo '<p class="wb-field__desc">' . esc_html__('Upload a state CSV manually, or use Sync Datasets to download official SST rate files automatically.', 'ffl-funnels-addons') . '</p>';
 
-        echo '<div class="ffla-tax-row" style="margin-top:var(--wb-spacing-lg)">';
+        if (Tax_Coverage::has_state_filter()) {
+            echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-sm)">' . esc_html__('When state filtering is active, Sync Datasets downloads only the enabled SST states for this store.', 'ffl-funnels-addons') . '</p>';
+        }
+
+        echo '<div class="ffla-tax-row ffla-tax-row--inline" style="margin-top:var(--wb-spacing-lg)">';
         echo '<div class="wb-field ffla-tax-field--state">';
         echo '<label class="wb-field__label" for="ffla-csv-state">' . esc_html__('State', 'ffl-funnels-addons') . '</label>';
         echo '<div class="wb-field__control"><input type="text" id="ffla-csv-state" class="wb-input" placeholder="IN" maxlength="2"></div>';
@@ -576,8 +640,11 @@ class Tax_Rates_Admin
             'sync_schedule'   => 'quarterly',
             'wc_auto_sync'    => '1',
             'api_key_enabled' => '0',
+            'restrict_states' => '0',
+            'enabled_states'  => [],
         ]);
 
+        $enabled_states = is_array($s['enabled_states']) ? $s['enabled_states'] : [];
         $api_key = get_option('ffla_tax_api_key', '');
 
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
@@ -629,6 +696,46 @@ class Tax_Rates_Admin
 
         echo '</div></div>';
 
+        // Store state access.
+        echo '<div class="wb-card" style="margin-top:var(--wb-spacing-xl)">';
+        echo '<div class="wb-card__header"><h3>' . esc_html__('Store State Access', 'ffl-funnels-addons') . '</h3></div>';
+        echo '<div class="wb-card__body">';
+
+        FFLA_Admin::render_toggle_field(
+            __('Limit resolver to selected states', 'ffl-funnels-addons'),
+            'restrict_states',
+            $s['restrict_states'],
+            __('Turn this on if the resolver should only run for states where your business is licensed or registered to operate.', 'ffl-funnels-addons')
+        );
+
+        echo '<div class="ffla-tax-state-picker" id="ffla-tax-state-picker">';
+        echo '<div class="ffla-tax-state-picker__header">';
+        echo '<p class="wb-field__desc">' . esc_html__('Checked states stay active for Quote Lookup, REST quotes, WooCommerce runtime overrides, and SST auto-sync. Leave the toggle off above to allow every state.', 'ffl-funnels-addons') . '</p>';
+        echo '<div class="ffla-tax-state-picker__actions">';
+        echo '<button type="button" class="button button-secondary ffla-tax-state-picker__action" data-state-picker-action="select-all">' . esc_html__('Select All', 'ffl-funnels-addons') . '</button>';
+        echo '<button type="button" class="button button-secondary ffla-tax-state-picker__action" data-state-picker-action="select-covered">' . esc_html__('Select Covered', 'ffl-funnels-addons') . '</button>';
+        echo '<button type="button" class="button button-secondary ffla-tax-state-picker__action" data-state-picker-action="clear-all">' . esc_html__('Clear', 'ffl-funnels-addons') . '</button>';
+        echo '</div>';
+        echo '</div>';
+
+        echo '<div class="ffla-tax-state-picker__grid">';
+        foreach (self::get_state_names() as $state_code => $state_name) {
+            $coverage   = Tax_Coverage::get_state($state_code);
+            $is_covered = self::is_covered_state_status($coverage['coverage_status'] ?? Tax_Coverage::UNSUPPORTED);
+            $checked    = in_array($state_code, $enabled_states, true);
+            $item_class = 'ffla-tax-state-picker__item' . ($is_covered ? ' ffla-tax-state-picker__item--covered' : '');
+
+            echo '<label class="' . esc_attr($item_class) . '">';
+            echo '<input type="checkbox" name="enabled_states[]" value="' . esc_attr($state_code) . '" class="ffla-tax-state-picker__checkbox" data-covered="' . esc_attr($is_covered ? '1' : '0') . '"' . checked($checked, true, false) . '>';
+            echo '<span class="ffla-tax-state-picker__code">' . esc_html($state_code) . '</span>';
+            echo '<span class="ffla-tax-state-picker__name">' . esc_html($state_name) . '</span>';
+            echo '</label>';
+        }
+        echo '</div>';
+        echo '</div>';
+
+        echo '</div></div>';
+
         // API settings.
         echo '<div class="wb-card" style="margin-top:var(--wb-spacing-xl)">';
         echo '<div class="wb-card__header"><h3>' . esc_html__('API Access', 'ffl-funnels-addons') . '</h3></div>';
@@ -658,6 +765,16 @@ class Tax_Rates_Admin
     }
 
     /* ── Helpers ───────────────────────────────────────────────────── */
+
+    private static function is_covered_state_status(string $status): bool
+    {
+        return in_array($status, [
+            Tax_Coverage::SUPPORTED_ADDRESS_RATE,
+            Tax_Coverage::SUPPORTED_WITH_REMOTE,
+            Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED,
+            Tax_Coverage::NO_SALES_TAX,
+        ], true);
+    }
 
     private static function get_state_names(): array
     {

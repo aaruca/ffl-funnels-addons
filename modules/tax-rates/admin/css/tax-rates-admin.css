@@ -60,14 +60,17 @@
 .ffla-tax-row {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-end;
+    align-items: stretch;
     gap: var(--wb-spacing-lg);
 }
 
-.ffla-tax-lookup-form .ffla-tax-row {
-    display: flex;
+.ffla-tax-row--inline {
+    align-items: stretch;
+}
+
+.ffla-tax-row--stack {
     flex-direction: column;
-    gap: var(--wb-spacing-lg);
+    align-items: stretch;
 }
 
 .ffla-tax-lookup-form .wb-field {
@@ -90,9 +93,19 @@
 .ffla-tax-field--city,
 .ffla-tax-field--state,
 .ffla-tax-field--zip {
-    width: 100%;
-    flex: 0 0 auto;
     min-width: 0;
+}
+
+.ffla-tax-row--inline .ffla-tax-field--city {
+    flex: 1 1 240px;
+}
+
+.ffla-tax-row--inline .ffla-tax-field--state {
+    flex: 0 0 120px;
+}
+
+.ffla-tax-row--inline .ffla-tax-field--zip {
+    flex: 0 0 140px;
 }
 
 /* ── Quote Result ────────────────────────────────────────────────── */
@@ -299,6 +312,14 @@
     opacity: 0.5;
 }
 
+.ffla-tax-coverage-cell__store {
+    font-size: 9px;
+    font-weight: var(--wb-font-weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    opacity: 0.75;
+}
+
 /* Coverage status colors */
 .ffla-tax-coverage-cell--supported {
     background: rgba(39, 103, 73, 0.08);
@@ -310,6 +331,12 @@
     background: rgba(15, 108, 189, 0.08);
     border-color: rgba(15, 108, 189, 0.3);
     color: var(--wb-color-brand-foreground);
+}
+
+.ffla-tax-coverage-cell--context {
+    background: rgba(214, 158, 46, 0.08);
+    border-color: rgba(214, 158, 46, 0.3);
+    color: #8a6116;
 }
 
 .ffla-tax-coverage-cell--no-tax {
@@ -329,15 +356,21 @@
     opacity: 0.6;
 }
 
+.ffla-tax-coverage-cell--store-disabled {
+    opacity: 0.38;
+    filter: saturate(0.55);
+}
+
 /* ── Stats Cards ─────────────────────────────────────────────────── */
 .ffla-tax-stats {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--wb-spacing-lg);
     margin-bottom: var(--wb-spacing-xl);
 }
 
 .ffla-tax-stat {
-    flex: 1;
+    flex: 1 1 180px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -364,6 +397,14 @@
 
 .ffla-tax-stat--no-tax .ffla-tax-stat__value {
     color: var(--wb-color-neutral-foreground-3);
+}
+
+.ffla-tax-stat--enabled .ffla-tax-stat__value {
+    color: var(--wb-color-brand-foreground);
+}
+
+.ffla-tax-stat--disabled .ffla-tax-stat__value {
+    color: #8a6116;
 }
 
 .ffla-tax-stat--unsupported .ffla-tax-stat__value {
@@ -393,10 +434,79 @@
 }
 
 .ffla-tax-legend__dot--supported { background: var(--wb-color-success-foreground, #276749); }
+.ffla-tax-legend__dot--context { background: #b7791f; }
 .ffla-tax-legend__dot--remote { background: var(--wb-color-brand-foreground); }
 .ffla-tax-legend__dot--no-tax { background: var(--wb-color-neutral-foreground-3); }
 .ffla-tax-legend__dot--degraded { background: #b7791f; }
 .ffla-tax-legend__dot--unsupported { background: var(--wb-color-neutral-stroke-2); }
+.ffla-tax-legend__dot--disabled { background: rgba(15, 23, 42, 0.28); }
+
+/* State picker */
+.ffla-tax-state-picker {
+    margin-top: var(--wb-spacing-lg);
+    padding: var(--wb-spacing-lg);
+    border: 1px solid var(--wb-color-neutral-stroke-2);
+    border-radius: var(--wb-radius-lg);
+    background: var(--wb-color-neutral-background-2);
+    transition: opacity var(--wb-duration-fast) var(--wb-easing-standard);
+}
+
+.ffla-tax-state-picker--inactive {
+    opacity: 0.6;
+}
+
+.ffla-tax-state-picker__header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--wb-spacing-md);
+    margin-bottom: var(--wb-spacing-lg);
+}
+
+.ffla-tax-state-picker__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--wb-spacing-sm);
+}
+
+.ffla-tax-state-picker__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: var(--wb-spacing-sm);
+}
+
+.ffla-tax-state-picker__item {
+    display: flex;
+    align-items: center;
+    gap: var(--wb-spacing-sm);
+    padding: var(--wb-spacing-sm) var(--wb-spacing-md);
+    border: 1px solid var(--wb-color-neutral-stroke-2);
+    border-radius: var(--wb-radius-md);
+    background: #fff;
+    min-height: 44px;
+}
+
+.ffla-tax-state-picker__item--covered {
+    border-color: rgba(39, 103, 73, 0.22);
+    background: rgba(39, 103, 73, 0.04);
+}
+
+.ffla-tax-state-picker__checkbox {
+    margin: 0;
+}
+
+.ffla-tax-state-picker__code {
+    font-size: 12px;
+    font-weight: var(--wb-font-weight-semibold);
+    letter-spacing: 0.4px;
+    min-width: 22px;
+}
+
+.ffla-tax-state-picker__name {
+    font-size: var(--wb-font-size-sm);
+    color: var(--wb-color-neutral-foreground-2);
+    line-height: 1.2;
+}
 
 /* ── Upload Status ───────────────────────────────────────────────── */
 .ffla-tax-upload-status {
@@ -409,7 +519,7 @@
 
 /* ── Responsive ──────────────────────────────────────────────────── */
 @media (max-width: 768px) {
-    .ffla-tax-row {
+    .ffla-tax-row--inline {
         flex-direction: column;
     }
 
@@ -424,5 +534,9 @@
     .ffla-tax-meta {
         flex-direction: column;
         gap: var(--wb-spacing-md);
+    }
+
+    .ffla-tax-state-picker__header {
+        flex-direction: column;
     }
 }

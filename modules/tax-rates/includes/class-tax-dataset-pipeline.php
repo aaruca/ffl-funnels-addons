@@ -585,6 +585,7 @@ class Tax_Dataset_Pipeline
 
         $dir     = self::get_storage_dir();
         $results = [];
+        $allowed_states = self::get_target_sst_states();
 
         // Look for SST CSV files named like: SST_{STATE}.csv.
         $files = glob($dir . 'SST_*.csv');
@@ -603,6 +604,10 @@ class Tax_Dataset_Pipeline
             } elseif (preg_match('/^([A-Z]{2})_rates?$/i', $basename, $m)) {
                 $state = strtoupper($m[1]);
             } else {
+                continue;
+            }
+
+            if (!in_array($state, $allowed_states, true)) {
                 continue;
             }
 
@@ -625,7 +630,12 @@ class Tax_Dataset_Pipeline
         }
 
         $results = [];
+        $allowed_states = self::get_target_sst_states();
         foreach ($files as $state_code => $file) {
+            if (!in_array($state_code, $allowed_states, true)) {
+                continue;
+            }
+
             $results[$state_code] = self::download_and_import_sst_file(
                 $state_code,
                 $file['url'],
@@ -634,6 +644,28 @@ class Tax_Dataset_Pipeline
         }
 
         return $results;
+    }
+
+    /**
+     * Get the SST states this store should actively sync.
+     *
+     * @return string[]
+     */
+    private static function get_target_sst_states(): array
+    {
+        $member_states = class_exists('SST_Resolver')
+            ? SST_Resolver::MEMBER_STATES
+            : [
+                'AR', 'GA', 'IN', 'IA', 'KS', 'KY', 'MI', 'MN',
+                'NE', 'NV', 'NJ', 'NC', 'ND', 'OH', 'OK', 'RI',
+                'SD', 'TN', 'UT', 'VT', 'WA', 'WV', 'WI', 'WY',
+            ];
+
+        if (!Tax_Coverage::has_state_filter()) {
+            return $member_states;
+        }
+
+        return array_values(array_intersect($member_states, Tax_Coverage::get_enabled_states()));
     }
 
     /**

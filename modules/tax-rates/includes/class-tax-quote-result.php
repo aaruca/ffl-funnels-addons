@@ -18,6 +18,7 @@ class Tax_Quote_Result
     const OUTCOME_SUCCESS              = 'SUCCESS';
     const OUTCOME_NO_SALES_TAX         = 'NO_SALES_TAX';
     const OUTCOME_UNSUPPORTED          = 'STATE_UNSUPPORTED';
+    const OUTCOME_STATE_DISABLED       = 'STATE_DISABLED';
     const OUTCOME_RATE_NOT_DETERMINABLE = 'RATE_NOT_DETERMINABLE';
     const OUTCOME_DATASET_STALE        = 'DATASET_STALE';
     const OUTCOME_SOURCE_UNAVAILABLE   = 'SOURCE_UNAVAILABLE';
@@ -218,6 +219,29 @@ class Tax_Quote_Result
         $result->state            = $state_code;
         $result->coverageStatus   = Tax_Coverage::UNSUPPORTED;
         $result->set_error(self::OUTCOME_UNSUPPORTED, "Tax rate lookup is not yet supported for state: {$state_code}.");
+
+        return $result;
+    }
+
+    /**
+     * Create a "state disabled by store configuration" result.
+     */
+    public static function disabled_state(string $state_code, array $input, array $normalized): self
+    {
+        $result                    = new self();
+        $result->inputAddress      = $input;
+        $result->normalizedAddress = $normalized;
+        $result->state             = $state_code;
+
+        $rule = Tax_Coverage::get_state($state_code);
+        if ($rule && !empty($rule['coverage_status'])) {
+            $result->coverageStatus = $rule['coverage_status'];
+        }
+
+        $result->set_error(
+            self::OUTCOME_STATE_DISABLED,
+            sprintf('Tax resolver is currently disabled for state: %s. Enable it in Tax Resolver settings to use this state.', $state_code)
+        );
 
         return $result;
     }

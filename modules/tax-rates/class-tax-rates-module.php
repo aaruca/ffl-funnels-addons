@@ -99,6 +99,23 @@ class Tax_Rates_Module extends FFLA_Module
             Tax_Resolver_DB::install();
         }
 
+        foreach (SST_Resolver::MEMBER_STATES as $state_code) {
+            $rule = Tax_Coverage::get_state($state_code);
+            if ($rule
+                && $rule['resolver_name'] === 'sst'
+                && $rule['coverage_status'] === Tax_Coverage::SUPPORTED_ADDRESS_RATE
+            ) {
+                continue;
+            }
+
+            Tax_Coverage::update_state(
+                $state_code,
+                Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED,
+                'sst',
+                'Official SST member state. Run Sync Datasets to import the current state file and activate address-specific rates.'
+            );
+        }
+
         Tax_Coverage::update_state(
             'LA',
             Tax_Coverage::SUPPORTED_WITH_REMOTE,
@@ -203,6 +220,8 @@ class Tax_Rates_Module extends FFLA_Module
                 'auto_sync'       => '1',
                 'sync_schedule'   => 'quarterly',
                 'wc_auto_sync'    => '1',
+                'restrict_states' => '0',
+                'enabled_states'  => [],
             ]);
         }
     }
