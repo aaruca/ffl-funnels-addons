@@ -45,13 +45,13 @@
 
 .ffla-tax-row {
     display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
+    flex-direction: column;
     gap: var(--wb-spacing-lg);
 }
 
 .ffla-tax-lookup-form .wb-field {
     min-width: 0;
+    width: 100%;
 }
 
 .ffla-tax-lookup-form .wb-field__control,
@@ -66,9 +66,13 @@
     align-self: flex-start;
 }
 
-.ffla-tax-field--city { flex: 3; }
-.ffla-tax-field--state { flex: 1; min-width: 80px; }
-.ffla-tax-field--zip { flex: 1.5; min-width: 100px; }
+.ffla-tax-field--city,
+.ffla-tax-field--state,
+.ffla-tax-field--zip {
+    width: 100%;
+    flex: 0 0 auto;
+    min-width: 0;
+}
 
 /* ── Quote Result ────────────────────────────────────────────────── */
 .ffla-tax-result--success { }
