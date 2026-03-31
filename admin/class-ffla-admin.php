@@ -477,7 +477,7 @@ class FFLA_Admin
 
         echo '<div class="wb-message wb-message--' . esc_attr($type) . '">';
         echo $icon; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-        echo '<span>' . esc_html($message) . '</span>';
+        echo '<span>' . wp_kses_post($message) . '</span>';
         echo '</div>';
     }
 }

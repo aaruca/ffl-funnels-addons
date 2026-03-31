@@ -3,34 +3,72 @@
 /* State selector grid */
 .ffla-tax-states-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: var(--wb-spacing-sm);
 }
 
+/* ── Individual state item ─────────────────────────────────────────── */
 .ffla-tax-state-item {
     display: flex;
     align-items: flex-start;
-    gap: var(--wb-spacing-sm);
-    padding: var(--wb-spacing-sm) var(--wb-spacing-md);
-    border-radius: var(--wb-radius-sm);
+    gap: var(--wb-spacing-md);
+    padding: var(--wb-spacing-md) var(--wb-spacing-lg);
+    border-radius: var(--wb-radius-md);
+    border: 1px solid var(--wb-color-neutral-stroke-2);
+    background: var(--wb-color-neutral-background-1);
     cursor: pointer;
-    transition: background var(--wb-duration-fast) var(--wb-easing-standard);
+    transition: all var(--wb-duration-fast) var(--wb-easing-standard);
 }
 
 .ffla-tax-state-item:hover {
     background: var(--wb-color-neutral-background-2);
+    border-color: var(--wb-color-neutral-stroke-1);
+    box-shadow: var(--wb-shadow-1);
 }
 
+/* Selected / checked state */
+.ffla-tax-state-item:has(input:checked) {
+    border-color: var(--wb-color-brand-background);
+    background: rgba(15, 108, 189, 0.04);
+    box-shadow: 0 0 0 1px var(--wb-color-brand-background);
+}
+
+.ffla-tax-state-item:has(input:checked):hover {
+    background: rgba(15, 108, 189, 0.08);
+}
+
+/* ── Checkbox styling override ─────────────────────────────────────── */
+.ffla-tax-state-item .wb-checkbox {
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.ffla-tax-state-item .wb-checkbox input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--wb-color-brand-background);
+    cursor: pointer;
+    border-radius: var(--wb-radius-sm);
+}
+
+/* Hide the empty indicator span (checkbox alone is enough) */
+.ffla-tax-state-item .wb-checkbox__indicator {
+    display: none;
+}
+
+/* ── State info ────────────────────────────────────────────────────── */
 .ffla-tax-state-info {
     display: flex;
     flex-direction: column;
     gap: 2px;
     min-width: 0;
+    flex: 1;
 }
 
 .ffla-tax-state-name {
     font-size: var(--wb-font-size-sm);
-    font-weight: var(--wb-font-weight-medium);
+    font-weight: var(--wb-font-weight-semibold);
     color: var(--wb-color-neutral-foreground-1);
     white-space: nowrap;
     overflow: hidden;
@@ -39,14 +77,15 @@
 
 .ffla-tax-state-status {
     font-size: var(--wb-font-size-xs);
+    line-height: 1.4;
 }
 
 .ffla-tax-state-status--ok {
-    color: var(--wb-color-neutral-foreground-3);
+    color: var(--wb-color-success-foreground, #276749);
 }
 
 .ffla-tax-state-status--error {
-    color: #c53030;
+    color: var(--wb-color-danger-foreground, #c53030);
 }
 
 .ffla-tax-state-status--none {
@@ -54,7 +93,7 @@
     font-style: italic;
 }
 
-/* Progress bar */
+/* ── Progress bar ──────────────────────────────────────────────────── */
 .ffla-tax-progress-bar-wrap {
     background: var(--wb-color-neutral-background-3);
     border-radius: var(--wb-radius-round);
@@ -66,10 +105,11 @@
     background: var(--wb-color-brand-background);
     height: 100%;
     width: 0%;
+    border-radius: var(--wb-radius-round);
     transition: width 0.4s var(--wb-easing-standard);
 }
 
-/* Log container */
+/* ── Log container ─────────────────────────────────────────────────── */
 .ffla-tax-log {
     margin-top: var(--wb-spacing-lg);
     max-height: 200px;
@@ -79,7 +119,7 @@
     line-height: 1.6;
 }
 
-/* Progress counter */
+/* ── Progress counter ──────────────────────────────────────────────── */
 .ffla-tax-count {
     margin-top: var(--wb-spacing-sm);
     font-size: var(--wb-font-size-sm);
