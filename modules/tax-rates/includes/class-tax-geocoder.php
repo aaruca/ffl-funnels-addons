@@ -111,6 +111,7 @@ class Tax_Geocoder
             $result['stateFips']  = $tract_data['STATE'] ?? null;
             $result['countyFips'] = $tract_data['COUNTY'] ?? null;
             $result['tract']      = $tract_data['TRACT'] ?? null;
+            $result['countyName'] = self::extract_county_name($tract_data, $result['countyName']);
         }
 
         // Prefer Counties geography for the actual county/parish name.
@@ -122,9 +123,11 @@ class Tax_Geocoder
             if (empty($result['countyFips'])) {
                 $result['countyFips'] = $county_data['COUNTY'] ?? null;
             }
-            $result['countyName'] = $county_data['NAME']
-                ?? $county_data['BASENAME']
-                ?? $result['countyName'];
+            $result['countyName'] = self::extract_county_name($county_data, $result['countyName']);
+        }
+
+        if (!self::is_valid_county_name($result['countyName'])) {
+            $result['countyName'] = null;
         }
 
         // Tiger Line ID for precise geographic matching.
@@ -183,5 +186,48 @@ class Tax_Geocoder
             return null;
         }
         return $geocode['stateFips'] . $geocode['countyFips'];
+    }
+
+    /**
+     * Extract a usable county/parish name from a Census geography row.
+     */
+    private static function extract_county_name(array $geo_row, ?string $fallback = null): ?string
+    {
+        $candidates = [
+            $geo_row['NAME'] ?? null,
+            $geo_row['NAMELSAD'] ?? null,
+            $geo_row['BASENAME'] ?? null,
+            $fallback,
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (self::is_valid_county_name($candidate)) {
+                return trim((string) $candidate);
+            }
+        }
+
+        return $fallback;
+    }
+
+    /**
+     * Check whether a county/parish name looks usable.
+     */
+    private static function is_valid_county_name($value): bool
+    {
+        if (!is_string($value)) {
+            return false;
+        }
+
+        $value = trim($value);
+        if ($value === '') {
+            return false;
+        }
+
+        // Reject tract-like basenames such as "31.02".
+        if (preg_match('/^\d+(?:\.\d+)?$/', $value)) {
+            return false;
+        }
+
+        return true;
     }
 }

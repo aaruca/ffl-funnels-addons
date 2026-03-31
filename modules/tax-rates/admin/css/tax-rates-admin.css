@@ -40,11 +40,30 @@
     display: flex;
     flex-direction: column;
     gap: var(--wb-spacing-lg);
+    max-width: 100%;
 }
 
 .ffla-tax-row {
     display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
     gap: var(--wb-spacing-lg);
+}
+
+.ffla-tax-lookup-form .wb-field {
+    min-width: 0;
+}
+
+.ffla-tax-lookup-form .wb-field__control,
+.ffla-tax-lookup-form .wb-input,
+.ffla-tax-lookup-form input[type="text"] {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.ffla-tax-lookup-form .wb-btn {
+    align-self: flex-start;
 }
 
 .ffla-tax-field--city { flex: 3; }
