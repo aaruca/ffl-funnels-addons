@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.8.0--beta.2-orange.svg)
+![Version](https://img.shields.io/badge/version-1.8.0--beta.3-orange.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -88,6 +88,11 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.8.0-beta.3
+*   Fix: Compatibilidad corregida con `woocommerce_matched_tax_rates` para evitar fatal errors en checkout/cart.
+*   Fix: Fallback por FIPS para Louisiana y Texas cuando Census no entrega bien county/parish.
+*   Fix: `Tax Quote Lookup` ahora apila todos los campos en columna para una UI m&aacute;s limpia.
 
 ### v1.8.0-beta.2
 *   Fix: Integración directa con WooCommerce para cálculo runtime de impuestos en checkout/cart.
