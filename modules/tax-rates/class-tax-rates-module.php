@@ -61,16 +61,24 @@ class Tax_Rates_Module extends FFLA_Module
         require_once $base . 'includes/class-tax-quote-engine.php';
         require_once $base . 'includes/class-tax-dataset-pipeline.php';
         require_once $base . 'includes/class-tax-rest-api.php';
+        require_once $base . 'includes/class-tax-woocommerce-integration.php';
 
         // Resolvers.
         require_once $base . 'includes/resolvers/class-tax-resolver-base.php';
         require_once $base . 'includes/resolvers/class-sst-resolver.php';
+        require_once $base . 'includes/resolvers/class-louisiana-remote-resolver.php';
+        require_once $base . 'includes/resolvers/class-texas-rate-file-resolver.php';
 
         // Register resolvers.
         Tax_Resolver_Router::register(new SST_Resolver());
+        Tax_Resolver_Router::register(new Louisiana_Remote_Resolver());
+        Tax_Resolver_Router::register(new Texas_Rate_File_Resolver());
 
         // Register REST API routes.
         add_action('rest_api_init', ['Tax_REST_API', 'register_routes']);
+
+        // WooCommerce runtime tax calculation.
+        Tax_WooCommerce_Integration::init();
 
         // Cron.
         require_once $base . 'includes/class-tax-rates-cron.php';
@@ -80,6 +88,20 @@ class Tax_Rates_Module extends FFLA_Module
         if (Tax_Resolver_DB::needs_upgrade()) {
             Tax_Resolver_DB::install();
         }
+
+        Tax_Coverage::update_state(
+            'LA',
+            Tax_Coverage::SUPPORTED_WITH_REMOTE,
+            'la_remote',
+            'Resolved through the official Louisiana Parish E-File lookup.'
+        );
+
+        Tax_Coverage::update_state(
+            'TX',
+            Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED,
+            'tx_rate_file',
+            'Resolved through the official Texas Comptroller sales tax rate file with conservative handling for ambiguous special districts.'
+        );
 
         $settings = get_option('ffla_tax_resolver_settings', []);
         Tax_Quote_Engine::set_cache_ttl((int) ($settings['cache_ttl'] ?? 86400));
