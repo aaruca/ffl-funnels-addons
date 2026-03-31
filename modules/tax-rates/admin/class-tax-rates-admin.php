@@ -31,8 +31,7 @@ class Tax_Rates_Admin
         if (!isset($_GET['page']) || sanitize_text_field(wp_unslash($_GET['page'])) !== 'ffla-tax-rates') {
             return;
         }
-
-        $base_url = plugin_dir_url(dirname(__DIR__)) . 'modules/tax-rates/admin/';
+        $base_url = FFLA_URL . 'modules/tax-rates/admin/';
 
         wp_enqueue_script(
             'ffla-tax-rates-admin',
