@@ -130,21 +130,103 @@ class Tax_WooCommerce_Integration
      */
     private static function build_address_input(string $state, string $postcode, string $city): array
     {
+        $request_fields = self::get_checkout_request_fields();
         $street = '';
+        $request_street = self::pick_first_non_empty([
+            $request_fields['shipping_address_1'] ?? '',
+            $request_fields['billing_address_1'] ?? '',
+        ]);
+        $request_city = self::pick_first_non_empty([
+            $request_fields['shipping_city'] ?? '',
+            $request_fields['billing_city'] ?? '',
+            $city,
+        ]);
+        $request_state = self::pick_first_non_empty([
+            $request_fields['shipping_state'] ?? '',
+            $request_fields['billing_state'] ?? '',
+            $state,
+        ]);
+        $request_postcode = self::pick_first_non_empty([
+            $request_fields['shipping_postcode'] ?? '',
+            $request_fields['billing_postcode'] ?? '',
+            $postcode,
+        ]);
 
         if (function_exists('WC') && WC()->customer) {
-            $street = WC()->customer->get_shipping_address();
+            $street = $request_street !== '' ? $request_street : WC()->customer->get_shipping_address();
             if ($street === '') {
                 $street = WC()->customer->get_billing_address();
+            }
+
+            if ($request_city === '') {
+                $request_city = WC()->customer->get_shipping_city();
+                if ($request_city === '') {
+                    $request_city = WC()->customer->get_billing_city();
+                }
+            }
+
+            if ($request_state === '') {
+                $request_state = WC()->customer->get_shipping_state();
+                if ($request_state === '') {
+                    $request_state = WC()->customer->get_billing_state();
+                }
+            }
+
+            if ($request_postcode === '') {
+                $request_postcode = WC()->customer->get_shipping_postcode();
+                if ($request_postcode === '') {
+                    $request_postcode = WC()->customer->get_billing_postcode();
+                }
             }
         }
 
         return [
             'street' => $street,
-            'city'   => $city,
-            'state'  => $state,
-            'zip'    => $postcode,
+            'city'   => $request_city,
+            'state'  => $request_state,
+            'zip'    => $request_postcode,
         ];
+    }
+
+    /**
+     * Read the latest checkout fields from the current request payload.
+     */
+    private static function get_checkout_request_fields(): array
+    {
+        $fields = [];
+
+        if (!empty($_POST['post_data']) && is_string($_POST['post_data'])) {
+            parse_str(wp_unslash($_POST['post_data']), $fields);
+        }
+
+        if (empty($fields) && !empty($_POST) && is_array($_POST)) {
+            foreach ($_POST as $key => $value) {
+                if (is_scalar($value)) {
+                    $fields[(string) $key] = wp_unslash((string) $value);
+                }
+            }
+        }
+
+        return $fields;
+    }
+
+    /**
+     * Return the first non-empty scalar string from a list.
+     */
+    private static function pick_first_non_empty(array $values): string
+    {
+        foreach ($values as $value) {
+            if (!is_scalar($value)) {
+                continue;
+            }
+
+            $value = trim((string) $value);
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
     }
 
     /**
