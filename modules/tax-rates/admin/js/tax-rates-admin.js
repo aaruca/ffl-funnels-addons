@@ -138,7 +138,12 @@
 
         $('#ffla-sync-btn').on('click', function () {
             var $btn = $(this);
-            $btn.prop('disabled', true).text('Syncing...');
+            var $status = $('#ffla-upload-status');
+
+            $btn.prop('disabled', true).text('Syncing sheet data...');
+            $status
+                .show()
+                .html('<div class="wb-ai-loading-message"><span>Downloading the shared CSV and rebuilding local state datasets. This can take a minute.</span><span class="wb-ai-dots"><span></span><span></span><span></span></span></div>');
 
             $.post(FflaTaxResolver.ajaxUrl, {
                 action: 'ffla_tax_run_sync',
@@ -149,14 +154,16 @@
                     if (res && res.data && Array.isArray(res.data.errors) && res.data.errors.length) {
                         message += '\n\n' + res.data.errors.join('\n');
                     }
+                    $status.html('<strong>Sync finished.</strong> ' + escHtml(message));
                     alert(message);
                     location.reload();
                 })
                 .fail(function () {
+                    $status.html('<span class="ffla-tax-error">Sheet sync request failed.</span>');
                     alert('Request failed.');
                 })
                 .always(function () {
-                    $btn.prop('disabled', false).text('Sync SalesTaxHandbook States');
+                    $btn.prop('disabled', false).text('Sync Sheet Data');
                 });
         });
 

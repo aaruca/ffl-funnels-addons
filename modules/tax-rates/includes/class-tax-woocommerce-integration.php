@@ -78,7 +78,7 @@ class Tax_WooCommerce_Integration
             return $matched_tax_rates;
         }
 
-        if (!Tax_Coverage::is_supported($state) && !Tax_Coverage::has_no_tax($state)) {
+        if (!Tax_Coverage::is_supported($state)) {
             return $matched_tax_rates;
         }
 
@@ -104,11 +104,6 @@ class Tax_WooCommerce_Integration
 
         if (function_exists('WC') && WC()->session) {
             WC()->session->set('ffla_last_tax_quote', $quote->to_array());
-        }
-
-        if ($quote->outcomeCode === Tax_Quote_Result::OUTCOME_NO_SALES_TAX) {
-            self::store_runtime_tax_meta([]);
-            return [];
         }
 
         if (!$quote->is_success()) {
@@ -298,12 +293,17 @@ class Tax_WooCommerce_Integration
         $runtime_meta = [];
 
         foreach ($quote->breakdown as $index => $item) {
+            $rate_percent = (float) number_format(((float) $item['rate']) * 100, 4, '.', '');
+            if ($rate_percent <= 0) {
+                continue;
+            }
+
             $rate_id = 990000 + $index;
             $label   = self::build_rate_label($item);
             $code    = self::build_rate_code($quote->state, $rate_id, $item);
 
             $rates[$rate_id] = [
-                'rate'     => (float) number_format(((float) $item['rate']) * 100, 4, '.', ''),
+                'rate'     => $rate_percent,
                 'label'    => $label,
                 'shipping' => 'yes',
                 'compound' => 'no',
@@ -313,7 +313,7 @@ class Tax_WooCommerce_Integration
                 'id'       => $rate_id,
                 'label'    => $label,
                 'code'     => $code,
-                'rate'     => (float) number_format(((float) $item['rate']) * 100, 4, '.', ''),
+                'rate'     => $rate_percent,
                 'compound' => false,
                 'state'    => $quote->state,
                 'type'     => (string) ($item['type'] ?? 'tax'),

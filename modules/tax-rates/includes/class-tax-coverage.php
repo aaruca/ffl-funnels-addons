@@ -31,9 +31,7 @@ class Tax_Coverage
      * infrastructure like the Census geocoder.
      */
     const SOURCE_STRATEGY_NONE = 'none';
-    const SOURCE_STRATEGY_OFFICIAL = 'official';
-    const SOURCE_STRATEGY_HANDBOOK = 'handbook_city_table';
-    const SOURCE_STRATEGY_NO_TAX = 'official_no_tax_law';
+    const SOURCE_STRATEGY_SHEET = 'sheet_zip_dataset';
 
     /**
      * Canonical US state list including DC.
@@ -94,15 +92,14 @@ class Tax_Coverage
 
         // Summary counts.
         $counts = [
-            'total'          => count($matrix),
-            'supported'      => 0,
-            'unsupported'    => 0,
-            'no_sales_tax'   => 0,
-            'degraded'       => 0,
-            'enabled_for_store'  => 0,
-            'disabled_for_store' => 0,
-            'official_source_states' => 0,
-            'handbook_source_states' => 0,
+            'total'               => count($matrix),
+            'supported'           => 0,
+            'unsupported'         => 0,
+            'no_sales_tax'        => 0,
+            'degraded'            => 0,
+            'enabled_for_store'   => 0,
+            'disabled_for_store'  => 0,
+            'sheet_source_states' => 0,
         ];
 
         foreach ($matrix as $row) {
@@ -143,10 +140,8 @@ class Tax_Coverage
                 $counts['disabled_for_store']++;
             }
 
-            if (($s['sourceStrategy']['family'] ?? null) === self::SOURCE_STRATEGY_HANDBOOK) {
-                $counts['handbook_source_states']++;
-            } elseif (in_array(($s['sourceStrategy']['family'] ?? null), [self::SOURCE_STRATEGY_OFFICIAL, self::SOURCE_STRATEGY_NO_TAX], true)) {
-                $counts['official_source_states']++;
+            if (($s['sourceStrategy']['family'] ?? null) === self::SOURCE_STRATEGY_SHEET) {
+                $counts['sheet_source_states']++;
             }
         }
 
@@ -280,8 +275,7 @@ class Tax_Coverage
     /**
      * Get the tax-source strategy used for a state.
      *
-     * This exposes the real source-of-truth family: official sources or the
-     * SalesTaxHandbook state city table fallback.
+     * This exposes the real source-of-truth family for the active resolver.
      */
     public static function get_source_strategy(string $state_code): array
     {
@@ -304,28 +298,14 @@ class Tax_Coverage
         $resolver_name = $rule['resolver_name'] ?? '';
         $requires_geocode = self::resolver_requires_geocode($state_code, $resolver_name, $status);
 
-        if ($status === self::NO_SALES_TAX) {
+        if ($resolver_name === 'sheet_zip_dataset') {
             return [
-                'key'             => self::SOURCE_STRATEGY_NO_TAX,
-                'family'          => self::SOURCE_STRATEGY_NO_TAX,
-                'label'           => 'Official state no-tax law',
-                'shortLabel'      => 'No Tax Law',
-                'primary'         => 'official_no_tax_law',
-                'primaryLabel'    => 'Official state no-tax law',
-                'fallback'        => null,
-                'fallbackLabel'   => null,
-                'requiresGeocode' => false,
-            ];
-        }
-
-        if ($resolver_name === 'handbook_city_dataset') {
-            return [
-                'key'             => 'handbook_city_dataset',
-                'family'          => self::SOURCE_STRATEGY_HANDBOOK,
-                'label'           => 'SalesTaxHandbook imported city table dataset',
-                'shortLabel'      => 'Handbook',
-                'primary'         => 'handbook_city_dataset',
-                'primaryLabel'    => 'SalesTaxHandbook city table imported to local datasets',
+                'key'             => 'sheet_zip_dataset',
+                'family'          => self::SOURCE_STRATEGY_SHEET,
+                'label'           => 'Local Google Sheet ZIP dataset',
+                'shortLabel'      => 'Sheet',
+                'primary'         => 'sheet_zip_dataset',
+                'primaryLabel'    => 'Local dataset imported from the shared Google Sheet CSV',
                 'fallback'        => null,
                 'fallbackLabel'   => null,
                 'requiresGeocode' => $requires_geocode,
@@ -361,6 +341,6 @@ class Tax_Coverage
             }
         }
 
-        return !in_array($resolver_name, ['handbook_city_dataset'], true);
+        return !in_array($resolver_name, ['sheet_zip_dataset'], true);
     }
 }

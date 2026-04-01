@@ -4,9 +4,8 @@
  *
  * Tax Address Resolver for US sales tax by address.
  *
- * Uses imported SalesTaxHandbook city tables as the primary local dataset
- * source, persisted to local tables and refreshed monthly for the store's
- * selected states.
+ * Uses Google Sheets CSV ZIP datasets stored locally in WordPress and
+ * refreshed monthly for the store's selected states.
  *
  * @package FFL_Funnels_Addons
  */
@@ -33,7 +32,7 @@ class Tax_Rates_Module extends FFLA_Module
     public function get_description(): string
     {
         return __(
-            'US sales tax resolver powered by imported SalesTaxHandbook city tables stored locally in the WordPress database and refreshed monthly for the states your store uses.',
+            'US sales tax resolver powered by a shared Google Sheets ZIP dataset stored locally in WordPress and refreshed monthly for the states your store uses.',
             'ffl-funnels-addons'
         );
     }
@@ -63,10 +62,10 @@ class Tax_Rates_Module extends FFLA_Module
 
         // Resolvers.
         require_once $base . 'includes/resolvers/class-tax-resolver-base.php';
-        require_once $base . 'includes/resolvers/class-handbook-city-dataset-resolver.php';
+        require_once $base . 'includes/resolvers/class-sheet-zip-dataset-resolver.php';
 
         // Register resolvers.
-        Tax_Resolver_Router::register(new Handbook_City_Dataset_Resolver());
+        Tax_Resolver_Router::register(new Sheet_ZIP_Dataset_Resolver());
 
         // Register REST API routes.
         add_action('rest_api_init', ['Tax_REST_API', 'register_routes']);
@@ -84,15 +83,23 @@ class Tax_Rates_Module extends FFLA_Module
         }
 
         foreach (Tax_Coverage::ALL_STATES as $state_code) {
-            $has_dataset = Tax_Dataset_Pipeline::has_active_handbook_dataset($state_code);
+            $has_dataset = Tax_Dataset_Pipeline::has_active_sheet_dataset($state_code);
+            $status      = $has_dataset
+                ? Tax_Dataset_Pipeline::get_active_sheet_coverage_status($state_code)
+                : Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED;
+            $note        = 'Run sheet sync to build the local ZIP dataset for this state.';
+
+            if ($has_dataset) {
+                $note = $status === Tax_Coverage::NO_SALES_TAX
+                    ? 'A zero-tax Google Sheet dataset is active for this state.'
+                    : 'Google Sheet ZIP dataset is active for this state.';
+            }
 
             Tax_Coverage::update_state(
                 $state_code,
-                $has_dataset ? Tax_Coverage::SUPPORTED_ADDRESS_RATE : Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED,
-                'handbook_city_dataset',
-                $has_dataset
-                    ? 'Imported SalesTaxHandbook city-table dataset is active for this state.'
-                    : 'Run Sync SalesTaxHandbook States to import the SalesTaxHandbook state city table for this state.'
+                $status,
+                'sheet_zip_dataset',
+                $note
             );
         }
 
@@ -127,9 +134,9 @@ class Tax_Rates_Module extends FFLA_Module
                 'cache_ttl'       => 86400,    // 24 hours
                 'auto_sync'       => '1',
                 'sync_schedule'   => 'monthly',
-                'wc_auto_sync'    => '0',
                 'restrict_states' => '0',
                 'enabled_states'  => [],
+                'sheet_source_url'=> Tax_Dataset_Pipeline::DEFAULT_SHEET_URL,
             ]);
         }
     }

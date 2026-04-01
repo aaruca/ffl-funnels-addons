@@ -64,6 +64,19 @@
     gap: var(--wb-spacing-lg);
 }
 
+.ffla-tax-row .wb-field {
+    min-width: 0;
+}
+
+.ffla-tax-row .wb-field__control,
+.ffla-tax-row .wb-input,
+.ffla-tax-row .wb-select,
+.ffla-tax-row textarea {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
 .ffla-tax-row--inline {
     align-items: stretch;
 }

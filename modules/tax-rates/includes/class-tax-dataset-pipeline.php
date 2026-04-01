@@ -2,16 +2,11 @@
 /**
  * Tax Dataset Pipeline.
  *
- * Builds local per-state datasets from SalesTaxHandbook state pages,
- * specifically the "View City Sales Tax Rates" table at /rates#cities.
+ * Rebuilds local per-state tax datasets from a shared Google Sheets CSV export
+ * and stores normalized ZIP, city, and state-floor rows in
+ * dataset_versions/jurisdiction_rates.
  *
- * Active flow:
- *   1. Download the state page
- *   2. Parse the state sales-tax floor and city table
- *   3. Normalize rows into jurisdiction_rates
- *   4. Create a dataset version
- *   5. Promote that version to active for the state
- *   6. Clear cached quotes for the refreshed state
+ * Runtime checkout and quote lookups read only from these local datasets.
  *
  * @package FFL_Funnels_Addons
  */
@@ -22,17 +17,16 @@ if (!defined('ABSPATH')) {
 
 class Tax_Dataset_Pipeline
 {
-    const SST_RATES_INDEX = 'https://www.streamlinedsalestax.org/ratesandboundry/Rates/';
-    const HANDBOOK_BASE_URL = 'https://www.salestaxhandbook.com';
-    const HANDBOOK_SOURCE_CODE = 'salestaxhandbook_city_table';
-    const DOWNLOAD_TIMEOUT = 45;
+    const SHEET_SOURCE_CODE = 'google_sheet_zip_rates';
+    const FRESHNESS_POLICY  = '45d';
+    const DEFAULT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1lhFA1vDtbCNt0WA_oasyyW4m4RsyLpFnXXPWDOzSSb4/edit?usp=sharing';
 
     /**
-     * SalesTaxHandbook state name map used to derive /state-name/rates#cities URLs.
+     * Canonical supported US states including DC.
      *
      * @var array<string,string>
      */
-    const HANDBOOK_STATE_NAMES = [
+    const STATE_NAMES = [
         'AL' => 'Alabama',
         'AK' => 'Alaska',
         'AZ' => 'Arizona',
@@ -87,47 +81,62 @@ class Tax_Dataset_Pipeline
     ];
 
     /**
-     * Directory for storing downloaded dataset files.
-     */
-    public static function get_storage_dir(): string
-    {
-        $dir = WP_CONTENT_DIR . '/ffla-tax-datasets/';
-        if (!is_dir($dir)) {
-            wp_mkdir_p($dir);
-            // Protect with .htaccess.
-            file_put_contents($dir . '.htaccess', "Deny from all\n");
-        }
-        return $dir;
-    }
-
-    /**
-     * Sync datasets from all configured sources.
+     * Sync datasets from the configured sheet source.
      *
      * @param  string $source 'all' or specific source code.
-     * @return array  Sync results per source.
+     * @return array<string,array<string,mixed>>
      */
     public static function sync(string $source = 'all'): array
     {
         $results = [];
 
-        if ($source === 'all' || $source === self::HANDBOOK_SOURCE_CODE) {
-            $results['handbook'] = self::sync_handbook_city_tables();
+        if ($source === 'all' || $source === self::SHEET_SOURCE_CODE) {
+            $results['sheet'] = self::sync_sheet_datasets();
         }
 
         return $results;
     }
 
     /**
-     * Return the states whose SalesTaxHandbook datasets should be imported.
+     * Sync a single state.
      *
-     * If the store has a state filter enabled, only those selected states are
-     * refreshed. Otherwise, all 50 states plus DC are eligible.
+     * @return array<string,mixed>
+     */
+    public static function sync_state(string $state_code): array
+    {
+        $rows = self::fetch_sheet_rows(self::get_sheet_export_url());
+        if (is_wp_error($rows)) {
+            return [
+                'success'             => false,
+                'skipped'             => false,
+                'state'               => strtoupper($state_code),
+                'rows'                => 0,
+                'version_id'          => null,
+                'city_rows'           => 0,
+                'zip_rows'            => 0,
+                'updated'             => '',
+                'source_url'          => self::get_sheet_export_url(),
+                'error'               => $rows->get_error_message(),
+            ];
+        }
+
+        $grouped = self::group_rows_by_state($rows);
+
+        return self::import_sheet_state(
+            strtoupper($state_code),
+            $grouped[strtoupper($state_code)] ?? [],
+            self::get_sheet_export_url()
+        );
+    }
+
+    /**
+     * Return the states whose sheet datasets should be imported.
      *
      * @return string[]
      */
-    public static function get_target_handbook_states(): array
+    public static function get_target_sheet_states(): array
     {
-        $states = array_keys(self::HANDBOOK_STATE_NAMES);
+        $states = array_keys(self::STATE_NAMES);
 
         if (!class_exists('Tax_Coverage') || !Tax_Coverage::has_state_filter()) {
             return $states;
@@ -137,9 +146,9 @@ class Tax_Dataset_Pipeline
     }
 
     /**
-     * Check whether a state already has an active imported SalesTaxHandbook dataset.
+     * Check whether a state already has an active imported sheet dataset.
      */
-    public static function has_active_handbook_dataset(string $state_code): bool
+    public static function has_active_sheet_dataset(string $state_code): bool
     {
         global $wpdb;
 
@@ -150,94 +159,289 @@ class Tax_Dataset_Pipeline
              WHERE source_code = %s
                AND state_code = %s
                AND status = 'active'",
-            self::HANDBOOK_SOURCE_CODE,
+            self::SHEET_SOURCE_CODE,
             strtoupper($state_code)
         ));
     }
 
     /**
-     * Import the SalesTaxHandbook city table for all target states.
+     * Return the effective coverage status implied by the active local dataset.
+     */
+    public static function get_active_sheet_coverage_status(string $state_code): string
+    {
+        global $wpdb;
+
+        $dataset_table = Tax_Resolver_DB::table('dataset_versions');
+        $rates_table   = Tax_Resolver_DB::table('jurisdiction_rates');
+        $state_code    = strtoupper($state_code);
+
+        $dataset_id = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT id
+             FROM {$dataset_table}
+             WHERE source_code = %s
+               AND state_code = %s
+               AND status = 'active'
+             ORDER BY effective_date DESC, id DESC
+             LIMIT 1",
+            self::SHEET_SOURCE_CODE,
+            $state_code
+        ));
+
+        if ($dataset_id <= 0) {
+            return Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED;
+        }
+
+        $positive_rows = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*)
+             FROM {$rates_table}
+             WHERE dataset_version_id = %d
+               AND rate > 0",
+            $dataset_id
+        ));
+
+        return $positive_rows > 0
+            ? Tax_Coverage::SUPPORTED_ADDRESS_RATE
+            : Tax_Coverage::NO_SALES_TAX;
+    }
+
+    /**
+     * Get all active sheet datasets.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public static function get_active_versions(): array
+    {
+        global $wpdb;
+
+        $table = Tax_Resolver_DB::table('dataset_versions');
+
+        return $wpdb->get_results($wpdb->prepare(
+            "SELECT *
+             FROM {$table}
+             WHERE status = 'active'
+               AND source_code = %s
+             ORDER BY state_code ASC, effective_date DESC",
+            self::SHEET_SOURCE_CODE
+        ), ARRAY_A) ?: [];
+    }
+
+    /**
+     * Delete all local sheet dataset rows for a deselected state.
+     *
+     * @return array<string,int|string>
+     */
+    public static function purge_state_dataset(string $state_code): array
+    {
+        global $wpdb;
+
+        $state_code   = strtoupper($state_code);
+        $dataset_table = Tax_Resolver_DB::table('dataset_versions');
+        $rates_table   = Tax_Resolver_DB::table('jurisdiction_rates');
+
+        $versions = $wpdb->get_results($wpdb->prepare(
+            "SELECT id, row_count
+             FROM {$dataset_table}
+             WHERE source_code = %s
+               AND state_code = %s",
+            self::SHEET_SOURCE_CODE,
+            $state_code
+        ), ARRAY_A) ?: [];
+
+        $deleted_versions = 0;
+        $deleted_rows     = 0;
+
+        foreach ($versions as $version) {
+            $version_id = (int) ($version['id'] ?? 0);
+            if ($version_id <= 0) {
+                continue;
+            }
+
+            $deleted_rows += (int) ($version['row_count'] ?? 0);
+
+            $wpdb->delete($rates_table, ['dataset_version_id' => $version_id], ['%d']);
+            $wpdb->delete($dataset_table, ['id' => $version_id], ['%d']);
+
+            $deleted_versions++;
+        }
+
+        Tax_Resolver_DB::clear_state_cache($state_code);
+        Tax_Coverage::update_state(
+            $state_code,
+            Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED,
+            'sheet_zip_dataset',
+            'State removed from store selection; local sheet dataset was deleted.'
+        );
+
+        return [
+            'state'            => $state_code,
+            'deleted_versions' => $deleted_versions,
+            'deleted_rows'     => $deleted_rows,
+        ];
+    }
+
+    /**
+     * Get the configured sheet URL from settings.
+     */
+    public static function get_configured_sheet_url(): string
+    {
+        $settings = get_option('ffla_tax_resolver_settings', []);
+        $raw = trim((string) ($settings['sheet_source_url'] ?? ''));
+
+        return $raw !== '' ? $raw : self::DEFAULT_SHEET_URL;
+    }
+
+    /**
+     * Convert a shared Google Sheets URL into a CSV export URL when needed.
+     */
+    public static function get_sheet_export_url(?string $url = null): string
+    {
+        $url = trim((string) ($url ?? self::get_configured_sheet_url()));
+        if ($url === '') {
+            $url = self::DEFAULT_SHEET_URL;
+        }
+
+        if (stripos($url, 'docs.google.com/spreadsheets') === false) {
+            return $url;
+        }
+
+        if (stripos($url, '/export?format=csv') !== false) {
+            return $url;
+        }
+
+        if (preg_match('#/d/([a-zA-Z0-9-_]+)#', $url, $matches)) {
+            return 'https://docs.google.com/spreadsheets/d/' . $matches[1] . '/export?format=csv';
+        }
+
+        return $url;
+    }
+
+    /**
+     * Build one-line source status for admin and health responses.
+     *
+     * @return array<string,mixed>
+     */
+    public static function get_source_status(): array
+    {
+        $share_url  = self::get_configured_sheet_url();
+        $export_url = self::get_sheet_export_url($share_url);
+
+        return [
+            'configured' => trim($share_url) !== '',
+            'shareUrl'   => $share_url,
+            'exportUrl'  => $export_url,
+        ];
+    }
+
+    /**
+     * Import the configured sheet for all target states.
      *
      * @return array<string,array<string,mixed>>
      */
-    private static function sync_handbook_city_tables(): array
+    private static function sync_sheet_datasets(): array
     {
-        $results = [];
+        $results     = [];
+        $target_keys = self::get_target_sheet_states();
+        $source_url  = self::get_sheet_export_url();
+        $sheet_rows  = self::fetch_sheet_rows($source_url);
 
-        foreach (self::get_target_handbook_states() as $state_code) {
-            $results[$state_code] = self::import_handbook_state($state_code);
+        if (is_wp_error($sheet_rows)) {
+            foreach ($target_keys as $state_code) {
+                $results[$state_code] = [
+                    'success'             => false,
+                    'skipped'             => false,
+                    'state'               => $state_code,
+                    'rows'                => 0,
+                    'version_id'          => null,
+                    'city_rows'           => 0,
+                    'zip_rows'            => 0,
+                    'updated'             => '',
+                    'source_url'          => $source_url,
+                    'error'               => $sheet_rows->get_error_message(),
+                ];
+            }
+
+            return $results;
+        }
+
+        $grouped = self::group_rows_by_state($sheet_rows);
+
+        foreach ($target_keys as $state_code) {
+            $results[$state_code] = self::import_sheet_state(
+                $state_code,
+                $grouped[$state_code] ?? [],
+                $source_url
+            );
         }
 
         return $results;
     }
 
     /**
-     * Download and import one state's SalesTaxHandbook city table.
+     * Build one state's dataset from grouped CSV rows and persist it locally.
      *
+     * @param  array<int,array<string,string>> $state_rows
      * @return array<string,mixed>
      */
-    private static function import_handbook_state(string $state_code): array
+    private static function import_sheet_state(string $state_code, array $state_rows, string $source_url): array
     {
         $state_code = strtoupper($state_code);
+        $state_name = self::STATE_NAMES[$state_code] ?? $state_code;
         $result = [
-            'success'      => false,
-            'skipped'      => false,
-            'state'        => $state_code,
-            'rows'         => 0,
-            'version_id'   => null,
-            'city_rows'    => 0,
-            'updated'      => '',
-            'source_url'   => self::build_handbook_state_url($state_code),
-            'error'        => null,
+            'success'             => false,
+            'skipped'             => false,
+            'state'               => $state_code,
+            'rows'                => 0,
+            'version_id'          => null,
+            'city_rows'           => 0,
+            'zip_rows'            => 0,
+            'updated'             => '',
+            'source_url'          => $source_url,
+            'error'               => null,
         ];
 
-        $page = self::download_handbook_state_page($state_code);
-        if (is_wp_error($page)) {
-            $result['error'] = $page->get_error_message();
+        $dataset = self::build_state_dataset($state_code, $state_name, $state_rows, $source_url);
+        if (is_wp_error($dataset)) {
+            $result['error'] = $dataset->get_error_message();
             return $result;
         }
 
-        $parsed = self::parse_handbook_state_page($state_code, $page['html']);
-        $result['updated'] = $parsed['updated'];
+        $result['updated']   = (string) ($dataset['updated'] ?? '');
+        $result['city_rows'] = (int) ($dataset['cityRowCount'] ?? 0);
+        $result['zip_rows']  = (int) ($dataset['zipRowCount'] ?? 0);
 
-        if (empty($parsed['rates']) || (int) $parsed['cityRowCount'] <= 0) {
-            $result['error'] = 'The SalesTaxHandbook city table could not be parsed from the state page.';
+        $rates = self::build_rate_rows($dataset);
+        if (empty($rates)) {
+            $result['error'] = sprintf('The Google Sheet did not produce importable tax rows for %s.', $state_code);
             return $result;
         }
 
-        $checksum = hash('sha256', wp_json_encode([
-            'state'   => $state_code,
-            'updated' => $parsed['updated'],
-            'rates'   => $parsed['rates'],
-        ]));
+        $checksum = self::build_checksum($dataset);
 
-        if (self::active_checksum_exists(self::HANDBOOK_SOURCE_CODE, $state_code, $checksum)) {
-            self::mark_handbook_state_supported($state_code, $parsed['updated'], (int) $parsed['cityRowCount'], true);
+        if (self::active_checksum_exists(self::SHEET_SOURCE_CODE, $state_code, $checksum)) {
             Tax_Resolver_DB::clear_state_cache($state_code);
-            $result['success']   = true;
-            $result['skipped']   = true;
-            $result['rows']      = count($parsed['rates']);
-            $result['city_rows'] = (int) $parsed['cityRowCount'];
+            self::mark_state_supported($state_code, $dataset, true);
+
+            $result['success'] = true;
+            $result['skipped'] = true;
+            $result['rows']    = count($rates);
+
             return $result;
         }
 
-        $version_label = $parsed['updated'] !== ''
-            ? 'SalesTaxHandbook ' . $parsed['updated']
-            : 'SalesTaxHandbook ' . wp_date('Y-m-d');
+        $version_label = !empty($dataset['updated'])
+            ? 'Sheet ' . $dataset['updated']
+            : 'Sheet ' . wp_date('Y-m-d');
 
         $version_id = self::create_version(
-            self::HANDBOOK_SOURCE_CODE,
+            self::SHEET_SOURCE_CODE,
             $state_code,
             $version_label,
-            wp_date('Y-m-d'),
+            (string) ($dataset['effectiveDate'] ?? wp_date('Y-m-d')),
             $checksum,
-            $page['url'],
-            count($parsed['rates']),
-            '45d',
-            sprintf(
-                'Imported from SalesTaxHandbook city table. %d city rows parsed.',
-                (int) $parsed['cityRowCount']
-            )
+            $source_url,
+            count($rates),
+            self::FRESHNESS_POLICY,
+            self::build_version_notes($dataset)
         );
 
         if (!$version_id) {
@@ -245,338 +449,761 @@ class Tax_Dataset_Pipeline
             return $result;
         }
 
-        $inserted = self::insert_rates($version_id, $parsed['rates']);
-        self::promote_version($version_id, self::HANDBOOK_SOURCE_CODE, $state_code);
+        $inserted = self::insert_rates($version_id, $rates);
+        if ($inserted !== count($rates)) {
+            self::delete_version($version_id);
+            $result['error'] = sprintf(
+                'Only %1$d of %2$d jurisdiction rows were stored for %3$s.',
+                $inserted,
+                count($rates),
+                $state_code
+            );
+            return $result;
+        }
+
+        self::promote_version($version_id, self::SHEET_SOURCE_CODE, $state_code);
         Tax_Resolver_DB::clear_state_cache($state_code);
-        self::mark_handbook_state_supported($state_code, $parsed['updated'], (int) $parsed['cityRowCount']);
+        self::mark_state_supported($state_code, $dataset);
 
         $result['success']    = true;
         $result['rows']       = $inserted;
         $result['version_id'] = $version_id;
-        $result['city_rows']  = (int) $parsed['cityRowCount'];
 
         return $result;
     }
 
     /**
-     * Update coverage notes after a successful or unchanged handbook import.
+     * Convert grouped sheet rows into the normalized dataset payload.
+     *
+     * @param  array<int,array<string,string>> $state_rows
+     * @return array<string,mixed>|\WP_Error
      */
-    private static function mark_handbook_state_supported(string $state_code, string $updated_label, int $city_rows, bool $unchanged = false): void
+    private static function build_state_dataset(string $state_code, string $state_name, array $state_rows, string $source_url)
     {
-        $suffix = $updated_label !== '' ? ' Last updated ' . $updated_label . '.' : '';
+        $prepared_rows = [];
+        $latest_year   = 0;
+        $latest_month  = 0;
+
+        foreach ($state_rows as $raw_row) {
+            $prepared = self::prepare_sheet_row($state_code, $raw_row);
+            if ($prepared === null) {
+                continue;
+            }
+
+            $prepared_rows[] = $prepared;
+
+            if (
+                $prepared['year'] > $latest_year ||
+                ($prepared['year'] === $latest_year && $prepared['month'] > $latest_month)
+            ) {
+                $latest_year  = (int) $prepared['year'];
+                $latest_month = (int) $prepared['month'];
+            }
+        }
+
+        if (empty($prepared_rows)) {
+            return new \WP_Error(
+                'sheet_state_empty',
+                sprintf('The shared tax sheet has no usable ZIP rows for %s.', $state_code)
+            );
+        }
+
+        $zip_rows   = self::collapse_zip_rows($prepared_rows);
+        $city_rows  = self::build_city_rows($zip_rows);
+        $state_rate = self::determine_state_floor_rate($zip_rows);
+
+        $updated = ($latest_year > 0 && $latest_month > 0)
+            ? sprintf('%04d-%02d', $latest_year, $latest_month)
+            : wp_date('Y-m');
+
+        $effective_date = ($latest_year > 0 && $latest_month > 0)
+            ? sprintf('%04d-%02d-01', $latest_year, $latest_month)
+            : wp_date('Y-m-01');
+
+        return [
+            'stateCode'      => $state_code,
+            'stateName'      => $state_name,
+            'sourceUrl'      => $source_url,
+            'updated'        => $updated,
+            'effectiveDate'  => $effective_date,
+            'stateRate'      => $state_rate,
+            'cityRowCount'   => count($city_rows),
+            'zipRowCount'    => count($zip_rows),
+            'cities'         => array_values($city_rows),
+            'zipRows'        => array_values($zip_rows),
+        ];
+    }
+
+    /**
+     * Prepare one CSV row for import.
+     *
+     * @param  array<string,string> $raw_row
+     * @return array<string,mixed>|null
+     */
+    private static function prepare_sheet_row(string $state_code, array $raw_row): ?array
+    {
+        $row_state = strtoupper(trim((string) ($raw_row['State'] ?? '')));
+        if ($row_state !== $state_code) {
+            return null;
+        }
+
+        $zip_code = preg_replace('/[^0-9]/', '', (string) ($raw_row['ZipCode'] ?? ''));
+        $zip_code = strlen($zip_code) >= 5 ? substr($zip_code, 0, 5) : '';
+        if ($zip_code === '') {
+            return null;
+        }
+
+        $city_source = trim((string) ($raw_row['City'] ?? ''));
+        $city_label = Sheet_ZIP_Dataset_Resolver::normalize_city_label($city_source);
+        if ($city_label === '') {
+            $city_label = self::normalize_display_label((string) ($raw_row['TaxRegionName'] ?? ''));
+        }
+
+        $city_key_source = trim((string) ($raw_row['NormalizedCity'] ?? ''));
+        $city_key = Sheet_ZIP_Dataset_Resolver::normalize_city_key(
+            $city_key_source !== '' ? $city_key_source : $city_label
+        );
+
+        if ($city_key === '') {
+            return null;
+        }
+
+        $combined_rate = self::parse_percent_value(
+            self::first_non_empty([
+                (string) ($raw_row['AdjustedCombinedRate'] ?? ''),
+                (string) ($raw_row['CombinedRate'] ?? ''),
+            ])
+        );
+
+        if ($combined_rate === null) {
+            return null;
+        }
+
+        return [
+            'zip'              => $zip_code,
+            'state'            => $state_code,
+            'city_key'         => $city_key,
+            'city_label'       => $city_label,
+            'county_label'     => self::normalize_display_label((string) ($raw_row['County'] ?? '')),
+            'tax_region_label' => self::normalize_display_label((string) ($raw_row['TaxRegionName'] ?? '')),
+            'combined_rate'    => $combined_rate,
+            'state_rate'       => self::parse_percent_value((string) ($raw_row['StateRate'] ?? '')) ?? 0.0,
+            'county_rate'      => self::parse_percent_value((string) ($raw_row['CountyRate'] ?? '')) ?? 0.0,
+            'city_rate'        => self::parse_percent_value((string) ($raw_row['CityRate'] ?? '')) ?? 0.0,
+            'special_rate'     => self::parse_percent_value((string) ($raw_row['SpecialRate'] ?? '')) ?? 0.0,
+            'year'             => max(0, (int) ($raw_row['Year'] ?? 0)),
+            'month'            => max(0, (int) ($raw_row['Month'] ?? 0)),
+        ];
+    }
+
+    /**
+     * Reduce duplicate ZIP rows down to the strongest row per ZIP.
+     *
+     * @param  array<int,array<string,mixed>> $prepared_rows
+     * @return array<string,array<string,mixed>>
+     */
+    private static function collapse_zip_rows(array $prepared_rows): array
+    {
+        $collapsed = [];
+        $variants  = [];
+
+        foreach ($prepared_rows as $row) {
+            $zip = (string) $row['zip'];
+            $signature = implode('|', [
+                number_format((float) $row['combined_rate'], 6, '.', ''),
+                number_format((float) $row['state_rate'], 6, '.', ''),
+                number_format((float) $row['county_rate'], 6, '.', ''),
+                number_format((float) $row['city_rate'], 6, '.', ''),
+                number_format((float) $row['special_rate'], 6, '.', ''),
+                (string) $row['tax_region_label'],
+                (string) $row['city_key'],
+            ]);
+            $variants[$zip][$signature] = true;
+
+            if (
+                !isset($collapsed[$zip]) ||
+                (float) $row['combined_rate'] > (float) $collapsed[$zip]['combined_rate']
+            ) {
+                $collapsed[$zip] = $row;
+            }
+        }
+
+        foreach ($collapsed as $zip => &$row) {
+            $variant_count = count($variants[$zip] ?? []);
+            $row['notes'] = $variant_count > 1
+                ? 'Multiple rows were present for this ZIP in the shared sheet; the highest combined rate was stored.'
+                : '';
+        }
+        unset($row);
+
+        ksort($collapsed);
+
+        return $collapsed;
+    }
+
+    /**
+     * Build city fallback rows from ZIP rows.
+     *
+     * @param  array<string,array<string,mixed>> $zip_rows
+     * @return array<string,array<string,mixed>>
+     */
+    private static function build_city_rows(array $zip_rows): array
+    {
+        $groups = [];
+
+        foreach ($zip_rows as $row) {
+            $city_key = (string) $row['city_key'];
+            if ($city_key === '') {
+                continue;
+            }
+
+            $groups[$city_key][] = $row;
+        }
+
+        $cities = [];
+
+        foreach ($groups as $city_key => $rows) {
+            $top = null;
+            $unique_rates = [];
+
+            foreach ($rows as $row) {
+                $rate_key = number_format((float) $row['combined_rate'], 6, '.', '');
+                $unique_rates[$rate_key] = true;
+
+                if ($top === null || (float) $row['combined_rate'] > (float) $top['combined_rate']) {
+                    $top = $row;
+                }
+            }
+
+            if ($top === null) {
+                continue;
+            }
+
+            $notes = [];
+            if (count($unique_rates) > 1) {
+                $notes[] = 'Multiple ZIP rates exist for this city in the shared sheet; ZIP input will return a more precise result.';
+            }
+            if (!empty($top['notes'])) {
+                $notes[] = (string) $top['notes'];
+            }
+
+            $cities[$city_key] = [
+                'city_key'  => $city_key,
+                'label'     => (string) $top['city_label'],
+                'rate'      => (float) $top['combined_rate'],
+                'ambiguous' => count($unique_rates) > 1,
+                'notes'     => trim(implode(' ', array_filter($notes))),
+            ];
+        }
+
+        ksort($cities);
+
+        return $cities;
+    }
+
+    /**
+     * Determine the most representative state floor from the grouped rows.
+     *
+     * @param  array<string,array<string,mixed>> $zip_rows
+     */
+    private static function determine_state_floor_rate(array $zip_rows): float
+    {
+        $counts = [];
+
+        foreach ($zip_rows as $row) {
+            $rate = (float) ($row['state_rate'] ?? 0);
+            $key = number_format($rate, 6, '.', '');
+            if (!isset($counts[$key])) {
+                $counts[$key] = 0;
+            }
+            $counts[$key]++;
+        }
+
+        if (empty($counts)) {
+            return 0.0;
+        }
+
+        arsort($counts);
+        $top_key = (string) array_key_first($counts);
+
+        return (float) $top_key;
+    }
+
+    /**
+     * Convert the normalized dataset into jurisdiction_rates rows.
+     *
+     * @param  array<string,mixed> $dataset
+     * @return array<int,array<string,mixed>>
+     */
+    private static function build_rate_rows(array $dataset): array
+    {
+        $state_code     = strtoupper((string) ($dataset['stateCode'] ?? ''));
+        $state_name     = trim((string) ($dataset['stateName'] ?? $state_code));
+        $effective_date = (string) ($dataset['effectiveDate'] ?? wp_date('Y-m-d'));
+        $rates          = [];
+
+        $rates[] = [
+            'state_code'        => $state_code,
+            'jurisdiction_fips' => null,
+            'jurisdiction_code' => 'STATE_FLOOR',
+            'jurisdiction_type' => 'state',
+            'jurisdiction_name' => $state_name . ' State Floor',
+            'rate'              => max(0.0, (float) ($dataset['stateRate'] ?? 0)),
+            'rate_type'         => 'general',
+            'effective_date'    => $effective_date,
+            'expires_at'        => null,
+            'zip_codes'         => null,
+            'city_names'        => null,
+            'notes'             => 'Imported from the shared Google Sheets ZIP dataset.',
+        ];
+
+        foreach (($dataset['cities'] ?? []) as $city_row) {
+            if (!is_array($city_row)) {
+                continue;
+            }
+
+            $city_key   = trim((string) ($city_row['city_key'] ?? ''));
+            $city_label = trim((string) ($city_row['label'] ?? ''));
+            $rate       = max(0.0, (float) ($city_row['rate'] ?? 0));
+
+            if ($city_key === '' || $city_label === '') {
+                continue;
+            }
+
+            $rates[] = [
+                'state_code'        => $state_code,
+                'jurisdiction_fips' => null,
+                'jurisdiction_code' => 'CITY_' . $city_key,
+                'jurisdiction_type' => 'city',
+                'jurisdiction_name' => $city_label . ' Total',
+                'rate'              => $rate,
+                'rate_type'         => 'general',
+                'effective_date'    => $effective_date,
+                'expires_at'        => null,
+                'zip_codes'         => null,
+                'city_names'        => $city_key,
+                'notes'             => !empty($city_row['notes']) ? (string) $city_row['notes'] : null,
+            ];
+        }
+
+        foreach (($dataset['zipRows'] ?? []) as $zip_row) {
+            if (!is_array($zip_row)) {
+                continue;
+            }
+
+            $zip_code         = (string) ($zip_row['zip'] ?? '');
+            $city_key         = (string) ($zip_row['city_key'] ?? '');
+            $city_label       = (string) ($zip_row['city_label'] ?? '');
+            $county_label     = (string) ($zip_row['county_label'] ?? '');
+            $tax_region_label = (string) ($zip_row['tax_region_label'] ?? '');
+            $combined_rate    = max(0.0, (float) ($zip_row['combined_rate'] ?? 0));
+            $state_rate       = max(0.0, (float) ($zip_row['state_rate'] ?? 0));
+            $county_rate      = max(0.0, (float) ($zip_row['county_rate'] ?? 0));
+            $city_rate        = max(0.0, (float) ($zip_row['city_rate'] ?? 0));
+            $special_rate     = max(0.0, (float) ($zip_row['special_rate'] ?? 0));
+            $notes            = trim((string) ($zip_row['notes'] ?? ''));
+
+            if ($zip_code === '') {
+                continue;
+            }
+
+            $base_name = $tax_region_label !== ''
+                ? $tax_region_label
+                : ($city_label !== '' ? $city_label : ($state_code . ' ' . $zip_code));
+
+            $rates[] = [
+                'state_code'        => $state_code,
+                'jurisdiction_fips' => null,
+                'jurisdiction_code' => 'ZIP_TOTAL_' . $zip_code,
+                'jurisdiction_type' => 'zip_total',
+                'jurisdiction_name' => $base_name . ' ' . $zip_code . ' Total',
+                'rate'              => $combined_rate,
+                'rate_type'         => 'general',
+                'effective_date'    => $effective_date,
+                'expires_at'        => null,
+                'zip_codes'         => $zip_code,
+                'city_names'        => $city_key !== '' ? $city_key : null,
+                'notes'             => $notes !== '' ? $notes : 'Imported from the shared Google Sheets ZIP dataset.',
+            ];
+
+            if ($state_rate > 0 || ($combined_rate === 0.0 && $county_rate === 0.0 && $city_rate === 0.0 && $special_rate === 0.0)) {
+                $rates[] = [
+                    'state_code'        => $state_code,
+                    'jurisdiction_fips' => null,
+                    'jurisdiction_code' => 'ZIP_STATE_' . $zip_code,
+                    'jurisdiction_type' => 'zip_state',
+                    'jurisdiction_name' => $state_name . ' State Tax',
+                    'rate'              => $state_rate,
+                    'rate_type'         => 'general',
+                    'effective_date'    => $effective_date,
+                    'expires_at'        => null,
+                    'zip_codes'         => $zip_code,
+                    'city_names'        => $city_key !== '' ? $city_key : null,
+                    'notes'             => null,
+                ];
+            }
+
+            if ($county_rate > 0) {
+                $rates[] = [
+                    'state_code'        => $state_code,
+                    'jurisdiction_fips' => null,
+                    'jurisdiction_code' => 'ZIP_COUNTY_' . $zip_code,
+                    'jurisdiction_type' => 'zip_county',
+                    'jurisdiction_name' => $county_label !== '' ? $county_label : ($state_name . ' County Tax'),
+                    'rate'              => $county_rate,
+                    'rate_type'         => 'general',
+                    'effective_date'    => $effective_date,
+                    'expires_at'        => null,
+                    'zip_codes'         => $zip_code,
+                    'city_names'        => $city_key !== '' ? $city_key : null,
+                    'notes'             => null,
+                ];
+            }
+
+            if ($city_rate > 0) {
+                $rates[] = [
+                    'state_code'        => $state_code,
+                    'jurisdiction_fips' => null,
+                    'jurisdiction_code' => 'ZIP_CITY_' . $zip_code,
+                    'jurisdiction_type' => 'zip_city',
+                    'jurisdiction_name' => $city_label !== '' ? $city_label : ($state_name . ' City Tax'),
+                    'rate'              => $city_rate,
+                    'rate_type'         => 'general',
+                    'effective_date'    => $effective_date,
+                    'expires_at'        => null,
+                    'zip_codes'         => $zip_code,
+                    'city_names'        => $city_key !== '' ? $city_key : null,
+                    'notes'             => null,
+                ];
+            }
+
+            if ($special_rate > 0) {
+                $rates[] = [
+                    'state_code'        => $state_code,
+                    'jurisdiction_fips' => null,
+                    'jurisdiction_code' => 'ZIP_SPECIAL_' . $zip_code,
+                    'jurisdiction_type' => 'zip_special',
+                    'jurisdiction_name' => $tax_region_label !== '' ? $tax_region_label : 'Special District',
+                    'rate'              => $special_rate,
+                    'rate_type'         => 'general',
+                    'effective_date'    => $effective_date,
+                    'expires_at'        => null,
+                    'zip_codes'         => $zip_code,
+                    'city_names'        => $city_key !== '' ? $city_key : null,
+                    'notes'             => null,
+                ];
+            }
+        }
+
+        return $rates;
+    }
+
+    /**
+     * Check whether the normalized dataset is an all-zero-tax state.
+     */
+    private static function dataset_is_zero_tax(array $dataset): bool
+    {
+        if ((float) ($dataset['stateRate'] ?? 0) > 0) {
+            return false;
+        }
+
+        foreach (($dataset['cities'] ?? []) as $city_row) {
+            if (is_array($city_row) && (float) ($city_row['rate'] ?? 0) > 0) {
+                return false;
+            }
+        }
+
+        foreach (($dataset['zipRows'] ?? []) as $zip_row) {
+            if (!is_array($zip_row)) {
+                continue;
+            }
+
+            foreach (['combined_rate', 'state_rate', 'county_rate', 'city_rate', 'special_rate'] as $key) {
+                if ((float) ($zip_row[$key] ?? 0) > 0) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Generate a stable checksum for a normalized sheet dataset payload.
+     */
+    private static function build_checksum(array $dataset): string
+    {
+        return hash('sha256', wp_json_encode([
+            'stateCode' => $dataset['stateCode'] ?? '',
+            'updated'   => (string) ($dataset['updated'] ?? ''),
+            'stateRate' => (float) ($dataset['stateRate'] ?? 0),
+            'cities'    => array_map(static function (array $row): array {
+                return [
+                    'city_key'  => (string) ($row['city_key'] ?? ''),
+                    'label'     => (string) ($row['label'] ?? ''),
+                    'rate'      => (float) ($row['rate'] ?? 0),
+                    'ambiguous' => !empty($row['ambiguous']),
+                    'notes'     => (string) ($row['notes'] ?? ''),
+                ];
+            }, is_array($dataset['cities'] ?? null) ? $dataset['cities'] : []),
+            'zipRows' => array_map(static function (array $row): array {
+                return [
+                    'zip'              => (string) ($row['zip'] ?? ''),
+                    'city_key'         => (string) ($row['city_key'] ?? ''),
+                    'combined_rate'    => (float) ($row['combined_rate'] ?? 0),
+                    'state_rate'       => (float) ($row['state_rate'] ?? 0),
+                    'county_rate'      => (float) ($row['county_rate'] ?? 0),
+                    'city_rate'        => (float) ($row['city_rate'] ?? 0),
+                    'special_rate'     => (float) ($row['special_rate'] ?? 0),
+                    'tax_region_label' => (string) ($row['tax_region_label'] ?? ''),
+                    'notes'            => (string) ($row['notes'] ?? ''),
+                ];
+            }, is_array($dataset['zipRows'] ?? null) ? $dataset['zipRows'] : []),
+        ]));
+    }
+
+    /**
+     * Build dataset version notes for auditing.
+     */
+    private static function build_version_notes(array $dataset): string
+    {
+        $parts = [];
+        $parts[] = 'Local dataset imported from the shared Google Sheets CSV source.';
+        $parts[] = sprintf('%d ZIP rows imported.', (int) ($dataset['zipRowCount'] ?? 0));
+        $parts[] = sprintf('%d city fallback rows imported.', (int) ($dataset['cityRowCount'] ?? 0));
+
+        if (!empty($dataset['updated'])) {
+            $parts[] = 'Source label: ' . trim((string) $dataset['updated']) . '.';
+        }
+
+        return trim(implode(' ', array_filter($parts)));
+    }
+
+    /**
+     * Update coverage notes after a successful or unchanged sheet import.
+     *
+     * @param array<string,mixed> $dataset
+     */
+    private static function mark_state_supported(string $state_code, array $dataset, bool $unchanged = false): void
+    {
+        $is_zero_tax = self::dataset_is_zero_tax($dataset);
         $prefix = $unchanged
-            ? 'SalesTaxHandbook city-table dataset already current.'
-            : 'Imported SalesTaxHandbook city-table dataset.';
+            ? 'Google Sheet ZIP dataset already current.'
+            : 'Google Sheet ZIP dataset rebuilt locally.';
+        $suffix = !empty($dataset['updated']) ? ' Source label: ' . $dataset['updated'] . '.' : '';
+        $status = $is_zero_tax ? Tax_Coverage::NO_SALES_TAX : Tax_Coverage::SUPPORTED_ADDRESS_RATE;
+        $summary = $is_zero_tax
+            ? sprintf(
+                '%1$s Imported data for this state is zero tax across %2$d ZIP rows and %3$d city fallback rows.%4$s',
+                $prefix,
+                (int) ($dataset['zipRowCount'] ?? 0),
+                (int) ($dataset['cityRowCount'] ?? 0),
+                $suffix
+            )
+            : sprintf(
+                '%1$s %2$d ZIP rows and %3$d city fallback rows available.%4$s',
+                $prefix,
+                (int) ($dataset['zipRowCount'] ?? 0),
+                (int) ($dataset['cityRowCount'] ?? 0),
+                $suffix
+            );
 
         Tax_Coverage::update_state(
             $state_code,
-            Tax_Coverage::SUPPORTED_ADDRESS_RATE,
-            'handbook_city_dataset',
-            sprintf('%s %d city rows available.%s', $prefix, $city_rows, $suffix)
+            $status,
+            'sheet_zip_dataset',
+            $summary
         );
     }
 
     /**
-     * Download a SalesTaxHandbook state page.
+     * Fetch and parse the public Google Sheets CSV.
      *
-     * @return array<string,string>|WP_Error
+     * @return array<int,array<string,string>>|\WP_Error
      */
-    private static function download_handbook_state_page(string $state_code)
+    private static function fetch_sheet_rows(string $source_url)
     {
-        $url = self::build_handbook_state_url($state_code);
-        $request_url = preg_replace('/#.*$/', '', $url);
-        $attempts = [
-            [
-                'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        $response = wp_remote_get($source_url, [
+            'timeout'     => 60,
+            'redirection' => 5,
+            'decompress'  => true,
+            'headers'     => [
+                'Accept'          => 'text/csv,text/plain;q=0.9,*/*;q=0.8',
                 'Accept-Language' => 'en-US,en;q=0.9',
                 'Cache-Control'   => 'no-cache',
                 'Pragma'          => 'no-cache',
                 'User-Agent'      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
             ],
-            [
-                'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language' => 'en-US,en;q=0.9',
-                'User-Agent'      => 'WordPress/' . (function_exists('get_bloginfo') ? get_bloginfo('version') : 'unknown') . '; ' . home_url('/'),
-            ],
-        ];
-        $last_error = null;
+        ]);
 
-        foreach ($attempts as $headers) {
-            $response = wp_remote_get($request_url, [
-                'timeout'     => self::DOWNLOAD_TIMEOUT,
-                'redirection' => 5,
-                'decompress'  => true,
-                'headers'     => $headers,
-            ]);
-
-            if (is_wp_error($response)) {
-                $last_error = $response;
-                continue;
-            }
-
-            $code = (int) wp_remote_retrieve_response_code($response);
-            $html = wp_remote_retrieve_body($response);
-
-            if ($code !== 200) {
-                $last_error = new WP_Error(
-                    'handbook_http_error',
-                    sprintf('SalesTaxHandbook returned HTTP %d for %s.', $code, $state_code)
-                );
-                continue;
-            }
-
-            if (!is_string($html) || trim($html) === '') {
-                $last_error = new WP_Error(
-                    'handbook_empty_body',
-                    sprintf('SalesTaxHandbook returned an empty response for %s.', $state_code)
-                );
-                continue;
-            }
-
-            if (
-                stripos($html, 'View City Sales Tax Rates') === false &&
-                stripos($html, 'id=cities') === false &&
-                stripos($html, 'City Name') === false
-            ) {
-                $last_error = new WP_Error(
-                    'handbook_unexpected_markup',
-                    sprintf('SalesTaxHandbook returned unexpected markup for %s; the city table was not found.', $state_code)
-                );
-                continue;
-            }
-
-            return [
-                'url'  => $url,
-                'html' => $html,
-            ];
-        }
-
-        return $last_error ?: new WP_Error(
-            'handbook_request_failed',
-            sprintf('SalesTaxHandbook request failed for %s.', $state_code)
-        );
-    }
-
-    /**
-     * Build a SalesTaxHandbook state page URL.
-     */
-    private static function build_handbook_state_url(string $state_code): string
-    {
-        $state_code = strtoupper($state_code);
-        $name       = self::HANDBOOK_STATE_NAMES[$state_code] ?? $state_code;
-        $slug       = strtolower(str_replace(['.', "'"], '', $name));
-        $slug       = preg_replace('/[^a-z0-9]+/', '-', $slug);
-        $slug       = trim((string) $slug, '-');
-
-        return trailingslashit(self::HANDBOOK_BASE_URL) . $slug . '/rates#cities';
-    }
-
-    /**
-     * Parse one SalesTaxHandbook state page into importable rate rows.
-     *
-     * @return array<string,mixed>
-     */
-    private static function parse_handbook_state_page(string $state_code, string $html): array
-    {
-        $updated     = self::extract_handbook_updated_label($html);
-        $state_rate  = self::extract_handbook_state_rate($html);
-        $state_label = (self::HANDBOOK_STATE_NAMES[$state_code] ?? $state_code) . ' State Rate';
-        $city_rows   = self::extract_handbook_city_rows($state_code, $html);
-        $rates       = [];
-
-        $rates[] = [
-            'state_code'         => $state_code,
-            'jurisdiction_fips'  => null,
-            'jurisdiction_code'  => 'STATE_FLOOR',
-            'jurisdiction_type'  => 'state',
-            'jurisdiction_name'  => $state_label,
-            'rate'               => $state_rate,
-            'rate_type'          => 'general',
-            'effective_date'     => wp_date('Y-m-d'),
-            'expires_at'         => null,
-            'zip_codes'          => null,
-            'city_names'         => null,
-            'notes'              => 'Imported from SalesTaxHandbook statewide sales tax summary.',
-        ];
-
-        foreach ($city_rows as $city_row) {
-            $notes = [];
-            if (!empty($city_row['ambiguous'])) {
-                $notes[] = 'Multiple rates were listed for this city name; the highest listed city-table rate was stored.';
-            }
-
-            $rates[] = [
-                'state_code'         => $state_code,
-                'jurisdiction_fips'  => null,
-                'jurisdiction_code'  => 'CITY_' . $city_row['city_key'],
-                'jurisdiction_type'  => 'city',
-                'jurisdiction_name'  => $city_row['label'] . ' Total',
-                'rate'               => $city_row['rate'],
-                'rate_type'          => 'general',
-                'effective_date'     => wp_date('Y-m-d'),
-                'expires_at'         => null,
-                'zip_codes'          => null,
-                'city_names'         => $city_row['city_key'],
-                'notes'              => !empty($notes) ? implode(' ', $notes) : null,
-            ];
-        }
-
-        return [
-            'updated'      => $updated,
-            'stateRate'    => $state_rate,
-            'cityRowCount' => count($city_rows),
-            'rates'        => $rates,
-        ];
-    }
-
-    /**
-     * Extract the state sales tax floor from the page summary.
-     */
-    private static function extract_handbook_state_rate(string $html): float
-    {
-        if (preg_match('/Sales Tax:\s*<\/b>\s*<div class="lead text-success">\s*<b>(.*?)<\/b>/is', $html, $matches)) {
-            $rate = Handbook_City_Dataset_Resolver::parse_rate_value($matches[1]);
-            if ($rate !== null) {
-                return $rate;
-            }
-        }
-
-        return 0.0;
-    }
-
-    /**
-     * Extract city rows from the #cities tab content.
-     *
-     * @return array<int,array<string,mixed>>
-     */
-    private static function extract_handbook_city_rows(string $state_code, string $html): array
-    {
-        $cities_index = stripos($html, 'id=cities');
-        if ($cities_index === false) {
-            $cities_index = stripos($html, 'id="cities"');
-        }
-
-        if ($cities_index === false) {
-            return [];
-        }
-
-        $cities_html = substr($html, $cities_index);
-        if (!preg_match('/<table\b[^>]*>(.*?)<\/table>/is', $cities_html, $table_match)) {
-            return [];
-        }
-
-        $city_table = $table_match[0];
-        if (stripos($city_table, 'City Name') === false || stripos($city_table, 'Tax Rate') === false) {
-            return [];
-        }
-
-        if (!preg_match('/<tbody[^>]*>(.*?)<\/tbody>/is', $city_table, $body_match)) {
-            return [];
-        }
-
-        preg_match_all('/<tr\b[^>]*>(.*?)<\/tr>/is', $body_match[1], $row_matches);
-
-        $grouped = [];
-        foreach ($row_matches[1] as $row_html) {
-            preg_match_all('/<td\b[^>]*>(.*?)<\/td>/is', $row_html, $cell_matches);
-            if (count($cell_matches[1]) < 2) {
-                continue;
-            }
-
-            $city_html  = $cell_matches[1][0];
-            $rate_html  = $cell_matches[1][1];
-            $city_label = Handbook_City_Dataset_Resolver::normalize_city_label(
-                self::clean_handbook_text($city_html)
+        if (is_wp_error($response)) {
+            return new \WP_Error(
+                'sheet_fetch_failed',
+                'Could not fetch the shared tax sheet: ' . $response->get_error_message()
             );
-            $city_key = Handbook_City_Dataset_Resolver::normalize_city_key($city_label);
-
-            if ($city_key === '') {
-                continue;
-            }
-
-            $rate = Handbook_City_Dataset_Resolver::parse_rate_value($rate_html);
-            if ($rate === null) {
-                $rate = self::extract_rate_from_city_title($city_html);
-            }
-
-            if ($rate === null) {
-                continue;
-            }
-
-            $grouped[$city_key]['label'] = $city_label;
-            $grouped[$city_key]['rates'][] = $rate;
         }
 
-        $selected = [];
-        foreach ($grouped as $city_key => $group) {
-            $unique_rates = array_values(array_unique(array_map(
-                static function ($rate) {
-                    return number_format((float) $rate, 6, '.', '');
-                },
-                $group['rates'] ?? []
-            )));
+        $code = (int) wp_remote_retrieve_response_code($response);
+        $body = (string) wp_remote_retrieve_body($response);
 
-            if (empty($unique_rates)) {
-                continue;
-            }
-
-            $selected[] = [
-                'city_key'  => $city_key,
-                'label'     => $group['label'] ?? $city_key,
-                'rate'      => (float) max(array_map('floatval', $unique_rates)),
-                'ambiguous' => count($unique_rates) > 1,
-            ];
+        if ($code !== 200) {
+            return new \WP_Error(
+                'sheet_fetch_http_error',
+                sprintf('The shared tax sheet returned HTTP %d.', $code)
+            );
         }
 
-        return $selected;
+        if (trim($body) === '') {
+            return new \WP_Error(
+                'sheet_fetch_empty',
+                'The shared tax sheet returned an empty CSV.'
+            );
+        }
+
+        $rows = self::parse_csv_body($body);
+
+        if (empty($rows)) {
+            return new \WP_Error(
+                'sheet_csv_empty',
+                'The shared tax sheet CSV did not contain any data rows.'
+            );
+        }
+
+        return $rows;
     }
 
     /**
-     * Try to parse a rate from the link title in the city cell.
+     * Parse CSV text into associative rows.
+     *
+     * @return array<int,array<string,string>>
      */
-    private static function extract_rate_from_city_title(string $city_html): ?float
+    private static function parse_csv_body(string $csv): array
     {
-        if (preg_match('/local sales tax rate of\s+([0-9.]+)%/i', $city_html, $matches)) {
-            return ((float) $matches[1]) / 100;
+        $rows = [];
+        $handle = fopen('php://temp', 'r+');
+
+        if ($handle === false) {
+            return [];
         }
 
-        if (preg_match('/local sales tax rate of\s+0%/i', $city_html)) {
-            return 0.0;
+        fwrite($handle, $csv);
+        rewind($handle);
+
+        $headers = fgetcsv($handle);
+        if (!is_array($headers)) {
+            fclose($handle);
+            return [];
         }
 
-        return null;
+        $headers = array_map(static function ($header): string {
+            $header = (string) $header;
+            $header = preg_replace('/^\xEF\xBB\xBF/', '', $header);
+            return trim($header);
+        }, $headers);
+
+        while (($row = fgetcsv($handle)) !== false) {
+            if (!is_array($row) || count($row) === 0) {
+                continue;
+            }
+
+            $assoc = [];
+            foreach ($headers as $index => $header) {
+                if ($header === '') {
+                    continue;
+                }
+
+                $assoc[$header] = isset($row[$index]) ? trim((string) $row[$index]) : '';
+            }
+
+            if (!empty($assoc)) {
+                $rows[] = $assoc;
+            }
+        }
+
+        fclose($handle);
+
+        return $rows;
     }
 
     /**
-     * Extract the visible "Last updated ..." label from a state page.
+     * Group parsed CSV rows by supported state code.
+     *
+     * @param  array<int,array<string,string>> $rows
+     * @return array<string,array<int,array<string,string>>>
      */
-    private static function extract_handbook_updated_label(string $html): string
+    private static function group_rows_by_state(array $rows): array
     {
-        if (preg_match('/Last updated\s+([^<]+)</i', $html, $matches)) {
-            return trim(html_entity_decode($matches[1], ENT_QUOTES, 'UTF-8'));
+        $grouped = [];
+
+        foreach ($rows as $row) {
+            $state_code = strtoupper(trim((string) ($row['State'] ?? '')));
+            if (!isset(self::STATE_NAMES[$state_code])) {
+                continue;
+            }
+
+            if (!isset($grouped[$state_code])) {
+                $grouped[$state_code] = [];
+            }
+
+            $grouped[$state_code][] = $row;
         }
 
-        if (preg_match('/current as of\s+([^<]+)</i', $html, $matches)) {
-            return trim(html_entity_decode($matches[1], ENT_QUOTES, 'UTF-8'));
+        return $grouped;
+    }
+
+    /**
+     * Normalize display labels like "HILLSBOROUGH COUNTY" for admin and checkout.
+     */
+    private static function normalize_display_label(string $value): string
+    {
+        $value = trim(preg_replace('/\s+/', ' ', wp_strip_all_tags($value)));
+        if ($value === '') {
+            return '';
+        }
+
+        $lower = strtolower($value);
+        return function_exists('mb_convert_case')
+            ? (string) mb_convert_case($lower, MB_CASE_TITLE, 'UTF-8')
+            : ucwords($lower);
+    }
+
+    /**
+     * Parse a numeric percent value like "7.5" into a decimal rate.
+     */
+    private static function parse_percent_value(string $value): ?float
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+
+        $number = preg_replace('/[^0-9.\-]+/', '', $value);
+        if ($number === '' || !is_numeric($number)) {
+            return null;
+        }
+
+        return ((float) $number) / 100;
+    }
+
+    /**
+     * Return the first non-empty value from a list.
+     *
+     * @param  array<int,string> $values
+     */
+    private static function first_non_empty(array $values): string
+    {
+        foreach ($values as $value) {
+            $value = trim((string) $value);
+            if ($value !== '') {
+                return $value;
+            }
         }
 
         return '';
     }
 
     /**
-     * Strip markup and normalize handbook text cells.
-     */
-    private static function clean_handbook_text(string $value): string
-    {
-        $value = html_entity_decode($value, ENT_QUOTES, 'UTF-8');
-        $value = wp_strip_all_tags($value);
-        $value = preg_replace('/\s+/', ' ', (string) $value);
-
-        return trim((string) $value);
-    }
-
-    /**
-     * Check whether a checksum is already active for this source/state pair.
+     * Check if an identical active checksum already exists for a state.
      */
     private static function active_checksum_exists(string $source_code, string $state_code, string $checksum): bool
     {
@@ -585,7 +1212,8 @@ class Tax_Dataset_Pipeline
         $table = Tax_Resolver_DB::table('dataset_versions');
 
         return (bool) $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM {$table}
+            "SELECT COUNT(*)
+             FROM {$table}
              WHERE source_code = %s
                AND state_code = %s
                AND checksum = %s
@@ -595,346 +1223,6 @@ class Tax_Dataset_Pipeline
             $checksum
         ));
     }
-
-    /**
-     * Import an SST-format CSV file for a specific state.
-     *
-     * This method accepts a CSV file (either as a path or uploaded file)
-     * and imports it into the jurisdiction_rates table.
-     *
-     * SST CSV format typically contains:
-     *   State, JurisdictionType, JurisdictionFIPS, JurisdictionName,
-     *   GeneralRateIntrastate, GeneralRateInterstate, ...
-     *
-     * @param  string $file_path    Path to CSV file.
-     * @param  string $state_code   Two-letter state code.
-     * @param  string $source_label Human-readable source label.
-     * @return array  Import result.
-     */
-    public static function import_csv(
-        string $file_path,
-        string $state_code,
-        string $source_label = 'manual_upload',
-        ?string $version_label = null,
-        ?string $storage_uri = null
-    ): array
-    {
-        $result = [
-            'success'     => false,
-            'skipped'     => false,
-            'state'       => $state_code,
-            'rows'        => 0,
-            'version_id'  => null,
-            'error'       => null,
-        ];
-
-        if (!file_exists($file_path)) {
-            $result['error'] = 'File not found.';
-            return $result;
-        }
-
-        // Calculate checksum.
-        $checksum = hash_file('sha256', $file_path);
-
-        // Check for duplicate import.
-        if (self::checksum_exists($checksum)) {
-            $result['error'] = 'This exact file has already been imported.';
-            return $result;
-        }
-
-        // Parse CSV.
-        $rates = self::parse_sst_csv($file_path, $state_code);
-
-        if (empty($rates)) {
-            $result['error'] = 'No valid rate entries found in CSV file.';
-            return $result;
-        }
-
-        // Create dataset version.
-        $version_id = self::create_version(
-            'sst_rate_boundary',
-            $state_code,
-            $version_label ?: pathinfo($file_path, PATHINFO_FILENAME),
-            wp_date('Y-m-d'),
-            $checksum,
-            $storage_uri ?: $file_path,
-            count($rates)
-        );
-
-        if (!$version_id) {
-            $result['error'] = 'Failed to create dataset version record.';
-            return $result;
-        }
-
-        // Import rates.
-        $imported = self::insert_rates($version_id, $rates);
-
-        // Promote this version (deactivate previous for same source+state).
-        self::promote_version($version_id, 'sst_rate_boundary', $state_code);
-
-        // Update coverage rule.
-        Tax_Coverage::update_state(
-            $state_code,
-            Tax_Coverage::SUPPORTED_ADDRESS_RATE,
-            'sst',
-            "Imported from SST CSV. {$imported} rates. Version: {$state_code}-" . wp_date('Y-m-d')
-        );
-
-        $result['success']    = true;
-        $result['rows']       = $imported;
-        $result['version_id'] = $version_id;
-
-        return $result;
-    }
-
-    /**
-     * Import a simplified state rate table.
-     *
-     * For states where full SST files aren't available, accept a simple
-     * format: state_code, jurisdiction_type, jurisdiction_name, rate, fips, zip_codes
-     *
-     * @param  array  $rates      Array of rate entries.
-     * @param  string $state_code Two-letter state code.
-     * @param  string $source     Source identifier.
-     * @return array  Import result.
-     */
-    public static function import_rates(array $rates, string $state_code, string $source = 'manual'): array
-    {
-        $result = [
-            'success'     => false,
-            'state'       => $state_code,
-            'rows'        => 0,
-            'version_id'  => null,
-            'error'       => null,
-        ];
-
-        if (empty($rates)) {
-            $result['error'] = 'No rates provided.';
-            return $result;
-        }
-
-        // Create dataset version.
-        $version_label = $state_code . '-' . $source . '-' . wp_date('Y-m-d');
-        $checksum      = hash('sha256', wp_json_encode($rates));
-
-        $version_id = self::create_version(
-            $source,
-            $state_code,
-            $version_label,
-            wp_date('Y-m-d'),
-            $checksum,
-            null,
-            count($rates)
-        );
-
-        if (!$version_id) {
-            $result['error'] = 'Failed to create dataset version.';
-            return $result;
-        }
-
-        // Normalize and insert rates.
-        $normalized_rates = [];
-        foreach ($rates as $r) {
-            $normalized_rates[] = [
-                'state_code'         => $state_code,
-                'jurisdiction_fips'  => $r['fips'] ?? null,
-                'jurisdiction_code'  => $r['code'] ?? ($r['fips'] ?? $r['name'] ?? ''),
-                'jurisdiction_type'  => $r['type'] ?? 'state',
-                'jurisdiction_name'  => $r['name'] ?? 'Statewide',
-                'rate'               => (float) ($r['rate'] ?? 0),
-                'rate_type'          => 'general',
-                'effective_date'     => wp_date('Y-m-d'),
-                'expires_at'         => null,
-                'zip_codes'          => $r['zip_codes'] ?? null,
-                'city_names'         => $r['city_names'] ?? null,
-            ];
-        }
-
-        $imported = self::insert_rates($version_id, $normalized_rates);
-
-        // Promote.
-        self::promote_version($version_id, $source, $state_code);
-
-        $result['success']    = true;
-        $result['rows']       = $imported;
-        $result['version_id'] = $version_id;
-
-        return $result;
-    }
-
-    /* ── CSV Parsing ──────────────────────────────────────────────── */
-
-    /**
-     * Parse an SST-format CSV file.
-     *
-     * Handles multiple SST CSV formats:
-     *   - Standard SST rate file (with JurisdictionType, FIPS, Rate columns)
-     *   - State-specific variations
-     *
-     * @param  string $file_path  Path to CSV.
-     * @param  string $state_code Expected state.
-     * @return array[] Normalized rate entries.
-     */
-    public static function parse_sst_csv(string $file_path, string $state_code): array
-    {
-        $handle = fopen($file_path, 'r');
-        if (!$handle) {
-            return [];
-        }
-
-        $rates   = [];
-        $headers = null;
-        $row_num = 0;
-
-        while (($row = fgetcsv($handle)) !== false) {
-            $row_num++;
-
-            // First row = headers.
-            if (!$headers) {
-                $headers = array_map(function ($h) {
-                    return strtolower(trim(str_replace(['"', ' '], ['', '_'], $h)));
-                }, $row);
-                continue;
-            }
-
-            // Map row to associative array.
-            if (count($row) < count($headers)) {
-                continue;
-            }
-            $entry = array_combine($headers, array_slice($row, 0, count($headers)));
-
-            // Extract rate data based on column naming patterns.
-            $rate_data = self::extract_rate_from_row($entry, $state_code);
-
-            if ($rate_data) {
-                $rates[] = $rate_data;
-            }
-        }
-
-        fclose($handle);
-
-        return $rates;
-    }
-
-    /**
-     * Extract a normalized rate entry from a CSV row.
-     *
-     * Handles various column naming conventions found in SST files.
-     */
-    private static function extract_rate_from_row(array $row, string $state_code): ?array
-    {
-        // Try common column name patterns for rate.
-        $rate = null;
-        $rate_cols = [
-            'general_rate_intrastate', 'generalrateintrastate',
-            'general_rate', 'rate', 'tax_rate', 'combined_rate',
-            'total_rate', 'general_rate_interstate',
-        ];
-
-        foreach ($rate_cols as $col) {
-            if (isset($row[$col]) && is_numeric($row[$col])) {
-                $rate = (float) $row[$col];
-                break;
-            }
-        }
-
-        if ($rate === null || $rate <= 0) {
-            return null;
-        }
-
-        // If rate looks like a percentage (e.g., 6.25), convert to decimal.
-        if ($rate > 1) {
-            $rate = $rate / 100;
-        }
-
-        // Jurisdiction type.
-        $type_cols = ['jurisdiction_type', 'jurisdictiontype', 'type', 'level'];
-        $type = 'state';
-        foreach ($type_cols as $col) {
-            if (!empty($row[$col])) {
-                $raw_type = strtolower(trim($row[$col]));
-                if (strpos($raw_type, 'state') !== false) {
-                    $type = 'state';
-                } elseif (strpos($raw_type, 'county') !== false) {
-                    $type = 'county';
-                } elseif (strpos($raw_type, 'city') !== false || strpos($raw_type, 'municipal') !== false) {
-                    $type = 'city';
-                } elseif (strpos($raw_type, 'special') !== false || strpos($raw_type, 'district') !== false) {
-                    $type = 'special';
-                }
-                break;
-            }
-        }
-
-        // FIPS code.
-        $fips_cols = ['jurisdiction_fips', 'jurisdictionfips', 'fips', 'fips_code', 'county_fips'];
-        $fips = null;
-        foreach ($fips_cols as $col) {
-            if (!empty($row[$col])) {
-                $fips = trim($row[$col]);
-                break;
-            }
-        }
-
-        // Jurisdiction name.
-        $name_cols = ['jurisdiction_name', 'jurisdictionname', 'name', 'county', 'city', 'jurisdiction'];
-        $name = 'Unknown';
-        foreach ($name_cols as $col) {
-            if (!empty($row[$col])) {
-                $name = trim($row[$col]);
-                break;
-            }
-        }
-
-        // Jurisdiction code.
-        $code_cols = ['jurisdiction_code', 'jurisdictioncode', 'code'];
-        $code = $fips ?? $name;
-        foreach ($code_cols as $col) {
-            if (!empty($row[$col])) {
-                $code = trim($row[$col]);
-                break;
-            }
-        }
-
-        // Effective date.
-        $date_cols = ['effective_date', 'effectivedate', 'eff_date', 'start_date'];
-        $eff_date = wp_date('Y-m-d');
-        foreach ($date_cols as $col) {
-            if (!empty($row[$col])) {
-                $parsed = date('Y-m-d', strtotime($row[$col]));
-                if ($parsed) {
-                    $eff_date = $parsed;
-                }
-                break;
-            }
-        }
-
-        // ZIP codes (if present).
-        $zip_cols = ['zip_code', 'zipcode', 'zip', 'zip_codes', 'postcodes'];
-        $zip = null;
-        foreach ($zip_cols as $col) {
-            if (!empty($row[$col])) {
-                $zip = trim($row[$col]);
-                break;
-            }
-        }
-
-        return [
-            'state_code'         => $state_code,
-            'jurisdiction_fips'  => $fips,
-            'jurisdiction_code'  => $code,
-            'jurisdiction_type'  => $type,
-            'jurisdiction_name'  => $name,
-            'rate'               => $rate,
-            'rate_type'          => 'general',
-            'effective_date'     => $eff_date,
-            'expires_at'         => null,
-            'zip_codes'          => $zip,
-            'city_names'         => null,
-        ];
-    }
-
-    /* ── Database Operations ──────────────────────────────────────── */
 
     /**
      * Create a dataset version record.
@@ -976,6 +1264,8 @@ class Tax_Dataset_Pipeline
     /**
      * Insert rate entries for a dataset version.
      *
+     * @param  int                            $version_id
+     * @param  array<int,array<string,mixed>> $rates
      * @return int Number of rows inserted.
      */
     private static function insert_rates(int $version_id, array $rates): int
@@ -999,6 +1289,7 @@ class Tax_Dataset_Pipeline
                 'expires_at'         => $rate['expires_at'],
                 'zip_codes'          => $rate['zip_codes'],
                 'city_names'         => $rate['city_names'],
+                'notes'              => $rate['notes'] ?? null,
             ]);
 
             if ($inserted) {
@@ -1018,7 +1309,6 @@ class Tax_Dataset_Pipeline
 
         $table = Tax_Resolver_DB::table('dataset_versions');
 
-        // Deactivate previous active versions for this source.
         $wpdb->query($wpdb->prepare(
             "UPDATE {$table}
              SET status = 'superseded'
@@ -1031,7 +1321,6 @@ class Tax_Dataset_Pipeline
             $version_id
         ));
 
-        // Activate the new version.
         $wpdb->update(
             $table,
             ['status' => 'active'],
@@ -1040,428 +1329,16 @@ class Tax_Dataset_Pipeline
     }
 
     /**
-     * Rollback to the previous version for a source.
+     * Delete a failed pending version and its inserted rates.
      */
-    public static function rollback(string $source_code, ?string $state_code = null): bool
+    private static function delete_version(int $version_id): void
     {
         global $wpdb;
 
-        $table = Tax_Resolver_DB::table('dataset_versions');
-
-        // Find the current active version.
-        if ($state_code) {
-            $current = $wpdb->get_row($wpdb->prepare(
-                "SELECT id FROM {$table}
-                 WHERE source_code = %s AND state_code = %s AND status = 'active'
-                 LIMIT 1",
-                $source_code,
-                strtoupper($state_code)
-            ));
-        } else {
-            $current = $wpdb->get_row($wpdb->prepare(
-                "SELECT id FROM {$table} WHERE source_code = %s AND status = 'active' LIMIT 1",
-                $source_code
-            ));
-        }
-
-        if (!$current) {
-            return false;
-        }
-
-        // Find the most recent superseded version.
-        if ($state_code) {
-            $previous = $wpdb->get_row($wpdb->prepare(
-                "SELECT id FROM {$table}
-                 WHERE source_code = %s AND state_code = %s AND status = 'superseded'
-                 ORDER BY loaded_at DESC LIMIT 1",
-                $source_code,
-                strtoupper($state_code)
-            ));
-        } else {
-            $previous = $wpdb->get_row($wpdb->prepare(
-                "SELECT id FROM {$table}
-                 WHERE source_code = %s AND status = 'superseded'
-                 ORDER BY loaded_at DESC LIMIT 1",
-                $source_code
-            ));
-        }
-
-        if (!$previous) {
-            return false;
-        }
-
-        // Swap statuses.
-        $wpdb->update($table, ['status' => 'rolled_back'], ['id' => $current->id]);
-        $wpdb->update($table, ['status' => 'active'], ['id' => $previous->id]);
-
-        return true;
-    }
-
-    /**
-     * Check if a checksum already exists in dataset_versions.
-     */
-    private static function checksum_exists(string $checksum): bool
-    {
-        global $wpdb;
-
-        $table = Tax_Resolver_DB::table('dataset_versions');
-        return (bool) $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM {$table} WHERE checksum = %s AND status IN ('active', 'pending')",
-            $checksum
-        ));
-    }
-
-    /**
-     * Sync SST data (placeholder for auto-download).
-     *
-     * For now, this checks for manually placed CSV files in the
-     * datasets directory and imports them.
-     */
-    private static function sync_sst(): array
-    {
-        $official_results = self::sync_sst_from_official_source();
-        if (!empty($official_results)) {
-            return $official_results;
-        }
-
-        $dir     = self::get_storage_dir();
-        $results = [];
-        $allowed_states = self::get_target_sst_states();
-
-        // Look for SST CSV files named like: SST_{STATE}.csv.
-        $files = glob($dir . 'SST_*.csv');
-
-        if (empty($files)) {
-            // Also check for generic rate files.
-            $files = glob($dir . '*.csv');
-        }
-
-        foreach ($files as $file) {
-            $basename = basename($file, '.csv');
-
-            // Try to extract state code from filename.
-            if (preg_match('/^SST_([A-Z]{2})$/i', $basename, $m)) {
-                $state = strtoupper($m[1]);
-            } elseif (preg_match('/^([A-Z]{2})_rates?$/i', $basename, $m)) {
-                $state = strtoupper($m[1]);
-            } else {
-                continue;
-            }
-
-            if (!in_array($state, $allowed_states, true)) {
-                continue;
-            }
-
-            $results[$state] = self::import_csv($file, $state, 'sst_auto_sync');
-        }
-
-        return $results;
-    }
-
-    /**
-     * Sync SST datasets from the official public directory.
-     *
-     * @return array<string, array>
-     */
-    private static function sync_sst_from_official_source(): array
-    {
-        $files = self::discover_sst_rate_files();
-        if (empty($files)) {
-            return [];
-        }
-
-        $results = [];
-        $allowed_states = self::get_target_sst_states();
-        foreach ($files as $state_code => $file) {
-            if (!in_array($state_code, $allowed_states, true)) {
-                continue;
-            }
-
-            $results[$state_code] = self::download_and_import_sst_file(
-                $state_code,
-                $file['url'],
-                $file['filename']
-            );
-        }
-
-        return $results;
-    }
-
-    /**
-     * Get the SST states this store should actively sync.
-     *
-     * @return string[]
-     */
-    private static function get_target_sst_states(): array
-    {
-        $member_states = class_exists('SST_Resolver')
-            ? SST_Resolver::MEMBER_STATES
-            : [
-                'AR', 'GA', 'IN', 'IA', 'KS', 'KY', 'MI', 'MN',
-                'NE', 'NV', 'NJ', 'NC', 'ND', 'OH', 'OK', 'RI',
-                'SD', 'TN', 'UT', 'VT', 'WA', 'WV', 'WI', 'WY',
-            ];
-
-        if (!Tax_Coverage::has_state_filter()) {
-            return $member_states;
-        }
-
-        return array_values(array_intersect($member_states, Tax_Coverage::get_enabled_states()));
-    }
-
-    /**
-     * Discover official SST rate files from the public directory listing.
-     *
-     * @return array<string, array{filename:string,url:string}>
-     */
-    private static function discover_sst_rate_files(): array
-    {
-        $response = wp_remote_get(self::SST_RATES_INDEX, [
-            'timeout' => self::DOWNLOAD_TIMEOUT,
-            'headers' => ['Accept' => 'text/html'],
-        ]);
-
-        if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
-            return [];
-        }
-
-        $html = wp_remote_retrieve_body($response);
-        if (!is_string($html) || $html === '') {
-            return [];
-        }
-
-        preg_match_all('/href="([^"]+)"|href=([^\s>]+)/i', $html, $matches);
-
-        $files = [];
-        foreach (($matches[1] ?? []) as $index => $href_a) {
-            $href = $href_a ?: ($matches[2][$index] ?? '');
-            $href = trim($href, "\"' ");
-            $filename = basename($href);
-
-            if (!preg_match('/^([A-Z]{2})R.+\.(csv|zip)$/i', $filename, $file_match)) {
-                continue;
-            }
-
-            $state_code = strtoupper($file_match[1]);
-            $files[$state_code] = [
-                'filename' => $filename,
-                'url'      => self::build_official_file_url($href),
-            ];
-        }
-
-        return $files;
-    }
-
-    /**
-     * Download and import a single official SST file.
-     *
-     * @return array
-     */
-    private static function download_and_import_sst_file(string $state_code, string $url, string $filename): array
-    {
-        $result = [
-            'success'    => false,
-            'skipped'    => false,
-            'state'      => $state_code,
-            'rows'       => 0,
-            'version_id' => null,
-            'error'      => null,
-        ];
-
-        $downloaded = self::download_remote_file($url, $filename);
-        if (is_wp_error($downloaded)) {
-            $result['error'] = $downloaded->get_error_message();
-            return $result;
-        }
-
-        $source_path = $downloaded['path'];
-        $csv_path    = $source_path;
-
-        if (strtolower(pathinfo($filename, PATHINFO_EXTENSION)) === 'zip') {
-            $csv_path = self::extract_csv_from_zip($source_path, $state_code, $filename);
-            if (is_wp_error($csv_path)) {
-                $result['error'] = $csv_path->get_error_message();
-                return $result;
-            }
-        }
-
-        $checksum = hash_file('sha256', $csv_path);
-        if ($checksum && self::checksum_exists($checksum)) {
-            $result['success'] = true;
-            $result['skipped'] = true;
-            $result['error']   = 'No dataset changes detected.';
-            return $result;
-        }
-
-        return self::import_csv(
-            $csv_path,
-            $state_code,
-            'sst_auto_sync',
-            pathinfo($filename, PATHINFO_FILENAME),
-            $url
-        );
-    }
-
-    /**
-     * Download a remote file into the local dataset storage directory.
-     *
-     * @return array|WP_Error
-     */
-    private static function download_remote_file(string $url, string $filename)
-    {
-        if (!function_exists('download_url')) {
-            require_once ABSPATH . 'wp-admin/includes/file.php';
-        }
-
-        $tmp = download_url($url, self::DOWNLOAD_TIMEOUT);
-        if (is_wp_error($tmp)) {
-            return $tmp;
-        }
-
-        $storage_dir = self::get_storage_dir();
-        $target_path = $storage_dir . sanitize_file_name($filename);
-
-        if (!@copy($tmp, $target_path)) {
-            @unlink($tmp);
-            return new WP_Error('sst_download_copy_failed', 'Downloaded SST file could not be stored locally.');
-        }
-
-        @unlink($tmp);
-
-        return [
-            'path' => $target_path,
-            'url'  => $url,
-        ];
-    }
-
-    /**
-     * Extract the first CSV file from an SST zip archive.
-     *
-     * @return string|WP_Error
-     */
-    private static function extract_csv_from_zip(string $zip_path, string $state_code, string $filename)
-    {
-        $extract_dir = trailingslashit(self::get_storage_dir() . 'extract-' . strtolower($state_code));
-        self::delete_path($extract_dir);
-        wp_mkdir_p($extract_dir);
-
-        $extracted = false;
-
-        if (class_exists('ZipArchive')) {
-            $zip = new ZipArchive();
-            if ($zip->open($zip_path) === true) {
-                $extracted = $zip->extractTo($extract_dir);
-                $zip->close();
-            }
-        }
-
-        if (!$extracted) {
-            if (!function_exists('unzip_file')) {
-                require_once ABSPATH . 'wp-admin/includes/file.php';
-            }
-
-            $unzipped = unzip_file($zip_path, $extract_dir);
-            if (is_wp_error($unzipped) || !$unzipped) {
-                self::delete_path($extract_dir);
-                return new WP_Error('sst_zip_extract_failed', 'Official SST zip archive could not be extracted.');
-            }
-        }
-
-        $csv_path = self::find_first_csv($extract_dir);
-        if (!$csv_path) {
-            self::delete_path($extract_dir);
-            return new WP_Error(
-                'sst_zip_no_csv',
-                sprintf('No CSV file was found inside %s.', $filename)
-            );
-        }
-
-        $target_csv = self::get_storage_dir() . 'SST_' . strtoupper($state_code) . '.csv';
-        if (!@copy($csv_path, $target_csv)) {
-            self::delete_path($extract_dir);
-            return new WP_Error('sst_zip_copy_failed', 'Extracted SST CSV could not be stored locally.');
-        }
-
-        self::delete_path($extract_dir);
-
-        return $target_csv;
-    }
-
-    /**
-     * Build an absolute official SST file URL from a directory href.
-     */
-    private static function build_official_file_url(string $href): string
-    {
-        if (preg_match('#^https?://#i', $href)) {
-            return $href;
-        }
-
-        return trailingslashit(self::SST_RATES_INDEX) . ltrim($href, '/');
-    }
-
-    /**
-     * Find the first CSV file inside a directory tree.
-     */
-    private static function find_first_csv(string $directory): ?string
-    {
-        if (!is_dir($directory)) {
-            return null;
-        }
-
-        $iterator = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS)
-        );
-
-        foreach ($iterator as $file) {
-            if ($file->isFile() && strtolower($file->getExtension()) === 'csv') {
-                return $file->getPathname();
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Delete a file or directory tree.
-     */
-    private static function delete_path(string $path): void
-    {
-        if (!file_exists($path)) {
-            return;
-        }
-
-        if (is_file($path)) {
-            @unlink($path);
-            return;
-        }
-
-        $items = scandir($path);
-        if (!is_array($items)) {
-            return;
-        }
-
-        foreach ($items as $item) {
-            if ($item === '.' || $item === '..') {
-                continue;
-            }
-
-            self::delete_path(trailingslashit($path) . $item);
-        }
-
-        @rmdir($path);
-    }
-
-    /**
-     * Get all active dataset versions.
-     */
-    public static function get_active_versions(): array
-    {
-        global $wpdb;
-
-        $table = Tax_Resolver_DB::table('dataset_versions');
-        return $wpdb->get_results(
-            "SELECT * FROM {$table} WHERE status = 'active' ORDER BY source_code, effective_date DESC",
-            ARRAY_A
-        ) ?: [];
+        $rates_table    = Tax_Resolver_DB::table('jurisdiction_rates');
+        $datasets_table = Tax_Resolver_DB::table('dataset_versions');
+
+        $wpdb->delete($rates_table, ['dataset_version_id' => $version_id]);
+        $wpdb->delete($datasets_table, ['id' => $version_id]);
     }
 }

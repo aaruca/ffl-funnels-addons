@@ -54,7 +54,7 @@ class Tax_Quote_Result
     /** @var string How the rate was resolved (e.g., 'dataset_match', 'remote_lookup'). */
     public $resolutionMode = '';
 
-    /** @var string|null Source identifier (e.g., 'sst', 'idor_address_specific'). */
+    /** @var string|null Source identifier (for example, 'google_sheet_zip_rates'). */
     public $source;
 
     /** @var string|null Specific version label of the dataset used. */
@@ -189,7 +189,7 @@ class Tax_Quote_Result
     }
 
     /**
-     * Create a "no sales tax" result.
+     * Create a zero-rate result for backward-compatible callers.
      */
     public static function no_sales_tax(string $state_code, array $input, array $normalized): self
     {
@@ -200,10 +200,10 @@ class Tax_Quote_Result
         $result->coverageStatus   = Tax_Coverage::NO_SALES_TAX;
         $result->outcomeCode      = self::OUTCOME_NO_SALES_TAX;
         $result->totalRate        = 0.0;
-        $result->resolutionMode   = 'no_tax_state';
-        $result->source           = 'state_law';
+        $result->resolutionMode   = 'dataset_zero_rate';
+        $result->source           = 'google_sheet_zip_rates';
         $result->confidence       = self::CONFIDENCE_HIGH;
-        $result->limitations      = ['This state does not levy a general sales tax.'];
+        $result->limitations      = ['Returned a zero-rate result from the local tax dataset.'];
 
         return $result;
     }

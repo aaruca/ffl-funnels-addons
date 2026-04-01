@@ -1,13 +1,13 @@
 <?php
 /**
- * Tax Resolver Database — Schema management.
+ * Tax Resolver Database - Schema management.
  *
  * Creates and manages custom tables for the Tax Address Resolver:
  *   - coverage_rules: per-state coverage status and resolver mapping
  *   - dataset_versions: immutable dataset version records
- *   - jurisdiction_rates: official tax rates by jurisdiction
+ *   - jurisdiction_rates: imported local tax rates by jurisdiction
  *   - quotes_audit: full audit trail of every query
- *   - address_cache: normalized address + geocode cache
+ *   - address_cache: normalized address cache
  *
  * @package FFL_Funnels_Addons
  */
@@ -18,8 +18,8 @@ if (!defined('ABSPATH')) {
 
 class Tax_Resolver_DB
 {
-    const DB_VERSION      = '1.1.0';
-    const DB_VERSION_OPT  = 'ffla_tax_resolver_db_version';
+    const DB_VERSION = '1.4.0';
+    const DB_VERSION_OPT = 'ffla_tax_resolver_db_version';
 
     /**
      * Get table name with WP prefix.
@@ -27,6 +27,7 @@ class Tax_Resolver_DB
     public static function table(string $name): string
     {
         global $wpdb;
+
         return $wpdb->prefix . 'ffla_tax_' . $name;
     }
 
@@ -41,7 +42,6 @@ class Tax_Resolver_DB
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
-        // ── Coverage Rules ──────────────────────────────────────────
         $t_coverage = self::table('coverage_rules');
         $sql_coverage = "CREATE TABLE {$t_coverage} (
             state_code         CHAR(2) NOT NULL,
@@ -54,7 +54,6 @@ class Tax_Resolver_DB
             PRIMARY KEY (state_code)
         ) {$charset};";
 
-        // ── Dataset Versions ────────────────────────────────────────
         $t_datasets = self::table('dataset_versions');
         $sql_datasets = "CREATE TABLE {$t_datasets} (
             id                 BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -74,7 +73,6 @@ class Tax_Resolver_DB
             KEY idx_effective (effective_date)
         ) {$charset};";
 
-        // ── Jurisdiction Rates ──────────────────────────────────────
         $t_rates = self::table('jurisdiction_rates');
         $sql_rates = "CREATE TABLE {$t_rates} (
             id                     BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -90,6 +88,7 @@ class Tax_Resolver_DB
             expires_at             DATE DEFAULT NULL,
             zip_codes              TEXT,
             city_names             TEXT,
+            notes                  TEXT,
             PRIMARY KEY (id),
             KEY idx_state_type (state_code, jurisdiction_type),
             KEY idx_dataset (dataset_version_id),
@@ -97,7 +96,6 @@ class Tax_Resolver_DB
             KEY idx_state_effective (state_code, effective_date)
         ) {$charset};";
 
-        // ── Quotes Audit ────────────────────────────────────────────
         $t_audit = self::table('quotes_audit');
         $sql_audit = "CREATE TABLE {$t_audit} (
             query_id           VARCHAR(36) NOT NULL,
@@ -122,7 +120,6 @@ class Tax_Resolver_DB
             KEY idx_outcome (outcome_code)
         ) {$charset};";
 
-        // ── Address Cache ───────────────────────────────────────────
         $t_cache = self::table('address_cache');
         $sql_cache = "CREATE TABLE {$t_cache} (
             cache_key          VARCHAR(64) NOT NULL,
@@ -142,8 +139,8 @@ class Tax_Resolver_DB
         dbDelta($sql_audit);
         dbDelta($sql_cache);
 
-        // Backfill state_code for earlier resolver builds that stored per-state
-        // datasets without the explicit state_code column.
+        $wpdb->query("DROP TABLE IF EXISTS " . self::table('manual_overrides'));
+
         $wpdb->query(
             "UPDATE {$t_datasets}
              SET state_code = UPPER(LEFT(version_label, 2))
@@ -151,7 +148,6 @@ class Tax_Resolver_DB
                AND version_label REGEXP '^[A-Za-z]{2}-'"
         );
 
-        // Seed coverage rules for all 50 states + DC.
         self::seed_coverage_rules();
 
         update_option(self::DB_VERSION_OPT, self::DB_VERSION);
@@ -166,22 +162,17 @@ class Tax_Resolver_DB
     }
 
     /**
-     * Seed initial coverage rules (all UNSUPPORTED).
+     * Seed initial coverage rules.
      */
     private static function seed_coverage_rules(): void
     {
         global $wpdb;
 
         $table = self::table('coverage_rules');
-
-        // Only seed if table is empty.
         $count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}");
         if ($count > 0) {
             return;
         }
-
-        // No-sales-tax states.
-        $no_tax = ['AK', 'DE', 'MT', 'NH', 'OR'];
 
         $states = [
             'AL','AK','AZ','AR','CA','CO','CT','DE','DC','FL',
@@ -192,21 +183,18 @@ class Tax_Resolver_DB
         ];
 
         foreach ($states as $code) {
-            $status = in_array($code, $no_tax, true) ? 'NO_SALES_TAX' : 'UNSUPPORTED';
-            $note   = in_array($code, $no_tax, true) ? 'State does not levy a general sales tax.' : null;
-
             $wpdb->insert($table, [
                 'state_code'      => $code,
                 'resolver_name'   => '',
-                'coverage_status' => $status,
-                'notes'           => $note,
+                'coverage_status' => 'UNSUPPORTED',
+                'notes'           => null,
                 'updated_at'      => current_time('mysql'),
             ]);
         }
     }
 
     /**
-     * Drop all custom tables (for uninstall).
+     * Drop all custom tables.
      */
     public static function uninstall(): void
     {
@@ -216,12 +204,13 @@ class Tax_Resolver_DB
             self::table('coverage_rules'),
             self::table('dataset_versions'),
             self::table('jurisdiction_rates'),
+            self::table('manual_overrides'),
             self::table('quotes_audit'),
             self::table('address_cache'),
         ];
 
-        foreach ($tables as $t) {
-            $wpdb->query("DROP TABLE IF EXISTS {$t}");
+        foreach ($tables as $table) {
+            $wpdb->query("DROP TABLE IF EXISTS {$table}");
         }
 
         delete_option(self::DB_VERSION_OPT);
@@ -242,7 +231,7 @@ class Tax_Resolver_DB
     }
 
     /**
-     * Purge old audit entries (older than N days).
+     * Purge old audit entries.
      */
     public static function purge_audit(int $days = 90): void
     {
@@ -257,7 +246,7 @@ class Tax_Resolver_DB
     }
 
     /**
-     * Clear cached quote entries for a state after dataset refresh.
+     * Clear cached quote entries for a state.
      */
     public static function clear_state_cache(string $state_code): void
     {
@@ -268,5 +257,193 @@ class Tax_Resolver_DB
             "DELETE FROM {$table} WHERE state_code = %s",
             strtoupper($state_code)
         ));
+    }
+
+    /**
+     * Upsert a manual override row for a state/city or state floor.
+     */
+    public static function save_manual_override(
+        string $state_code,
+        string $scope,
+        string $city_key,
+        string $city_label,
+        float $manual_rate,
+        bool $lock_on_resync,
+        string $reason,
+        int $updated_by = 0
+    ): int {
+        global $wpdb;
+
+        $table = self::table('manual_overrides');
+        $state_code = strtoupper($state_code);
+        $scope = $scope === 'state' ? 'state' : 'city';
+        $city_key = $scope === 'state' ? '' : $city_key;
+        $city_label = $scope === 'state' ? '' : $city_label;
+
+        $existing_id = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT id
+             FROM {$table}
+             WHERE state_code = %s
+               AND override_scope = %s
+               AND city_key = %s
+             LIMIT 1",
+            $state_code,
+            $scope,
+            $city_key
+        ));
+
+        $payload = [
+            'state_code'     => $state_code,
+            'override_scope' => $scope,
+            'city_key'       => $city_key,
+            'city_label'     => $city_label !== '' ? $city_label : null,
+            'manual_rate'    => $manual_rate,
+            'lock_on_resync' => $lock_on_resync ? 1 : 0,
+            'reason'         => $reason !== '' ? $reason : null,
+            'updated_by'     => $updated_by > 0 ? $updated_by : null,
+            'updated_at'     => current_time('mysql'),
+        ];
+
+        if ($existing_id > 0) {
+            $wpdb->update(
+                $table,
+                $payload,
+                ['id' => $existing_id],
+                ['%s', '%s', '%s', '%s', '%f', '%d', '%s', '%d', '%s'],
+                ['%d']
+            );
+
+            return $existing_id;
+        }
+
+        $wpdb->insert(
+            $table,
+            $payload,
+            ['%s', '%s', '%s', '%s', '%f', '%d', '%s', '%d', '%s']
+        );
+
+        return (int) $wpdb->insert_id;
+    }
+
+    /**
+     * Delete one manual override by id.
+     */
+    public static function delete_manual_override(int $override_id): bool
+    {
+        global $wpdb;
+
+        $table = self::table('manual_overrides');
+
+        return (bool) $wpdb->delete($table, ['id' => $override_id], ['%d']);
+    }
+
+    /**
+     * Fetch one manual override by state/scope/city key.
+     *
+     * @return array<string,mixed>|null
+     */
+    public static function get_manual_override(string $state_code, string $scope, string $city_key = ''): ?array
+    {
+        global $wpdb;
+
+        $table = self::table('manual_overrides');
+        $scope = $scope === 'state' ? 'state' : 'city';
+        $city_key = $scope === 'state' ? '' : $city_key;
+
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT *
+             FROM {$table}
+             WHERE state_code = %s
+               AND override_scope = %s
+               AND city_key = %s
+             LIMIT 1",
+            strtoupper($state_code),
+            $scope,
+            $city_key
+        ), ARRAY_A);
+
+        return $row ?: null;
+    }
+
+    /**
+     * Fetch one manual override by id.
+     *
+     * @return array<string,mixed>|null
+     */
+    public static function get_manual_override_by_id(int $override_id): ?array
+    {
+        global $wpdb;
+
+        $table = self::table('manual_overrides');
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT *
+             FROM {$table}
+             WHERE id = %d
+             LIMIT 1",
+            $override_id
+        ), ARRAY_A);
+
+        return $row ?: null;
+    }
+
+    /**
+     * List manual overrides for admin.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public static function list_manual_overrides(?string $state_code = null): array
+    {
+        global $wpdb;
+
+        $table = self::table('manual_overrides');
+
+        if ($state_code !== null && $state_code !== '') {
+            return $wpdb->get_results($wpdb->prepare(
+                "SELECT *
+                 FROM {$table}
+                 WHERE state_code = %s
+                 ORDER BY state_code ASC, override_scope ASC, city_label ASC, updated_at DESC",
+                strtoupper($state_code)
+            ), ARRAY_A) ?: [];
+        }
+
+        return $wpdb->get_results(
+            "SELECT *
+             FROM {$table}
+             ORDER BY state_code ASC, override_scope ASC, city_label ASC, updated_at DESC",
+            ARRAY_A
+        ) ?: [];
+    }
+
+    /**
+     * Delete overrides for a state that are not locked against resync.
+     *
+     * @return int Number of deleted rows.
+     */
+    public static function clear_resyncable_overrides(string $state_code): int
+    {
+        global $wpdb;
+
+        $table = self::table('manual_overrides');
+        $wpdb->query($wpdb->prepare(
+            "DELETE FROM {$table}
+             WHERE state_code = %s
+               AND lock_on_resync = 0",
+            strtoupper($state_code)
+        ));
+
+        return (int) $wpdb->rows_affected;
+    }
+
+    /**
+     * Count manual overrides for health/admin summaries.
+     */
+    public static function count_manual_overrides(): int
+    {
+        global $wpdb;
+
+        $table = self::table('manual_overrides');
+
+        return (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}");
     }
 }

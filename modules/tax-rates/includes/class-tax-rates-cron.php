@@ -1,9 +1,9 @@
 <?php
 /**
- * Tax Rates Cron - Dataset sync and maintenance.
+ * Tax Rates Cron - Sheet dataset sync and maintenance.
  *
  * Schedules:
- *   - Monthly SalesTaxHandbook dataset rebuild
+ *   - Monthly rebuild of Google Sheet state datasets
  *   - Daily quote-cache cleanup
  *   - Weekly audit-log purge
  *
@@ -79,12 +79,12 @@ class Tax_Rates_Cron
     }
 
     /**
-     * Run dataset sync.
+     * Run sheet dataset sync.
      */
     public static function run_sync(): void
     {
         if (class_exists('Tax_Dataset_Pipeline')) {
-            Tax_Dataset_Pipeline::sync(Tax_Dataset_Pipeline::HANDBOOK_SOURCE_CODE);
+            Tax_Dataset_Pipeline::sync(Tax_Dataset_Pipeline::SHEET_SOURCE_CODE);
         }
     }
 

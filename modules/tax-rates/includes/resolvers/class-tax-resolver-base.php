@@ -16,17 +16,17 @@ if (!defined('ABSPATH')) {
 abstract class Tax_Resolver_Base
 {
     /**
-     * Unique identifier for this resolver (e.g., 'sst', 'illinois_idor').
+     * Unique identifier for this resolver (for example, 'sheet_zip_dataset').
      */
     abstract public function get_id(): string;
 
     /**
-     * Human-readable name (e.g., 'SST Rate Files', 'Illinois IDOR').
+     * Human-readable name shown in audit, admin, and health responses.
      */
     abstract public function get_name(): string;
 
     /**
-     * Source code for audit trail (e.g., 'sst_rate_boundary', 'idor_address_specific').
+     * Source code used in audit logs and dataset version rows.
      */
     abstract public function get_source_code(): string;
 
