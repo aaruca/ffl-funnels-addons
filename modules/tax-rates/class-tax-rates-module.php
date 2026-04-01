@@ -8,7 +8,9 @@
  *   - Census Bureau Geocoder for address validation
  *   - Individual state resolvers for non-SST states
  *
- * No paid APIs, no AI, no scraping — only official sources.
+ * Official-first tax resolver with a secondary SalesTaxHandbook city-table
+ * fallback for states that do not yet have an official address-specific
+ * integration.
  *
  * @package FFL_Funnels_Addons
  */
@@ -35,7 +37,7 @@ class Tax_Rates_Module extends FFLA_Module
     public function get_description(): string
     {
         return __(
-            'US sales tax resolver using official government sources. Geocodes addresses, resolves jurisdictions, and syncs rates to WooCommerce — no paid APIs, fully auditable.',
+            'US sales tax resolver using official government sources first, with SalesTaxHandbook city tables as a secondary fallback where official local coverage is not yet integrated. Geocodes addresses, resolves jurisdictions, and syncs rates to WooCommerce.',
             'ffl-funnels-addons'
         );
     }

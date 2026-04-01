@@ -376,7 +376,7 @@ class Tax_Rates_Admin
 
         // Disclaimer.
         FFLA_Admin::render_notice('info',
-            __('This tool provides informational tax rate quotes based on official government sources. It is not a legal determination and does not replace professional tax advice.', 'ffl-funnels-addons')
+            __('This tool provides informational tax rate quotes using official government sources first and approved secondary source fallbacks where official local coverage is not yet integrated. It is not a legal determination and does not replace professional tax advice.', 'ffl-funnels-addons')
         );
     }
 
