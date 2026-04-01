@@ -223,6 +223,26 @@
                 });
         });
 
+        $('#ffla-handbook-refresh-btn').on('click', function () {
+            var $btn = $(this);
+            $btn.prop('disabled', true).text('Refreshing SalesTaxHandbook...');
+
+            $.post(FflaTaxResolver.ajaxUrl, {
+                action: 'ffla_tax_refresh_handbook',
+                security: FflaTaxResolver.nonce
+            })
+                .done(function (res) {
+                    alert(res.success ? res.data.message : (res.data || 'Refresh failed.'));
+                    location.reload();
+                })
+                .fail(function () {
+                    alert('Request failed.');
+                })
+                .always(function () {
+                    $btn.prop('disabled', false).text('Refresh SalesTaxHandbook Cache');
+                });
+        });
+
         var $restrictStates = $('input[name="restrict_states"]');
         var $statePicker = $('#ffla-tax-state-picker');
 

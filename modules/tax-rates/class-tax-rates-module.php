@@ -229,6 +229,7 @@ class Tax_Rates_Module extends FFLA_Module
     public function deactivate(): void
     {
         wp_clear_scheduled_hook('ffla_tax_dataset_sync');
+        wp_clear_scheduled_hook('ffla_tax_handbook_refresh');
         wp_clear_scheduled_hook('ffla_tax_cache_cleanup');
         wp_clear_scheduled_hook('ffla_tax_audit_purge');
     }

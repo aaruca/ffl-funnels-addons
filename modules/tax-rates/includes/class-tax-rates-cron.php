@@ -17,9 +17,10 @@ if (!defined('ABSPATH')) {
 
 class Tax_Rates_Cron
 {
-    const SYNC_HOOK    = 'ffla_tax_dataset_sync';
-    const CLEANUP_HOOK = 'ffla_tax_cache_cleanup';
-    const PURGE_HOOK   = 'ffla_tax_audit_purge';
+    const SYNC_HOOK             = 'ffla_tax_dataset_sync';
+    const HANDBOOK_REFRESH_HOOK = 'ffla_tax_handbook_refresh';
+    const CLEANUP_HOOK          = 'ffla_tax_cache_cleanup';
+    const PURGE_HOOK            = 'ffla_tax_audit_purge';
 
     public static function init(): void
     {
@@ -28,6 +29,7 @@ class Tax_Rates_Cron
 
         // Hook callbacks.
         add_action(self::SYNC_HOOK, [__CLASS__, 'run_sync']);
+        add_action(self::HANDBOOK_REFRESH_HOOK, [__CLASS__, 'run_handbook_refresh']);
         add_action(self::CLEANUP_HOOK, [__CLASS__, 'run_cleanup']);
         add_action(self::PURGE_HOOK, [__CLASS__, 'run_purge']);
 
@@ -78,6 +80,13 @@ class Tax_Rates_Cron
             wp_clear_scheduled_hook(self::SYNC_HOOK);
         }
 
+        // SalesTaxHandbook fallback refresh always runs monthly on its own schedule.
+        $scheduled_handbook = wp_get_scheduled_event(self::HANDBOOK_REFRESH_HOOK);
+        if (!$scheduled_handbook || $scheduled_handbook->schedule !== 'ffla_monthly') {
+            wp_clear_scheduled_hook(self::HANDBOOK_REFRESH_HOOK);
+            wp_schedule_event(time(), 'ffla_monthly', self::HANDBOOK_REFRESH_HOOK);
+        }
+
         // Cache cleanup (daily).
         if (!wp_next_scheduled(self::CLEANUP_HOOK)) {
             wp_schedule_event(time(), 'daily', self::CLEANUP_HOOK);
@@ -102,6 +111,16 @@ class Tax_Rates_Cron
         $settings = get_option('ffla_tax_resolver_settings', []);
         if (!empty($settings['wc_auto_sync']) && class_exists('Tax_Quote_Engine')) {
             Tax_Quote_Engine::sync_all_to_woocommerce();
+        }
+    }
+
+    /**
+     * Refresh the SalesTaxHandbook secondary-source cache on a monthly cadence.
+     */
+    public static function run_handbook_refresh(): void
+    {
+        if (class_exists('Official_State_Floor_Resolver')) {
+            Official_State_Floor_Resolver::refresh_handbook_cache(false);
         }
     }
 

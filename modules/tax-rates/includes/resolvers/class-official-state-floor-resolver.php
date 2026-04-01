@@ -19,6 +19,8 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
     const HANDBOOK_BASE_URL = 'https://www.salestaxhandbook.com';
     const HANDBOOK_SOURCE_CODE = 'salestaxhandbook_fallback';
     const HANDBOOK_CACHE_TTL = 30 * DAY_IN_SECONDS;
+    const HANDBOOK_STATUS_OPTION = 'ffla_tax_handbook_refresh_status';
+    const HANDBOOK_USED_OPTION = 'ffla_tax_handbook_used_counties';
 
     /**
      * SalesTaxHandbook state slug map for states using the official floor resolver.
@@ -142,6 +144,91 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
         return array_keys(self::STATES);
     }
 
+    /**
+     * Get the fallback states currently relevant for this store.
+     *
+     * @return string[]
+     */
+    public static function get_handbook_target_states(): array
+    {
+        $states = array_keys(self::HANDBOOK_STATE_SLUGS);
+
+        if (!class_exists('Tax_Coverage') || !Tax_Coverage::has_state_filter()) {
+            return $states;
+        }
+
+        return array_values(array_intersect($states, Tax_Coverage::get_enabled_states()));
+    }
+
+    /**
+     * Return the most recent refresh status payload for admin visibility.
+     */
+    public static function get_handbook_refresh_status(): array
+    {
+        $status = get_option(self::HANDBOOK_STATUS_OPTION, []);
+        return is_array($status) ? $status : [];
+    }
+
+    /**
+     * Refresh state pages for all fallback states and rewarm county pages that have been used.
+     *
+     * @return array<string,mixed>
+     */
+    public static function refresh_handbook_cache(bool $force_all_counties = false): array
+    {
+        $targets = self::get_handbook_target_states();
+        $used_counties = self::get_used_handbook_counties();
+        $summary = [
+            'ranAt'             => current_time('mysql'),
+            'stateCount'        => count($targets),
+            'states'            => [],
+            'statePagesRefreshed'=> 0,
+            'countyPagesRefreshed' => 0,
+            'errors'            => [],
+            'forceAllCounties'  => $force_all_counties,
+        ];
+
+        foreach ($targets as $state_code) {
+            $state_slug = self::HANDBOOK_STATE_SLUGS[$state_code] ?? null;
+            if ($state_slug === null) {
+                continue;
+            }
+
+            $state_page = self::fetch_handbook_state_page($state_code, $state_slug);
+            if (!$state_page) {
+                $summary['errors'][$state_code] = 'State page could not be downloaded.';
+                continue;
+            }
+
+            $summary['statePagesRefreshed']++;
+            $county_slugs = self::extract_handbook_county_slugs($state_page['html']);
+            $refresh_slugs = $force_all_counties
+                ? $county_slugs
+                : array_values(array_intersect($county_slugs, $used_counties[$state_code] ?? []));
+
+            $state_summary = [
+                'updated'          => $state_page['updated'],
+                'stateUrl'         => $state_page['url'],
+                'countiesDiscovered' => count($county_slugs),
+                'countiesRefreshed'  => 0,
+            ];
+
+            foreach ($refresh_slugs as $county_slug) {
+                $county_page = self::prime_handbook_county_page($state_code, $state_slug, $county_slug);
+                if ($county_page) {
+                    $summary['countyPagesRefreshed']++;
+                    $state_summary['countiesRefreshed']++;
+                }
+            }
+
+            $summary['states'][$state_code] = $state_summary;
+        }
+
+        update_option(self::HANDBOOK_STATUS_OPTION, $summary, false);
+
+        return $summary;
+    }
+
     public function resolve(array $normalized, array $geocode): Tax_Quote_Result
     {
         $state_code = strtoupper((string) ($normalized['state'] ?? ''));
@@ -194,7 +281,7 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
             return null;
         }
 
-        $county_page = $this->fetch_handbook_county_page($state_slug, $county_slug);
+        $county_page = $this->fetch_handbook_county_page($state_code, $state_slug, $county_slug);
         if (!$county_page || empty($county_page['html'])) {
             return null;
         }
@@ -237,8 +324,22 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
      *
      * @return array<string,string>|null
      */
-    private function fetch_handbook_county_page(string $state_slug, string $county_key): ?array
+    private function fetch_handbook_county_page(string $state_code, string $state_slug, string $county_key): ?array
     {
+        self::remember_handbook_county_usage($state_code, $county_key);
+
+        return self::prime_handbook_county_page($state_code, $state_slug, $county_key);
+    }
+
+    /**
+     * Download and cache a handbook county page.
+     *
+     * @return array<string,string>|null
+     */
+    private static function prime_handbook_county_page(string $state_code, string $state_slug, string $county_key): ?array
+    {
+        self::remember_handbook_county_usage($state_code, $county_key);
+
         $transient_key = 'ffla_tax_sth_' . md5($state_slug . '|' . $county_key);
         $cached = get_transient($transient_key);
 
@@ -266,13 +367,122 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
 
         $payload = [
             'url'     => $url,
-            'updated' => $this->extract_handbook_updated_label($html),
+            'updated' => self::extract_handbook_updated_label($html),
             'html'    => $html,
         ];
 
         set_transient($transient_key, $payload, self::HANDBOOK_CACHE_TTL);
 
         return $payload;
+    }
+
+    /**
+     * Fetch and cache the state-level handbook rates page.
+     *
+     * @return array<string,string>|null
+     */
+    private static function fetch_handbook_state_page(string $state_code, string $state_slug): ?array
+    {
+        $transient_key = 'ffla_tax_sth_state_' . strtolower($state_code);
+        $url = trailingslashit(self::HANDBOOK_BASE_URL) . $state_slug . '/rates';
+
+        $response = wp_remote_get($url, [
+            'timeout' => 20,
+            'headers' => [
+                'Accept'     => 'text/html',
+                'User-Agent' => 'FFL Funnels Tax Resolver/' . (defined('FFLA_VERSION') ? FFLA_VERSION : 'dev'),
+            ],
+        ]);
+
+        if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
+            return null;
+        }
+
+        $html = wp_remote_retrieve_body($response);
+        if (!is_string($html) || $html === '') {
+            return null;
+        }
+
+        $payload = [
+            'url'     => $url,
+            'updated' => self::extract_handbook_updated_label($html),
+            'html'    => $html,
+        ];
+
+        set_transient($transient_key, $payload, self::HANDBOOK_CACHE_TTL);
+
+        return $payload;
+    }
+
+    /**
+     * Extract county page slugs from a handbook state page.
+     *
+     * @return string[]
+     */
+    private static function extract_handbook_county_slugs(string $html): array
+    {
+        preg_match_all('/href="rates\/([a-z0-9-]+-county)"/i', $html, $matches);
+        $slugs = array_map('strtolower', $matches[1] ?? []);
+        $slugs = array_values(array_unique($slugs));
+        sort($slugs);
+
+        return $slugs;
+    }
+
+    /**
+     * Track county pages actually used by runtime lookups.
+     */
+    private static function remember_handbook_county_usage(string $state_code, string $county_slug): void
+    {
+        $state_code = strtoupper($state_code);
+        $county_slug = strtolower(trim($county_slug));
+
+        if ($county_slug === '') {
+            return;
+        }
+
+        $used = self::get_used_handbook_counties();
+        $state_used = $used[$state_code] ?? [];
+        $state_used[] = $county_slug;
+        $state_used = array_values(array_unique($state_used));
+        sort($state_used);
+        $used[$state_code] = $state_used;
+
+        update_option(self::HANDBOOK_USED_OPTION, $used, false);
+    }
+
+    /**
+     * Read the recorded set of county pages used by runtime lookups.
+     *
+     * @return array<string,string[]>
+     */
+    private static function get_used_handbook_counties(): array
+    {
+        $used = get_option(self::HANDBOOK_USED_OPTION, []);
+        if (!is_array($used)) {
+            return [];
+        }
+
+        foreach ($used as $state_code => $counties) {
+            if (!is_array($counties)) {
+                unset($used[$state_code]);
+                continue;
+            }
+
+            $clean = [];
+            foreach ($counties as $county_slug) {
+                $county_slug = strtolower(trim((string) $county_slug));
+                if ($county_slug !== '') {
+                    $clean[] = $county_slug;
+                }
+            }
+
+            $clean = array_values(array_unique($clean));
+            sort($clean);
+            $used[$state_code] = $clean;
+        }
+
+        return $used;
     }
 
     /**
@@ -351,7 +561,7 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
     /**
      * Extract the visible "Last updated ..." label from a handbook page.
      */
-    private function extract_handbook_updated_label(string $html): string
+    private static function extract_handbook_updated_label(string $html): string
     {
         if (preg_match('/Last updated\s+([^<]+)</i', $html, $matches)) {
             return trim(html_entity_decode($matches[1], ENT_QUOTES, 'UTF-8'));

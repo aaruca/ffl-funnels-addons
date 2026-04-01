@@ -27,6 +27,7 @@ class Tax_Rates_Admin
         add_action('wp_ajax_ffla_tax_upload_csv', [$this, 'ajax_upload_csv']);
         add_action('wp_ajax_ffla_tax_sync_wc', [$this, 'ajax_sync_wc']);
         add_action('wp_ajax_ffla_tax_run_sync', [$this, 'ajax_run_sync']);
+        add_action('wp_ajax_ffla_tax_refresh_handbook', [$this, 'ajax_refresh_handbook']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
     }
 
@@ -227,6 +228,32 @@ class Tax_Rates_Admin
         $results = Tax_Dataset_Pipeline::sync('all');
         wp_send_json_success([
             'message' => __('Dataset sync completed.', 'ffl-funnels-addons'),
+            'results' => $results,
+        ]);
+    }
+
+    /* ── AJAX: Refresh SalesTaxHandbook ───────────────────────────── */
+
+    public function ajax_refresh_handbook(): void
+    {
+        check_ajax_referer('ffla_tax_resolver_nonce', 'security');
+
+        if (!current_user_can('manage_woocommerce')) {
+            wp_send_json_error('Permission denied.');
+        }
+
+        if (!class_exists('Official_State_Floor_Resolver')) {
+            wp_send_json_error('SalesTaxHandbook fallback resolver is not available.');
+        }
+
+        $results = Official_State_Floor_Resolver::refresh_handbook_cache(false);
+
+        wp_send_json_success([
+            'message' => sprintf(
+                __('SalesTaxHandbook cache refreshed for %d states and %d county pages.', 'ffl-funnels-addons'),
+                (int) ($results['statePagesRefreshed'] ?? 0),
+                (int) ($results['countyPagesRefreshed'] ?? 0)
+            ),
             'results' => $results,
         ]);
     }
@@ -482,6 +509,12 @@ class Tax_Rates_Admin
     private function render_datasets_tab(): void
     {
         global $wpdb;
+        $handbook_status = class_exists('Official_State_Floor_Resolver')
+            ? Official_State_Floor_Resolver::get_handbook_refresh_status()
+            : [];
+        $handbook_targets = class_exists('Official_State_Floor_Resolver')
+            ? Official_State_Floor_Resolver::get_handbook_target_states()
+            : [];
 
         // Upload form.
         echo '<div class="wb-card">';
@@ -508,7 +541,30 @@ class Tax_Rates_Admin
         echo '<button type="button" id="ffla-csv-upload-btn" class="wb-btn wb-btn--primary">' . esc_html__('Upload & Import', 'ffl-funnels-addons') . '</button>';
         echo ' <button type="button" id="ffla-sync-btn" class="wb-btn wb-btn--subtle">' . esc_html__('Sync Datasets', 'ffl-funnels-addons') . '</button>';
         echo ' <button type="button" id="ffla-wc-sync-all-btn" class="wb-btn wb-btn--subtle">' . esc_html__('Sync All to WooCommerce', 'ffl-funnels-addons') . '</button>';
+        if (class_exists('Official_State_Floor_Resolver')) {
+            echo ' <button type="button" id="ffla-handbook-refresh-btn" class="wb-btn wb-btn--subtle">' . esc_html__('Refresh SalesTaxHandbook Cache', 'ffl-funnels-addons') . '</button>';
+        }
         echo '</div>';
+
+        if (class_exists('Official_State_Floor_Resolver')) {
+            echo '<div class="ffla-tax-source-status" style="margin-top:var(--wb-spacing-lg)">';
+            echo '<strong>' . esc_html__('SalesTaxHandbook Fallback', 'ffl-funnels-addons') . '</strong>';
+            echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-xs)">' . esc_html(sprintf(
+                __('Monthly refresh runs separately for %d fallback states. It revisits each fallback state page and rewarms county pages already used by your store.', 'ffl-funnels-addons'),
+                count($handbook_targets)
+            )) . '</p>';
+
+            if (!empty($handbook_status['ranAt'])) {
+                echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-xs)">' . esc_html(sprintf(
+                    __('Last refresh: %1$s. State pages refreshed: %2$d. County pages refreshed: %3$d.', 'ffl-funnels-addons'),
+                    date_i18n(get_option('date_format') . ' ' . get_option('time_format'), strtotime($handbook_status['ranAt'])),
+                    (int) ($handbook_status['statePagesRefreshed'] ?? 0),
+                    (int) ($handbook_status['countyPagesRefreshed'] ?? 0)
+                )) . '</p>';
+            }
+
+            echo '</div>';
+        }
 
         echo '<div id="ffla-upload-status" class="ffla-tax-upload-status" style="display:none"></div>';
 
