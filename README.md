@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.8.0--beta.5-orange.svg)
+![Version](https://img.shields.io/badge/version-1.8.0-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -48,6 +48,15 @@ A visual element for Bricks Builder to help customers locate nearby FFL dealers 
 *   Edit prices, stock, and SKU directly from Google Sheets.
 *   Create simple products and variations from the sheet.
 
+### 7. Tax Address Resolver
+US sales tax resolution for WooCommerce using a shared Google Sheets ZIP dataset that is imported and stored locally in WordPress.
+*   **Local-first tax engine:** Checkout and Quote Lookup resolve from local tables, not live web requests.
+*   **Google Sheet sync:** Imports ZIP rows, city fallback rows, and state floor rows from the configured shared sheet CSV.
+*   **WooCommerce runtime taxes:** Applies resolved taxes directly in cart and checkout.
+*   **State controls:** Limit the resolver to only the states your store uses, and purge local datasets when a state is removed from selection.
+*   **Admin tooling:** Includes Quote Lookup, Coverage Matrix, Datasets, Audit Log, and Settings screens.
+*   **Monthly refresh:** Re-syncs the selected states automatically on a monthly schedule.
+
 ## Installation
 
 1.  Download the `ffl-funnels-addons.zip` file from the [Releases](https://github.com/aaruca/ffl-funnels-addons/releases) page.
@@ -73,6 +82,19 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 2.  Toggle the switches for the modules you want to use (e.g., WooBooster, Wishlist).
 3.  Click the "Settings" button on active cards to configure specific options.
 
+### Tax Address Resolver
+1.  Go to **FFL Addons > Tax Resolver > Settings**.
+2.  Set the shared Google Sheet URL used as the tax source.
+3.  Optionally enable **Limit resolver to selected states** and choose only the states your store uses.
+4.  Save settings.
+5.  Open **Datasets** and run **Sync Sheet Data** to import the selected states locally.
+6.  Use **Quote Lookup** to verify ZIP and city results before testing in WooCommerce checkout.
+
+Notes:
+*   Removing a state from the selected list deletes its local imported dataset.
+*   Checkout uses the local imported dataset; it does not query the sheet live.
+*   The REST quote endpoint is admin-only.
+
 ### WooBooster Rules
 1.  Go to **FFL Addons > WooBooster > Rules**.
 2.  Click **Add Rule**.
@@ -88,6 +110,14 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.8.0
+*   Feature: Released the Tax Address Resolver as a stable module powered by a shared Google Sheets CSV source.
+*   Feature: WooCommerce checkout and cart now resolve taxes from local ZIP datasets stored in WordPress.
+*   Feature: Added local sheet sync with ZIP rows, city fallback rows, state floor rows, audit logging, and monthly refresh.
+*   Feature: Added state selection controls so stores can import and use only their active states.
+*   Enhancement: Removing a state from selection now purges that state's local imported dataset and cache.
+*   Cleanup: Removed beta-era API key access, manual override UI, and legacy source/resolver paths from the active tax flow.
 
 ### v1.8.0-beta.5
 *   Feature: Cobertura nacional del resolver fiscal completada para los 50 estados + DC.
