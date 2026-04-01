@@ -430,6 +430,11 @@ class Tax_Rates_Admin
             );
         }
 
+        FFLA_Admin::render_notice(
+            'info',
+            __('Source model: official state sources are primary wherever they exist. States still waiting on official local coverage use the SalesTaxHandbook state city table first, with the official statewide floor kept as a conservative fallback.', 'ffl-funnels-addons')
+        );
+
         // State grid.
         echo '<div class="wb-card">';
         echo '<div class="wb-card__header"><h3>' . esc_html__('State Coverage Matrix', 'ffl-funnels-addons') . '</h3></div>';
@@ -443,6 +448,7 @@ class Tax_Rates_Admin
             $status = $row['coverage_status'];
             $name   = $names[$code] ?? $code;
             $store_enabled = Tax_Coverage::is_enabled_for_store($code);
+            $strategy = Tax_Coverage::get_source_strategy($code);
 
             $class = 'ffla-tax-coverage-cell';
             $badge = '';
@@ -477,12 +483,20 @@ class Tax_Rates_Admin
                 $class .= ' ffla-tax-coverage-cell--store-disabled';
             }
 
-            echo '<div class="' . esc_attr($class) . '" title="' . esc_attr($name . ' - ' . $status) . '">';
+            $title = $name . ' - ' . $status;
+            if (!empty($strategy['label'])) {
+                $title .= ' - ' . $strategy['label'];
+            }
+
+            echo '<div class="' . esc_attr($class) . '" title="' . esc_attr($title) . '">';
             echo '<span class="ffla-tax-coverage-cell__code">' . esc_html($code) . '</span>';
             echo '<span class="ffla-tax-coverage-cell__badge">' . esc_html($badge) . '</span>';
             echo '<span class="ffla-tax-coverage-cell__name">' . esc_html($name) . '</span>';
             if ($row['resolver_name']) {
                 echo '<span class="ffla-tax-coverage-cell__resolver">' . esc_html($row['resolver_name']) . '</span>';
+            }
+            if (!empty($strategy['shortLabel']) && $strategy['family'] !== Tax_Coverage::SOURCE_STRATEGY_NONE) {
+                echo '<span class="ffla-tax-coverage-cell__source">' . esc_html($strategy['shortLabel']) . '</span>';
             }
             if ($state_filter_active) {
                 echo '<span class="ffla-tax-coverage-cell__store">' . esc_html($store_enabled ? __('On', 'ffl-funnels-addons') : __('Off', 'ffl-funnels-addons')) . '</span>';
@@ -525,6 +539,7 @@ class Tax_Rates_Admin
         echo '<div class="wb-card__body">';
         echo '<p class="wb-field__desc">' . esc_html__('Upload a state CSV manually, or use Sync SST Datasets to download official SST rate files automatically.', 'ffl-funnels-addons') . '</p>';
         echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-xs)">' . esc_html__('Runtime sources such as Louisiana official lookup, Texas official files, statewide resolvers, and SalesTaxHandbook fallback do not create dataset rows here because they are resolved live at quote time.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-xs)">' . esc_html__('WooCommerce checkout uses the runtime resolver as the primary source of truth. Syncing tax tables below is optional compatibility support only.', 'ffl-funnels-addons') . '</p>';
 
         if (Tax_Coverage::has_state_filter()) {
             echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-sm)">' . esc_html__('When state filtering is active, Sync SST Datasets downloads only the enabled SST states for this store.', 'ffl-funnels-addons') . '</p>';
@@ -545,7 +560,7 @@ class Tax_Rates_Admin
         echo '<div style="margin-top:var(--wb-spacing-lg)">';
         echo '<button type="button" id="ffla-csv-upload-btn" class="wb-btn wb-btn--primary">' . esc_html__('Upload & Import', 'ffl-funnels-addons') . '</button>';
         echo ' <button type="button" id="ffla-sync-btn" class="wb-btn wb-btn--subtle">' . esc_html__('Sync SST Datasets', 'ffl-funnels-addons') . '</button>';
-        echo ' <button type="button" id="ffla-wc-sync-all-btn" class="wb-btn wb-btn--subtle">' . esc_html__('Sync All to WooCommerce', 'ffl-funnels-addons') . '</button>';
+        echo ' <button type="button" id="ffla-wc-sync-all-btn" class="wb-btn wb-btn--subtle">' . esc_html__('Sync All to WooCommerce (Compatibility)', 'ffl-funnels-addons') . '</button>';
         if (class_exists('Official_State_Floor_Resolver')) {
             echo ' <button type="button" id="ffla-handbook-refresh-btn" class="wb-btn wb-btn--subtle">' . esc_html__('Refresh SalesTaxHandbook Cache', 'ffl-funnels-addons') . '</button>';
         }
@@ -750,10 +765,10 @@ class Tax_Rates_Admin
         );
 
         FFLA_Admin::render_toggle_field(
-            __('Auto-sync to WooCommerce', 'ffl-funnels-addons'),
+            __('Auto-sync WooCommerce tables (compatibility)', 'ffl-funnels-addons'),
             'wc_auto_sync',
             $s['wc_auto_sync'],
-            __('Automatically update WooCommerce tax tables after each dataset sync.', 'ffl-funnels-addons')
+            __('Optionally update WooCommerce tax tables after each dataset sync. Runtime checkout resolution remains the primary source of truth.', 'ffl-funnels-addons')
         );
 
         echo '</div></div>';

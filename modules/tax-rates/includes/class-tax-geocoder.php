@@ -21,14 +21,14 @@ class Tax_Geocoder
     const TIMEOUT   = 15; // seconds
 
     /**
-     * Geocode an address using the Census Bureau API.
+     * Return the canonical empty geocode result shape.
      *
-     * @param  array $normalized Normalized address components.
-     * @return array Geocode result with matched address, coordinates, geographies.
+     * Resolvers that do not need a Census lookup still receive this structure
+     * so downstream code can safely read the expected keys.
      */
-    public static function geocode(array $normalized): array
+    public static function empty_result(): array
     {
-        $result = [
+        return [
             'success'        => false,
             'matchType'      => null,
             'matchedAddress' => null,
@@ -43,6 +43,17 @@ class Tax_Geocoder
             'raw'            => null,
             'error'          => null,
         ];
+    }
+
+    /**
+     * Geocode an address using the Census Bureau API.
+     *
+     * @param  array $normalized Normalized address components.
+     * @return array Geocode result with matched address, coordinates, geographies.
+     */
+    public static function geocode(array $normalized): array
+    {
+        $result = self::empty_result();
 
         // Build query params.
         $params = [

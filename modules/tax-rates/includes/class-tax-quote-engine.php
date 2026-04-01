@@ -6,10 +6,10 @@
  *   1. Validate input
  *   2. Normalize address
  *   3. Check cache
- *   4. Geocode with Census
- *   5. Determine state
- *   6. Check coverage
- *   7. Check dataset freshness
+ *   4. Short-circuit no-tax states
+ *   5. Check coverage
+ *   6. Route to the state resolver
+ *   7. Geocode only when that resolver requires it
  *   8. Execute resolver
  *   9. Normalize result
  *  10. Persist audit
@@ -26,7 +26,7 @@ class Tax_Quote_Engine
 {
     /** @var int Cache TTL in seconds (default 24 hours). */
     private static $cache_ttl = 86400;
-    private const CACHE_SCHEMA_VERSION = '2026-03-31-handbook-fallback-v1';
+    private const CACHE_SCHEMA_VERSION = '2026-03-31-resolver-routing-v2';
 
     /**
      * Execute a tax quote for an address.
@@ -92,10 +92,7 @@ class Tax_Quote_Engine
             return self::audit($result, $start_time);
         }
 
-        // Step 6: Geocode with Census.
-        $geocode = Tax_Geocoder::geocode($normalized);
-
-        // Step 7: Route to resolver.
+        // Step 6: Route to resolver.
         $resolver = Tax_Resolver_Router::route($state_code);
 
         if (!$resolver) {
@@ -103,6 +100,11 @@ class Tax_Quote_Engine
             $result->trace['durationMs'] = self::elapsed($start_time);
             return self::audit($result, $start_time);
         }
+
+        // Step 7: Geocode only when the routed resolver actually needs it.
+        $geocode = $resolver->requires_geocode()
+            ? Tax_Geocoder::geocode($normalized)
+            : Tax_Geocoder::empty_result();
 
         // Step 8: Execute resolver.
         try {

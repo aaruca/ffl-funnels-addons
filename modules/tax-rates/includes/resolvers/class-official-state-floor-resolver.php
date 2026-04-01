@@ -2,10 +2,9 @@
 /**
  * Official State Floor Resolver.
  *
- * Provides a conservative statewide base rate for states where local or
- * district taxes still require a richer official address-specific integration.
- * This keeps national coverage functional while clearly signaling that the
- * determination is a state-rate floor rather than a final local-inclusive rate.
+ * Uses SalesTaxHandbook state city tables as the primary fallback for states
+ * that do not yet have an official address-specific local integration, while
+ * retaining the official statewide rate as a conservative floor.
  *
  * @package FFL_Funnels_Addons
  */
@@ -130,7 +129,7 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
 
     public function get_name(): string
     {
-        return 'Official State Floor Resolver';
+        return 'SalesTaxHandbook City Table + Official Floor Fallback';
     }
 
     public function get_source_code(): string
@@ -141,6 +140,11 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
     public function get_supported_states(): array
     {
         return array_keys(self::STATES);
+    }
+
+    public function requires_geocode(): bool
+    {
+        return false;
     }
 
     /**

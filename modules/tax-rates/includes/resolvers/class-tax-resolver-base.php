@@ -47,6 +47,17 @@ abstract class Tax_Resolver_Base
     abstract public function resolve(array $normalized, array $geocode): Tax_Quote_Result;
 
     /**
+     * Whether this resolver needs a Census geocode before it can resolve.
+     *
+     * Resolvers that rely only on state/city input can override this to false
+     * so the quote engine can skip an unnecessary network call.
+     */
+    public function requires_geocode(): bool
+    {
+        return true;
+    }
+
+    /**
      * Check if this resolver can handle a specific state.
      */
     public function supports_state(string $state_code): bool

@@ -25,6 +25,17 @@ class Tax_Coverage
     const NO_SALES_TAX                = 'NO_SALES_TAX';
 
     /**
+     * Resolver/source strategy labels shown in admin and REST responses.
+     *
+     * These describe the tax-source family used by a state, not helper
+     * infrastructure like the Census geocoder.
+     */
+    const SOURCE_STRATEGY_NONE = 'none';
+    const SOURCE_STRATEGY_OFFICIAL = 'official';
+    const SOURCE_STRATEGY_HANDBOOK = 'handbook_city_table';
+    const SOURCE_STRATEGY_NO_TAX = 'official_no_tax_law';
+
+    /**
      * Canonical US state list including DC.
      *
      * @var string[]
@@ -81,7 +92,22 @@ class Tax_Coverage
         $matrix = self::get_matrix();
         $states = [];
 
+        // Summary counts.
+        $counts = [
+            'total'          => count($matrix),
+            'supported'      => 0,
+            'unsupported'    => 0,
+            'no_sales_tax'   => 0,
+            'degraded'       => 0,
+            'enabled_for_store'  => 0,
+            'disabled_for_store' => 0,
+            'official_source_states' => 0,
+            'handbook_source_states' => 0,
+        ];
+
         foreach ($matrix as $row) {
+            $strategy = self::build_source_strategy($row['state_code'], $row);
+
             $states[$row['state_code']] = [
                 'state'           => $row['state_code'],
                 'status'          => $row['coverage_status'],
@@ -90,19 +116,9 @@ class Tax_Coverage
                 'effectiveEnd'    => $row['effective_end'],
                 'notes'           => $row['notes'],
                 'enabledForStore' => self::is_enabled_for_store($row['state_code']),
+                'sourceStrategy'  => $strategy,
             ];
         }
-
-        // Summary counts.
-        $counts = [
-            'total'          => count($states),
-            'supported'      => 0,
-            'unsupported'    => 0,
-            'no_sales_tax'   => 0,
-            'degraded'       => 0,
-            'enabled_for_store'  => 0,
-            'disabled_for_store' => 0,
-        ];
 
         foreach ($states as $s) {
             switch ($s['status']) {
@@ -125,6 +141,12 @@ class Tax_Coverage
                 $counts['enabled_for_store']++;
             } else {
                 $counts['disabled_for_store']++;
+            }
+
+            if (($s['sourceStrategy']['family'] ?? null) === self::SOURCE_STRATEGY_HANDBOOK) {
+                $counts['handbook_source_states']++;
+            } elseif (in_array(($s['sourceStrategy']['family'] ?? null), [self::SOURCE_STRATEGY_OFFICIAL, self::SOURCE_STRATEGY_NO_TAX], true)) {
+                $counts['official_source_states']++;
             }
         }
 
@@ -253,5 +275,116 @@ class Tax_Coverage
     {
         $rule = self::get_state($state_code);
         return ($rule && !empty($rule['resolver_name'])) ? $rule['resolver_name'] : null;
+    }
+
+    /**
+     * Get the tax-source strategy used for a state.
+     *
+     * This exposes the real source-of-truth family: official sources or the
+     * SalesTaxHandbook state city table fallback.
+     */
+    public static function get_source_strategy(string $state_code): array
+    {
+        $state_code = strtoupper($state_code);
+
+        return self::build_source_strategy($state_code, self::get_state($state_code));
+    }
+
+    /**
+     * Build a source strategy payload from a coverage-rule row.
+     *
+     * @param  string     $state_code
+     * @param  array|null $rule
+     * @return array<string,mixed>
+     */
+    private static function build_source_strategy(string $state_code, ?array $rule): array
+    {
+        $state_code = strtoupper($state_code);
+        $status = $rule['coverage_status'] ?? self::UNSUPPORTED;
+        $resolver_name = $rule['resolver_name'] ?? '';
+        $requires_geocode = self::resolver_requires_geocode($state_code, $resolver_name, $status);
+
+        if ($status === self::NO_SALES_TAX) {
+            return [
+                'key'             => self::SOURCE_STRATEGY_NO_TAX,
+                'family'          => self::SOURCE_STRATEGY_NO_TAX,
+                'label'           => 'Official state no-tax law',
+                'shortLabel'      => 'No Tax Law',
+                'primary'         => 'official_no_tax_law',
+                'primaryLabel'    => 'Official state no-tax law',
+                'fallback'        => null,
+                'fallbackLabel'   => null,
+                'requiresGeocode' => false,
+            ];
+        }
+
+        if ($resolver_name === 'official_state_floor') {
+            return [
+                'key'             => 'handbook_city_table_with_official_floor_fallback',
+                'family'          => self::SOURCE_STRATEGY_HANDBOOK,
+                'label'           => 'SalesTaxHandbook city table with official state floor fallback',
+                'shortLabel'      => 'Handbook',
+                'primary'         => 'handbook_city_table',
+                'primaryLabel'    => 'SalesTaxHandbook state city table',
+                'fallback'        => 'official_state_floor',
+                'fallbackLabel'   => 'Official state floor',
+                'requiresGeocode' => $requires_geocode,
+            ];
+        }
+
+        $official_labels = [
+            'sst'                => ['Official SST dataset', 'Official SST dataset'],
+            'official_statewide' => ['Official statewide rate', 'Official statewide rate'],
+            'la_remote'          => ['Official remote lookup', 'Official remote lookup'],
+            'tx_rate_file'       => ['Official state rate file', 'Official state rate file'],
+            'pa_official'        => ['Official state + local overlay', 'Official state + local overlay'],
+            'va_official'        => ['Official locality schedule', 'Official locality schedule'],
+            'hi_get'             => ['Official statewide schedule', 'Official statewide schedule'],
+        ];
+
+        if (isset($official_labels[$resolver_name])) {
+            return [
+                'key'             => 'official_source',
+                'family'          => self::SOURCE_STRATEGY_OFFICIAL,
+                'label'           => $official_labels[$resolver_name][0],
+                'shortLabel'      => 'Official',
+                'primary'         => 'official_source',
+                'primaryLabel'    => $official_labels[$resolver_name][1],
+                'fallback'        => null,
+                'fallbackLabel'   => null,
+                'requiresGeocode' => $requires_geocode,
+            ];
+        }
+
+        return [
+            'key'             => self::SOURCE_STRATEGY_NONE,
+            'family'          => self::SOURCE_STRATEGY_NONE,
+            'label'           => 'No active source strategy',
+            'shortLabel'      => 'None',
+            'primary'         => null,
+            'primaryLabel'    => null,
+            'fallback'        => null,
+            'fallbackLabel'   => null,
+            'requiresGeocode' => false,
+        ];
+    }
+
+    /**
+     * Determine whether the active resolver for a state requires geocoding.
+     */
+    private static function resolver_requires_geocode(string $state_code, string $resolver_name, string $status): bool
+    {
+        if (in_array($status, [self::UNSUPPORTED, self::NO_SALES_TAX], true)) {
+            return false;
+        }
+
+        if (class_exists('Tax_Resolver_Router')) {
+            $resolver = Tax_Resolver_Router::route($state_code);
+            if (is_object($resolver) && method_exists($resolver, 'requires_geocode')) {
+                return (bool) $resolver->requires_geocode();
+            }
+        }
+
+        return !in_array($resolver_name, ['official_state_floor', 'official_statewide', 'hi_get'], true);
     }
 }

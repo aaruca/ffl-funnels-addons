@@ -87,6 +87,11 @@ class Official_Statewide_Rate_Resolver extends Tax_Resolver_Base
         return array_keys(self::STATES);
     }
 
+    public function requires_geocode(): bool
+    {
+        return false;
+    }
+
     public function resolve(array $normalized, array $geocode): Tax_Quote_Result
     {
         $state_code = strtoupper((string) ($normalized['state'] ?? ''));

@@ -312,6 +312,14 @@
     opacity: 0.5;
 }
 
+.ffla-tax-coverage-cell__source {
+    font-size: 8px;
+    font-weight: var(--wb-font-weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    opacity: 0.72;
+}
+
 .ffla-tax-coverage-cell__store {
     font-size: 9px;
     font-weight: var(--wb-font-weight-semibold);

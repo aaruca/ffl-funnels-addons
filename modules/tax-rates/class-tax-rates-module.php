@@ -37,7 +37,7 @@ class Tax_Rates_Module extends FFLA_Module
     public function get_description(): string
     {
         return __(
-            'US sales tax resolver using official government sources first, with SalesTaxHandbook city tables as a secondary fallback where official local coverage is not yet integrated. Geocodes addresses, resolves jurisdictions, and syncs rates to WooCommerce.',
+            'US sales tax resolver using official government sources first, with SalesTaxHandbook city tables as a secondary fallback where official local coverage is not yet integrated. Powers WooCommerce runtime tax calculation and can sync compatibility tables when needed.',
             'ffl-funnels-addons'
         );
     }
@@ -163,17 +163,17 @@ class Tax_Rates_Module extends FFLA_Module
         );
 
         foreach ([
-            'AL' => 'Official Alabama statewide floor rate (4%) with local taxes still to be layered in.',
-            'AZ' => 'Official Arizona statewide TPT/use-tax floor rate (5.6%) with county and city taxes still to be layered in.',
-            'CA' => 'Official California statewide base rate (7.25%) with district taxes still to be layered in.',
-            'CO' => 'Official Colorado statewide floor rate (2.9%) with local and district taxes still to be layered in.',
-            'FL' => 'Official Florida statewide floor rate (6%) with county discretionary surtax still to be layered in.',
-            'ID' => 'Official Idaho statewide floor rate (6%) with local resort taxes still to be layered in.',
-            'IL' => 'Official Illinois statewide floor rate (6.25%) with local occupation taxes still to be layered in.',
-            'MO' => 'Official Missouri statewide floor rate (4.225%) with local rates still to be layered in.',
-            'NM' => 'Official New Mexico statewide floor rate (4.875%) with county and municipal gross receipts taxes still to be layered in.',
-            'NY' => 'Official New York statewide floor rate (4%) with local taxes and MCTD still to be layered in.',
-            'SC' => 'Official South Carolina statewide floor rate (6%) with county and municipal taxes still to be layered in.',
+            'AL' => 'Uses the SalesTaxHandbook Alabama state city table first, with the official Alabama statewide floor rate (4%) as a conservative fallback.',
+            'AZ' => 'Uses the SalesTaxHandbook Arizona state city table first, with the official Arizona statewide TPT/use-tax floor rate (5.6%) as a conservative fallback.',
+            'CA' => 'Uses the SalesTaxHandbook California state city table first, with the official California statewide base rate (7.25%) as a conservative fallback.',
+            'CO' => 'Uses the SalesTaxHandbook Colorado state city table first, with the official Colorado statewide floor rate (2.9%) as a conservative fallback.',
+            'FL' => 'Uses the SalesTaxHandbook Florida state city table first, with the official Florida statewide floor rate (6%) as a conservative fallback.',
+            'ID' => 'Uses the SalesTaxHandbook Idaho state city table first, with the official Idaho statewide floor rate (6%) as a conservative fallback.',
+            'IL' => 'Uses the SalesTaxHandbook Illinois state city table first, with the official Illinois statewide floor rate (6.25%) as a conservative fallback.',
+            'MO' => 'Uses the SalesTaxHandbook Missouri state city table first, with the official Missouri statewide floor rate (4.225%) as a conservative fallback.',
+            'NM' => 'Uses the SalesTaxHandbook New Mexico state city table first, with the official New Mexico statewide floor rate (4.875%) as a conservative fallback.',
+            'NY' => 'Uses the SalesTaxHandbook New York state city table first, with the official New York statewide floor rate (4%) as a conservative fallback.',
+            'SC' => 'Uses the SalesTaxHandbook South Carolina state city table first, with the official South Carolina statewide floor rate (6%) as a conservative fallback.',
         ] as $state_code => $note) {
             Tax_Coverage::update_state(
                 $state_code,

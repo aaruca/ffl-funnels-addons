@@ -38,6 +38,11 @@ class Hawaii_GET_Resolver extends Tax_Resolver_Base
         return ['HI'];
     }
 
+    public function requires_geocode(): bool
+    {
+        return false;
+    }
+
     public function resolve(array $normalized, array $geocode): Tax_Quote_Result
     {
         $result                    = new Tax_Quote_Result();
