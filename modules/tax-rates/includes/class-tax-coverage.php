@@ -318,38 +318,14 @@ class Tax_Coverage
             ];
         }
 
-        if ($resolver_name === 'official_state_floor') {
+        if ($resolver_name === 'handbook_city_dataset') {
             return [
-                'key'             => 'handbook_city_table_with_official_floor_fallback',
+                'key'             => 'handbook_city_dataset',
                 'family'          => self::SOURCE_STRATEGY_HANDBOOK,
-                'label'           => 'SalesTaxHandbook city table with official state floor fallback',
+                'label'           => 'SalesTaxHandbook imported city table dataset',
                 'shortLabel'      => 'Handbook',
-                'primary'         => 'handbook_city_table',
-                'primaryLabel'    => 'SalesTaxHandbook state city table',
-                'fallback'        => 'official_state_floor',
-                'fallbackLabel'   => 'Official state floor',
-                'requiresGeocode' => $requires_geocode,
-            ];
-        }
-
-        $official_labels = [
-            'sst'                => ['Official SST dataset', 'Official SST dataset'],
-            'official_statewide' => ['Official statewide rate', 'Official statewide rate'],
-            'la_remote'          => ['Official remote lookup', 'Official remote lookup'],
-            'tx_rate_file'       => ['Official state rate file', 'Official state rate file'],
-            'pa_official'        => ['Official state + local overlay', 'Official state + local overlay'],
-            'va_official'        => ['Official locality schedule', 'Official locality schedule'],
-            'hi_get'             => ['Official statewide schedule', 'Official statewide schedule'],
-        ];
-
-        if (isset($official_labels[$resolver_name])) {
-            return [
-                'key'             => 'official_source',
-                'family'          => self::SOURCE_STRATEGY_OFFICIAL,
-                'label'           => $official_labels[$resolver_name][0],
-                'shortLabel'      => 'Official',
-                'primary'         => 'official_source',
-                'primaryLabel'    => $official_labels[$resolver_name][1],
+                'primary'         => 'handbook_city_dataset',
+                'primaryLabel'    => 'SalesTaxHandbook city table imported to local datasets',
                 'fallback'        => null,
                 'fallbackLabel'   => null,
                 'requiresGeocode' => $requires_geocode,
@@ -385,6 +361,6 @@ class Tax_Coverage
             }
         }
 
-        return !in_array($resolver_name, ['official_state_floor', 'official_statewide', 'hi_get'], true);
+        return !in_array($resolver_name, ['handbook_city_dataset'], true);
     }
 }

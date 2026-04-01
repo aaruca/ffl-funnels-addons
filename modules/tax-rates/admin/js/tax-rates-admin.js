@@ -136,49 +136,6 @@
             return '<span class="ffla-tax-meta__item"><span class="ffla-tax-meta__label">' + label + '</span><span class="ffla-tax-meta__value">' + escHtml(value) + '</span></span>';
         }
 
-        $('#ffla-csv-upload-btn').on('click', function () {
-            var stateCode = $('#ffla-csv-state').val().trim().toUpperCase();
-            var fileInput = document.getElementById('ffla-csv-file');
-            var $status = $('#ffla-upload-status');
-
-            if (!stateCode || stateCode.length !== 2) {
-                alert('Enter a valid 2-letter state code.');
-                return;
-            }
-
-            if (!fileInput.files || !fileInput.files[0]) {
-                alert('Select a CSV file to upload.');
-                return;
-            }
-
-            var formData = new FormData();
-            formData.append('action', 'ffla_tax_upload_csv');
-            formData.append('security', FflaTaxResolver.nonce);
-            formData.append('state_code', stateCode);
-            formData.append('csv_file', fileInput.files[0]);
-
-            $status.show().html('<span style="color:var(--wb-color-brand-foreground)">Uploading and importing...</span>');
-
-            $.ajax({
-                url: FflaTaxResolver.ajaxUrl,
-                type: 'POST',
-                data: formData,
-                processData: false,
-                contentType: false
-            })
-                .done(function (res) {
-                    if (res.success) {
-                        $status.html('<span style="color:var(--wb-color-success-foreground)">+ ' + escHtml(res.data.message) + '</span>');
-                        setTimeout(function () { location.reload(); }, 1500);
-                    } else {
-                        $status.html('<span style="color:var(--wb-color-danger-foreground)">x ' + escHtml(res.data || 'Upload failed.') + '</span>');
-                    }
-                })
-                .fail(function () {
-                    $status.html('<span style="color:var(--wb-color-danger-foreground)">x Request failed.</span>');
-                });
-        });
-
         $('#ffla-sync-btn').on('click', function () {
             var $btn = $(this);
             $btn.prop('disabled', true).text('Syncing...');
@@ -188,58 +145,15 @@
                 security: FflaTaxResolver.nonce
             })
                 .done(function (res) {
-                    alert(res.success ? 'Sync completed.' : (res.data || 'Sync failed.'));
+                    var message = (res && res.data && res.data.message) ? res.data.message : (res.data || 'Sync failed.');
+                    alert(message);
                     location.reload();
                 })
                 .fail(function () {
                     alert('Request failed.');
                 })
                 .always(function () {
-                    $btn.prop('disabled', false).text('Sync SST Datasets');
-                });
-        });
-
-        $('#ffla-wc-sync-all-btn').on('click', function () {
-            var $btn = $(this);
-            $btn.prop('disabled', true).text('Syncing to WooCommerce...');
-
-            $.post(FflaTaxResolver.ajaxUrl, {
-                action: 'ffla_tax_sync_wc',
-                security: FflaTaxResolver.nonce
-            })
-                .done(function (res) {
-                    if (res.success) {
-                        alert(res.data.message);
-                    } else {
-                        alert(res.data || 'Sync failed.');
-                    }
-                    location.reload();
-                })
-                .fail(function () {
-                    alert('Request failed.');
-                })
-                .always(function () {
-                    $btn.prop('disabled', false).text('Sync All to WooCommerce');
-                });
-        });
-
-        $('#ffla-handbook-refresh-btn').on('click', function () {
-            var $btn = $(this);
-            $btn.prop('disabled', true).text('Refreshing SalesTaxHandbook...');
-
-            $.post(FflaTaxResolver.ajaxUrl, {
-                action: 'ffla_tax_refresh_handbook',
-                security: FflaTaxResolver.nonce
-            })
-                .done(function (res) {
-                    alert(res.success ? res.data.message : (res.data || 'Refresh failed.'));
-                    location.reload();
-                })
-                .fail(function () {
-                    alert('Request failed.');
-                })
-                .always(function () {
-                    $btn.prop('disabled', false).text('Refresh SalesTaxHandbook Cache');
+                    $btn.prop('disabled', false).text('Sync SalesTaxHandbook States');
                 });
         });
 

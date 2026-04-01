@@ -2,18 +2,16 @@
 /**
  * Tax Dataset Pipeline.
  *
- * Downloads, validates, transforms, and imports official tax rate
- * datasets into the jurisdiction_rates table. Supports SST CSV
- * format and individual state file formats.
+ * Builds local per-state datasets from SalesTaxHandbook state pages,
+ * specifically the "View City Sales Tax Rates" table at /rates#cities.
  *
- * Pipeline stages:
- *   1. Download — fetch file from official source or local upload
- *   2. Checksum — SHA-256 verification
- *   3. Validate — schema validation (columns, types, dates)
- *   4. Transform — parse to internal rate model
- *   5. Import — write to jurisdiction_rates with versioning
- *   6. Promote — activate version after validation
- *   7. Rollback — revert to previous version if needed
+ * Active flow:
+ *   1. Download the state page
+ *   2. Parse the state sales-tax floor and city table
+ *   3. Normalize rows into jurisdiction_rates
+ *   4. Create a dataset version
+ *   5. Promote that version to active for the state
+ *   6. Clear cached quotes for the refreshed state
  *
  * @package FFL_Funnels_Addons
  */
@@ -25,7 +23,68 @@ if (!defined('ABSPATH')) {
 class Tax_Dataset_Pipeline
 {
     const SST_RATES_INDEX = 'https://www.streamlinedsalestax.org/ratesandboundry/Rates/';
+    const HANDBOOK_BASE_URL = 'https://www.salestaxhandbook.com';
+    const HANDBOOK_SOURCE_CODE = 'salestaxhandbook_city_table';
     const DOWNLOAD_TIMEOUT = 45;
+
+    /**
+     * SalesTaxHandbook state name map used to derive /state-name/rates#cities URLs.
+     *
+     * @var array<string,string>
+     */
+    const HANDBOOK_STATE_NAMES = [
+        'AL' => 'Alabama',
+        'AK' => 'Alaska',
+        'AZ' => 'Arizona',
+        'AR' => 'Arkansas',
+        'CA' => 'California',
+        'CO' => 'Colorado',
+        'CT' => 'Connecticut',
+        'DE' => 'Delaware',
+        'DC' => 'District of Columbia',
+        'FL' => 'Florida',
+        'GA' => 'Georgia',
+        'HI' => 'Hawaii',
+        'ID' => 'Idaho',
+        'IL' => 'Illinois',
+        'IN' => 'Indiana',
+        'IA' => 'Iowa',
+        'KS' => 'Kansas',
+        'KY' => 'Kentucky',
+        'LA' => 'Louisiana',
+        'ME' => 'Maine',
+        'MD' => 'Maryland',
+        'MA' => 'Massachusetts',
+        'MI' => 'Michigan',
+        'MN' => 'Minnesota',
+        'MS' => 'Mississippi',
+        'MO' => 'Missouri',
+        'MT' => 'Montana',
+        'NE' => 'Nebraska',
+        'NV' => 'Nevada',
+        'NH' => 'New Hampshire',
+        'NJ' => 'New Jersey',
+        'NM' => 'New Mexico',
+        'NY' => 'New York',
+        'NC' => 'North Carolina',
+        'ND' => 'North Dakota',
+        'OH' => 'Ohio',
+        'OK' => 'Oklahoma',
+        'OR' => 'Oregon',
+        'PA' => 'Pennsylvania',
+        'RI' => 'Rhode Island',
+        'SC' => 'South Carolina',
+        'SD' => 'South Dakota',
+        'TN' => 'Tennessee',
+        'TX' => 'Texas',
+        'UT' => 'Utah',
+        'VT' => 'Vermont',
+        'VA' => 'Virginia',
+        'WA' => 'Washington',
+        'WV' => 'West Virginia',
+        'WI' => 'Wisconsin',
+        'WY' => 'Wyoming',
+    ];
 
     /**
      * Directory for storing downloaded dataset files.
@@ -51,11 +110,452 @@ class Tax_Dataset_Pipeline
     {
         $results = [];
 
-        if ($source === 'all' || $source === 'sst_rate_boundary') {
-            $results['sst'] = self::sync_sst();
+        if ($source === 'all' || $source === self::HANDBOOK_SOURCE_CODE) {
+            $results['handbook'] = self::sync_handbook_city_tables();
         }
 
         return $results;
+    }
+
+    /**
+     * Return the states whose SalesTaxHandbook datasets should be imported.
+     *
+     * If the store has a state filter enabled, only those selected states are
+     * refreshed. Otherwise, all 50 states plus DC are eligible.
+     *
+     * @return string[]
+     */
+    public static function get_target_handbook_states(): array
+    {
+        $states = array_keys(self::HANDBOOK_STATE_NAMES);
+
+        if (!class_exists('Tax_Coverage') || !Tax_Coverage::has_state_filter()) {
+            return $states;
+        }
+
+        return array_values(array_intersect($states, Tax_Coverage::get_enabled_states()));
+    }
+
+    /**
+     * Check whether a state already has an active imported SalesTaxHandbook dataset.
+     */
+    public static function has_active_handbook_dataset(string $state_code): bool
+    {
+        global $wpdb;
+
+        $table = Tax_Resolver_DB::table('dataset_versions');
+
+        return (bool) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$table}
+             WHERE source_code = %s
+               AND state_code = %s
+               AND status = 'active'",
+            self::HANDBOOK_SOURCE_CODE,
+            strtoupper($state_code)
+        ));
+    }
+
+    /**
+     * Import the SalesTaxHandbook city table for all target states.
+     *
+     * @return array<string,array<string,mixed>>
+     */
+    private static function sync_handbook_city_tables(): array
+    {
+        $results = [];
+
+        foreach (self::get_target_handbook_states() as $state_code) {
+            $results[$state_code] = self::import_handbook_state($state_code);
+        }
+
+        return $results;
+    }
+
+    /**
+     * Download and import one state's SalesTaxHandbook city table.
+     *
+     * @return array<string,mixed>
+     */
+    private static function import_handbook_state(string $state_code): array
+    {
+        $state_code = strtoupper($state_code);
+        $result = [
+            'success'      => false,
+            'skipped'      => false,
+            'state'        => $state_code,
+            'rows'         => 0,
+            'version_id'   => null,
+            'city_rows'    => 0,
+            'updated'      => '',
+            'source_url'   => self::build_handbook_state_url($state_code),
+            'error'        => null,
+        ];
+
+        $page = self::download_handbook_state_page($state_code);
+        if (is_wp_error($page)) {
+            $result['error'] = $page->get_error_message();
+            return $result;
+        }
+
+        $parsed = self::parse_handbook_state_page($state_code, $page['html']);
+        $result['updated'] = $parsed['updated'];
+
+        if (empty($parsed['rates'])) {
+            $result['error'] = 'No city or state rows could be parsed from the SalesTaxHandbook page.';
+            return $result;
+        }
+
+        $checksum = hash('sha256', wp_json_encode([
+            'state'   => $state_code,
+            'updated' => $parsed['updated'],
+            'rates'   => $parsed['rates'],
+        ]));
+
+        if (self::active_checksum_exists(self::HANDBOOK_SOURCE_CODE, $state_code, $checksum)) {
+            self::mark_handbook_state_supported($state_code, $parsed['updated'], (int) $parsed['cityRowCount'], true);
+            Tax_Resolver_DB::clear_state_cache($state_code);
+            $result['success']   = true;
+            $result['skipped']   = true;
+            $result['rows']      = count($parsed['rates']);
+            $result['city_rows'] = (int) $parsed['cityRowCount'];
+            return $result;
+        }
+
+        $version_label = $parsed['updated'] !== ''
+            ? 'SalesTaxHandbook ' . $parsed['updated']
+            : 'SalesTaxHandbook ' . wp_date('Y-m-d');
+
+        $version_id = self::create_version(
+            self::HANDBOOK_SOURCE_CODE,
+            $state_code,
+            $version_label,
+            wp_date('Y-m-d'),
+            $checksum,
+            $page['url'],
+            count($parsed['rates']),
+            '45d',
+            sprintf(
+                'Imported from SalesTaxHandbook city table. %d city rows parsed.',
+                (int) $parsed['cityRowCount']
+            )
+        );
+
+        if (!$version_id) {
+            $result['error'] = 'Failed to create dataset version.';
+            return $result;
+        }
+
+        $inserted = self::insert_rates($version_id, $parsed['rates']);
+        self::promote_version($version_id, self::HANDBOOK_SOURCE_CODE, $state_code);
+        Tax_Resolver_DB::clear_state_cache($state_code);
+        self::mark_handbook_state_supported($state_code, $parsed['updated'], (int) $parsed['cityRowCount']);
+
+        $result['success']    = true;
+        $result['rows']       = $inserted;
+        $result['version_id'] = $version_id;
+        $result['city_rows']  = (int) $parsed['cityRowCount'];
+
+        return $result;
+    }
+
+    /**
+     * Update coverage notes after a successful or unchanged handbook import.
+     */
+    private static function mark_handbook_state_supported(string $state_code, string $updated_label, int $city_rows, bool $unchanged = false): void
+    {
+        $suffix = $updated_label !== '' ? ' Last updated ' . $updated_label . '.' : '';
+        $prefix = $unchanged
+            ? 'SalesTaxHandbook city-table dataset already current.'
+            : 'Imported SalesTaxHandbook city-table dataset.';
+
+        Tax_Coverage::update_state(
+            $state_code,
+            Tax_Coverage::SUPPORTED_ADDRESS_RATE,
+            'handbook_city_dataset',
+            sprintf('%s %d city rows available.%s', $prefix, $city_rows, $suffix)
+        );
+    }
+
+    /**
+     * Download a SalesTaxHandbook state page.
+     *
+     * @return array<string,string>|WP_Error
+     */
+    private static function download_handbook_state_page(string $state_code)
+    {
+        $url = self::build_handbook_state_url($state_code);
+
+        $response = wp_remote_get($url, [
+            'timeout' => self::DOWNLOAD_TIMEOUT,
+            'headers' => [
+                'Accept'     => 'text/html',
+                'User-Agent' => 'FFL Funnels Tax Resolver/' . (defined('FFLA_VERSION') ? FFLA_VERSION : 'dev'),
+            ],
+        ]);
+
+        if (is_wp_error($response)) {
+            return $response;
+        }
+
+        $code = (int) wp_remote_retrieve_response_code($response);
+        if ($code !== 200) {
+            return new WP_Error(
+                'handbook_http_error',
+                sprintf('SalesTaxHandbook returned HTTP %d for %s.', $code, $state_code)
+            );
+        }
+
+        $html = wp_remote_retrieve_body($response);
+        if (!is_string($html) || trim($html) === '') {
+            return new WP_Error(
+                'handbook_empty_body',
+                sprintf('SalesTaxHandbook returned an empty response for %s.', $state_code)
+            );
+        }
+
+        return [
+            'url'  => $url,
+            'html' => $html,
+        ];
+    }
+
+    /**
+     * Build a SalesTaxHandbook state page URL.
+     */
+    private static function build_handbook_state_url(string $state_code): string
+    {
+        $state_code = strtoupper($state_code);
+        $name       = self::HANDBOOK_STATE_NAMES[$state_code] ?? $state_code;
+        $slug       = strtolower(str_replace(['.', "'"], '', $name));
+        $slug       = preg_replace('/[^a-z0-9]+/', '-', $slug);
+        $slug       = trim((string) $slug, '-');
+
+        return trailingslashit(self::HANDBOOK_BASE_URL) . $slug . '/rates#cities';
+    }
+
+    /**
+     * Parse one SalesTaxHandbook state page into importable rate rows.
+     *
+     * @return array<string,mixed>
+     */
+    private static function parse_handbook_state_page(string $state_code, string $html): array
+    {
+        $updated     = self::extract_handbook_updated_label($html);
+        $state_rate  = self::extract_handbook_state_rate($html);
+        $state_label = (self::HANDBOOK_STATE_NAMES[$state_code] ?? $state_code) . ' State Rate';
+        $city_rows   = self::extract_handbook_city_rows($state_code, $html);
+        $rates       = [];
+
+        $rates[] = [
+            'state_code'         => $state_code,
+            'jurisdiction_fips'  => null,
+            'jurisdiction_code'  => 'STATE_FLOOR',
+            'jurisdiction_type'  => 'state',
+            'jurisdiction_name'  => $state_label,
+            'rate'               => $state_rate,
+            'rate_type'          => 'general',
+            'effective_date'     => wp_date('Y-m-d'),
+            'expires_at'         => null,
+            'zip_codes'          => null,
+            'city_names'         => null,
+            'notes'              => 'Imported from SalesTaxHandbook statewide sales tax summary.',
+        ];
+
+        foreach ($city_rows as $city_row) {
+            $notes = [];
+            if (!empty($city_row['ambiguous'])) {
+                $notes[] = 'Multiple rates were listed for this city name; the highest listed city-table rate was stored.';
+            }
+
+            $rates[] = [
+                'state_code'         => $state_code,
+                'jurisdiction_fips'  => null,
+                'jurisdiction_code'  => 'CITY_' . $city_row['city_key'],
+                'jurisdiction_type'  => 'city',
+                'jurisdiction_name'  => $city_row['label'] . ' Total',
+                'rate'               => $city_row['rate'],
+                'rate_type'          => 'general',
+                'effective_date'     => wp_date('Y-m-d'),
+                'expires_at'         => null,
+                'zip_codes'          => null,
+                'city_names'         => $city_row['city_key'],
+                'notes'              => !empty($notes) ? implode(' ', $notes) : null,
+            ];
+        }
+
+        return [
+            'updated'      => $updated,
+            'stateRate'    => $state_rate,
+            'cityRowCount' => count($city_rows),
+            'rates'        => $rates,
+        ];
+    }
+
+    /**
+     * Extract the state sales tax floor from the page summary.
+     */
+    private static function extract_handbook_state_rate(string $html): float
+    {
+        if (preg_match('/Sales Tax:\s*<\/b>\s*<div class="lead text-success">\s*<b>(.*?)<\/b>/is', $html, $matches)) {
+            $rate = Handbook_City_Dataset_Resolver::parse_rate_value($matches[1]);
+            if ($rate !== null) {
+                return $rate;
+            }
+        }
+
+        return 0.0;
+    }
+
+    /**
+     * Extract city rows from the #cities tab content.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private static function extract_handbook_city_rows(string $state_code, string $html): array
+    {
+        $cities_index = stripos($html, 'id=cities');
+        if ($cities_index === false) {
+            $cities_index = stripos($html, 'id="cities"');
+        }
+
+        if ($cities_index === false) {
+            return [];
+        }
+
+        $cities_html = substr($html, $cities_index);
+        if (!preg_match('/<table\b[^>]*>(.*?)<\/table>/is', $cities_html, $table_match)) {
+            return [];
+        }
+
+        $city_table = $table_match[0];
+        if (stripos($city_table, 'City Name') === false || stripos($city_table, 'Tax Rate') === false) {
+            return [];
+        }
+
+        if (!preg_match('/<tbody[^>]*>(.*?)<\/tbody>/is', $city_table, $body_match)) {
+            return [];
+        }
+
+        preg_match_all('/<tr\b[^>]*>(.*?)<\/tr>/is', $body_match[1], $row_matches);
+
+        $grouped = [];
+        foreach ($row_matches[1] as $row_html) {
+            preg_match_all('/<td\b[^>]*>(.*?)<\/td>/is', $row_html, $cell_matches);
+            if (count($cell_matches[1]) < 2) {
+                continue;
+            }
+
+            $city_html  = $cell_matches[1][0];
+            $rate_html  = $cell_matches[1][1];
+            $city_label = Handbook_City_Dataset_Resolver::normalize_city_label(
+                self::clean_handbook_text($city_html)
+            );
+            $city_key = Handbook_City_Dataset_Resolver::normalize_city_key($city_label);
+
+            if ($city_key === '') {
+                continue;
+            }
+
+            $rate = Handbook_City_Dataset_Resolver::parse_rate_value($rate_html);
+            if ($rate === null) {
+                $rate = self::extract_rate_from_city_title($city_html);
+            }
+
+            if ($rate === null) {
+                continue;
+            }
+
+            $grouped[$city_key]['label'] = $city_label;
+            $grouped[$city_key]['rates'][] = $rate;
+        }
+
+        $selected = [];
+        foreach ($grouped as $city_key => $group) {
+            $unique_rates = array_values(array_unique(array_map(
+                static function ($rate) {
+                    return number_format((float) $rate, 6, '.', '');
+                },
+                $group['rates'] ?? []
+            )));
+
+            if (empty($unique_rates)) {
+                continue;
+            }
+
+            $selected[] = [
+                'city_key'  => $city_key,
+                'label'     => $group['label'] ?? $city_key,
+                'rate'      => (float) max(array_map('floatval', $unique_rates)),
+                'ambiguous' => count($unique_rates) > 1,
+            ];
+        }
+
+        return $selected;
+    }
+
+    /**
+     * Try to parse a rate from the link title in the city cell.
+     */
+    private static function extract_rate_from_city_title(string $city_html): ?float
+    {
+        if (preg_match('/local sales tax rate of\s+([0-9.]+)%/i', $city_html, $matches)) {
+            return ((float) $matches[1]) / 100;
+        }
+
+        if (preg_match('/local sales tax rate of\s+0%/i', $city_html)) {
+            return 0.0;
+        }
+
+        return null;
+    }
+
+    /**
+     * Extract the visible "Last updated ..." label from a state page.
+     */
+    private static function extract_handbook_updated_label(string $html): string
+    {
+        if (preg_match('/Last updated\s+([^<]+)</i', $html, $matches)) {
+            return trim(html_entity_decode($matches[1], ENT_QUOTES, 'UTF-8'));
+        }
+
+        if (preg_match('/current as of\s+([^<]+)</i', $html, $matches)) {
+            return trim(html_entity_decode($matches[1], ENT_QUOTES, 'UTF-8'));
+        }
+
+        return '';
+    }
+
+    /**
+     * Strip markup and normalize handbook text cells.
+     */
+    private static function clean_handbook_text(string $value): string
+    {
+        $value = html_entity_decode($value, ENT_QUOTES, 'UTF-8');
+        $value = wp_strip_all_tags($value);
+        $value = preg_replace('/\s+/', ' ', (string) $value);
+
+        return trim((string) $value);
+    }
+
+    /**
+     * Check whether a checksum is already active for this source/state pair.
+     */
+    private static function active_checksum_exists(string $source_code, string $state_code, string $checksum): bool
+    {
+        global $wpdb;
+
+        $table = Tax_Resolver_DB::table('dataset_versions');
+
+        return (bool) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$table}
+             WHERE source_code = %s
+               AND state_code = %s
+               AND checksum = %s
+               AND status = 'active'",
+            $source_code,
+            strtoupper($state_code),
+            $checksum
+        ));
     }
 
     /**
@@ -410,7 +910,9 @@ class Tax_Dataset_Pipeline
         string $effective_date,
         string $checksum,
         ?string $storage_uri,
-        int $row_count
+        int $row_count,
+        string $freshness_policy = '90d',
+        ?string $notes = null
     ): ?int {
         global $wpdb;
 
@@ -423,10 +925,11 @@ class Tax_Dataset_Pipeline
             'effective_date'   => $effective_date,
             'loaded_at'        => current_time('mysql'),
             'checksum'         => $checksum,
-            'freshness_policy' => '90d',
+            'freshness_policy' => $freshness_policy,
             'status'           => 'pending',
             'storage_uri'      => $storage_uri,
             'row_count'        => $row_count,
+            'notes'            => $notes,
         ]);
 
         return $inserted ? (int) $wpdb->insert_id : null;

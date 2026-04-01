@@ -26,7 +26,7 @@ class Tax_Quote_Engine
 {
     /** @var int Cache TTL in seconds (default 24 hours). */
     private static $cache_ttl = 86400;
-    private const CACHE_SCHEMA_VERSION = '2026-03-31-resolver-routing-v2';
+    private const CACHE_SCHEMA_VERSION = '2026-03-31-handbook-dataset-v4';
 
     /**
      * Execute a tax quote for an address.

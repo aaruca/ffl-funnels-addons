@@ -2,15 +2,11 @@
 /**
  * Tax Rates Module — Entry Point.
  *
- * Official Tax Address Resolver for US sales tax by address.
- * Uses hybrid model with official free government sources:
- *   - SST Rate/Boundary files for member states
- *   - Census Bureau Geocoder for address validation
- *   - Individual state resolvers for non-SST states
+ * Tax Address Resolver for US sales tax by address.
  *
- * Official-first tax resolver with a secondary SalesTaxHandbook city-table
- * fallback for states that do not yet have an official address-specific
- * integration.
+ * Uses imported SalesTaxHandbook city tables as the primary local dataset
+ * source, persisted to local tables and refreshed monthly for the store's
+ * selected states.
  *
  * @package FFL_Funnels_Addons
  */
@@ -37,7 +33,7 @@ class Tax_Rates_Module extends FFLA_Module
     public function get_description(): string
     {
         return __(
-            'US sales tax resolver using official government sources first, with SalesTaxHandbook city tables as a secondary fallback where official local coverage is not yet integrated. Powers WooCommerce runtime tax calculation and can sync compatibility tables when needed.',
+            'US sales tax resolver powered by imported SalesTaxHandbook city tables stored locally in the WordPress database and refreshed monthly for the states your store uses.',
             'ffl-funnels-addons'
         );
     }
@@ -67,24 +63,10 @@ class Tax_Rates_Module extends FFLA_Module
 
         // Resolvers.
         require_once $base . 'includes/resolvers/class-tax-resolver-base.php';
-        require_once $base . 'includes/resolvers/class-sst-resolver.php';
-        require_once $base . 'includes/resolvers/class-official-statewide-rate-resolver.php';
-        require_once $base . 'includes/resolvers/class-official-state-floor-resolver.php';
-        require_once $base . 'includes/resolvers/class-hawaii-get-resolver.php';
-        require_once $base . 'includes/resolvers/class-pennsylvania-official-resolver.php';
-        require_once $base . 'includes/resolvers/class-virginia-official-resolver.php';
-        require_once $base . 'includes/resolvers/class-louisiana-remote-resolver.php';
-        require_once $base . 'includes/resolvers/class-texas-rate-file-resolver.php';
+        require_once $base . 'includes/resolvers/class-handbook-city-dataset-resolver.php';
 
         // Register resolvers.
-        Tax_Resolver_Router::register(new SST_Resolver());
-        Tax_Resolver_Router::register(new Official_Statewide_Rate_Resolver());
-        Tax_Resolver_Router::register(new Official_State_Floor_Resolver());
-        Tax_Resolver_Router::register(new Hawaii_GET_Resolver());
-        Tax_Resolver_Router::register(new Pennsylvania_Official_Resolver());
-        Tax_Resolver_Router::register(new Virginia_Official_Resolver());
-        Tax_Resolver_Router::register(new Louisiana_Remote_Resolver());
-        Tax_Resolver_Router::register(new Texas_Rate_File_Resolver());
+        Tax_Resolver_Router::register(new Handbook_City_Dataset_Resolver());
 
         // Register REST API routes.
         add_action('rest_api_init', ['Tax_REST_API', 'register_routes']);
@@ -101,94 +83,18 @@ class Tax_Rates_Module extends FFLA_Module
             Tax_Resolver_DB::install();
         }
 
-        foreach (SST_Resolver::MEMBER_STATES as $state_code) {
-            $rule = Tax_Coverage::get_state($state_code);
-            if ($rule
-                && $rule['resolver_name'] === 'sst'
-                && $rule['coverage_status'] === Tax_Coverage::SUPPORTED_ADDRESS_RATE
-            ) {
-                continue;
-            }
+        foreach (Tax_Coverage::ALL_STATES as $state_code) {
+            $has_dataset = Tax_Dataset_Pipeline::has_active_handbook_dataset($state_code);
 
             Tax_Coverage::update_state(
                 $state_code,
-                Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED,
-                'sst',
-                'Official SST member state. Run Sync SST Datasets to import the current state file and activate address-specific rates.'
+                $has_dataset ? Tax_Coverage::SUPPORTED_ADDRESS_RATE : Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED,
+                'handbook_city_dataset',
+                $has_dataset
+                    ? 'Imported SalesTaxHandbook city-table dataset is active for this state.'
+                    : 'Run Sync SalesTaxHandbook States to import the SalesTaxHandbook state city table for this state.'
             );
         }
-
-        Tax_Coverage::update_state(
-            'LA',
-            Tax_Coverage::SUPPORTED_WITH_REMOTE,
-            'la_remote',
-            'Resolved through the official Louisiana Parish E-File lookup.'
-        );
-
-        foreach ([
-            'CT' => 'Connecticut Department of Revenue Services statewide general rate (6.35%) with no local general sales tax.',
-            'DC' => 'District of Columbia general sales tax remains 6.0% through September 30, 2026, per the Oct. 1, 2025 OTR notice.',
-            'MA' => 'Massachusetts Department of Revenue statewide general rate (6.25%) with no local general sales tax.',
-            'MD' => 'Maryland Comptroller statewide general sales and use tax rate (6%) with no local general sales tax.',
-            'ME' => 'Maine Revenue Services statewide general sales tax rate (5.5%) with no local general sales tax.',
-            'MS' => 'Mississippi Department of Revenue statewide general retail sales tax rate (7%).',
-        ] as $state_code => $note) {
-            Tax_Coverage::update_state(
-                $state_code,
-                Tax_Coverage::SUPPORTED_ADDRESS_RATE,
-                'official_statewide',
-                $note
-            );
-        }
-
-        Tax_Coverage::update_state(
-            'PA',
-            Tax_Coverage::SUPPORTED_ADDRESS_RATE,
-            'pa_official',
-            'Pennsylvania Department of Revenue statewide rate plus official local add-ons for Allegheny County and Philadelphia.'
-        );
-
-        Tax_Coverage::update_state(
-            'HI',
-            Tax_Coverage::SUPPORTED_ADDRESS_RATE,
-            'hi_get',
-            'Hawaii general excise tax modeled from the official 4.0% state GET plus the current 0.5% county surcharge schedule.'
-        );
-
-        Tax_Coverage::update_state(
-            'VA',
-            Tax_Coverage::SUPPORTED_ADDRESS_RATE,
-            'va_official',
-            'Virginia Tax locality groups for 5.3%, 6.0%, 6.3%, and 7.0% general retail sales tax rates.'
-        );
-
-        foreach ([
-            'AL' => 'Uses the SalesTaxHandbook Alabama state city table first, with the official Alabama statewide floor rate (4%) as a conservative fallback.',
-            'AZ' => 'Uses the SalesTaxHandbook Arizona state city table first, with the official Arizona statewide TPT/use-tax floor rate (5.6%) as a conservative fallback.',
-            'CA' => 'Uses the SalesTaxHandbook California state city table first, with the official California statewide base rate (7.25%) as a conservative fallback.',
-            'CO' => 'Uses the SalesTaxHandbook Colorado state city table first, with the official Colorado statewide floor rate (2.9%) as a conservative fallback.',
-            'FL' => 'Uses the SalesTaxHandbook Florida state city table first, with the official Florida statewide floor rate (6%) as a conservative fallback.',
-            'ID' => 'Uses the SalesTaxHandbook Idaho state city table first, with the official Idaho statewide floor rate (6%) as a conservative fallback.',
-            'IL' => 'Uses the SalesTaxHandbook Illinois state city table first, with the official Illinois statewide floor rate (6.25%) as a conservative fallback.',
-            'MO' => 'Uses the SalesTaxHandbook Missouri state city table first, with the official Missouri statewide floor rate (4.225%) as a conservative fallback.',
-            'NM' => 'Uses the SalesTaxHandbook New Mexico state city table first, with the official New Mexico statewide floor rate (4.875%) as a conservative fallback.',
-            'NY' => 'Uses the SalesTaxHandbook New York state city table first, with the official New York statewide floor rate (4%) as a conservative fallback.',
-            'SC' => 'Uses the SalesTaxHandbook South Carolina state city table first, with the official South Carolina statewide floor rate (6%) as a conservative fallback.',
-        ] as $state_code => $note) {
-            Tax_Coverage::update_state(
-                $state_code,
-                Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED,
-                'official_state_floor',
-                $note
-            );
-        }
-
-        Tax_Coverage::update_state(
-            'TX',
-            Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED,
-            'tx_rate_file',
-            'Resolved through the official Texas Comptroller sales tax rate file with conservative handling for ambiguous special districts.'
-        );
 
         $settings = get_option('ffla_tax_resolver_settings', []);
         Tax_Quote_Engine::set_cache_ttl((int) ($settings['cache_ttl'] ?? 86400));
@@ -220,8 +126,8 @@ class Tax_Rates_Module extends FFLA_Module
             update_option('ffla_tax_resolver_settings', [
                 'cache_ttl'       => 86400,    // 24 hours
                 'auto_sync'       => '1',
-                'sync_schedule'   => 'quarterly',
-                'wc_auto_sync'    => '1',
+                'sync_schedule'   => 'monthly',
+                'wc_auto_sync'    => '0',
                 'restrict_states' => '0',
                 'enabled_states'  => [],
             ]);
@@ -231,7 +137,6 @@ class Tax_Rates_Module extends FFLA_Module
     public function deactivate(): void
     {
         wp_clear_scheduled_hook('ffla_tax_dataset_sync');
-        wp_clear_scheduled_hook('ffla_tax_handbook_refresh');
         wp_clear_scheduled_hook('ffla_tax_cache_cleanup');
         wp_clear_scheduled_hook('ffla_tax_audit_purge');
     }

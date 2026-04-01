@@ -255,4 +255,18 @@ class Tax_Resolver_DB
             $days
         ));
     }
+
+    /**
+     * Clear cached quote entries for a state after dataset refresh.
+     */
+    public static function clear_state_cache(string $state_code): void
+    {
+        global $wpdb;
+
+        $table = self::table('address_cache');
+        $wpdb->query($wpdb->prepare(
+            "DELETE FROM {$table} WHERE state_code = %s",
+            strtoupper($state_code)
+        ));
+    }
 }

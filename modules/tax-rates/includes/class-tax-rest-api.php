@@ -185,11 +185,14 @@ class Tax_REST_API
 
         $ds_table = Tax_Resolver_DB::table('dataset_versions');
         $datasets = $wpdb->get_results(
-            "SELECT source_code, state_code, version_label, effective_date, loaded_at, status,
-                    freshness_policy, row_count
-             FROM {$ds_table}
-             WHERE status = 'active'
-             ORDER BY source_code, state_code",
+            $wpdb->prepare(
+                "SELECT source_code, state_code, version_label, effective_date, loaded_at, status,
+                        freshness_policy, row_count
+                 FROM {$ds_table}
+                 WHERE status = 'active' AND source_code = %s
+                 ORDER BY source_code, state_code",
+                Tax_Dataset_Pipeline::HANDBOOK_SOURCE_CODE
+            ),
             ARRAY_A
         ) ?: [];
 
@@ -261,7 +264,13 @@ class Tax_REST_API
 
         $table = Tax_Resolver_DB::table('dataset_versions');
         $rows  = $wpdb->get_results(
-            "SELECT * FROM {$table} ORDER BY source_code, state_code, loaded_at DESC LIMIT 50",
+            $wpdb->prepare(
+                "SELECT * FROM {$table}
+                 WHERE source_code = %s
+                 ORDER BY source_code, state_code, loaded_at DESC
+                 LIMIT 50",
+                Tax_Dataset_Pipeline::HANDBOOK_SOURCE_CODE
+            ),
             ARRAY_A
         ) ?: [];
 
@@ -273,7 +282,7 @@ class Tax_REST_API
      */
     public static function handle_sync(\WP_REST_Request $request): \WP_REST_Response
     {
-        $source = $request->get_param('source') ?? 'all';
+        $source = Tax_Dataset_Pipeline::HANDBOOK_SOURCE_CODE;
 
         // Trigger sync via pipeline.
         if (class_exists('Tax_Dataset_Pipeline')) {

@@ -1,12 +1,11 @@
 <?php
 /**
- * Tax Rates Cron — Dataset sync and maintenance.
+ * Tax Rates Cron - Dataset sync and maintenance.
  *
- * Schedules periodic tasks:
- *   - Dataset sync (quarterly by default)
- *   - Cache cleanup (daily)
- *   - Audit log purge (weekly, 90-day retention)
- *   - Freshness monitoring
+ * Schedules:
+ *   - Monthly SalesTaxHandbook dataset rebuild
+ *   - Daily quote-cache cleanup
+ *   - Weekly audit-log purge
  *
  * @package FFL_Funnels_Addons
  */
@@ -17,10 +16,9 @@ if (!defined('ABSPATH')) {
 
 class Tax_Rates_Cron
 {
-    const SYNC_HOOK             = 'ffla_tax_dataset_sync';
-    const HANDBOOK_REFRESH_HOOK = 'ffla_tax_handbook_refresh';
-    const CLEANUP_HOOK          = 'ffla_tax_cache_cleanup';
-    const PURGE_HOOK            = 'ffla_tax_audit_purge';
+    const SYNC_HOOK    = 'ffla_tax_dataset_sync';
+    const CLEANUP_HOOK = 'ffla_tax_cache_cleanup';
+    const PURGE_HOOK   = 'ffla_tax_audit_purge';
 
     public static function init(): void
     {
@@ -29,7 +27,6 @@ class Tax_Rates_Cron
 
         // Hook callbacks.
         add_action(self::SYNC_HOOK, [__CLASS__, 'run_sync']);
-        add_action(self::HANDBOOK_REFRESH_HOOK, [__CLASS__, 'run_handbook_refresh']);
         add_action(self::CLEANUP_HOOK, [__CLASS__, 'run_cleanup']);
         add_action(self::PURGE_HOOK, [__CLASS__, 'run_purge']);
 
@@ -42,13 +39,6 @@ class Tax_Rates_Cron
      */
     public static function add_schedules(array $schedules): array
     {
-        if (!isset($schedules['ffla_quarterly'])) {
-            $schedules['ffla_quarterly'] = [
-                'interval' => 90 * DAY_IN_SECONDS,
-                'display'  => __('Quarterly (FFLA Tax)', 'ffl-funnels-addons'),
-            ];
-        }
-
         if (!isset($schedules['ffla_monthly'])) {
             $schedules['ffla_monthly'] = [
                 'interval' => 30 * DAY_IN_SECONDS,
@@ -65,26 +55,16 @@ class Tax_Rates_Cron
     public static function maybe_schedule(): void
     {
         $settings = get_option('ffla_tax_resolver_settings', []);
-        $desired_schedule = (($settings['sync_schedule'] ?? 'quarterly') === 'monthly')
-            ? 'ffla_monthly'
-            : 'ffla_quarterly';
         $scheduled_sync = wp_get_scheduled_event(self::SYNC_HOOK);
 
         // Dataset sync.
         if (!empty($settings['auto_sync'])) {
-            if (!$scheduled_sync || $scheduled_sync->schedule !== $desired_schedule) {
+            if (!$scheduled_sync || $scheduled_sync->schedule !== 'ffla_monthly') {
                 wp_clear_scheduled_hook(self::SYNC_HOOK);
-                wp_schedule_event(time(), $desired_schedule, self::SYNC_HOOK);
+                wp_schedule_event(time(), 'ffla_monthly', self::SYNC_HOOK);
             }
         } else {
             wp_clear_scheduled_hook(self::SYNC_HOOK);
-        }
-
-        // SalesTaxHandbook fallback refresh always runs monthly on its own schedule.
-        $scheduled_handbook = wp_get_scheduled_event(self::HANDBOOK_REFRESH_HOOK);
-        if (!$scheduled_handbook || $scheduled_handbook->schedule !== 'ffla_monthly') {
-            wp_clear_scheduled_hook(self::HANDBOOK_REFRESH_HOOK);
-            wp_schedule_event(time(), 'ffla_monthly', self::HANDBOOK_REFRESH_HOOK);
         }
 
         // Cache cleanup (daily).
@@ -104,23 +84,7 @@ class Tax_Rates_Cron
     public static function run_sync(): void
     {
         if (class_exists('Tax_Dataset_Pipeline')) {
-            Tax_Dataset_Pipeline::sync('all');
-        }
-
-        // Auto-sync to WooCommerce after dataset sync.
-        $settings = get_option('ffla_tax_resolver_settings', []);
-        if (!empty($settings['wc_auto_sync']) && class_exists('Tax_Quote_Engine')) {
-            Tax_Quote_Engine::sync_all_to_woocommerce();
-        }
-    }
-
-    /**
-     * Refresh the SalesTaxHandbook secondary-source cache on a monthly cadence.
-     */
-    public static function run_handbook_refresh(): void
-    {
-        if (class_exists('Official_State_Floor_Resolver')) {
-            Official_State_Floor_Resolver::refresh_handbook_cache(false);
+            Tax_Dataset_Pipeline::sync(Tax_Dataset_Pipeline::HANDBOOK_SOURCE_CODE);
         }
     }
 
