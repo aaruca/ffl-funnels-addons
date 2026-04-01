@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.8.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.8.1-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -110,6 +110,10 @@ Notes:
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.8.1
+
+*   Maintenance: bumped the plugin asset version to `1.8.1` so WordPress and browsers invalidate cached admin CSS/JS after the final 1.8 styling fixes.
 
 ### v1.8.0
 *   Feature: Released the Tax Address Resolver as a stable module powered by a shared Google Sheets CSV source.
