@@ -521,7 +521,7 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
                 continue;
             }
 
-            $city_label = $this->clean_handbook_text($cell_matches[1][0]);
+            $city_label = $this->normalize_handbook_city_label($this->clean_handbook_text($cell_matches[1][0]));
             $rate = $this->parse_handbook_percent($cell_matches[1][1]);
             $city_key = $this->normalize_place_key($city_label);
 
@@ -549,6 +549,17 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
         }
 
         return $selected;
+    }
+
+    /**
+     * Normalize handbook city labels like "Tampa, FL" to "Tampa".
+     */
+    private function normalize_handbook_city_label(string $value): string
+    {
+        $value = trim($value);
+        $value = preg_replace('/,\s*[A-Z]{2}$/', '', $value);
+
+        return trim((string) $value);
     }
 
     /**
