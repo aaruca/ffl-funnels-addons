@@ -113,11 +113,18 @@ Notes:
 
 ### v1.8.0
 *   Feature: Released the Tax Address Resolver as a stable module powered by a shared Google Sheets CSV source.
-*   Feature: WooCommerce checkout and cart now resolve taxes from local ZIP datasets stored in WordPress.
-*   Feature: Added local sheet sync with ZIP rows, city fallback rows, state floor rows, audit logging, and monthly refresh.
-*   Feature: Added state selection controls so stores can import and use only their active states.
-*   Enhancement: Removing a state from selection now purges that state's local imported dataset and cache.
-*   Cleanup: Removed beta-era API key access, manual override UI, and legacy source/resolver paths from the active tax flow.
+*   Feature: The tax module now uses a single source-of-truth flow: Google Sheet CSV -> local WordPress tax tables -> WooCommerce runtime tax calculation.
+*   Feature: Added local dataset sync that imports ZIP rows, city fallback rows, and state floor rows for the states your store selects.
+*   Feature: Added monthly automatic refresh so selected states can rebuild from the shared sheet without live scraping at checkout.
+*   Feature: WooCommerce cart and checkout now resolve taxes from the locally imported dataset instead of external web calls.
+*   Feature: Added Quote Lookup for manual verification of ZIP, city, and state-floor matches from the local dataset.
+*   Feature: Added Coverage Matrix, Datasets, Audit Log, and Settings screens for tax operations inside WordPress admin.
+*   Feature: Added state selection controls so each store can limit the resolver to only the states it actively uses.
+*   Enhancement: Removing a state from the selected list now purges that state's local dataset and clears its cached quotes.
+*   Enhancement: The resolver keeps zero-tax states working through the imported local model and coverage tracking.
+*   Enhancement: The admin UI now reflects the local-sheet workflow rather than the previous beta experiments.
+*   Cleanup: Removed beta-era API key access, manual override UI, AI/import experiments, and legacy resolver/source paths from the active tax flow.
+*   Fix: Stabilized the Tax Resolver admin tabs and layout inside the shared FFL admin shell for the final 1.8.0 build.
 
 ### v1.8.0-beta.5
 *   Feature: Cobertura nacional del resolver fiscal completada para los 50 estados + DC.
