@@ -26,6 +26,7 @@ class Tax_Quote_Engine
 {
     /** @var int Cache TTL in seconds (default 24 hours). */
     private static $cache_ttl = 86400;
+    private const CACHE_SCHEMA_VERSION = '2026-03-31-handbook-fallback-v1';
 
     /**
      * Execute a tax quote for an address.
@@ -349,6 +350,11 @@ class Tax_Quote_Engine
             }
         }
 
+        $cached_version = $result->trace['cacheSchemaVersion'] ?? null;
+        if ($cached_version !== self::get_cache_schema_version()) {
+            return null;
+        }
+
         return $result;
     }
 
@@ -361,6 +367,7 @@ class Tax_Quote_Engine
 
         $table      = Tax_Resolver_DB::table('address_cache');
         $expires_at = wp_date('Y-m-d H:i:s', time() + self::$cache_ttl);
+        $result->trace['cacheSchemaVersion'] = self::get_cache_schema_version();
 
         $wpdb->replace($table, [
             'cache_key'       => $cache_key,
@@ -421,5 +428,13 @@ class Tax_Quote_Engine
     public static function set_cache_ttl(int $seconds): void
     {
         self::$cache_ttl = max(60, $seconds);
+    }
+
+    /**
+     * Return the cache schema version used to invalidate stale quote payloads.
+     */
+    private static function get_cache_schema_version(): string
+    {
+        return (defined('FFLA_VERSION') ? FFLA_VERSION : 'dev') . ':' . self::CACHE_SCHEMA_VERSION;
     }
 }
