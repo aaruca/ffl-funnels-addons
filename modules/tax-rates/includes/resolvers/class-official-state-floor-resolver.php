@@ -145,15 +145,20 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
     }
 
     /**
-     * Get the fallback states currently relevant for this store.
+     * Get the SalesTaxHandbook fallback states monitored by the refresh job.
+     *
+     * When $respect_store_filter is true, only states enabled for this store are
+     * returned. The scheduled/monthly refresh intentionally monitors every
+     * fallback state so that secondary-source pages stay current even before a
+     * store starts using that state.
      *
      * @return string[]
      */
-    public static function get_handbook_target_states(): array
+    public static function get_handbook_target_states(bool $respect_store_filter = false): array
     {
         $states = array_keys(self::HANDBOOK_STATE_SLUGS);
 
-        if (!class_exists('Tax_Coverage') || !Tax_Coverage::has_state_filter()) {
+        if (!$respect_store_filter || !class_exists('Tax_Coverage') || !Tax_Coverage::has_state_filter()) {
             return $states;
         }
 
@@ -178,12 +183,17 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
     {
         $targets = self::get_handbook_target_states();
         $used_counties = self::get_used_handbook_counties();
+        $tracked_counties = 0;
+        foreach ($targets as $state_code) {
+            $tracked_counties += count($used_counties[$state_code] ?? []);
+        }
         $summary = [
             'ranAt'             => current_time('mysql'),
             'stateCount'        => count($targets),
             'states'            => [],
             'statePagesRefreshed'=> 0,
             'countyPagesRefreshed' => 0,
+            'trackedCountyPages' => $tracked_counties,
             'errors'            => [],
             'forceAllCounties'  => $force_all_counties,
         ];

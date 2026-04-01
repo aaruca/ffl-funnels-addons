@@ -247,13 +247,23 @@ class Tax_Rates_Admin
         }
 
         $results = Official_State_Floor_Resolver::refresh_handbook_cache(false);
+        $state_targets = (int) ($results['stateCount'] ?? 0);
+        $state_pages = (int) ($results['statePagesRefreshed'] ?? 0);
+        $county_pages = (int) ($results['countyPagesRefreshed'] ?? 0);
+        $tracked_counties = (int) ($results['trackedCountyPages'] ?? 0);
+        $message = sprintf(
+            __('SalesTaxHandbook refresh checked %1$d fallback states, refreshed %2$d state pages and %3$d county pages.', 'ffl-funnels-addons'),
+            $state_targets,
+            $state_pages,
+            $county_pages
+        );
+
+        if ($tracked_counties === 0) {
+            $message .= ' ' . __('No county pages were warmed yet because your store has not used any SalesTaxHandbook county lookups yet.', 'ffl-funnels-addons');
+        }
 
         wp_send_json_success([
-            'message' => sprintf(
-                __('SalesTaxHandbook cache refreshed for %d states and %d county pages.', 'ffl-funnels-addons'),
-                (int) ($results['statePagesRefreshed'] ?? 0),
-                (int) ($results['countyPagesRefreshed'] ?? 0)
-            ),
+            'message' => $message,
             'results' => $results,
         ]);
     }
@@ -520,10 +530,12 @@ class Tax_Rates_Admin
         echo '<div class="wb-card">';
         echo '<div class="wb-card__header"><h3>' . esc_html__('Upload Rate CSV', 'ffl-funnels-addons') . '</h3></div>';
         echo '<div class="wb-card__body">';
-        echo '<p class="wb-field__desc">' . esc_html__('Upload a state CSV manually, or use Sync Datasets to download official SST rate files automatically.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('Upload a state CSV manually, or use Sync SST Datasets to download official SST rate files automatically.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-xs)">' . esc_html__('Runtime sources such as Louisiana official lookup, Texas official files, statewide resolvers, and SalesTaxHandbook fallback do not create dataset rows here because they are resolved live at quote time.', 'ffl-funnels-addons') . '</p>';
 
         if (Tax_Coverage::has_state_filter()) {
-            echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-sm)">' . esc_html__('When state filtering is active, Sync Datasets downloads only the enabled SST states for this store.', 'ffl-funnels-addons') . '</p>';
+            echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-sm)">' . esc_html__('When state filtering is active, Sync SST Datasets downloads only the enabled SST states for this store.', 'ffl-funnels-addons') . '</p>';
+            echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-xs)">' . esc_html__('SalesTaxHandbook monitoring still refreshes its fallback state pages monthly so those secondary sources stay current.', 'ffl-funnels-addons') . '</p>';
         }
 
         echo '<div class="ffla-tax-row ffla-tax-row--inline" style="margin-top:var(--wb-spacing-lg)">';
@@ -539,7 +551,7 @@ class Tax_Rates_Admin
 
         echo '<div style="margin-top:var(--wb-spacing-lg)">';
         echo '<button type="button" id="ffla-csv-upload-btn" class="wb-btn wb-btn--primary">' . esc_html__('Upload & Import', 'ffl-funnels-addons') . '</button>';
-        echo ' <button type="button" id="ffla-sync-btn" class="wb-btn wb-btn--subtle">' . esc_html__('Sync Datasets', 'ffl-funnels-addons') . '</button>';
+        echo ' <button type="button" id="ffla-sync-btn" class="wb-btn wb-btn--subtle">' . esc_html__('Sync SST Datasets', 'ffl-funnels-addons') . '</button>';
         echo ' <button type="button" id="ffla-wc-sync-all-btn" class="wb-btn wb-btn--subtle">' . esc_html__('Sync All to WooCommerce', 'ffl-funnels-addons') . '</button>';
         if (class_exists('Official_State_Floor_Resolver')) {
             echo ' <button type="button" id="ffla-handbook-refresh-btn" class="wb-btn wb-btn--subtle">' . esc_html__('Refresh SalesTaxHandbook Cache', 'ffl-funnels-addons') . '</button>';
@@ -556,10 +568,11 @@ class Tax_Rates_Admin
 
             if (!empty($handbook_status['ranAt'])) {
                 echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-xs)">' . esc_html(sprintf(
-                    __('Last refresh: %1$s. State pages refreshed: %2$d. County pages refreshed: %3$d.', 'ffl-funnels-addons'),
+                    __('Last refresh: %1$s. State pages refreshed: %2$d. County pages refreshed: %3$d. Tracked county pages: %4$d.', 'ffl-funnels-addons'),
                     date_i18n(get_option('date_format') . ' ' . get_option('time_format'), strtotime($handbook_status['ranAt'])),
                     (int) ($handbook_status['statePagesRefreshed'] ?? 0),
-                    (int) ($handbook_status['countyPagesRefreshed'] ?? 0)
+                    (int) ($handbook_status['countyPagesRefreshed'] ?? 0),
+                    (int) ($handbook_status['trackedCountyPages'] ?? 0)
                 )) . '</p>';
             }
 
@@ -578,11 +591,12 @@ class Tax_Rates_Admin
         ) ?: [];
 
         echo '<div class="wb-card" style="margin-top:var(--wb-spacing-xl)">';
-        echo '<div class="wb-card__header"><h3>' . esc_html__('Active Datasets', 'ffl-funnels-addons') . '</h3></div>';
+        echo '<div class="wb-card__header"><h3>' . esc_html__('Active Imported Datasets', 'ffl-funnels-addons') . '</h3></div>';
         echo '<div class="wb-card__body wb-card__body--table">';
 
         if (empty($datasets)) {
-            echo '<p style="color:var(--wb-color-neutral-foreground-3)">' . esc_html__('No datasets imported yet. Upload a CSV or run sync to begin.', 'ffl-funnels-addons') . '</p>';
+            echo '<p style="color:var(--wb-color-neutral-foreground-3)">' . esc_html__('No SST or manual CSV datasets have been imported yet. That is expected if your store is currently using runtime sources instead.', 'ffl-funnels-addons') . '</p>';
+            echo '<p style="color:var(--wb-color-neutral-foreground-3);margin-top:var(--wb-spacing-xs)">' . esc_html__('Runtime sources such as Louisiana official lookup, Texas official files, statewide resolvers, and SalesTaxHandbook fallback do not appear in this table.', 'ffl-funnels-addons') . '</p>';
         } else {
             echo '<table class="wb-table">';
             echo '<thead><tr>';
@@ -619,6 +633,7 @@ class Tax_Rates_Admin
             }
 
             echo '</tbody></table>';
+            echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-sm)">' . esc_html__('Only imported SST/manual datasets appear in this table. Runtime resolver sources are tracked separately and do not create dataset rows.', 'ffl-funnels-addons') . '</p>';
         }
 
         echo '</div></div>';

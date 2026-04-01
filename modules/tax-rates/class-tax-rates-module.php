@@ -112,7 +112,7 @@ class Tax_Rates_Module extends FFLA_Module
                 $state_code,
                 Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED,
                 'sst',
-                'Official SST member state. Run Sync Datasets to import the current state file and activate address-specific rates.'
+                'Official SST member state. Run Sync SST Datasets to import the current state file and activate address-specific rates.'
             );
         }
 

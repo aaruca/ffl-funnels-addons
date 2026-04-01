@@ -195,7 +195,7 @@
                     alert('Request failed.');
                 })
                 .always(function () {
-                    $btn.prop('disabled', false).text('Sync Datasets');
+                    $btn.prop('disabled', false).text('Sync SST Datasets');
                 });
         });
 
