@@ -287,7 +287,7 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
         $county_key = $this->normalize_county_key($county_name);
         $county_slug = $this->normalize_county_slug($county_name);
 
-        if ($state_slug === null || $city_key === '' || $county_key === '' || $county_slug === '') {
+        if ($state_slug === null || $county_key === '' || $county_slug === '') {
             return null;
         }
 
@@ -297,11 +297,39 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
         }
 
         $city_rates = $this->parse_handbook_city_rates($county_page['html'], $county_key);
-        if (empty($city_rates[$city_key])) {
-            return null;
+        if ($city_key !== '' && !empty($city_rates[$city_key])) {
+            $match = $city_rates[$city_key];
+
+            $result                    = new Tax_Quote_Result();
+            $result->inputAddress      = $normalized;
+            $result->normalizedAddress = $normalized;
+            $result->matchedAddress    = $geocode['matchedAddress'] ?? null;
+            $result->state             = $state_code;
+            $result->coverageStatus    = Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED;
+            $result->determinationScope = 'city_rate_only';
+            $result->resolutionMode    = 'handbook_city_fallback';
+            $result->source            = self::HANDBOOK_SOURCE_CODE;
+            $result->sourceVersion     = $county_page['updated'] ?: 'monthly-cache';
+            $result->confidence        = $match['confidence'];
+            $result->trace['resolver'] = $this->get_id();
+            $result->trace['geocodeUsed'] = !empty($geocode['success']);
+            $result->trace['sourceUrl'] = $county_page['url'];
+            $result->trace['countyKey'] = $county_key;
+            $result->trace['countySlug'] = $county_slug;
+            $result->trace['fallbackSource'] = 'SalesTaxHandbook';
+            $result->limitations[] = $config['note'];
+            $result->limitations[] = 'Local city fallback came from SalesTaxHandbook because an official address-specific local dataset is not yet integrated for this state.';
+            $result->limitations[] = 'SalesTaxHandbook is refreshed on a 30-day cache cycle and should be treated as a secondary source for edge cases.';
+            $result->add_breakdown('city', $match['label'], $match['rate']);
+            $result->calculate_total();
+
+            return $result;
         }
 
-        $match = $city_rates[$city_key];
+        $county_floor_rate = $this->extract_handbook_county_floor_rate($city_rates);
+        if ($county_floor_rate <= 0) {
+            return null;
+        }
 
         $result                    = new Tax_Quote_Result();
         $result->inputAddress      = $normalized;
@@ -309,24 +337,49 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
         $result->matchedAddress    = $geocode['matchedAddress'] ?? null;
         $result->state             = $state_code;
         $result->coverageStatus    = Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED;
-        $result->determinationScope = 'city_rate_only';
-        $result->resolutionMode    = 'handbook_city_fallback';
+        $result->determinationScope = 'county_rate_only';
+        $result->resolutionMode    = 'handbook_county_floor_fallback';
         $result->source            = self::HANDBOOK_SOURCE_CODE;
         $result->sourceVersion     = $county_page['updated'] ?: 'monthly-cache';
-        $result->confidence        = $match['confidence'];
+        $result->confidence        = Tax_Quote_Result::CONFIDENCE_MEDIUM;
         $result->trace['resolver'] = $this->get_id();
         $result->trace['geocodeUsed'] = !empty($geocode['success']);
         $result->trace['sourceUrl'] = $county_page['url'];
         $result->trace['countyKey'] = $county_key;
         $result->trace['countySlug'] = $county_slug;
         $result->trace['fallbackSource'] = 'SalesTaxHandbook';
+        $result->trace['cityKeyAttempted'] = $city_key;
         $result->limitations[] = $config['note'];
-        $result->limitations[] = 'Local city fallback came from SalesTaxHandbook because an official address-specific local dataset is not yet integrated for this state.';
+        $result->limitations[] = 'City-level fallback did not find an exact SalesTaxHandbook row, so the lowest published rate on the county page was used as a conservative county fallback.';
         $result->limitations[] = 'SalesTaxHandbook is refreshed on a 30-day cache cycle and should be treated as a secondary source for edge cases.';
-        $result->add_breakdown('city', $match['label'], $match['rate']);
+        $result->add_breakdown('county', $county_name !== '' ? $county_name . ' Floor' : ($county_key . ' County Floor'), $county_floor_rate);
         $result->calculate_total();
 
         return $result;
+    }
+
+    /**
+     * Derive a conservative county floor from the parsed handbook city rows.
+     */
+    private function extract_handbook_county_floor_rate(array $city_rates): float
+    {
+        if (empty($city_rates)) {
+            return 0.0;
+        }
+
+        $rates = [];
+        foreach ($city_rates as $row) {
+            $rate = (float) ($row['rate'] ?? 0);
+            if ($rate > 0) {
+                $rates[] = $rate;
+            }
+        }
+
+        if (empty($rates)) {
+            return 0.0;
+        }
+
+        return min($rates);
     }
 
     /**
