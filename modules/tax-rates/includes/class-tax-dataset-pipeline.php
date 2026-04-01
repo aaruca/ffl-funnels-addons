@@ -200,8 +200,8 @@ class Tax_Dataset_Pipeline
         $parsed = self::parse_handbook_state_page($state_code, $page['html']);
         $result['updated'] = $parsed['updated'];
 
-        if (empty($parsed['rates'])) {
-            $result['error'] = 'No city or state rows could be parsed from the SalesTaxHandbook page.';
+        if (empty($parsed['rates']) || (int) $parsed['cityRowCount'] <= 0) {
+            $result['error'] = 'The SalesTaxHandbook city table could not be parsed from the state page.';
             return $result;
         }
 
@@ -284,39 +284,77 @@ class Tax_Dataset_Pipeline
     private static function download_handbook_state_page(string $state_code)
     {
         $url = self::build_handbook_state_url($state_code);
-
-        $response = wp_remote_get($url, [
-            'timeout' => self::DOWNLOAD_TIMEOUT,
-            'headers' => [
-                'Accept'     => 'text/html',
-                'User-Agent' => 'FFL Funnels Tax Resolver/' . (defined('FFLA_VERSION') ? FFLA_VERSION : 'dev'),
+        $request_url = preg_replace('/#.*$/', '', $url);
+        $attempts = [
+            [
+                'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language' => 'en-US,en;q=0.9',
+                'Cache-Control'   => 'no-cache',
+                'Pragma'          => 'no-cache',
+                'User-Agent'      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
             ],
-        ]);
-
-        if (is_wp_error($response)) {
-            return $response;
-        }
-
-        $code = (int) wp_remote_retrieve_response_code($response);
-        if ($code !== 200) {
-            return new WP_Error(
-                'handbook_http_error',
-                sprintf('SalesTaxHandbook returned HTTP %d for %s.', $code, $state_code)
-            );
-        }
-
-        $html = wp_remote_retrieve_body($response);
-        if (!is_string($html) || trim($html) === '') {
-            return new WP_Error(
-                'handbook_empty_body',
-                sprintf('SalesTaxHandbook returned an empty response for %s.', $state_code)
-            );
-        }
-
-        return [
-            'url'  => $url,
-            'html' => $html,
+            [
+                'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language' => 'en-US,en;q=0.9',
+                'User-Agent'      => 'WordPress/' . (function_exists('get_bloginfo') ? get_bloginfo('version') : 'unknown') . '; ' . home_url('/'),
+            ],
         ];
+        $last_error = null;
+
+        foreach ($attempts as $headers) {
+            $response = wp_remote_get($request_url, [
+                'timeout'     => self::DOWNLOAD_TIMEOUT,
+                'redirection' => 5,
+                'decompress'  => true,
+                'headers'     => $headers,
+            ]);
+
+            if (is_wp_error($response)) {
+                $last_error = $response;
+                continue;
+            }
+
+            $code = (int) wp_remote_retrieve_response_code($response);
+            $html = wp_remote_retrieve_body($response);
+
+            if ($code !== 200) {
+                $last_error = new WP_Error(
+                    'handbook_http_error',
+                    sprintf('SalesTaxHandbook returned HTTP %d for %s.', $code, $state_code)
+                );
+                continue;
+            }
+
+            if (!is_string($html) || trim($html) === '') {
+                $last_error = new WP_Error(
+                    'handbook_empty_body',
+                    sprintf('SalesTaxHandbook returned an empty response for %s.', $state_code)
+                );
+                continue;
+            }
+
+            if (
+                stripos($html, 'View City Sales Tax Rates') === false &&
+                stripos($html, 'id=cities') === false &&
+                stripos($html, 'City Name') === false
+            ) {
+                $last_error = new WP_Error(
+                    'handbook_unexpected_markup',
+                    sprintf('SalesTaxHandbook returned unexpected markup for %s; the city table was not found.', $state_code)
+                );
+                continue;
+            }
+
+            return [
+                'url'  => $url,
+                'html' => $html,
+            ];
+        }
+
+        return $last_error ?: new WP_Error(
+            'handbook_request_failed',
+            sprintf('SalesTaxHandbook request failed for %s.', $state_code)
+        );
     }
 
     /**

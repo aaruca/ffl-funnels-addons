@@ -152,10 +152,19 @@ class Tax_Rates_Admin
         $states  = $results['handbook'] ?? [];
         $checked = count($states);
         $updated = 0;
+        $error_details = [];
 
         foreach ($states as $state_result) {
             if (!empty($state_result['success']) && empty($state_result['skipped'])) {
                 $updated++;
+            }
+
+            if (!empty($state_result['error'])) {
+                $error_details[] = sprintf(
+                    '%s: %s',
+                    $state_result['state'] ?? '--',
+                    $state_result['error']
+                );
             }
         }
 
@@ -172,6 +181,7 @@ class Tax_Rates_Admin
                 }))
             ),
             'results' => $results,
+            'errors'  => $error_details,
         ]);
     }
 

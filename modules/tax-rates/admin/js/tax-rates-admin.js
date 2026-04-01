@@ -146,6 +146,9 @@
             })
                 .done(function (res) {
                     var message = (res && res.data && res.data.message) ? res.data.message : (res.data || 'Sync failed.');
+                    if (res && res.data && Array.isArray(res.data.errors) && res.data.errors.length) {
+                        message += '\n\n' + res.data.errors.join('\n');
+                    }
                     alert(message);
                     location.reload();
                 })
