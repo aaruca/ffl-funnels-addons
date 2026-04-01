@@ -1,44 +1,62 @@
 /* Tax Address Resolver — Admin Styles */
 
 /* ── Tab Navigation ──────────────────────────────────────────────── */
-.ffla-tax-tabs {
+.ffla-admin .ffla-tax-tabs {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--wb-spacing-sm);
-    padding: var(--wb-spacing-xs);
-    border: 1px solid var(--wb-color-neutral-stroke-2);
-    border-radius: var(--wb-radius-lg);
-    background: var(--wb-color-neutral-background-2);
-    margin-bottom: var(--wb-spacing-xl);
+    gap: var(--wb-spacing-sm, 8px);
+    padding: var(--wb-spacing-xs, 4px);
+    margin: 0 0 var(--wb-spacing-xl, 24px);
+    border: 1px solid var(--wb-color-neutral-stroke-2, #e2e8f0);
+    border-radius: var(--wb-radius-lg, 12px);
+    background: var(--wb-color-neutral-background-2, #f8f9fa);
+    box-sizing: border-box;
 }
 
-.ffla-tax-tabs__tab {
+.ffla-admin .ffla-tax-tabs__tab,
+.ffla-admin .ffla-tax-tabs a.ffla-tax-tabs__tab {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     min-height: 38px;
-    padding: var(--wb-spacing-md) var(--wb-spacing-xl);
-    font-size: var(--wb-font-size-sm);
-    font-weight: var(--wb-font-weight-semibold);
+    padding: var(--wb-spacing-md, 12px) var(--wb-spacing-xl, 24px);
+    margin: 0;
+    font-size: var(--wb-font-size-sm, 13px);
+    font-weight: var(--wb-font-weight-semibold, 600);
     line-height: 1.2;
-    color: var(--wb-color-neutral-foreground-2);
-    text-decoration: none;
+    font-family: inherit;
+    color: var(--wb-color-neutral-foreground-2, #4a5568);
+    text-decoration: none !important;
     border: 1px solid transparent;
-    border-radius: var(--wb-radius-md);
+    border-radius: var(--wb-radius-md, 8px);
     white-space: nowrap;
     background: transparent;
-    transition: all var(--wb-duration-fast) var(--wb-easing-standard);
+    box-shadow: none;
+    cursor: pointer;
+    transition:
+        color var(--wb-duration-fast, 150ms) var(--wb-easing-standard, ease),
+        background-color var(--wb-duration-fast, 150ms) var(--wb-easing-standard, ease),
+        border-color var(--wb-duration-fast, 150ms) var(--wb-easing-standard, ease),
+        box-shadow var(--wb-duration-fast, 150ms) var(--wb-easing-standard, ease);
 }
 
-.ffla-tax-tabs__tab:hover {
-    color: var(--wb-color-neutral-foreground-1);
-    background: var(--wb-color-neutral-background-1);
-    border-color: var(--wb-color-neutral-stroke-2);
+.ffla-admin .ffla-tax-tabs__tab:hover,
+.ffla-admin .ffla-tax-tabs a.ffla-tax-tabs__tab:hover {
+    color: var(--wb-color-neutral-foreground-1, #1a202c);
+    background: var(--wb-color-neutral-background-1, #ffffff);
+    border-color: var(--wb-color-neutral-stroke-2, #e2e8f0);
 }
 
-.ffla-tax-tabs__tab--active {
-    color: var(--wb-color-brand-foreground);
-    background: #fff;
+.ffla-admin .ffla-tax-tabs__tab:focus-visible,
+.ffla-admin .ffla-tax-tabs a.ffla-tax-tabs__tab:focus-visible {
+    outline: 2px solid rgba(15, 108, 189, 0.35);
+    outline-offset: 2px;
+}
+
+.ffla-admin .ffla-tax-tabs__tab--active,
+.ffla-admin .ffla-tax-tabs a.ffla-tax-tabs__tab--active {
+    color: var(--wb-color-brand-foreground, #0f6cbd);
+    background: #ffffff;
     border-color: rgba(15, 108, 189, 0.25);
     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
