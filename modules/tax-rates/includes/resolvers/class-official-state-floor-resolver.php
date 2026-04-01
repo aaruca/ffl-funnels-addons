@@ -204,7 +204,7 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
                 continue;
             }
 
-            $state_page = self::fetch_handbook_state_page($state_code, $state_slug);
+            $state_page = self::fetch_handbook_state_page($state_code, $state_slug, true);
             if (!$state_page) {
                 $summary['errors'][$state_code] = 'State page could not be downloaded.';
                 continue;
@@ -224,7 +224,7 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
             ];
 
             foreach ($refresh_slugs as $county_slug) {
-                $county_page = self::prime_handbook_county_page($state_code, $state_slug, $county_slug);
+                $county_page = self::prime_handbook_county_page($state_code, $state_slug, $county_slug, true);
                 if ($county_page) {
                     $summary['countyPagesRefreshed']++;
                     $state_summary['countiesRefreshed']++;
@@ -292,11 +292,11 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
         }
 
         $county_page = $this->fetch_handbook_county_page($state_code, $state_slug, $county_slug);
-        if (!$county_page || empty($county_page['html'])) {
-            return null;
+        $city_rates = [];
+        if ($county_page && !empty($county_page['html'])) {
+            $city_rates = $this->parse_handbook_city_rates($county_page['html'], $county_key);
         }
 
-        $city_rates = $this->parse_handbook_city_rates($county_page['html'], $county_key);
         if ($city_key !== '' && !empty($city_rates[$city_key])) {
             $match = $city_rates[$city_key];
 
@@ -319,6 +319,41 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
             $result->trace['fallbackSource'] = 'SalesTaxHandbook';
             $result->limitations[] = $config['note'];
             $result->limitations[] = 'Local city fallback came from SalesTaxHandbook because an official address-specific local dataset is not yet integrated for this state.';
+            $result->limitations[] = 'SalesTaxHandbook is refreshed on a 30-day cache cycle and should be treated as a secondary source for edge cases.';
+            $result->add_breakdown('city', $match['label'], $match['rate']);
+            $result->calculate_total();
+
+            return $result;
+        }
+
+        $state_page = self::fetch_handbook_state_page($state_code, $state_slug);
+        $state_city_rates = [];
+        if ($state_page && !empty($state_page['html'])) {
+            $state_city_rates = $this->parse_handbook_state_city_rates($state_page['html']);
+        }
+
+        if ($city_key !== '' && !empty($state_city_rates[$city_key])) {
+            $match = $state_city_rates[$city_key];
+
+            $result                    = new Tax_Quote_Result();
+            $result->inputAddress      = $normalized;
+            $result->normalizedAddress = $normalized;
+            $result->matchedAddress    = $geocode['matchedAddress'] ?? null;
+            $result->state             = $state_code;
+            $result->coverageStatus    = Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED;
+            $result->determinationScope = 'city_rate_only';
+            $result->resolutionMode    = 'handbook_state_city_fallback';
+            $result->source            = self::HANDBOOK_SOURCE_CODE;
+            $result->sourceVersion     = $state_page['updated'] ?: 'monthly-cache';
+            $result->confidence        = $match['confidence'];
+            $result->trace['resolver'] = $this->get_id();
+            $result->trace['geocodeUsed'] = !empty($geocode['success']);
+            $result->trace['sourceUrl'] = $state_page['url'];
+            $result->trace['countyKey'] = $county_key;
+            $result->trace['countySlug'] = $county_slug;
+            $result->trace['fallbackSource'] = 'SalesTaxHandbook';
+            $result->limitations[] = $config['note'];
+            $result->limitations[] = 'City-level fallback came from the SalesTaxHandbook state city table because the county-specific page did not produce a reliable city match.';
             $result->limitations[] = 'SalesTaxHandbook is refreshed on a 30-day cache cycle and should be treated as a secondary source for edge cases.';
             $result->add_breakdown('city', $match['label'], $match['rate']);
             $result->calculate_total();
@@ -399,12 +434,12 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
      *
      * @return array<string,string>|null
      */
-    private static function prime_handbook_county_page(string $state_code, string $state_slug, string $county_key): ?array
+    private static function prime_handbook_county_page(string $state_code, string $state_slug, string $county_key, bool $force = false): ?array
     {
         self::remember_handbook_county_usage($state_code, $county_key);
 
         $transient_key = 'ffla_tax_sth_' . md5($state_slug . '|' . $county_key);
-        $cached = get_transient($transient_key);
+        $cached = $force ? null : get_transient($transient_key);
 
         if (is_array($cached) && !empty($cached['html'])) {
             return $cached;
@@ -444,10 +479,15 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
      *
      * @return array<string,string>|null
      */
-    private static function fetch_handbook_state_page(string $state_code, string $state_slug): ?array
+    private static function fetch_handbook_state_page(string $state_code, string $state_slug, bool $force = false): ?array
     {
         $transient_key = 'ffla_tax_sth_state_' . strtolower($state_code);
         $url = trailingslashit(self::HANDBOOK_BASE_URL) . $state_slug . '/rates';
+        $cached = $force ? null : get_transient($transient_key);
+
+        if (is_array($cached) && !empty($cached['html'])) {
+            return $cached;
+        }
 
         $response = wp_remote_get($url, [
             'timeout' => 20,
@@ -546,6 +586,70 @@ class Official_State_Floor_Resolver extends Tax_Resolver_Base
         }
 
         return $used;
+    }
+
+    /**
+     * Parse unique city total-rate rows from a SalesTaxHandbook state city table.
+     *
+     * @return array<string,array<string,mixed>>
+     */
+    private function parse_handbook_state_city_rates(string $html): array
+    {
+        preg_match_all('/<table\b[^>]*>(.*?)<\/table>/is', $html, $table_matches);
+        $city_table = '';
+
+        foreach ($table_matches[1] as $table_html) {
+            if (stripos($table_html, 'City Name') !== false && stripos($table_html, 'Tax Rate') !== false) {
+                $city_table = $table_html;
+                break;
+            }
+        }
+
+        if ($city_table === '') {
+            return [];
+        }
+
+        if (!preg_match('/<tbody[^>]*>(.*?)<\/tbody>/is', $city_table, $body_match)) {
+            return [];
+        }
+
+        preg_match_all('/<tr\b[^>]*>(.*?)<\/tr>/is', $body_match[1], $row_matches);
+
+        $grouped = [];
+        foreach ($row_matches[1] as $row_html) {
+            preg_match_all('/<td\b[^>]*>(.*?)<\/td>/is', $row_html, $cell_matches);
+            if (count($cell_matches[1]) < 2) {
+                continue;
+            }
+
+            $city_label = $this->clean_handbook_text($cell_matches[1][0]);
+            $rate = $this->parse_handbook_percent($cell_matches[1][1]);
+            $city_key = $this->normalize_place_key($city_label);
+
+            if ($city_key === '' || $rate <= 0) {
+                continue;
+            }
+
+            $grouped[$city_key]['label'] = $city_label;
+            $grouped[$city_key]['rates'][] = $rate;
+        }
+
+        $selected = [];
+        foreach ($grouped as $city_key => $group) {
+            $rates = array_values(array_unique(array_map('strval', $group['rates'] ?? [])));
+            if (count($rates) !== 1) {
+                continue;
+            }
+
+            $selected[$city_key] = [
+                'rate'       => (float) $rates[0],
+                'label'      => ($group['label'] ?? $city_key) . ' Total',
+                'city'       => $group['label'] ?? $city_key,
+                'confidence' => Tax_Quote_Result::CONFIDENCE_MEDIUM,
+            ];
+        }
+
+        return $selected;
     }
 
     /**
