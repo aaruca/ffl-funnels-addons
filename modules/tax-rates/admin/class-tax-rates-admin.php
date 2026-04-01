@@ -249,18 +249,11 @@ class Tax_Rates_Admin
         $results = Official_State_Floor_Resolver::refresh_handbook_cache(false);
         $state_targets = (int) ($results['stateCount'] ?? 0);
         $state_pages = (int) ($results['statePagesRefreshed'] ?? 0);
-        $county_pages = (int) ($results['countyPagesRefreshed'] ?? 0);
-        $tracked_counties = (int) ($results['trackedCountyPages'] ?? 0);
         $message = sprintf(
-            __('SalesTaxHandbook refresh checked %1$d fallback states, refreshed %2$d state pages and %3$d county pages.', 'ffl-funnels-addons'),
+            __('SalesTaxHandbook refresh checked %1$d fallback states and refreshed %2$d state city tables.', 'ffl-funnels-addons'),
             $state_targets,
-            $state_pages,
-            $county_pages
+            $state_pages
         );
-
-        if ($tracked_counties === 0) {
-            $message .= ' ' . __('No county pages were warmed yet because your store has not used any SalesTaxHandbook county lookups yet.', 'ffl-funnels-addons');
-        }
 
         wp_send_json_success([
             'message' => $message,
@@ -562,17 +555,15 @@ class Tax_Rates_Admin
             echo '<div class="ffla-tax-source-status" style="margin-top:var(--wb-spacing-lg)">';
             echo '<strong>' . esc_html__('SalesTaxHandbook Fallback', 'ffl-funnels-addons') . '</strong>';
             echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-xs)">' . esc_html(sprintf(
-                __('Monthly refresh runs separately for %d fallback states. It revisits each fallback state page and rewarms county pages already used by your store.', 'ffl-funnels-addons'),
+                __('Monthly refresh runs separately for %d fallback states. It revisits each fallback state rates page and refreshes the city rate table used by the runtime resolver.', 'ffl-funnels-addons'),
                 count($handbook_targets)
             )) . '</p>';
 
             if (!empty($handbook_status['ranAt'])) {
                 echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-xs)">' . esc_html(sprintf(
-                    __('Last refresh: %1$s. State pages refreshed: %2$d. County pages refreshed: %3$d. Tracked county pages: %4$d.', 'ffl-funnels-addons'),
+                    __('Last refresh: %1$s. State pages refreshed: %2$d.', 'ffl-funnels-addons'),
                     date_i18n(get_option('date_format') . ' ' . get_option('time_format'), strtotime($handbook_status['ranAt'])),
-                    (int) ($handbook_status['statePagesRefreshed'] ?? 0),
-                    (int) ($handbook_status['countyPagesRefreshed'] ?? 0),
-                    (int) ($handbook_status['trackedCountyPages'] ?? 0)
+                    (int) ($handbook_status['statePagesRefreshed'] ?? 0)
                 )) . '</p>';
             }
 
