@@ -124,6 +124,7 @@ Notes:
 
 *   **Wishlist:** Wishlist JS/CSS load on all public storefront pages (with WooCommerce active) so the header counter and guest session work everywhere, not only on shop/product/wishlist templates.
 *   **Wishlist:** Bricks Wishlist Counter and `[alg_wishlist_count]` render the correct count from PHP on first load; optional filter `ffla_wishlist_enqueue_assets` to disable global enqueue for advanced setups.
+*   **Product Reviews:** Bricks Review Form — fixed star-rating JS so overall/quality/value groups all update correctly; checkbox “Show quality & value” hides optional rows when off; Style tab for layout/colors/typography (container, stars, fields, button, notices).
 
 ### v1.9.1
 

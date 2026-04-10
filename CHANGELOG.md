@@ -7,6 +7,11 @@ All notable changes to FFL Funnels Addons are documented in this file.
 ### Fixed
 - **Wishlist:** Header / global Bricks counter showed `0` off product and wishlist pages because wishlist JS/CSS were not enqueued there, so `AlgWishlist.init()` never ran. Assets now load on the full WooCommerce storefront (public front). Opt out with `add_filter( 'ffla_wishlist_enqueue_assets', '__return_false' );` if needed.
 - **Wishlist:** Bricks **Wishlist Counter** and `[alg_wishlist_count]` now output the server-side item count on first paint (still synced via AJAX after toggles).
+- **Product Reviews (Bricks Review Form):** Star rating UI updated all groups to the last row only (JS closure over loop variable); fixed by scoping listeners per star block.
+- **Product Reviews (Bricks Review Form):** “Show quality & value” respected Bricks checkbox off-state (`array_key_exists` + `FILTER_VALIDATE_BOOLEAN`); same for collapse-media and login hint.
+
+### Added
+- **Product Reviews (Bricks Review Form):** Style tab — container, stars (colors/size/legends), fields (labels, inputs, media box), submit button, and notices (success/error/info).
 
 ## [1.9.1] - 2026-04-10
 

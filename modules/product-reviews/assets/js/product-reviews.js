@@ -58,10 +58,9 @@
 
     function initStarRatingInputs() {
         var roots = document.querySelectorAll('[data-ffla-stars]');
-        for (var r = 0; r < roots.length; r++) {
-            var root = roots[r];
+        roots.forEach(function (root) {
             if (root.getAttribute('data-ffla-stars-init') === '1') {
-                continue;
+                return;
             }
             root.setAttribute('data-ffla-stars-init', '1');
             syncStarDisplay(root);
@@ -72,11 +71,10 @@
                 root.removeAttribute('data-hover');
                 syncStarDisplay(root);
             });
-            var labels = root.querySelectorAll('.ffla-star-rating-input__label');
-            for (var j = 0; j < labels.length; j++) {
-                labels[j].addEventListener('mouseenter', function (ev) {
-                    var label = ev.currentTarget;
-                    var fid = label.getAttribute('for');
+            root.querySelectorAll('.ffla-star-rating-input__label').forEach(function (label) {
+                label.addEventListener('mouseenter', function (ev) {
+                    var el = ev.currentTarget;
+                    var fid = el.getAttribute('for');
                     var input = fid ? document.getElementById(fid) : null;
                     if (!input || !input.value) {
                         return;
@@ -84,8 +82,8 @@
                     root.setAttribute('data-hover', input.value);
                     syncStarDisplay(root);
                 });
-            }
-        }
+            });
+        });
     }
 
     function init() {
