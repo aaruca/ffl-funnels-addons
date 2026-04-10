@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 
 class FFL_Dealer_Finder_Element extends \Bricks\Element
 {
-    public $category = 'FFL Checkout';
+    public $category = 'FFL Funnels';
     public $name     = 'ffl-dealer-finder';
     public $icon     = 'ti-location-pin';
     public $tag      = 'div';

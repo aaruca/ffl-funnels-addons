@@ -16,6 +16,10 @@ class Alg_Wishlist_Assets
 
     public function enqueue_scripts()
     {
+        if (!$this->should_enqueue_wishlist_assets()) {
+            return;
+        }
+
         // CSS
         wp_enqueue_style('alg-wishlist-css', ALG_WISHLIST_URL . 'assets/css/algenib-wishlist.css', array(), ALG_WISHLIST_VERSION);
 
@@ -30,12 +34,12 @@ class Alg_Wishlist_Assets
             'nonce' => wp_create_nonce('alg_wishlist_nonce'),
             'initial_items' => $items, // Pass PHP state to JS on load
             'i18n' => array(
-                'added' => __('Added to Wishlist', 'algenib-wishlist'),
-                'removed' => __('Removed from Wishlist', 'algenib-wishlist'),
-                'text_add' => __('Add to wishlist', 'algenib-wishlist'),
-                'text_remove' => __('Remove from wishlist', 'algenib-wishlist'),
-                'link_copied' => __('Link copied to clipboard!', 'algenib-wishlist'),
-                'empty_wishlist' => __('Your wishlist is currently empty.', 'algenib-wishlist'),
+                'added' => __('Added to Wishlist', 'ffl-funnels-addons'),
+                'removed' => __('Removed from Wishlist', 'ffl-funnels-addons'),
+                'text_add' => __('Add to wishlist', 'ffl-funnels-addons'),
+                'text_remove' => __('Remove from wishlist', 'ffl-funnels-addons'),
+                'link_copied' => __('Link copied to clipboard!', 'ffl-funnels-addons'),
+                'empty_wishlist' => __('Your wishlist is currently empty.', 'ffl-funnels-addons'),
             )
         ));
 
@@ -183,6 +187,47 @@ class Alg_Wishlist_Assets
         ";
 
         wp_add_inline_style('alg-wishlist-css', $custom_css);
+    }
+
+    /**
+     * Avoid loading wishlist JS/CSS on every page (e.g. blog posts).
+     *
+     * @filter ffla_wishlist_force_enqueue_assets Return true to always enqueue.
+     */
+    private function should_enqueue_wishlist_assets(): bool
+    {
+        if (apply_filters('ffla_wishlist_force_enqueue_assets', false)) {
+            return true;
+        }
+
+        if (is_admin()) {
+            return false;
+        }
+
+        if (!function_exists('is_woocommerce')) {
+            return false;
+        }
+
+        if (is_shop() || is_product() || is_product_taxonomy() || is_cart() || is_checkout() || is_account_page()) {
+            return true;
+        }
+
+        $wishlist_page_id = Alg_Wishlist_Core::get_wishlist_page_id();
+        if ($wishlist_page_id > 0 && is_page($wishlist_page_id)) {
+            return true;
+        }
+
+        if (is_singular()) {
+            $post = get_queried_object();
+            if ($post instanceof WP_Post) {
+                $content = (string) $post->post_content;
+                if (strpos($content, '[alg_wishlist') !== false) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**

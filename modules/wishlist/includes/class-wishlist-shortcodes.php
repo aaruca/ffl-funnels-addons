@@ -38,12 +38,12 @@ class Alg_Wishlist_Shortcodes
         $is_active = in_array($id, $items);
         $class = 'aws-wishlist--trigger single';
         $type = 'ADD';
-        $text = __('Add to wishlist', 'algenib-wishlist');
+        $text = __('Add to wishlist', 'ffl-funnels-addons');
 
         if ($is_active) {
             $class .= ' active';
             $type = 'REMOVE';
-            $text = __('Remove from wishlist', 'algenib-wishlist');
+            $text = __('Remove from wishlist', 'ffl-funnels-addons');
         }
 
         // F7: data-todo attribute for forced action
@@ -123,7 +123,7 @@ class Alg_Wishlist_Shortcodes
         ?>
         <button type="button" class="alg-add-to-wishlist <?php echo esc_attr($atts['class']); ?>"
             data-product-id="<?php echo esc_attr($id); ?>" style="<?php echo esc_attr($style); ?>"
-            aria-label="<?php esc_attr_e('Add to Wishlist', 'algenib-wishlist'); ?>"<?php echo $todo_attr; ?>>
+            aria-label="<?php esc_attr_e('Add to Wishlist', 'ffl-funnels-addons'); ?>"<?php echo $todo_attr; ?>>
 
             <?php echo $icon_html; ?>
 
@@ -209,9 +209,9 @@ class Alg_Wishlist_Shortcodes
         <div class="alg-wishlist-grid">
             <?php if (empty($items)): ?>
                 <div class="alg-wishlist-empty">
-                    <p><?php esc_html_e('Your wishlist is currently empty.', 'algenib-wishlist'); ?></p>
+                    <p><?php esc_html_e('Your wishlist is currently empty.', 'ffl-funnels-addons'); ?></p>
                     <a href="<?php echo esc_url(get_permalink(wc_get_page_id('shop'))); ?>" class="button alg-return-shop">
-                        <?php esc_html_e('Return to Shop', 'algenib-wishlist'); ?>
+                        <?php esc_html_e('Return to Shop', 'ffl-funnels-addons'); ?>
                     </a>
                 </div>
             <?php else: ?>
@@ -226,7 +226,7 @@ class Alg_Wishlist_Shortcodes
                                 <?php echo wp_kses_post($product->get_image('woocommerce_thumbnail')); ?>
                             </a>
                             <button type="button" class="alg-remove-btn" data-product-id="<?php echo esc_attr($product_id); ?>"
-                                aria-label="<?php esc_attr_e('Remove', 'algenib-wishlist'); ?>">
+                                aria-label="<?php esc_attr_e('Remove', 'ffl-funnels-addons'); ?>">
                                 &times;
                             </button>
                         </div>
@@ -240,7 +240,7 @@ class Alg_Wishlist_Shortcodes
                             <div class="alg-card-actions">
                                 <a href="<?php echo esc_url($product->add_to_cart_url()); ?>" class="button alg-add-cart-btn"
                                     data-product_id="<?php echo esc_attr($product_id); ?>" data-quantity="1">
-                                    <?php esc_html_e('Add to Cart', 'algenib-wishlist'); ?>
+                                    <?php esc_html_e('Add to Cart', 'ffl-funnels-addons'); ?>
                                 </a>
                             </div>
                         </div>

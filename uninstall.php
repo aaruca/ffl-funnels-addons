@@ -57,14 +57,35 @@ if (in_array('doofinder-sync', $ffla_active_modules, true)) {
 // ── FFL Checkout cleanup ────────────────────────────────────────────
 if (in_array('ffl-checkout', $ffla_active_modules, true)) {
     delete_option('ffl_checkout_settings');
-    // Clean up per-order meta.
+    // Clean up per-order meta (classic orders in postmeta).
     $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key IN ('_ffl_vendor_id', '_ffl_vendor_name', '_ffl_vendor_license')");
+    // HPOS order meta table when WooCommerce uses custom order tables.
+    $orders_meta = $wpdb->prefix . 'wc_orders_meta';
+    // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+    if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $orders_meta)) === $orders_meta) {
+        $wpdb->query("DELETE FROM {$orders_meta} WHERE meta_key IN ('_ffl_vendor_id', '_ffl_vendor_name', '_ffl_vendor_license')");
+    }
 }
 
 // ── Tax Rates cleanup ───────────────────────────────────────────────
 if (in_array('tax-rates', $ffla_active_modules, true)) {
+    $tax_db_file = dirname(__FILE__) . '/modules/tax-rates/includes/class-tax-resolver-db.php';
+    if (file_exists($tax_db_file)) {
+        require_once $tax_db_file;
+        if (class_exists('Tax_Resolver_DB')) {
+            Tax_Resolver_DB::uninstall();
+        }
+    }
+
+    delete_option('ffla_tax_resolver_settings');
+    delete_option('ffla_tax_resolver_db_version');
+    // Legacy keys from older uninstall script / misnamed options.
     delete_option('ffla_tax_rates_settings');
     delete_option('ffla_tax_rates_last_import');
+
+    wp_clear_scheduled_hook('ffla_tax_dataset_sync');
+    wp_clear_scheduled_hook('ffla_tax_cache_cleanup');
+    wp_clear_scheduled_hook('ffla_tax_audit_purge');
 }
 
 // ── Woo Sheets Sync cleanup ────────────────────────────────────────
@@ -85,6 +106,17 @@ if (in_array('woo-sheets-sync', $ffla_active_modules, true)) {
     $legacy_log = $upload_dir['basedir'] . '/wss-oauth-debug.log';
     if (file_exists($legacy_log)) {
         @unlink($legacy_log); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+    }
+}
+
+// ── Product Reviews cleanup ─────────────────────────────────────────
+if (in_array('product-reviews', $ffla_active_modules, true)) {
+    delete_option('ffla_product_reviews_settings');
+
+    wp_unschedule_hook('ffla_send_product_review_request');
+
+    if (function_exists('as_unschedule_all_actions')) {
+        as_unschedule_all_actions('ffla_send_product_review_request', null, 'ffla-product-reviews');
     }
 }
 

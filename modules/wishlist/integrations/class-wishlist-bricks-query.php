@@ -26,7 +26,7 @@ class Alg_Wishlist_Bricks_Query
      */
     public static function register_query_type($options)
     {
-        $options['queryTypes'][self::QUERY_TYPE] = esc_html__('Algenib Wishlist', 'algenib-wishlist');
+        $options['queryTypes'][self::QUERY_TYPE] = esc_html__('Wishlist', 'ffl-funnels-addons');
         return $options;
     }
 

@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 
 class WooBooster_Bundle_Element extends \Bricks\Element
 {
-    public $category = 'WooBooster';
+    public $category = 'FFL Funnels';
     public $name     = 'woobooster-bundle';
     public $icon     = 'ti-package';
     public $tag      = 'div';

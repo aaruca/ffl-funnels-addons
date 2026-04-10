@@ -22,15 +22,15 @@ class Tax_REST_API
         ]);
 
         register_rest_route(self::ROUTE_NAMESPACE, '/coverage', [
-            'methods' => 'GET',
-            'callback' => [__CLASS__, 'handle_coverage'],
-            'permission_callback' => '__return_true',
+            'methods'             => 'GET',
+            'callback'            => [__CLASS__, 'handle_coverage'],
+            'permission_callback' => [__CLASS__, 'check_admin_permission'],
         ]);
 
         register_rest_route(self::ROUTE_NAMESPACE, '/health', [
-            'methods' => 'GET',
-            'callback' => [__CLASS__, 'handle_health'],
-            'permission_callback' => '__return_true',
+            'methods'             => 'GET',
+            'callback'            => [__CLASS__, 'handle_health'],
+            'permission_callback' => [__CLASS__, 'check_admin_permission'],
         ]);
 
         register_rest_route(self::ROUTE_NAMESPACE, '/datasets', [

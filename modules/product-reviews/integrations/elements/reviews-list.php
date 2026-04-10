@@ -7,7 +7,7 @@ if (!defined('ABSPATH')) {
 
 class FFLA_Reviews_List extends \Bricks\Element
 {
-    public $category = 'FFL Funnels - Product Reviews';
+    public $category = 'FFL Funnels';
     public $name     = 'ffla-reviews-list';
     public $icon     = 'ti-comment-alt';
     public $tag      = 'div';
@@ -46,6 +46,101 @@ class FFLA_Reviews_List extends \Bricks\Element
             ],
             'default' => 'recent',
         ];
+
+        $this->controls['starFilledColor'] = [
+            'tab'     => 'content',
+            'label'   => esc_html__('Filled stars color', 'ffl-funnels-addons'),
+            'type'    => 'color',
+            'default' => '#d4a017',
+            'css'     => [['property' => '--ffla-star-filled', 'selector' => '']],
+        ];
+
+        $this->controls['starEmptyColor'] = [
+            'tab'     => 'content',
+            'label'   => esc_html__('Empty stars color', 'ffl-funnels-addons'),
+            'type'    => 'color',
+            'default' => '#d8dce5',
+            'css'     => [['property' => '--ffla-star-empty', 'selector' => '']],
+        ];
+
+        $this->controls['starSize'] = [
+            'tab'     => 'content',
+            'label'   => esc_html__('Star size', 'ffl-funnels-addons'),
+            'type'    => 'number',
+            'units'   => true,
+            'default' => '16px',
+            'css'     => [['property' => 'font-size', 'selector' => '.ffla-stars']],
+        ];
+
+        $this->controls['cardBg'] = [
+            'tab'   => 'content',
+            'label' => esc_html__('Card background', 'ffl-funnels-addons'),
+            'type'  => 'color',
+            'css'   => [['property' => 'background-color', 'selector' => '.ffla-review-card']],
+        ];
+
+        $this->controls['cardBorder'] = [
+            'tab'   => 'content',
+            'label' => esc_html__('Card border', 'ffl-funnels-addons'),
+            'type'  => 'border',
+            'css'   => [['property' => 'border', 'selector' => '.ffla-review-card']],
+        ];
+
+        $this->controls['cardRadius'] = [
+            'tab'   => 'content',
+            'label' => esc_html__('Card border radius', 'ffl-funnels-addons'),
+            'type'  => 'number',
+            'units' => true,
+            'css'   => [['property' => 'border-radius', 'selector' => '.ffla-review-card']],
+        ];
+
+        $this->controls['cardPadding'] = [
+            'tab'   => 'content',
+            'label' => esc_html__('Card padding', 'ffl-funnels-addons'),
+            'type'  => 'spacing',
+            'css'   => [['property' => 'padding', 'selector' => '.ffla-review-card']],
+        ];
+
+        $this->controls['listGap'] = [
+            'tab'   => 'content',
+            'label' => esc_html__('List gap', 'ffl-funnels-addons'),
+            'type'  => 'number',
+            'units' => true,
+            'css'   => [['property' => 'gap', 'selector' => '']],
+        ];
+
+        $this->controls['authorTypography'] = [
+            'tab'   => 'content',
+            'label' => esc_html__('Author typography', 'ffl-funnels-addons'),
+            'type'  => 'typography',
+            'css'   => [['property' => 'typography', 'selector' => '.ffla-review-card__author']],
+        ];
+
+        $this->controls['dateTypography'] = [
+            'tab'   => 'content',
+            'label' => esc_html__('Date typography', 'ffl-funnels-addons'),
+            'type'  => 'typography',
+            'css'   => [['property' => 'typography', 'selector' => '.ffla-review-card__date']],
+        ];
+
+        $this->controls['contentTypography'] = [
+            'tab'   => 'content',
+            'label' => esc_html__('Review text typography', 'ffl-funnels-addons'),
+            'type'  => 'typography',
+            'css'   => [['property' => 'typography', 'selector' => '.ffla-review-card__content']],
+        ];
+    }
+
+    private function render_stars(float $rating, int $max_stars = 5): string
+    {
+        $rating = max(0, min($max_stars, $rating));
+        $percentage = ($rating / $max_stars) * 100;
+        $stars = str_repeat('&#9733;', $max_stars);
+
+        return '<span class="ffla-stars" aria-label="' . esc_attr(sprintf(__('Rated %1$s out of %2$s', 'ffl-funnels-addons'), number_format_i18n($rating, 1), $max_stars)) . '">'
+            . '<span class="ffla-stars__base">' . $stars . '</span>'
+            . '<span class="ffla-stars__fill" style="width:' . esc_attr(number_format($percentage, 4, '.', '')) . '%;">' . $stars . '</span>'
+            . '</span>';
     }
 
     public function render()
@@ -95,7 +190,7 @@ class FFLA_Reviews_List extends \Bricks\Element
         }
 
         foreach ($reviews as $review) {
-            $rating = (int) get_comment_meta($review->comment_ID, 'rating', true);
+            $rating = (float) get_comment_meta($review->comment_ID, 'rating', true);
             $quality = (int) get_comment_meta($review->comment_ID, 'ffla_review_quality', true);
             $value = (int) get_comment_meta($review->comment_ID, 'ffla_review_value', true);
             $helpful = (int) get_comment_meta($review->comment_ID, 'ffla_helpful_yes', true);
@@ -112,7 +207,7 @@ class FFLA_Reviews_List extends \Bricks\Element
             echo '</header>';
 
             if ($rating > 0) {
-                echo '<div class="ffla-review-card__rating">' . wp_kses_post(wc_get_rating_html($rating, 1)) . '</div>';
+                echo '<div class="ffla-review-card__rating">' . wp_kses_post($this->render_stars($rating)) . '</div>';
             }
 
             if ($verified) {

@@ -57,6 +57,9 @@ class FFLA_Updater
 
         // AJAX handler for the dashboard "Check for Updates" button.
         add_action('wp_ajax_ffla_check_update', [$this, 'ajax_check_update']);
+
+        // Dismiss GitHub API error notice (same capability as notice visibility).
+        add_action('wp_ajax_ffla_dismiss_api_notice', [$this, 'handle_dismiss_api_notice']);
     }
 
     /**
@@ -196,11 +199,6 @@ class FFLA_Updater
             return;
         }
 
-        $dismiss_url = wp_nonce_url(
-            admin_url('admin-post.php?action=ffla_dismiss_api_notice'),
-            'ffla_dismiss_api_notice'
-        );
-
         echo '<div class="notice notice-warning is-dismissible" id="ffla-api-notice">';
         echo '<p><strong>FFL Funnels Addons:</strong> ' . esc_html($error) . '</p>';
         echo '</div>';
@@ -222,6 +220,11 @@ class FFLA_Updater
     public function handle_dismiss_api_notice(): void
     {
         check_ajax_referer('ffla_dismiss_api_notice', '_wpnonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_die('', '', 403);
+        }
+
         delete_transient('ffla_github_api_error');
         wp_die();
     }

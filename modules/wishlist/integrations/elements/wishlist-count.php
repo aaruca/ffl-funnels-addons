@@ -15,7 +15,7 @@ if (!defined('ABSPATH'))
 class FFLA_Wishlist_Count extends \Bricks\Element
 {
 
-    public $category = 'FFL Funnels - Wishlist';
+    public $category = 'FFL Funnels';
     public $name = 'ffla-wishlist-count';
     public $icon = 'ti-bag';
     public $tag = 'a';

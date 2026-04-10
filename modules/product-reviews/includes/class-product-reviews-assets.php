@@ -18,6 +18,10 @@ class Product_Reviews_Assets
 
     public static function enqueue_frontend_assets(): void
     {
+        if (!self::should_enqueue_frontend_assets()) {
+            return;
+        }
+
         wp_enqueue_style(
             'ffla-product-reviews',
             FFLA_URL . 'modules/product-reviews/assets/css/product-reviews.css',
@@ -51,5 +55,22 @@ class Product_Reviews_Assets
                 true
             );
         }
+    }
+
+    /**
+     * Load assets only where reviews UI is typically needed (single product by default).
+     * Use filter {@see 'ffla_product_reviews_enqueue_assets'} to force-load (e.g. Bricks on non-product templates).
+     */
+    private static function should_enqueue_frontend_assets(): bool
+    {
+        if (apply_filters('ffla_product_reviews_enqueue_assets', false)) {
+            return true;
+        }
+
+        if (function_exists('is_product') && is_product()) {
+            return true;
+        }
+
+        return false;
     }
 }

@@ -7,7 +7,7 @@ if (!defined('ABSPATH')) {
 
 class FFLA_Review_Form extends \Bricks\Element
 {
-    public $category = 'FFL Funnels - Product Reviews';
+    public $category = 'FFL Funnels';
     public $name     = 'ffla-review-form';
     public $icon     = 'ti-pencil-alt';
     public $tag      = 'div';
@@ -33,6 +33,14 @@ class FFLA_Review_Form extends \Bricks\Element
             'type'    => 'text',
             'default' => esc_html__('Write a review', 'ffl-funnels-addons'),
         ];
+
+        $this->controls['showLoginHint'] = [
+            'tab'     => 'content',
+            'label'   => esc_html__('Show login hint', 'ffl-funnels-addons'),
+            'type'    => 'checkbox',
+            'inline'  => true,
+            'default' => true,
+        ];
     }
 
     public function render()
@@ -45,19 +53,29 @@ class FFLA_Review_Form extends \Bricks\Element
             ]);
         }
 
-        if (!comments_open($product_id)) {
-            return;
-        }
-
         $title = $settings['title'] ?? Product_Reviews_Core::get_setting('form_title', __('Write a review', 'ffl-funnels-addons'));
+        $show_login_hint = !isset($settings['showLoginHint']) || !empty($settings['showLoginHint']);
+        $status = isset($_GET['ffla_review_status']) ? sanitize_text_field(wp_unslash($_GET['ffla_review_status'])) : '';
+        $message = isset($_GET['ffla_review_message']) ? sanitize_text_field(wp_unslash($_GET['ffla_review_message'])) : '';
 
         $this->set_attribute('_root', 'class', 'ffla-review-form-wrap');
         echo '<div ' . $this->render_attributes('_root') . '>';
         echo '<h4 class="ffla-review-form__title">' . esc_html($title) . '</h4>';
 
-        echo '<form class="ffla-review-form" method="post" enctype="multipart/form-data" action="' . esc_url(site_url('/wp-comments-post.php')) . '">';
+        if ($status === 'success') {
+            echo '<p class="ffla-review-form__notice ffla-review-form__notice--success">' . esc_html__('Thanks! Your review was submitted.', 'ffl-funnels-addons') . '</p>';
+        } elseif ($status === 'error' && $message !== '') {
+            echo '<p class="ffla-review-form__notice ffla-review-form__notice--error">' . esc_html($message) . '</p>';
+        }
+
+        if (!is_user_logged_in() && get_option('comment_registration') && $show_login_hint) {
+            echo '<p class="ffla-review-form__notice ffla-review-form__notice--info">' . esc_html__('You must be logged in to submit a review.', 'ffl-funnels-addons') . '</p>';
+        }
+
+        echo '<form class="ffla-review-form" method="post" enctype="multipart/form-data" action="' . esc_url(admin_url('admin-post.php')) . '">';
         wp_nonce_field('ffla_review_form', 'ffla_review_form_nonce');
         echo '<input type="text" class="ffla-review-hp-field" name="ffla_hp" value="" autocomplete="off" tabindex="-1" aria-hidden="true">';
+        echo '<input type="hidden" name="action" value="ffla_submit_product_review">';
 
         if (!is_user_logged_in()) {
             $commenter = wp_get_current_commenter();
@@ -104,7 +122,7 @@ class FFLA_Review_Form extends \Bricks\Element
 
         echo '<input type="hidden" name="comment_post_ID" value="' . esc_attr((string) $product_id) . '">';
         echo '<input type="hidden" name="comment_parent" value="0">';
-        echo '<input type="hidden" name="redirect_to" value="' . esc_url(get_permalink($product_id) . '#reviews') . '">';
+        echo '<input type="hidden" name="redirect_to" value="' . esc_url(get_permalink($product_id)) . '">';
         echo '<button class="ffla-review-form__submit" type="submit">' . esc_html__('Submit review', 'ffl-funnels-addons') . '</button>';
 
         echo '</form>';

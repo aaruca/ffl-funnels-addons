@@ -20,6 +20,28 @@ class Alg_Wishlist_Bricks
 
         // Register native Bricks elements (priority 11, after Bricks' own init).
         add_action('init', [__CLASS__, 'register_elements'], 11);
+
+        add_filter('ffla_wishlist_force_enqueue_assets', [__CLASS__, 'force_assets_in_bricks_context']);
+    }
+
+    /**
+     * Wishlist controls need scripts in the Bricks editor even off WooCommerce templates.
+     */
+    public static function force_assets_in_bricks_context($force)
+    {
+        if ($force) {
+            return true;
+        }
+
+        if (function_exists('bricks_is_builder') && bricks_is_builder()) {
+            return true;
+        }
+
+        if (function_exists('bricks_is_builder_call') && bricks_is_builder_call()) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

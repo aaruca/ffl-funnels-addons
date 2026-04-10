@@ -820,7 +820,9 @@ class WooBooster_Admin
             ));
 
             if (is_wp_error($response)) {
-                error_log('WooBooster AI: WP_Error — ' . $response->get_error_message());
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('WooBooster AI: WP_Error — ' . $response->get_error_message());
+                }
                 wp_send_json_error(array('message' => __('AI service error. Please try again.', 'ffl-funnels-addons'), 'steps' => $steps));
             }
 
@@ -828,7 +830,9 @@ class WooBooster_Admin
 
             if (empty($data) || isset($data['error'])) {
                 $err_msg = isset($data['error']['message']) ? $data['error']['message'] : 'Unknown API error';
-                error_log('WooBooster AI: API error — ' . $err_msg);
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('WooBooster AI: API error — ' . $err_msg);
+                }
                 wp_send_json_error(array('message' => __('AI service error. Please try again.', 'ffl-funnels-addons'), 'steps' => $steps));
             }
 

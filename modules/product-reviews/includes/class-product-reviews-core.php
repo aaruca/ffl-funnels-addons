@@ -20,6 +20,8 @@ class Product_Reviews_Core
         add_filter('preprocess_comment', [__CLASS__, 'validate_review_submission']);
         add_action('comment_post', [__CLASS__, 'save_review_meta'], 10, 3);
         add_action('delete_comment', [__CLASS__, 'cleanup_review_media'], 10, 1);
+        add_action('admin_post_ffla_submit_product_review', [__CLASS__, 'handle_form_submission']);
+        add_action('admin_post_nopriv_ffla_submit_product_review', [__CLASS__, 'handle_form_submission']);
         add_filter('woocommerce_product_tabs', [__CLASS__, 'maybe_hide_default_reviews_tab'], 99);
 
         if (is_admin()) {
@@ -126,8 +128,7 @@ class Product_Reviews_Core
             return $commentdata;
         }
 
-        $honeypot = isset($_POST['ffla_hp']) ? trim((string) wp_unslash($_POST['ffla_hp'])) : '';
-        if ($honeypot !== '') {
+        if (self::review_honeypot_triggered()) {
             wp_die(esc_html__('Your review could not be submitted.', 'ffl-funnels-addons'));
         }
 
@@ -138,17 +139,38 @@ class Product_Reviews_Core
             }
         }
 
-        if (self::is_turnstile_enabled()) {
-            $token = isset($_POST['cf-turnstile-response'])
-                ? sanitize_text_field(wp_unslash($_POST['cf-turnstile-response']))
-                : '';
-
-            if ($token === '' || !self::verify_turnstile_token($token)) {
-                wp_die(esc_html__('Cloudflare validation failed. Please try again.', 'ffl-funnels-addons'));
-            }
+        if (!self::turnstile_token_valid_for_request()) {
+            wp_die(esc_html__('Cloudflare validation failed. Please try again.', 'ffl-funnels-addons'));
         }
 
-        // Any review containing media is sent to moderation by default.
+        return self::apply_media_moderation_flag($commentdata);
+    }
+
+    private static function review_honeypot_triggered(): bool
+    {
+        $honeypot = isset($_POST['ffla_hp']) ? trim((string) wp_unslash($_POST['ffla_hp'])) : '';
+
+        return $honeypot !== '';
+    }
+
+    /**
+     * When Turnstile is enabled, require a valid token (native + Bricks forms).
+     */
+    private static function turnstile_token_valid_for_request(): bool
+    {
+        if (!self::is_turnstile_enabled()) {
+            return true;
+        }
+
+        $token = isset($_POST['cf-turnstile-response'])
+            ? sanitize_text_field(wp_unslash($_POST['cf-turnstile-response']))
+            : '';
+
+        return $token !== '' && self::verify_turnstile_token($token);
+    }
+
+    private static function apply_media_moderation_flag(array $commentdata): array
+    {
         if (self::has_review_media_upload()) {
             $commentdata['comment_approved'] = 0;
         }
@@ -471,5 +493,123 @@ class Product_Reviews_Core
             ];
         }
         return $normalized;
+    }
+
+    public static function handle_form_submission(): void
+    {
+        $product_id   = isset($_POST['comment_post_ID']) ? absint($_POST['comment_post_ID']) : 0;
+        $redirect_raw = isset($_POST['redirect_to']) ? esc_url_raw(wp_unslash($_POST['redirect_to'])) : '';
+
+        $fallback = home_url('/');
+        if ($product_id > 0 && 'product' === get_post_type($product_id)) {
+            $fallback = get_permalink($product_id);
+        }
+
+        $redirect = $redirect_raw !== '' ? wp_validate_redirect($redirect_raw, $fallback) : $fallback;
+
+        if ($product_id <= 0 || 'product' !== get_post_type($product_id)) {
+            self::redirect_with_status(
+                $redirect,
+                'error',
+                __('Invalid product for review.', 'ffl-funnels-addons'),
+                $fallback
+            );
+        }
+
+        if (!isset($_POST['ffla_review_form_nonce'])
+            || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['ffla_review_form_nonce'])), 'ffla_review_form')) {
+            self::redirect_with_status(
+                $redirect,
+                'error',
+                __('Security check failed. Please refresh and try again.', 'ffl-funnels-addons'),
+                $fallback
+            );
+        }
+
+        if (self::review_honeypot_triggered()) {
+            self::redirect_with_status(
+                $redirect,
+                'error',
+                __('Your review could not be submitted.', 'ffl-funnels-addons'),
+                $fallback
+            );
+        }
+
+        if (!self::turnstile_token_valid_for_request()) {
+            self::redirect_with_status(
+                $redirect,
+                'error',
+                __('Cloudflare validation failed. Please try again.', 'ffl-funnels-addons'),
+                $fallback
+            );
+        }
+
+        $comment_content = isset($_POST['comment']) ? trim((string) wp_unslash($_POST['comment'])) : '';
+        $rating          = isset($_POST['rating']) ? absint($_POST['rating']) : 0;
+
+        if ($comment_content === '') {
+            self::redirect_with_status($redirect, 'error', __('Review text is required.', 'ffl-funnels-addons'), $fallback);
+        }
+
+        if ($rating < 1 || $rating > 5) {
+            self::redirect_with_status($redirect, 'error', __('Please select a rating between 1 and 5.', 'ffl-funnels-addons'), $fallback);
+        }
+
+        if (!is_user_logged_in() && get_option('comment_registration')) {
+            self::redirect_with_status($redirect, 'error', __('You must be logged in to submit a review.', 'ffl-funnels-addons'), $fallback);
+        }
+
+        $commentdata = [
+            'comment_post_ID'      => $product_id,
+            'comment_content'      => $comment_content,
+            'comment_parent'       => 0,
+            'comment_type'         => 'review',
+            'comment_author_IP'    => isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '',
+            'comment_agent'        => isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : '',
+            'user_id'              => get_current_user_id(),
+            'comment_author'       => '',
+            'comment_author_email' => '',
+            'comment_author_url'   => '',
+        ];
+
+        if (is_user_logged_in()) {
+            $user = wp_get_current_user();
+            $commentdata['comment_author']       = $user instanceof \WP_User ? $user->display_name : '';
+            $commentdata['comment_author_email'] = $user instanceof \WP_User ? $user->user_email : '';
+        } else {
+            $commentdata['comment_author']       = isset($_POST['author']) ? sanitize_text_field(wp_unslash($_POST['author'])) : '';
+            $commentdata['comment_author_email'] = isset($_POST['email']) ? sanitize_email(wp_unslash($_POST['email'])) : '';
+        }
+
+        if (!is_email($commentdata['comment_author_email'])) {
+            self::redirect_with_status($redirect, 'error', __('Please enter a valid email.', 'ffl-funnels-addons'), $fallback);
+        }
+
+        $commentdata = self::apply_media_moderation_flag($commentdata);
+
+        $comment_id = wp_new_comment($commentdata, true);
+        if (is_wp_error($comment_id) || !$comment_id) {
+            self::redirect_with_status($redirect, 'error', __('Could not submit your review. Please try again.', 'ffl-funnels-addons'), $fallback);
+        }
+
+        self::redirect_with_status($redirect, 'success', '', $fallback);
+    }
+
+    private static function redirect_with_status(string $redirect, string $status, string $message, string $fallback = ''): void
+    {
+        if ($fallback === '') {
+            $fallback = home_url('/');
+        }
+
+        $redirect = wp_validate_redirect($redirect, $fallback);
+
+        $args = ['ffla_review_status' => $status];
+        if ($message !== '') {
+            $args['ffla_review_message'] = $message;
+        }
+
+        $url = add_query_arg($args, $redirect) . '#reviews';
+        wp_safe_redirect($url);
+        exit;
     }
 }
