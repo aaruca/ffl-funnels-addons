@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.9.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.9.1-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -59,7 +59,7 @@ US sales tax resolution for WooCommerce using a shared Google Sheets ZIP dataset
 
 ### 8. Product Reviews
 Advanced WooCommerce product reviews with native Bricks elements and post-purchase review workflows.
-*   **Bricks Native Elements:** Rating Badge, Reviews List, and Review Form under `FFL Funnels - Product Reviews`.
+*   **Bricks Native Elements:** Rating Badge, Reviews List, and Review Form under the **`FFL Funnels`** element category (with partial star styling and style controls).
 *   **Post-Purchase Requests:** Schedules review reminder emails per purchased product after order completion.
 *   **Review Enrichment:** Multi-criteria fields (quality/value), verified-buyer tagging, and helpful votes.
 *   **Media Reviews:** Optional image/video uploads on reviews with moderation safeguards.
@@ -72,7 +72,7 @@ Advanced WooCommerce product reviews with native Bricks elements and post-purcha
 2.  Go to **WordPress Admin > Plugins > Add New**.
 3.  Click **Upload Plugin** and select the zip file.
 4.  Activate the plugin.
-5.  Go to **FFL Addons** in the admin menu to configure modules.
+5.  Go to **FFL Funnels** in the admin menu to configure modules.
 
 ## Auto-Updates
 
@@ -87,12 +87,12 @@ define('FFLA_GITHUB_TOKEN', 'ghp_your_token_here');
 
 ### Activating Modules
 The plugin is modular. You can enable or disable features to keep your site lightweight.
-1.  Navigate to **FFL Addons > Dashboard**.
+1.  Navigate to **FFL Funnels > Dashboard**.
 2.  Toggle the switches for the modules you want to use (e.g., WooBooster, Wishlist).
 3.  Click the "Settings" button on active cards to configure specific options.
 
 ### Tax Address Resolver
-1.  Go to **FFL Addons > Tax Resolver > Settings**.
+1.  Go to **FFL Funnels > Tax Resolver > Settings**.
 2.  Set the shared Google Sheet URL used as the tax source.
 3.  Optionally enable **Limit resolver to selected states** and choose only the states your store uses.
 4.  Save settings.
@@ -105,7 +105,7 @@ Notes:
 *   The REST quote endpoint is admin-only.
 
 ### WooBooster Rules
-1.  Go to **FFL Addons > WooBooster > Rules**.
+1.  Go to **FFL Funnels > WooBooster > Rules**.
 2.  Click **Add Rule**.
 3.  **Conditions:** Define *when* this rule applies (e.g., "Product Category is Firearms").
 4.  **Actions:** Define *what* to show (e.g., "Show products from Category: Ammo" OR "Show Related Products from Attribute: Caliber").
@@ -119,6 +119,19 @@ Notes:
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.9.1
+
+*   **Product Reviews:** Stricter CSRF on the Bricks/custom review form (`admin-post`), safe redirects with `wp_validate_redirect`, honeypot/Turnstile failures redirect instead of a blank `wp_die` screen.
+*   **Product Reviews:** Frontend CSS/JS (and Turnstile) load on single product pages by default; Bricks builder/preview can still load assets automatically; optional filters for custom templates.
+*   **Wishlist:** Frontend assets load only on relevant WooCommerce pages, the configured wishlist page, shortcodes, or Bricks builder — reduces global page weight.
+*   **Wishlist:** User-facing strings use the `ffl-funnels-addons` text domain; Bricks query label simplified to “Wishlist”.
+*   **Bricks:** Wishlist, WooBooster bundle, FFL Dealer Finder, and Product Reviews elements use one category: **`FFL Funnels`**.
+*   **Tax Resolver:** `GET /ffl-tax/v1/coverage` and `/health` REST routes now require `manage_woocommerce` (no anonymous operational metadata).
+*   **Updater:** Registered `wp_ajax_ffla_dismiss_api_notice` so the GitHub API warning can be dismissed; removed unused admin-post dismiss URL; dismiss checks `manage_options`.
+*   **Uninstall:** Tax module drops resolver tables/options and clears crons; Product Reviews clears settings and scheduled actions; FFL Checkout vendor meta removed from HPOS `wc_orders_meta` when present.
+*   **WooBooster:** AI error logging only when `WP_DEBUG` is enabled.
+*   **CI:** GitHub Actions workflow runs `php -l` on all PHP files on push/PR.
 
 ### v1.9.0
 

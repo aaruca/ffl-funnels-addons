@@ -2,6 +2,29 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.9.1] - 2026-04-10
+
+### Security
+- **Product Reviews:** Require review form nonce on the dedicated `admin-post` submission path; validate redirect target with `wp_validate_redirect`.
+- **Tax REST:** `GET /ffl-tax/v1/coverage` and `GET /ffl-tax/v1/health` now require `manage_woocommerce` instead of being public.
+
+### Fixed
+- **Updater:** Register `wp_ajax_ffla_dismiss_api_notice` so dismissing the GitHub API notice actually clears the error transient; enforce `manage_options` on dismiss.
+- **Uninstall:** Remove Tax Resolver data using `Tax_Resolver_DB::uninstall()` and correct option keys; clear tax cron hooks; remove Product Reviews options and scheduled hooks (including Action Scheduler group); delete FFL Checkout vendor meta from `wc_orders_meta` when HPOS is enabled.
+
+### Changed
+- **Product Reviews:** Honeypot and Turnstile failures on the custom form use redirects with user-visible messages.
+- **Product Reviews / Wishlist:** Load frontend assets only where needed (single product, Woo pages, wishlist page, shortcodes, Bricks builder); filters `ffla_product_reviews_enqueue_assets` and `ffla_wishlist_force_enqueue_assets` for edge cases.
+- **Wishlist:** Consolidate translations under text domain `ffl-funnels-addons` for listed UI strings.
+- **WooBooster:** Write AI request errors to `error_log` only when `WP_DEBUG` is true.
+
+### Added
+- **CI:** `.github/workflows/php-syntax.yml` runs `php -l` on all plugin PHP files.
+
+### Maintenance
+- **Bricks:** Unified element category label `FFL Funnels` for Wishlist, WooBooster bundle, FFL Dealer Finder, and Product Reviews elements.
+- README badge and changelog sections updated for `1.9.1`.
+
 ## [1.9.0] - 2026-04-09
 
 ### Features
