@@ -1,0 +1,475 @@
+<?php
+/**
+ * Product Reviews Core.
+ *
+ * @package FFL_Funnels_Addons
+ */
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+class Product_Reviews_Core
+{
+    const MAX_MEDIA_FILES = 3;
+
+    public static function init(): void
+    {
+        add_action('comment_form_after_fields', [__CLASS__, 'render_extra_review_fields']);
+        add_action('comment_form_logged_in_after', [__CLASS__, 'render_extra_review_fields']);
+        add_filter('preprocess_comment', [__CLASS__, 'validate_review_submission']);
+        add_action('comment_post', [__CLASS__, 'save_review_meta'], 10, 3);
+        add_action('delete_comment', [__CLASS__, 'cleanup_review_media'], 10, 1);
+        add_filter('woocommerce_product_tabs', [__CLASS__, 'maybe_hide_default_reviews_tab'], 99);
+
+        if (is_admin()) {
+            add_filter('manage_edit-comments_columns', [__CLASS__, 'register_admin_comments_columns']);
+            add_action('manage_comments_custom_column', [__CLASS__, 'render_admin_comments_columns'], 10, 2);
+            add_action('admin_head-edit-comments.php', [__CLASS__, 'render_admin_comments_column_css']);
+        }
+    }
+
+    public static function get_default_settings(): array
+    {
+        return [
+            'enable_requests'           => '1',
+            'request_delay_days'        => '7',
+            'enable_helpful_votes'      => '1',
+            'hide_default_reviews_tab'  => '0',
+            'enable_turnstile'          => '0',
+            'turnstile_site_key'        => '',
+            'turnstile_secret_key'      => '',
+            'form_title'                => __('Write a review', 'ffl-funnels-addons'),
+            'email_subject'             => __('How was your purchase?', 'ffl-funnels-addons'),
+            'email_heading'             => __('Leave a review for your recent order', 'ffl-funnels-addons'),
+            'email_template'            => __("Hi {customer_name},\n\nWe would love your feedback on {product_name}.\n\nLeave your review here:\n{review_url}\n\nThank you!", 'ffl-funnels-addons'),
+        ];
+    }
+
+    public static function get_settings(): array
+    {
+        $stored = get_option('ffla_product_reviews_settings', []);
+        if (!is_array($stored)) {
+            $stored = [];
+        }
+
+        return wp_parse_args($stored, self::get_default_settings());
+    }
+
+    public static function get_setting(string $key, $default = '')
+    {
+        $settings = self::get_settings();
+        return $settings[$key] ?? $default;
+    }
+
+    public static function maybe_hide_default_reviews_tab(array $tabs): array
+    {
+        if ('1' === self::get_setting('hide_default_reviews_tab', '0') && isset($tabs['reviews'])) {
+            unset($tabs['reviews']);
+        }
+
+        return $tabs;
+    }
+
+    public static function render_extra_review_fields(): void
+    {
+        if (!function_exists('is_product') || !is_product()) {
+            return;
+        }
+
+        echo '<div class="ffla-review-extra-fields">';
+        wp_nonce_field('ffla_review_form', 'ffla_review_form_nonce');
+
+        echo '<p class="comment-form-ffla-quality">';
+        echo '<label for="ffla_review_quality">' . esc_html__('Quality', 'ffl-funnels-addons') . '</label>';
+        echo '<select id="ffla_review_quality" name="ffla_review_quality">';
+        echo '<option value="">' . esc_html__('Select', 'ffl-funnels-addons') . '</option>';
+        for ($i = 1; $i <= 5; $i++) {
+            echo '<option value="' . esc_attr((string) $i) . '">' . esc_html((string) $i) . '</option>';
+        }
+        echo '</select>';
+        echo '</p>';
+
+        echo '<p class="comment-form-ffla-value">';
+        echo '<label for="ffla_review_value">' . esc_html__('Value', 'ffl-funnels-addons') . '</label>';
+        echo '<select id="ffla_review_value" name="ffla_review_value">';
+        echo '<option value="">' . esc_html__('Select', 'ffl-funnels-addons') . '</option>';
+        for ($i = 1; $i <= 5; $i++) {
+            echo '<option value="' . esc_attr((string) $i) . '">' . esc_html((string) $i) . '</option>';
+        }
+        echo '</select>';
+        echo '</p>';
+
+        // Honeypot anti-spam field (hidden via CSS).
+        echo '<p class="comment-form-ffla-hp ffla-review-hp-field" aria-hidden="true">';
+        echo '<label for="ffla_hp">' . esc_html__('Leave this field empty', 'ffl-funnels-addons') . '</label>';
+        echo '<input type="text" id="ffla_hp" name="ffla_hp" value="" autocomplete="off" tabindex="-1">';
+        echo '</p>';
+
+        if (self::is_turnstile_enabled()) {
+            $site_key = self::get_turnstile_site_key();
+            echo '<div class="ffla-review-turnstile-wrap">';
+            echo '<div class="cf-turnstile" data-sitekey="' . esc_attr($site_key) . '" data-theme="auto"></div>';
+            echo '</div>';
+        }
+        echo '</div>';
+    }
+
+    public static function validate_review_submission(array $commentdata): array
+    {
+        if (empty($commentdata['comment_post_ID'])) {
+            return $commentdata;
+        }
+
+        $product_id = absint($commentdata['comment_post_ID']);
+        if ('product' !== get_post_type($product_id)) {
+            return $commentdata;
+        }
+
+        $honeypot = isset($_POST['ffla_hp']) ? trim((string) wp_unslash($_POST['ffla_hp'])) : '';
+        if ($honeypot !== '') {
+            wp_die(esc_html__('Your review could not be submitted.', 'ffl-funnels-addons'));
+        }
+
+        if (isset($_POST['ffla_review_form_nonce'])) {
+            $nonce = sanitize_text_field(wp_unslash($_POST['ffla_review_form_nonce']));
+            if (!wp_verify_nonce($nonce, 'ffla_review_form')) {
+                wp_die(esc_html__('Security check failed. Please refresh and try again.', 'ffl-funnels-addons'));
+            }
+        }
+
+        if (self::is_turnstile_enabled()) {
+            $token = isset($_POST['cf-turnstile-response'])
+                ? sanitize_text_field(wp_unslash($_POST['cf-turnstile-response']))
+                : '';
+
+            if ($token === '' || !self::verify_turnstile_token($token)) {
+                wp_die(esc_html__('Cloudflare validation failed. Please try again.', 'ffl-funnels-addons'));
+            }
+        }
+
+        // Any review containing media is sent to moderation by default.
+        if (self::has_review_media_upload()) {
+            $commentdata['comment_approved'] = 0;
+        }
+
+        return $commentdata;
+    }
+
+    public static function save_review_meta(int $comment_id, int $comment_approved, array $commentdata): void
+    {
+        if (empty($commentdata['comment_post_ID'])) {
+            return;
+        }
+
+        $product_id = absint($commentdata['comment_post_ID']);
+        if ('product' !== get_post_type($product_id)) {
+            return;
+        }
+
+        $rating = isset($_POST['rating']) ? absint($_POST['rating']) : 0;
+        if ($rating > 0) {
+            update_comment_meta($comment_id, 'rating', min(5, $rating));
+        }
+
+        $quality = isset($_POST['ffla_review_quality']) ? absint($_POST['ffla_review_quality']) : 0;
+        if ($quality > 0) {
+            update_comment_meta($comment_id, 'ffla_review_quality', min(5, $quality));
+        }
+
+        $value = isset($_POST['ffla_review_value']) ? absint($_POST['ffla_review_value']) : 0;
+        if ($value > 0) {
+            update_comment_meta($comment_id, 'ffla_review_value', min(5, $value));
+        }
+
+        if (!metadata_exists('comment', $comment_id, 'ffla_helpful_yes')) {
+            update_comment_meta($comment_id, 'ffla_helpful_yes', 0);
+        }
+
+        $comment = get_comment($comment_id);
+        if (!$comment) {
+            return;
+        }
+
+        $email   = $comment->comment_author_email;
+        $user_id = (int) $comment->user_id;
+        $is_verified = function_exists('wc_customer_bought_product')
+            ? wc_customer_bought_product($email, $user_id, $product_id)
+            : false;
+
+        update_comment_meta($comment_id, 'ffla_verified_purchase', $is_verified ? 1 : 0);
+
+        self::save_review_media($comment_id);
+    }
+
+    private static function save_review_media(int $comment_id): void
+    {
+        if (empty($_FILES['ffla_review_media']) || !is_array($_FILES['ffla_review_media'])) {
+            return;
+        }
+
+        $files = self::normalize_uploads_array($_FILES['ffla_review_media']);
+        if (empty($files)) {
+            return;
+        }
+
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+        require_once ABSPATH . 'wp-admin/includes/media.php';
+        require_once ABSPATH . 'wp-admin/includes/image.php';
+
+        $allowed_mimes = [
+            'jpg|jpeg' => 'image/jpeg',
+            'png'      => 'image/png',
+            'gif'      => 'image/gif',
+            'webp'     => 'image/webp',
+            'mp4'      => 'video/mp4',
+            'webm'     => 'video/webm',
+        ];
+
+        $attachment_ids = [];
+        $processed = 0;
+
+        foreach ($files as $file) {
+            if ($processed >= self::MAX_MEDIA_FILES) {
+                break;
+            }
+
+            if (!empty($file['error']) || empty($file['tmp_name'])) {
+                continue;
+            }
+
+            if (!empty($file['size']) && (int) $file['size'] > (5 * 1024 * 1024)) {
+                continue;
+            }
+
+            $check = wp_check_filetype_and_ext($file['tmp_name'], $file['name'], $allowed_mimes);
+            if (empty($check['ext']) || empty($check['type'])) {
+                continue;
+            }
+
+            $_FILES['ffla_review_media_single'] = $file;
+            $attachment_id = media_handle_upload(
+                'ffla_review_media_single',
+                0,
+                [],
+                [
+                    'test_form' => false,
+                    'mimes'     => $allowed_mimes,
+                ]
+            );
+            unset($_FILES['ffla_review_media_single']);
+
+            if (!is_wp_error($attachment_id) && $attachment_id > 0) {
+                $attachment_ids[] = (int) $attachment_id;
+                $processed++;
+            }
+        }
+
+        if (!empty($attachment_ids)) {
+            update_comment_meta($comment_id, 'ffla_review_media_ids', array_values(array_unique($attachment_ids)));
+        }
+    }
+
+    public static function cleanup_review_media(int $comment_id): void
+    {
+        $comment = get_comment($comment_id);
+        if (!$comment) {
+            return;
+        }
+
+        $product_id = (int) $comment->comment_post_ID;
+        if ('product' !== get_post_type($product_id)) {
+            return;
+        }
+
+        $media_ids = get_comment_meta($comment_id, 'ffla_review_media_ids', true);
+        if (!is_array($media_ids) || empty($media_ids)) {
+            return;
+        }
+
+        foreach ($media_ids as $media_id) {
+            $media_id = absint($media_id);
+            if ($media_id > 0) {
+                wp_delete_attachment($media_id, true);
+            }
+        }
+    }
+
+    public static function register_admin_comments_columns(array $columns): array
+    {
+        $columns['ffla_review_media'] = __('Review Media', 'ffl-funnels-addons');
+        $columns['ffla_review_helpful'] = __('Helpful', 'ffl-funnels-addons');
+        return $columns;
+    }
+
+    public static function render_admin_comments_columns(string $column, int $comment_id): void
+    {
+        $comment = get_comment($comment_id);
+        if (!$comment || 'product' !== get_post_type((int) $comment->comment_post_ID)) {
+            return;
+        }
+
+        if ('ffla_review_helpful' === $column) {
+            echo esc_html((string) ((int) get_comment_meta($comment_id, 'ffla_helpful_yes', true)));
+            return;
+        }
+
+        if ('ffla_review_media' !== $column) {
+            return;
+        }
+
+        $media_ids = get_comment_meta($comment_id, 'ffla_review_media_ids', true);
+        if (!is_array($media_ids) || empty($media_ids)) {
+            echo '<span aria-hidden="true">-</span>';
+            return;
+        }
+
+        $max_preview = 3;
+        $shown = 0;
+
+        echo '<div class="ffla-comment-media-preview">';
+        foreach ($media_ids as $media_id) {
+            if ($shown >= $max_preview) {
+                break;
+            }
+
+            $media_id = absint($media_id);
+            if ($media_id <= 0) {
+                continue;
+            }
+
+            $mime = (string) get_post_mime_type($media_id);
+            $url  = wp_get_attachment_url($media_id);
+            if (!$url) {
+                continue;
+            }
+
+            if (strpos($mime, 'image/') === 0) {
+                $thumb = wp_get_attachment_image_url($media_id, 'thumbnail');
+                if (!$thumb) {
+                    $thumb = $url;
+                }
+                echo '<a href="' . esc_url($url) . '" target="_blank" rel="noopener noreferrer" title="' . esc_attr__('Open media', 'ffl-funnels-addons') . '">';
+                echo '<img src="' . esc_url($thumb) . '" alt="" />';
+                echo '</a>';
+            } else {
+                echo '<a class="ffla-comment-media-file" href="' . esc_url($url) . '" target="_blank" rel="noopener noreferrer">';
+                echo esc_html__('Video', 'ffl-funnels-addons');
+                echo '</a>';
+            }
+
+            $shown++;
+        }
+        echo '</div>';
+
+        $remaining = count($media_ids) - $shown;
+        if ($remaining > 0) {
+            echo '<div class="ffla-comment-media-more">+' . esc_html((string) $remaining) . '</div>';
+        }
+    }
+
+    public static function render_admin_comments_column_css(): void
+    {
+        echo '<style>
+            .column-ffla_review_media { width: 160px; }
+            .column-ffla_review_helpful { width: 80px; }
+            .ffla-comment-media-preview { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+            .ffla-comment-media-preview img { width:28px; height:28px; object-fit:cover; border-radius:4px; border:1px solid #dcdcde; }
+            .ffla-comment-media-file { display:inline-block; padding:2px 6px; border:1px solid #dcdcde; border-radius:4px; text-decoration:none; font-size:11px; }
+            .ffla-comment-media-more { font-size:11px; color:#646970; margin-top:2px; }
+        </style>';
+    }
+
+    private static function has_review_media_upload(): bool
+    {
+        if (empty($_FILES['ffla_review_media']) || !is_array($_FILES['ffla_review_media'])) {
+            return false;
+        }
+
+        $files = $_FILES['ffla_review_media'];
+        if (!isset($files['name'])) {
+            return false;
+        }
+
+        if (is_array($files['name'])) {
+            foreach ($files['name'] as $name) {
+                if (!empty($name)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        return !empty($files['name']);
+    }
+
+    public static function is_turnstile_enabled(): bool
+    {
+        return '1' === self::get_setting('enable_turnstile', '0')
+            && self::get_turnstile_site_key() !== ''
+            && self::get_turnstile_secret_key() !== '';
+    }
+
+    public static function get_turnstile_site_key(): string
+    {
+        return trim((string) self::get_setting('turnstile_site_key', ''));
+    }
+
+    public static function get_turnstile_secret_key(): string
+    {
+        return trim((string) self::get_setting('turnstile_secret_key', ''));
+    }
+
+    private static function verify_turnstile_token(string $token): bool
+    {
+        $secret = self::get_turnstile_secret_key();
+        if ($secret === '') {
+            return false;
+        }
+
+        $body = [
+            'secret'   => $secret,
+            'response' => $token,
+        ];
+
+        if (!empty($_SERVER['REMOTE_ADDR'])) {
+            $body['remoteip'] = sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR']));
+        }
+
+        $response = wp_remote_post('https://challenges.cloudflare.com/turnstile/v0/siteverify', [
+            'timeout' => 10,
+            'body'    => $body,
+        ]);
+
+        if (is_wp_error($response)) {
+            return false;
+        }
+
+        $code = (int) wp_remote_retrieve_response_code($response);
+        if ($code < 200 || $code >= 300) {
+            return false;
+        }
+
+        $data = json_decode((string) wp_remote_retrieve_body($response), true);
+        return is_array($data) && !empty($data['success']);
+    }
+
+    private static function normalize_uploads_array(array $files): array
+    {
+        if (!isset($files['name']) || !is_array($files['name'])) {
+            return [$files];
+        }
+
+        $normalized = [];
+        foreach ($files['name'] as $idx => $name) {
+            $normalized[] = [
+                'name'     => $name,
+                'type'     => $files['type'][$idx] ?? '',
+                'tmp_name' => $files['tmp_name'][$idx] ?? '',
+                'error'    => $files['error'][$idx] ?? UPLOAD_ERR_NO_FILE,
+                'size'     => $files['size'][$idx] ?? 0,
+            ];
+        }
+        return $normalized;
+    }
+}

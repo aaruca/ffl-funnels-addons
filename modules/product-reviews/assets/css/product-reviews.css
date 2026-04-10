@@ -1,0 +1,148 @@
+.ffla-reviews-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ffla-reviews-badge .star-rating {
+    margin: 0;
+}
+
+.ffla-reviews-badge__count {
+    font-size: 0.9rem;
+    opacity: 0.8;
+}
+
+.ffla-reviews-list {
+    display: grid;
+    gap: 16px;
+}
+
+.ffla-review-card {
+    border: 1px solid #e8eaef;
+    border-radius: 10px;
+    padding: 16px;
+    background: #fff;
+}
+
+.ffla-review-card__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.ffla-review-card__author {
+    font-weight: 600;
+}
+
+.ffla-review-card__date {
+    font-size: 0.85rem;
+    opacity: 0.75;
+}
+
+.ffla-review-card__verified {
+    display: inline-block;
+    margin: 6px 0;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #eef7f2;
+    color: #247a46;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.ffla-review-card__criteria {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 8px 0;
+    font-size: 0.85rem;
+    opacity: 0.85;
+}
+
+.ffla-review-card__media {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.ffla-review-card__media-item {
+    border: 1px solid #e8eaef;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #f8fafc;
+}
+
+.ffla-review-card__media-item img,
+.ffla-review-card__media-item video {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.ffla-review-helpful {
+    margin-top: 10px;
+    background: transparent;
+    border: 1px solid #d0d7e2;
+    border-radius: 6px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+.ffla-review-helpful.is-done {
+    opacity: 0.75;
+    cursor: default;
+}
+
+.ffla-review-form-wrap {
+    border: 1px solid #e8eaef;
+    border-radius: 10px;
+    padding: 16px;
+}
+
+.ffla-review-form {
+    display: grid;
+    gap: 12px;
+}
+
+.ffla-review-form__field {
+    margin: 0;
+}
+
+.ffla-review-form__field label {
+    display: block;
+    margin-bottom: 4px;
+    font-weight: 600;
+}
+
+.ffla-review-form__field input,
+.ffla-review-form__field select,
+.ffla-review-form__field textarea {
+    width: 100%;
+}
+
+.ffla-review-form__field small {
+    display: block;
+    margin-top: 4px;
+    opacity: 0.75;
+}
+
+.ffla-review-hp-field {
+    position: absolute !important;
+    left: -9999px !important;
+    width: 1px !important;
+    height: 1px !important;
+    overflow: hidden !important;
+}
+
+.ffla-review-turnstile-wrap {
+    margin-top: 8px;
+}
+
+.ffla-review-form__submit {
+    width: fit-content;
+}

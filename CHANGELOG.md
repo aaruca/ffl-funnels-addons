@@ -2,6 +2,34 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.9.0] - 2026-04-09
+
+### Features
+- **New Module: Product Reviews**
+  - Added a new modular WooCommerce Product Reviews addon inside FFL Funnels Addons.
+  - Added native Bricks elements: Reviews Rating Badge, Reviews List, and Review Form.
+  - Added post-purchase review request scheduling after order completion.
+  - Added configurable review email subject, heading, and template placeholders.
+- **Review UX & Data Enhancements**
+  - Added multi-criteria review fields (`Quality` and `Value`).
+  - Added verified buyer tagging through WooCommerce purchase checks.
+  - Added helpful-vote interactions with nonce validation and anti-abuse rate limiting.
+  - Added optional media uploads on reviews (images/videos) with file type and size limits.
+- **Security Hardening**
+  - Added honeypot and nonce validation on review submissions.
+  - Added moderation default for media reviews.
+  - Added cleanup flow to delete uploaded media attachments when a review is deleted.
+- **Cloudflare Integration**
+  - Added optional Cloudflare Turnstile support for review forms.
+  - Added server-side Turnstile token verification against Cloudflare siteverify API.
+  - Added Product Reviews admin settings for Turnstile toggle + site/secret keys.
+- **Admin Improvements**
+  - Added review media and helpful columns to the WordPress comments admin list for faster moderation.
+
+### Maintenance
+- Bumped plugin version to `1.9.0`.
+- Updated README feature set and release notes for Product Reviews module.
+
 ## [1.7.3] - 2026-03-28
 
 ### Features

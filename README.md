@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.8.1-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.9.0-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -57,6 +57,15 @@ US sales tax resolution for WooCommerce using a shared Google Sheets ZIP dataset
 *   **Admin tooling:** Includes Quote Lookup, Coverage Matrix, Datasets, Audit Log, and Settings screens.
 *   **Monthly refresh:** Re-syncs the selected states automatically on a monthly schedule.
 
+### 8. Product Reviews
+Advanced WooCommerce product reviews with native Bricks elements and post-purchase review workflows.
+*   **Bricks Native Elements:** Rating Badge, Reviews List, and Review Form under `FFL Funnels - Product Reviews`.
+*   **Post-Purchase Requests:** Schedules review reminder emails per purchased product after order completion.
+*   **Review Enrichment:** Multi-criteria fields (quality/value), verified-buyer tagging, and helpful votes.
+*   **Media Reviews:** Optional image/video uploads on reviews with moderation safeguards.
+*   **Cloudflare Turnstile:** Optional bot protection with server-side token verification.
+*   **Admin Moderation UX:** Extra review media/helpful columns in WordPress comments list.
+
 ## Installation
 
 1.  Download the `ffl-funnels-addons.zip` file from the [Releases](https://github.com/aaruca/ffl-funnels-addons/releases) page.
@@ -110,6 +119,16 @@ Notes:
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.9.0
+
+*   Feature: Added new **Product Reviews** module with Bricks-native elements (Rating Badge, Reviews List, Review Form).
+*   Feature: Added post-purchase review request scheduling and customizable review email template.
+*   Feature: Added review helpful-vote system with nonce and rate-limit protection.
+*   Feature: Added review media uploads (images/videos), verified-buyer meta, and product-specific extra criteria.
+*   Feature: Added optional **Cloudflare Turnstile** integration for review form protection with server-side validation.
+*   Enhancement: Added admin moderation shortcuts for review media and helpful counts in the comments list.
+*   Maintenance: Bumped plugin version and assets to `1.9.0`.
 
 ### v1.8.1
 
