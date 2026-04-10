@@ -224,6 +224,9 @@ class FFLA_Wishlist_Count extends \Bricks\Element
 
         $hide_zero = !empty($settings['hideWhenZero']);
 
+        $items = class_exists('Alg_Wishlist_Core') ? \Alg_Wishlist_Core::get_wishlist_items() : [];
+        $count = is_array($items) ? count($items) : 0;
+
         // F2: Show icon toggle (default = true for backwards compat).
         $show_icon = !isset($settings['showIcon']) || !empty($settings['showIcon']);
 
@@ -241,7 +244,7 @@ class FFLA_Wishlist_Count extends \Bricks\Element
         }
 
         $badge_class = 'alg-wishlist-count';
-        if ($hide_zero) {
+        if ($hide_zero && $count === 0) {
             $badge_class .= ' hidden';
         }
 
@@ -254,10 +257,10 @@ class FFLA_Wishlist_Count extends \Bricks\Element
         if ($show_icon) {
             $icon_wrap  = '<span class="ffla-count-icon-wrap">';
             $icon_wrap .= $icon_html;
-            $icon_wrap .= '<span class="' . esc_attr($badge_class) . '">0</span>';
+            $icon_wrap .= '<span class="' . esc_attr($badge_class) . '">' . esc_html((string) $count) . '</span>';
             $icon_wrap .= '</span>';
         } else {
-            $icon_wrap = '<span class="' . esc_attr($badge_class) . '">0</span>';
+            $icon_wrap = '<span class="' . esc_attr($badge_class) . '">' . esc_html((string) $count) . '</span>';
         }
 
         $output  = "<{$this->tag} {$this->render_attributes('_root')}>";

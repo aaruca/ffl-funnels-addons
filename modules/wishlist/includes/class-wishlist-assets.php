@@ -190,9 +190,14 @@ class Alg_Wishlist_Assets
     }
 
     /**
-     * Avoid loading wishlist JS/CSS on every page (e.g. blog posts).
+     * Enqueue wishlist JS/CSS on the public site when WooCommerce is available.
      *
-     * @filter ffla_wishlist_force_enqueue_assets Return true to always enqueue.
+     * The header/footer counter and guest session must work on every page (not only
+     * product archives or the wishlist page); otherwise the badge stays at the static
+     * HTML "0" because AlgWishlist.init() never runs.
+     *
+     * @filter ffla_wishlist_force_enqueue_assets Return true to enqueue even without WooCommerce (e.g. Bricks builder).
+     * @filter ffla_wishlist_enqueue_assets        Return false to skip enqueue (advanced / performance).
      */
     private function should_enqueue_wishlist_assets(): bool
     {
@@ -204,30 +209,15 @@ class Alg_Wishlist_Assets
             return false;
         }
 
+        if (!apply_filters('ffla_wishlist_enqueue_assets', true)) {
+            return false;
+        }
+
         if (!function_exists('is_woocommerce')) {
             return false;
         }
 
-        if (is_shop() || is_product() || is_product_taxonomy() || is_cart() || is_checkout() || is_account_page()) {
-            return true;
-        }
-
-        $wishlist_page_id = Alg_Wishlist_Core::get_wishlist_page_id();
-        if ($wishlist_page_id > 0 && is_page($wishlist_page_id)) {
-            return true;
-        }
-
-        if (is_singular()) {
-            $post = get_queried_object();
-            if ($post instanceof WP_Post) {
-                $content = (string) $post->post_content;
-                if (strpos($content, '[alg_wishlist') !== false) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        return true;
     }
 
     /**

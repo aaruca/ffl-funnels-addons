@@ -2,6 +2,12 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.9.2] - 2026-04-11
+
+### Fixed
+- **Wishlist:** Header / global Bricks counter showed `0` off product and wishlist pages because wishlist JS/CSS were not enqueued there, so `AlgWishlist.init()` never ran. Assets now load on the full WooCommerce storefront (public front). Opt out with `add_filter( 'ffla_wishlist_enqueue_assets', '__return_false' );` if needed.
+- **Wishlist:** Bricks **Wishlist Counter** and `[alg_wishlist_count]` now output the server-side item count on first paint (still synced via AJAX after toggles).
+
 ## [1.9.1] - 2026-04-10
 
 ### Security

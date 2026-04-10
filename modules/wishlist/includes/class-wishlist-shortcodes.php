@@ -167,20 +167,27 @@ class Alg_Wishlist_Shortcodes
         $is_link = strtolower($atts['is_link']) !== 'no';
         $page_url = esc_url(get_permalink(Alg_Wishlist_Core::get_wishlist_page_id()));
 
+        $items = Alg_Wishlist_Core::get_wishlist_items();
+        $count = is_array($items) ? count($items) : 0;
+        $badge_class = 'alg-wishlist-count';
+        if ($count === 0) {
+            $badge_class .= ' hidden';
+        }
+
         ob_start();
         if ($is_link) {
         ?>
         <a href="<?php echo $page_url; ?>"
             class="alg-wishlist-counter-link <?php echo esc_attr($atts['class']); ?>" style="<?php echo esc_attr($style); ?>">
             <?php echo $icon_html; ?>
-            <span class="alg-wishlist-count hidden">0</span>
+            <span class="<?php echo esc_attr($badge_class); ?>"><?php echo esc_html((string) $count); ?></span>
         </a>
         <?php
         } else {
         ?>
         <div class="alg-wishlist-counter-link <?php echo esc_attr($atts['class']); ?>" style="<?php echo esc_attr($style); ?>">
             <?php echo $icon_html; ?>
-            <span class="alg-wishlist-count hidden">0</span>
+            <span class="<?php echo esc_attr($badge_class); ?>"><?php echo esc_html((string) $count); ?></span>
         </div>
         <?php
         }

@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.9.1-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.9.2-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -119,6 +119,11 @@ Notes:
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.9.2
+
+*   **Wishlist:** Wishlist JS/CSS load on all public storefront pages (with WooCommerce active) so the header counter and guest session work everywhere, not only on shop/product/wishlist templates.
+*   **Wishlist:** Bricks Wishlist Counter and `[alg_wishlist_count]` render the correct count from PHP on first load; optional filter `ffla_wishlist_enqueue_assets` to disable global enqueue for advanced setups.
 
 ### v1.9.1
 
