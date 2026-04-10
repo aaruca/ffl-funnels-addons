@@ -146,8 +146,9 @@ class FFLA_Reviews_List extends \Bricks\Element
     public function render()
     {
         $settings = $this->settings;
-        $product_id = !empty($settings['productId']) ? absint($settings['productId']) : get_the_ID();
-        if (!$product_id || 'product' !== get_post_type($product_id)) {
+        $explicit = !empty($settings['productId']) ? absint($settings['productId']) : 0;
+        $product_id = \Product_Reviews_Core::resolve_context_product_id($explicit);
+        if ($product_id <= 0) {
             return $this->render_element_placeholder([
                 'title' => esc_html__('No product found for reviews list.', 'ffl-funnels-addons'),
             ]);
@@ -253,7 +254,7 @@ class FFLA_Reviews_List extends \Bricks\Element
                 echo '</div>';
             }
 
-            if ('1' === Product_Reviews_Core::get_setting('enable_helpful_votes', '1')) {
+            if ('1' === \Product_Reviews_Core::get_setting('enable_helpful_votes', '1')) {
                 echo '<button class="ffla-review-helpful" type="button" data-comment-id="' . esc_attr((string) $review->comment_ID) . '">';
                 echo esc_html__('Helpful', 'ffl-funnels-addons') . ' ';
                 echo '<span class="ffla-review-helpful__count">' . esc_html((string) $helpful) . '</span>';

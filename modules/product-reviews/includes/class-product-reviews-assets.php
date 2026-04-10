@@ -58,8 +58,9 @@ class Product_Reviews_Assets
     }
 
     /**
-     * Load assets only where reviews UI is typically needed (single product by default).
-     * Use filter {@see 'ffla_product_reviews_enqueue_assets'} to force-load (e.g. Bricks on non-product templates).
+     * Load assets on product singles, Bricks editor canvas (when building product templates), or via filter.
+     *
+     * @see 'ffla_product_reviews_enqueue_assets' Force enqueue (e.g. custom templates that are not is_product()).
      */
     private static function should_enqueue_frontend_assets(): bool
     {
@@ -68,6 +69,15 @@ class Product_Reviews_Assets
         }
 
         if (function_exists('is_product') && is_product()) {
+            return true;
+        }
+
+        if (function_exists('is_singular') && is_singular('product')) {
+            return true;
+        }
+
+        // Bricks: load in the builder so Product Reviews elements preview correctly (avoid bricks_is_builder_call on frontend).
+        if (function_exists('bricks_is_builder') && bricks_is_builder()) {
             return true;
         }
 

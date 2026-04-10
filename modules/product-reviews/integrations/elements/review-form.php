@@ -24,7 +24,7 @@ class FFLA_Review_Form extends \Bricks\Element
             'label'          => esc_html__('Product ID', 'ffl-funnels-addons'),
             'type'           => 'number',
             'hasDynamicData' => true,
-            'description'    => esc_html__('Leave empty to use current product context.', 'ffl-funnels-addons'),
+            'description'    => esc_html__('Optional. Leave empty to detect the product from this template (singular product, global $product, or Query Loop).', 'ffl-funnels-addons'),
         ];
 
         $this->controls['title'] = [
@@ -32,6 +32,31 @@ class FFLA_Review_Form extends \Bricks\Element
             'label'   => esc_html__('Title', 'ffl-funnels-addons'),
             'type'    => 'text',
             'default' => esc_html__('Write a review', 'ffl-funnels-addons'),
+        ];
+
+        $this->controls['introText'] = [
+            'tab'         => 'content',
+            'label'       => esc_html__('Intro text', 'ffl-funnels-addons'),
+            'type'        => 'textarea',
+            'description' => esc_html__('Short reassurance (e.g. honest feedback helps others). Shown above the fields.', 'ffl-funnels-addons'),
+        ];
+
+        $this->controls['showOptionalCriteria'] = [
+            'tab'         => 'content',
+            'label'       => esc_html__('Show quality & value', 'ffl-funnels-addons'),
+            'type'        => 'checkbox',
+            'inline'      => true,
+            'default'     => true,
+            'description' => esc_html__('Optional extra star ratings; overall rating stays required.', 'ffl-funnels-addons'),
+        ];
+
+        $this->controls['collapseMedia'] = [
+            'tab'         => 'content',
+            'label'       => esc_html__('Collapse media upload', 'ffl-funnels-addons'),
+            'type'        => 'checkbox',
+            'inline'      => true,
+            'default'     => true,
+            'description' => esc_html__('Keeps the form short; photos/video sit inside an expandable section.', 'ffl-funnels-addons'),
         ];
 
         $this->controls['showLoginHint'] = [
@@ -43,29 +68,75 @@ class FFLA_Review_Form extends \Bricks\Element
         ];
     }
 
+    /**
+     * @param string $name      Input name attribute.
+     * @param string $id_prefix Unique prefix for input ids.
+     * @param string $legend    Visible legend / aria label.
+     * @param bool   $required  Whether one star must be chosen.
+     */
+    private function render_star_radios(string $name, string $id_prefix, string $legend, bool $required = false): void
+    {
+        echo '<fieldset class="ffla-review-form__fieldset ffla-star-rating-fieldset">';
+        echo '<legend class="ffla-review-form__legend">' . esc_html($legend) . '</legend>';
+        echo '<div class="ffla-star-rating-input" data-ffla-stars>';
+        for ($i = 1; $i <= 5; $i++) {
+            $id = $id_prefix . '-s' . $i;
+            $req = ($required && 1 === $i) ? ' required' : '';
+            echo '<span class="ffla-star-rating-input__item">';
+            echo '<input class="ffla-star-rating-input__radio" type="radio" id="' . esc_attr($id) . '" name="' . esc_attr($name) . '" value="' . esc_attr((string) $i) . '"' . $req . '>';
+            echo '<label class="ffla-star-rating-input__label" for="' . esc_attr($id) . '">';
+            echo '<span class="screen-reader-text">' . esc_html(sprintf(/* translators: %d: star rating 1–5 */ __('%d out of 5 stars', 'ffl-funnels-addons'), $i)) . '</span>';
+            echo '<span class="ffla-star-rating-input__glyph" aria-hidden="true">&#9733;</span>';
+            echo '</label></span>';
+        }
+        echo '</div></fieldset>';
+    }
+
     public function render()
     {
-        $settings   = $this->settings;
-        $product_id = !empty($settings['productId']) ? absint($settings['productId']) : get_the_ID();
-        if (!$product_id || 'product' !== get_post_type($product_id)) {
+        $settings = $this->settings;
+        $explicit = !empty($settings['productId']) ? absint($settings['productId']) : 0;
+        $product_id = \Product_Reviews_Core::resolve_context_product_id($explicit);
+
+        if ($product_id <= 0) {
             return $this->render_element_placeholder([
-                'title' => esc_html__('No product found for review form.', 'ffl-funnels-addons'),
+                'title' => esc_html__('No product in context for this form.', 'ffl-funnels-addons'),
             ]);
         }
 
-        $title = $settings['title'] ?? Product_Reviews_Core::get_setting('form_title', __('Write a review', 'ffl-funnels-addons'));
+        $default_title = \Product_Reviews_Core::get_setting('form_title', __('Write a review', 'ffl-funnels-addons'));
+        $title = isset($settings['title']) && $settings['title'] !== '' ? $settings['title'] : $default_title;
         $show_login_hint = !isset($settings['showLoginHint']) || !empty($settings['showLoginHint']);
+        $show_criteria = !isset($settings['showOptionalCriteria']) || !empty($settings['showOptionalCriteria']);
+        $collapse_media = !isset($settings['collapseMedia']) || !empty($settings['collapseMedia']);
+        $intro = isset($settings['introText']) ? trim((string) $settings['introText']) : '';
+
         $status = isset($_GET['ffla_review_status']) ? sanitize_text_field(wp_unslash($_GET['ffla_review_status'])) : '';
         $message = isset($_GET['ffla_review_message']) ? sanitize_text_field(wp_unslash($_GET['ffla_review_message'])) : '';
+
+        $uid = wp_unique_id('ffla-rf-');
+        $comment_id = $uid . '-comment';
+
+        $redirect_target = '';
+        if (function_exists('wp_get_canonical_url') && is_singular()) {
+            $redirect_target = (string) wp_get_canonical_url(get_queried_object_id());
+        }
+        if ($redirect_target === '') {
+            $redirect_target = (string) get_permalink($product_id);
+        }
 
         $this->set_attribute('_root', 'class', 'ffla-review-form-wrap');
         echo '<div ' . $this->render_attributes('_root') . '>';
         echo '<h4 class="ffla-review-form__title">' . esc_html($title) . '</h4>';
 
+        if ($intro !== '') {
+            echo '<div class="ffla-review-form__intro">' . wp_kses_post(wpautop($intro)) . '</div>';
+        }
+
         if ($status === 'success') {
-            echo '<p class="ffla-review-form__notice ffla-review-form__notice--success">' . esc_html__('Thanks! Your review was submitted.', 'ffl-funnels-addons') . '</p>';
+            echo '<p class="ffla-review-form__notice ffla-review-form__notice--success" role="status">' . esc_html__('Thanks! Your review was submitted.', 'ffl-funnels-addons') . '</p>';
         } elseif ($status === 'error' && $message !== '') {
-            echo '<p class="ffla-review-form__notice ffla-review-form__notice--error">' . esc_html($message) . '</p>';
+            echo '<p class="ffla-review-form__notice ffla-review-form__notice--error" role="alert">' . esc_html($message) . '</p>';
         }
 
         if (!is_user_logged_in() && get_option('comment_registration') && $show_login_hint) {
@@ -79,50 +150,48 @@ class FFLA_Review_Form extends \Bricks\Element
 
         if (!is_user_logged_in()) {
             $commenter = wp_get_current_commenter();
-            echo '<p class="ffla-review-form__field"><label>' . esc_html__('Name', 'ffl-funnels-addons') . '</label>';
-            echo '<input type="text" name="author" value="' . esc_attr($commenter['comment_author'] ?? '') . '" required></p>';
-            echo '<p class="ffla-review-form__field"><label>' . esc_html__('Email', 'ffl-funnels-addons') . '</label>';
-            echo '<input type="email" name="email" value="' . esc_attr($commenter['comment_author_email'] ?? '') . '" required></p>';
+            echo '<p class="ffla-review-form__field"><label for="' . esc_attr($uid) . '-author">' . esc_html__('Name', 'ffl-funnels-addons') . '</label>';
+            echo '<input id="' . esc_attr($uid) . '-author" type="text" name="author" value="' . esc_attr($commenter['comment_author'] ?? '') . '" required autocomplete="name"></p>';
+            echo '<p class="ffla-review-form__field"><label for="' . esc_attr($uid) . '-email">' . esc_html__('Email', 'ffl-funnels-addons') . '</label>';
+            echo '<input id="' . esc_attr($uid) . '-email" type="email" name="email" value="' . esc_attr($commenter['comment_author_email'] ?? '') . '" required autocomplete="email"></p>';
         }
 
-        echo '<p class="ffla-review-form__field"><label for="ffla_review_rating">' . esc_html__('Rating', 'ffl-funnels-addons') . '</label>';
-        echo '<select id="ffla_review_rating" name="rating" required>';
-        echo '<option value="">' . esc_html__('Select a rating', 'ffl-funnels-addons') . '</option>';
-        for ($i = 5; $i >= 1; $i--) {
-            echo '<option value="' . esc_attr((string) $i) . '">' . esc_html((string) $i) . '</option>';
+        $this->render_star_radios('rating', $uid . '-r', __('Overall rating', 'ffl-funnels-addons'), true);
+
+        if ($show_criteria) {
+            $this->render_star_radios('ffla_review_quality', $uid . '-q', __('Quality (optional)', 'ffl-funnels-addons'), false);
+            $this->render_star_radios('ffla_review_value', $uid . '-v', __('Value for money (optional)', 'ffl-funnels-addons'), false);
         }
-        echo '</select></p>';
 
-        echo '<p class="ffla-review-form__field"><label for="ffla_review_quality">' . esc_html__('Quality', 'ffl-funnels-addons') . '</label>';
-        echo '<select id="ffla_review_quality" name="ffla_review_quality"><option value="">' . esc_html__('Select', 'ffl-funnels-addons') . '</option>';
-        for ($i = 1; $i <= 5; $i++) {
-            echo '<option value="' . esc_attr((string) $i) . '">' . esc_html((string) $i) . '</option>';
+        echo '<p class="ffla-review-form__field">';
+        echo '<label for="' . esc_attr($comment_id) . '">' . esc_html__('Your review', 'ffl-funnels-addons') . '</label>';
+        echo '<span class="ffla-review-form__hint">' . esc_html__('Share what stood out — pros, cons, or who it is best for.', 'ffl-funnels-addons') . '</span>';
+        echo '<textarea id="' . esc_attr($comment_id) . '" name="comment" rows="5" required></textarea></p>';
+
+        if ($collapse_media) {
+            echo '<details class="ffla-review-form__media-details">';
+            echo '<summary class="ffla-review-form__media-summary">' . esc_html__('Add photos or a short video (optional)', 'ffl-funnels-addons') . '</summary>';
+            echo '<p class="ffla-review-form__field ffla-review-form__field--media">';
+            echo '<label for="' . esc_attr($uid) . '-media">' . esc_html__('Files', 'ffl-funnels-addons') . '</label>';
+            echo '<input id="' . esc_attr($uid) . '-media" name="ffla_review_media[]" type="file" accept="image/*,video/mp4,video/webm" multiple>';
+            echo '<small>' . esc_html__('Up to 3 files, 5 MB each.', 'ffl-funnels-addons') . '</small></p>';
+            echo '</details>';
+        } else {
+            echo '<p class="ffla-review-form__field ffla-review-form__field--media">';
+            echo '<label for="' . esc_attr($uid) . '-media">' . esc_html__('Photos / video (optional)', 'ffl-funnels-addons') . '</label>';
+            echo '<input id="' . esc_attr($uid) . '-media" name="ffla_review_media[]" type="file" accept="image/*,video/mp4,video/webm" multiple>';
+            echo '<small>' . esc_html__('Up to 3 files, 5 MB each.', 'ffl-funnels-addons') . '</small></p>';
         }
-        echo '</select></p>';
 
-        echo '<p class="ffla-review-form__field"><label for="ffla_review_value">' . esc_html__('Value', 'ffl-funnels-addons') . '</label>';
-        echo '<select id="ffla_review_value" name="ffla_review_value"><option value="">' . esc_html__('Select', 'ffl-funnels-addons') . '</option>';
-        for ($i = 1; $i <= 5; $i++) {
-            echo '<option value="' . esc_attr((string) $i) . '">' . esc_html((string) $i) . '</option>';
-        }
-        echo '</select></p>';
-
-        echo '<p class="ffla-review-form__field"><label for="comment">' . esc_html__('Review', 'ffl-funnels-addons') . '</label>';
-        echo '<textarea id="comment" name="comment" rows="5" required></textarea></p>';
-
-        echo '<p class="ffla-review-form__field"><label for="ffla_review_media">' . esc_html__('Photos / Video (optional)', 'ffl-funnels-addons') . '</label>';
-        echo '<input id="ffla_review_media" name="ffla_review_media[]" type="file" accept="image/*,video/mp4,video/webm" multiple>';
-        echo '<small>' . esc_html__('Up to 3 files. Max 5MB each.', 'ffl-funnels-addons') . '</small></p>';
-
-        if (Product_Reviews_Core::is_turnstile_enabled()) {
+        if (\Product_Reviews_Core::is_turnstile_enabled()) {
             echo '<div class="ffla-review-turnstile-wrap">';
-            echo '<div class="cf-turnstile" data-sitekey="' . esc_attr(Product_Reviews_Core::get_turnstile_site_key()) . '" data-theme="auto"></div>';
+            echo '<div class="cf-turnstile" data-sitekey="' . esc_attr(\Product_Reviews_Core::get_turnstile_site_key()) . '" data-theme="auto"></div>';
             echo '</div>';
         }
 
         echo '<input type="hidden" name="comment_post_ID" value="' . esc_attr((string) $product_id) . '">';
         echo '<input type="hidden" name="comment_parent" value="0">';
-        echo '<input type="hidden" name="redirect_to" value="' . esc_url(get_permalink($product_id)) . '">';
+        echo '<input type="hidden" name="redirect_to" value="' . esc_url($redirect_target) . '">';
         echo '<button class="ffla-review-form__submit" type="submit">' . esc_html__('Submit review', 'ffl-funnels-addons') . '</button>';
 
         echo '</form>';

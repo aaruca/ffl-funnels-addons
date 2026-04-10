@@ -58,7 +58,7 @@ class Product_Reviews_Admin
             __('Hide default Woo reviews tab', 'ffl-funnels-addons'),
             'hide_default_reviews_tab',
             $settings['hide_default_reviews_tab'] ?? '0',
-            __('Enable this if you are rendering reviews only with Bricks elements.', 'ffl-funnels-addons')
+            __('Turn on when you use only the Bricks Review Form / list / badge so shoppers do not see WooCommerce’s second, built-in reviews tab.', 'ffl-funnels-addons')
         );
 
         echo '</div></div>';
@@ -71,7 +71,7 @@ class Product_Reviews_Admin
             __('Enable Turnstile on review forms', 'ffl-funnels-addons'),
             'enable_turnstile',
             $settings['enable_turnstile'] ?? '0',
-            __('Requires valid Cloudflare site key and secret key. Applied to product review submissions.', 'ffl-funnels-addons')
+            __('Requires valid Cloudflare site key and secret key. Applies to the Bricks Review Form submission endpoint; the default Woo reviews tab is not modified.', 'ffl-funnels-addons')
         );
 
         FFLA_Admin::render_text_field(

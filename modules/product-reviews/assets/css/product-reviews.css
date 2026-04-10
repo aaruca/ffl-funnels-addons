@@ -128,11 +128,135 @@
     border: 1px solid #e8eaef;
     border-radius: 10px;
     padding: 16px;
+    --ffla-star-filled: #d4a017;
+    --ffla-star-empty: #d8dce5;
 }
 
+/* Honeypot is clipped off-screen; form uses a vertical stack. */
 .ffla-review-form {
+    position: relative;
     display: grid;
     gap: 12px;
+}
+
+.ffla-review-form__intro {
+    margin: 0 0 8px;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    opacity: 0.88;
+}
+
+.ffla-review-form__intro p {
+    margin: 0 0 0.5em;
+}
+
+.ffla-review-form__intro p:last-child {
+    margin-bottom: 0;
+}
+
+.ffla-review-form__fieldset {
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.ffla-review-form__legend {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 600;
+    padding: 0;
+}
+
+.ffla-star-rating-fieldset {
+    margin: 0;
+}
+
+.ffla-star-rating-input {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 2px;
+}
+
+.ffla-star-rating-input__item {
+    position: relative;
+    display: inline-flex;
+}
+
+.ffla-star-rating-input__radio {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    clip: rect(0, 0, 0, 0);
+}
+
+.ffla-star-rating-input__label {
+    display: flex;
+    cursor: pointer;
+    line-height: 1;
+    padding: 2px;
+    border-radius: 4px;
+}
+
+.ffla-star-rating-input__radio:focus + .ffla-star-rating-input__label {
+    outline: 2px solid #3b6fd8;
+    outline-offset: 2px;
+}
+
+.ffla-star-rating-input__glyph {
+    font-size: 1.75rem;
+    color: var(--ffla-star-empty);
+    transition: color 0.12s ease, transform 0.12s ease;
+}
+
+.ffla-star-rating-input__label:hover .ffla-star-rating-input__glyph {
+    transform: scale(1.06);
+}
+
+.ffla-star-rating-input[data-display="1"] .ffla-star-rating-input__item:nth-child(-n + 1) .ffla-star-rating-input__glyph,
+.ffla-star-rating-input[data-display="2"] .ffla-star-rating-input__item:nth-child(-n + 2) .ffla-star-rating-input__glyph,
+.ffla-star-rating-input[data-display="3"] .ffla-star-rating-input__item:nth-child(-n + 3) .ffla-star-rating-input__glyph,
+.ffla-star-rating-input[data-display="4"] .ffla-star-rating-input__item:nth-child(-n + 4) .ffla-star-rating-input__glyph,
+.ffla-star-rating-input[data-display="5"] .ffla-star-rating-input__item:nth-child(-n + 5) .ffla-star-rating-input__glyph {
+    color: var(--ffla-star-filled);
+}
+
+.ffla-review-form__hint {
+    display: block;
+    margin: 2px 0 6px;
+    font-size: 0.85rem;
+    font-weight: 400;
+    opacity: 0.78;
+}
+
+.ffla-review-form__media-details {
+    border: 1px solid #e8eaef;
+    border-radius: 8px;
+    padding: 0 12px;
+    background: #fafbfc;
+}
+
+.ffla-review-form__media-summary {
+    cursor: pointer;
+    font-weight: 600;
+    padding: 10px 0;
+    list-style: none;
+}
+
+.ffla-review-form__media-summary::-webkit-details-marker {
+    display: none;
+}
+
+.ffla-review-form__media-details[open] .ffla-review-form__media-summary {
+    border-bottom: 1px solid #e8eaef;
+    margin-bottom: 8px;
+}
+
+.ffla-review-form__field--media {
+    margin-top: 0;
+    margin-bottom: 12px;
 }
 
 .ffla-review-form__field {

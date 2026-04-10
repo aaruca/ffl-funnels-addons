@@ -15,8 +15,7 @@ class Product_Reviews_Core
 
     public static function init(): void
     {
-        add_action('comment_form_after_fields', [__CLASS__, 'render_extra_review_fields']);
-        add_action('comment_form_logged_in_after', [__CLASS__, 'render_extra_review_fields']);
+        // Review UI is the Bricks “Review Form” element only — no hooks into WordPress/WC comment_form.
         add_filter('preprocess_comment', [__CLASS__, 'validate_review_submission']);
         add_action('comment_post', [__CLASS__, 'save_review_meta'], 10, 3);
         add_action('delete_comment', [__CLASS__, 'cleanup_review_media'], 10, 1);
@@ -73,48 +72,106 @@ class Product_Reviews_Core
         return $tabs;
     }
 
-    public static function render_extra_review_fields(): void
+    /**
+     * Resolve product ID for Bricks elements: explicit ID, global product, main query, Query Loop, or builder preview.
+     */
+    public static function resolve_context_product_id(int $explicit_id = 0): int
     {
-        if (!function_exists('is_product') || !is_product()) {
-            return;
+        if ($explicit_id > 0) {
+            return self::normalize_to_parent_product_id($explicit_id);
         }
 
-        echo '<div class="ffla-review-extra-fields">';
-        wp_nonce_field('ffla_review_form', 'ffla_review_form_nonce');
+        global $product;
+        if ($product instanceof \WC_Product) {
+            if ($product->is_type('variation')) {
+                return (int) $product->get_parent_id();
+            }
 
-        echo '<p class="comment-form-ffla-quality">';
-        echo '<label for="ffla_review_quality">' . esc_html__('Quality', 'ffl-funnels-addons') . '</label>';
-        echo '<select id="ffla_review_quality" name="ffla_review_quality">';
-        echo '<option value="">' . esc_html__('Select', 'ffl-funnels-addons') . '</option>';
-        for ($i = 1; $i <= 5; $i++) {
-            echo '<option value="' . esc_attr((string) $i) . '">' . esc_html((string) $i) . '</option>';
+            return (int) $product->get_id();
         }
-        echo '</select>';
-        echo '</p>';
 
-        echo '<p class="comment-form-ffla-value">';
-        echo '<label for="ffla_review_value">' . esc_html__('Value', 'ffl-funnels-addons') . '</label>';
-        echo '<select id="ffla_review_value" name="ffla_review_value">';
-        echo '<option value="">' . esc_html__('Select', 'ffl-funnels-addons') . '</option>';
-        for ($i = 1; $i <= 5; $i++) {
-            echo '<option value="' . esc_attr((string) $i) . '">' . esc_html((string) $i) . '</option>';
+        if (class_exists('\Bricks\Query')) {
+            $loop_id = (int) \Bricks\Query::get_loop_object_id();
+            $norm    = self::normalize_to_parent_product_id($loop_id);
+            if ($norm > 0) {
+                return $norm;
+            }
+            $loop_obj = \Bricks\Query::get_loop_object();
+            if ($loop_obj instanceof \WP_Post) {
+                $norm = self::normalize_to_parent_product_id((int) $loop_obj->ID);
+                if ($norm > 0) {
+                    return $norm;
+                }
+            }
         }
-        echo '</select>';
-        echo '</p>';
 
-        // Honeypot anti-spam field (hidden via CSS).
-        echo '<p class="comment-form-ffla-hp ffla-review-hp-field" aria-hidden="true">';
-        echo '<label for="ffla_hp">' . esc_html__('Leave this field empty', 'ffl-funnels-addons') . '</label>';
-        echo '<input type="text" id="ffla_hp" name="ffla_hp" value="" autocomplete="off" tabindex="-1">';
-        echo '</p>';
-
-        if (self::is_turnstile_enabled()) {
-            $site_key = self::get_turnstile_site_key();
-            echo '<div class="ffla-review-turnstile-wrap">';
-            echo '<div class="cf-turnstile" data-sitekey="' . esc_attr($site_key) . '" data-theme="auto"></div>';
-            echo '</div>';
+        if (function_exists('is_product') && is_product()) {
+            $qid = (int) get_queried_object_id();
+            $norm = self::normalize_to_parent_product_id($qid);
+            if ($norm > 0) {
+                return $norm;
+            }
         }
-        echo '</div>';
+
+        $tid = (int) get_the_ID();
+        $norm = self::normalize_to_parent_product_id($tid);
+        if ($norm > 0) {
+            return $norm;
+        }
+
+        if (self::is_bricks_preview_context() && function_exists('wc_get_products')) {
+            $ids = wc_get_products([
+                'limit'   => 1,
+                'status'  => 'publish',
+                'return'  => 'ids',
+                'orderby' => 'date',
+                'order'   => 'DESC',
+            ]);
+            if (!empty($ids)) {
+                return (int) $ids[0];
+            }
+        }
+
+        return 0;
+    }
+
+    private static function is_bricks_preview_context(): bool
+    {
+        if (function_exists('bricks_is_builder') && bricks_is_builder()) {
+            return true;
+        }
+        if (function_exists('bricks_is_builder_call') && bricks_is_builder_call()) {
+            return true;
+        }
+        if (class_exists('\Bricks\Database') && !empty(\Bricks\Database::$is_builder_call)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * WooCommerce stores reviews on the parent product; map variation IDs to parent.
+     */
+    private static function normalize_to_parent_product_id(int $post_id): int
+    {
+        if ($post_id <= 0) {
+            return 0;
+        }
+
+        $type = get_post_type($post_id);
+        if ('product' === $type) {
+            return $post_id;
+        }
+
+        if ('product_variation' === $type && function_exists('wc_get_product')) {
+            $v = wc_get_product($post_id);
+            $parent = $v ? (int) $v->get_parent_id() : 0;
+
+            return $parent > 0 ? $parent : 0;
+        }
+
+        return 0;
     }
 
     public static function validate_review_submission(array $commentdata): array
@@ -498,6 +555,7 @@ class Product_Reviews_Core
     public static function handle_form_submission(): void
     {
         $product_id   = isset($_POST['comment_post_ID']) ? absint($_POST['comment_post_ID']) : 0;
+        $product_id   = self::normalize_to_parent_product_id($product_id);
         $redirect_raw = isset($_POST['redirect_to']) ? esc_url_raw(wp_unslash($_POST['redirect_to'])) : '';
 
         $fallback = home_url('/');

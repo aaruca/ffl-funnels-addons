@@ -105,8 +105,9 @@ class FFLA_Reviews_Rating_Badge extends \Bricks\Element
     public function render()
     {
         $settings = $this->settings;
-        $product_id = !empty($settings['productId']) ? absint($settings['productId']) : get_the_ID();
-        if (!$product_id || 'product' !== get_post_type($product_id)) {
+        $explicit = !empty($settings['productId']) ? absint($settings['productId']) : 0;
+        $product_id = \Product_Reviews_Core::resolve_context_product_id($explicit);
+        if ($product_id <= 0) {
             return $this->render_element_placeholder([
                 'title' => esc_html__('No product found for rating badge.', 'ffl-funnels-addons'),
             ]);
