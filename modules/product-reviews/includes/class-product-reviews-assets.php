@@ -81,6 +81,18 @@ class Product_Reviews_Assets
             return true;
         }
 
+        $hub_page = absint(Product_Reviews_Core::get_setting('order_review_page_id', '0'));
+        if ($hub_page > 0 && function_exists('is_page') && is_page($hub_page)) {
+            return true;
+        }
+
+        if (function_exists('is_singular') && is_singular()) {
+            $post = get_post();
+            if ($post && isset($post->post_content) && has_shortcode((string) $post->post_content, 'ffla_order_reviews')) {
+                return true;
+            }
+        }
+
         return false;
     }
 }

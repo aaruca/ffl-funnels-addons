@@ -13,6 +13,10 @@ class Product_Reviews_Core
 {
     const MAX_MEDIA_FILES = 3;
 
+    /** @var bool */
+    /** @var bool */
+    private static $order_review_rewrite_tag_registered = false;
+
     public static function init(): void
     {
         // Review UI is the Bricks “Review Form” element only — no hooks into WordPress/WC comment_form.
@@ -22,6 +26,9 @@ class Product_Reviews_Core
         add_action('admin_post_ffla_submit_product_review', [__CLASS__, 'handle_form_submission']);
         add_action('admin_post_nopriv_ffla_submit_product_review', [__CLASS__, 'handle_form_submission']);
         add_filter('woocommerce_product_tabs', [__CLASS__, 'maybe_hide_default_reviews_tab'], 99);
+        add_filter('pre_comment_approved', [__CLASS__, 'filter_pre_comment_approved'], 10, 2);
+        add_action('init', [__CLASS__, 'register_order_review_rewrites'], 20);
+        add_action('parse_request', [__CLASS__, 'parse_request_order_review_page'], 4);
 
         if (is_admin()) {
             add_filter('manage_edit-comments_columns', [__CLASS__, 'register_admin_comments_columns']);
@@ -41,6 +48,12 @@ class Product_Reviews_Core
             'turnstile_site_key'        => '',
             'turnstile_secret_key'      => '',
             'form_title'                => __('Write a review', 'ffl-funnels-addons'),
+            'moderate_all_reviews'      => '0',
+            'request_email_mode'        => 'per_product',
+            'order_review_page_id'      => '0',
+            'order_review_show_criteria' => '0',
+            'order_review_pretty_urls'  => '0',
+            'order_review_rewrite_slug' => 'order-review',
             'email_subject'             => __('How was your purchase?', 'ffl-funnels-addons'),
             'email_heading'             => __('Leave a review for your recent order', 'ffl-funnels-addons'),
             'email_template'            => __("Hi {customer_name},\n\nWe would love your feedback on {product_name}.\n\nLeave your review here:\n{review_url}\n\nThank you!", 'ffl-funnels-addons'),
@@ -200,7 +213,272 @@ class Product_Reviews_Core
             wp_die(esc_html__('Cloudflare validation failed. Please try again.', 'ffl-funnels-addons'));
         }
 
+        return self::apply_review_comment_approval($commentdata);
+    }
+
+    /**
+     * Hold reviews when admin enables moderation or when media is attached.
+     */
+    private static function apply_review_comment_approval(array $commentdata): array
+    {
+        if ('1' === self::get_setting('moderate_all_reviews', '0')) {
+            $commentdata['comment_approved'] = 0;
+        }
+
         return self::apply_media_moderation_flag($commentdata);
+    }
+
+    /**
+     * @param int|string $approved
+     * @return int|string
+     */
+    public static function filter_pre_comment_approved($approved, array $commentdata)
+    {
+        if (($commentdata['comment_type'] ?? '') !== 'review') {
+            return $approved;
+        }
+
+        $post_id = isset($commentdata['comment_post_ID']) ? (int) $commentdata['comment_post_ID'] : 0;
+        if ($post_id <= 0 || 'product' !== get_post_type($post_id)) {
+            return $approved;
+        }
+
+        if (is_user_logged_in()) {
+            $uid = get_current_user_id();
+            if ($uid && user_can($uid, 'moderate_comments')) {
+                return $approved;
+            }
+        }
+
+        if ('1' !== self::get_setting('moderate_all_reviews', '0')) {
+            return $approved;
+        }
+
+        return 0;
+    }
+
+    public static function register_order_review_rewrites(): void
+    {
+        if (!self::$order_review_rewrite_tag_registered) {
+            add_rewrite_tag('%ffla_order_review_token%', '([A-Za-z0-9._~-]+)');
+            self::$order_review_rewrite_tag_registered = true;
+        }
+
+        if ('1' !== self::get_setting('order_review_pretty_urls', '0')) {
+            return;
+        }
+
+        $slug = sanitize_title(self::get_setting('order_review_rewrite_slug', 'order-review'));
+        if ($slug === '') {
+            return;
+        }
+
+        add_rewrite_rule(
+            '^' . preg_quote($slug, '/') . '/([A-Za-z0-9._~-]+)/?$',
+            'index.php?ffla_order_review_token=$matches[1]',
+            'top'
+        );
+    }
+
+    /**
+     * Map /{slug}/{token}/ to the configured hub page and preserve token for the hub renderer.
+     *
+     * @param \WP $wp
+     */
+    public static function parse_request_order_review_page($wp): void
+    {
+        if (!isset($wp->query_vars['ffla_order_review_token']) || $wp->query_vars['ffla_order_review_token'] === '') {
+            return;
+        }
+
+        $token = (string) $wp->query_vars['ffla_order_review_token'];
+        Product_Reviews_Order_Hub::set_context_token($token);
+
+        $page_id = absint(self::get_setting('order_review_page_id', '0'));
+        if ($page_id <= 0) {
+            return;
+        }
+
+        $page = get_post($page_id);
+        if (!$page || 'page' !== $page->post_type || 'publish' !== $page->post_status) {
+            return;
+        }
+
+        $wp->query_vars = [
+            'page_id'   => $page_id,
+            'post_type' => 'page',
+        ];
+    }
+
+    public static function order_review_token_secret(): string
+    {
+        return wp_salt('ffla_product_reviews_order');
+    }
+
+    public static function build_order_review_token(int $order_id, string $billing_email): string
+    {
+        $exp = time() + (90 * DAY_IN_SECONDS);
+        $eh  = md5(strtolower(trim($billing_email)));
+        $payload = $order_id . '|' . $exp . '|' . $eh;
+        $sig     = hash_hmac('sha256', $payload, self::order_review_token_secret());
+
+        return rtrim(strtr(base64_encode($payload . '|' . $sig), '+/', '-_'), '=');
+    }
+
+    /**
+     * @return array{order_id:int,expires:int,email_hash:string}|null
+     */
+    public static function parse_order_review_token_payload(string $token): ?array
+    {
+        $token = trim($token);
+        if ($token === '') {
+            return null;
+        }
+
+        $s = strtr($token, '-_', '+/');
+        $pad = strlen($s) % 4;
+        if ($pad !== 0) {
+            $s .= str_repeat('=', 4 - $pad);
+        }
+
+        $bin = base64_decode($s, true);
+        if ($bin === false || substr_count($bin, '|') < 3) {
+            return null;
+        }
+
+        $parts = explode('|', $bin, 4);
+        if (count($parts) !== 4) {
+            return null;
+        }
+
+        [$oid, $exp, $eh, $sig] = $parts;
+        $payload = $oid . '|' . $exp . '|' . $eh;
+        $expected = hash_hmac('sha256', $payload, self::order_review_token_secret());
+        if (!hash_equals($expected, $sig)) {
+            return null;
+        }
+
+        if ((int) $exp < time()) {
+            return null;
+        }
+
+        return [
+            'order_id'   => (int) $oid,
+            'expires'    => (int) $exp,
+            'email_hash' => $eh,
+        ];
+    }
+
+    public static function get_order_for_review_token(string $token): ?\WC_Order
+    {
+        if ($token === '') {
+            return null;
+        }
+
+        $data = self::parse_order_review_token_payload($token);
+        if (!$data) {
+            return null;
+        }
+
+        $order = wc_get_order($data['order_id']);
+        if (!$order) {
+            return null;
+        }
+
+        $eh = md5(strtolower(trim((string) $order->get_billing_email())));
+        if (!hash_equals($data['email_hash'], $eh)) {
+            return null;
+        }
+
+        return $order;
+    }
+
+    public static function line_item_parent_product_id(\WC_Order_Item_Product $item): int
+    {
+        $product = $item->get_product();
+        if ($product && $product->is_type('variation')) {
+            return (int) $product->get_parent_id();
+        }
+
+        return (int) $item->get_product_id();
+    }
+
+    public static function order_contains_reviewable_product(\WC_Order $order, int $parent_product_id): bool
+    {
+        foreach ($order->get_items() as $item) {
+            if (!$item instanceof \WC_Order_Item_Product) {
+                continue;
+            }
+            if (self::line_item_parent_product_id($item) === $parent_product_id) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static function customer_has_review_for_product(string $email, int $product_id): bool
+    {
+        if ($email === '' || $product_id <= 0) {
+            return false;
+        }
+
+        $found = get_comments([
+            'post_id'      => $product_id,
+            'type'         => 'review',
+            'author_email' => $email,
+            'status'       => 'all',
+            'number'       => 1,
+            'fields'       => 'ids',
+        ]);
+
+        return !empty($found);
+    }
+
+    public static function order_review_return_base_url(): string
+    {
+        $page_id = absint(self::get_setting('order_review_page_id', '0'));
+        if ($page_id > 0) {
+            $u = get_permalink($page_id);
+            if ($u) {
+                return $u;
+            }
+        }
+
+        return home_url('/');
+    }
+
+    public static function append_order_review_token_to_url(string $url, string $token): string
+    {
+        if ('1' === self::get_setting('order_review_pretty_urls', '0')) {
+            $slug = sanitize_title(self::get_setting('order_review_rewrite_slug', 'order-review'));
+            if ($slug !== '') {
+                return trailingslashit(home_url($slug)) . rawurlencode($token) . '/';
+            }
+        }
+
+        return add_query_arg('ffla_ro', rawurlencode($token), $url);
+    }
+
+    public static function order_review_landing_url(string $token): string
+    {
+        if ('1' === self::get_setting('order_review_pretty_urls', '0')) {
+            $slug = sanitize_title(self::get_setting('order_review_rewrite_slug', 'order-review'));
+            if ($slug !== '') {
+                return trailingslashit(home_url($slug)) . rawurlencode($token) . '/';
+            }
+        }
+
+        $base = self::order_review_return_base_url();
+
+        return add_query_arg('ffla_ro', rawurlencode($token), $base);
+    }
+
+    public static function maybe_flush_rewrites_on_settings(): void
+    {
+        if ('1' === self::get_setting('order_review_pretty_urls', '0')) {
+            flush_rewrite_rules(false);
+        }
     }
 
     private static function review_honeypot_triggered(): bool
@@ -219,11 +497,32 @@ class Product_Reviews_Core
             return true;
         }
 
+        if (self::order_review_token_bypasses_turnstile()) {
+            return true;
+        }
+
         $token = isset($_POST['cf-turnstile-response'])
             ? sanitize_text_field(wp_unslash($_POST['cf-turnstile-response']))
             : '';
 
         return $token !== '' && self::verify_turnstile_token($token);
+    }
+
+    private static function order_review_token_bypasses_turnstile(): bool
+    {
+        if (empty($_POST['ffla_order_review_token']) || empty($_POST['comment_post_ID'])) {
+            return false;
+        }
+
+        $raw = sanitize_text_field(wp_unslash($_POST['ffla_order_review_token']));
+        $order = self::get_order_for_review_token($raw);
+        if (!$order) {
+            return false;
+        }
+
+        $pid = self::normalize_to_parent_product_id(absint($_POST['comment_post_ID']));
+
+        return self::order_contains_reviewable_product($order, $pid);
     }
 
     private static function apply_media_moderation_flag(array $commentdata): array
@@ -272,9 +571,20 @@ class Product_Reviews_Core
 
         $email   = $comment->comment_author_email;
         $user_id = (int) $comment->user_id;
-        $is_verified = function_exists('wc_customer_bought_product')
-            ? wc_customer_bought_product($email, $user_id, $product_id)
-            : false;
+
+        $order_token = isset($_POST['ffla_order_review_token'])
+            ? sanitize_text_field(wp_unslash($_POST['ffla_order_review_token']))
+            : '';
+        $is_verified = false;
+        if ($order_token !== '') {
+            $ord = self::get_order_for_review_token($order_token);
+            if ($ord && self::order_contains_reviewable_product($ord, $product_id)) {
+                $is_verified = true;
+            }
+        }
+        if (!$is_verified && function_exists('wc_customer_bought_product')) {
+            $is_verified = (bool) wc_customer_bought_product($email, $user_id, $product_id);
+        }
 
         update_comment_meta($comment_id, 'ffla_verified_purchase', $is_verified ? 1 : 0);
 
@@ -554,12 +864,20 @@ class Product_Reviews_Core
 
     public static function handle_form_submission(): void
     {
-        $product_id   = isset($_POST['comment_post_ID']) ? absint($_POST['comment_post_ID']) : 0;
-        $product_id   = self::normalize_to_parent_product_id($product_id);
+        $product_id = isset($_POST['comment_post_ID']) ? absint($_POST['comment_post_ID']) : 0;
+        $product_id = self::normalize_to_parent_product_id($product_id);
+
+        $order_token_raw = isset($_POST['ffla_order_review_token'])
+            ? sanitize_text_field(wp_unslash($_POST['ffla_order_review_token']))
+            : '';
+        $order_ctx = $order_token_raw !== '' ? self::get_order_for_review_token($order_token_raw) : null;
+
         $redirect_raw = isset($_POST['redirect_to']) ? esc_url_raw(wp_unslash($_POST['redirect_to'])) : '';
 
         $fallback = home_url('/');
-        if ($product_id > 0 && 'product' === get_post_type($product_id)) {
+        if ($order_ctx) {
+            $fallback = self::append_order_review_token_to_url(self::order_review_return_base_url(), $order_token_raw);
+        } elseif ($product_id > 0 && 'product' === get_post_type($product_id)) {
             $fallback = get_permalink($product_id);
         }
 
@@ -602,6 +920,27 @@ class Product_Reviews_Core
             );
         }
 
+        if ($order_ctx) {
+            if (!self::order_contains_reviewable_product($order_ctx, $product_id)) {
+                self::redirect_with_status(
+                    $redirect,
+                    'error',
+                    __('That product is not part of this order.', 'ffl-funnels-addons'),
+                    $fallback
+                );
+            }
+
+            $billing_email = strtolower(trim((string) $order_ctx->get_billing_email()));
+            if (self::customer_has_review_for_product($billing_email, $product_id)) {
+                self::redirect_with_status(
+                    $redirect,
+                    'error',
+                    __('You already submitted a review for this product.', 'ffl-funnels-addons'),
+                    $fallback
+                );
+            }
+        }
+
         $comment_content = isset($_POST['comment']) ? trim((string) wp_unslash($_POST['comment'])) : '';
         $rating          = isset($_POST['rating']) ? absint($_POST['rating']) : 0;
 
@@ -613,7 +952,7 @@ class Product_Reviews_Core
             self::redirect_with_status($redirect, 'error', __('Please select a rating between 1 and 5.', 'ffl-funnels-addons'), $fallback);
         }
 
-        if (!is_user_logged_in() && get_option('comment_registration')) {
+        if (!$order_ctx && !is_user_logged_in() && get_option('comment_registration')) {
             self::redirect_with_status($redirect, 'error', __('You must be logged in to submit a review.', 'ffl-funnels-addons'), $fallback);
         }
 
@@ -630,7 +969,17 @@ class Product_Reviews_Core
             'comment_author_url'   => '',
         ];
 
-        if (is_user_logged_in()) {
+        if ($order_ctx) {
+            $first = trim((string) $order_ctx->get_billing_first_name());
+            $last  = trim((string) $order_ctx->get_billing_last_name());
+            $name  = trim($first . ' ' . $last);
+            if ($name === '') {
+                $name = __('Customer', 'ffl-funnels-addons');
+            }
+            $commentdata['comment_author']       = $name;
+            $commentdata['comment_author_email'] = (string) $order_ctx->get_billing_email();
+            $commentdata['user_id']              = (int) $order_ctx->get_user_id();
+        } elseif (is_user_logged_in()) {
             $user = wp_get_current_user();
             $commentdata['comment_author']       = $user instanceof \WP_User ? $user->display_name : '';
             $commentdata['comment_author_email'] = $user instanceof \WP_User ? $user->user_email : '';
@@ -643,7 +992,7 @@ class Product_Reviews_Core
             self::redirect_with_status($redirect, 'error', __('Please enter a valid email.', 'ffl-funnels-addons'), $fallback);
         }
 
-        $commentdata = self::apply_media_moderation_flag($commentdata);
+        $commentdata = self::apply_review_comment_approval($commentdata);
 
         $comment_id = wp_new_comment($commentdata, true);
         if (is_wp_error($comment_id) || !$comment_id) {

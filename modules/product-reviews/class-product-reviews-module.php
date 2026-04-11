@@ -38,6 +38,9 @@ class Product_Reviews_Module extends FFLA_Module
     {
         $base = $this->get_path();
 
+        require_once $base . 'includes/class-product-reviews-order-hub.php';
+        Product_Reviews_Order_Hub::init();
+
         require_once $base . 'includes/class-product-reviews-core.php';
         Product_Reviews_Core::init();
 
@@ -70,6 +73,8 @@ class Product_Reviews_Module extends FFLA_Module
         }
 
         update_option('ffla_product_reviews_settings', wp_parse_args($current, $defaults));
+        Product_Reviews_Core::register_order_review_rewrites();
+        flush_rewrite_rules(false);
     }
 
     public function deactivate(): void
