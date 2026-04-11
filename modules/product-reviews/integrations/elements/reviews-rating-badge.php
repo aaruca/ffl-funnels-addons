@@ -43,6 +43,15 @@ class FFLA_Reviews_Rating_Badge extends \Bricks\Element
             'inline'  => true,
         ];
 
+        $this->controls['hideIfNoReviews'] = [
+            'tab'         => 'content',
+            'label'       => esc_html__('Hide when no reviews', 'ffl-funnels-addons'),
+            'type'        => 'checkbox',
+            'default'     => false,
+            'inline'      => true,
+            'description' => esc_html__('Do not output the badge on the front end when the product has zero approved reviews. In Bricks, a small placeholder is still shown while editing.', 'ffl-funnels-addons'),
+        ];
+
         $this->controls['filledColor'] = [
             'tab'     => 'content',
             'label'   => esc_html__('Filled stars color', 'ffl-funnels-addons'),
@@ -122,6 +131,18 @@ class FFLA_Reviews_Rating_Badge extends \Bricks\Element
         $count   = (int) $product->get_review_count();
         $show_number = !isset($settings['showNumber']) || !empty($settings['showNumber']);
         $show_count = !isset($settings['showCount']) || !empty($settings['showCount']);
+
+        if (!empty($settings['hideIfNoReviews']) && $count < 1) {
+            $in_builder = (function_exists('bricks_is_builder') && bricks_is_builder())
+                || (function_exists('bricks_is_builder_call') && bricks_is_builder_call());
+            if ($in_builder) {
+                return $this->render_element_placeholder([
+                    'title' => esc_html__('No reviews (badge hidden on frontend)', 'ffl-funnels-addons'),
+                ]);
+            }
+
+            return;
+        }
 
         $this->set_attribute('_root', 'class', 'ffla-reviews-badge');
 

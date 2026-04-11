@@ -2,6 +2,14 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.9.4] - 2026-04-12
+
+### Added
+- **Product Reviews (Bricks Reviews Rating Badge):** Optional **Hide when no reviews** — no output on the front end when the product has zero approved reviews; Bricks builder still shows a small placeholder while editing.
+
+### Changed
+- **Product Reviews:** Minor cleanup in `Product_Reviews_Core` (duplicate docblock / comment).
+
 ## [1.9.3] - 2026-04-11
 
 ### Added

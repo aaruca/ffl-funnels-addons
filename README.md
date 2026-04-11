@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.9.3-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.9.4-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -65,6 +65,7 @@ Advanced WooCommerce product reviews with native Bricks elements and post-purcha
 *   **Media Reviews:** Optional image/video uploads on reviews with moderation safeguards.
 *   **Cloudflare Turnstile:** Optional bot protection with server-side token verification.
 *   **Admin Moderation UX:** Extra review media/helpful columns in WordPress comments list.
+*   **Reviews Rating Badge:** Optional control to hide the badge when a product has no reviews yet.
 
 ## Installation
 
@@ -119,6 +120,10 @@ Notes:
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.9.4
+
+*   **Product Reviews:** Bricks **Reviews Rating Badge** — optional “Hide when no reviews”; minor core cleanup.
 
 ### v1.9.3
 

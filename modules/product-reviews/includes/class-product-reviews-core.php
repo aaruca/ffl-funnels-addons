@@ -14,12 +14,10 @@ class Product_Reviews_Core
     const MAX_MEDIA_FILES = 3;
 
     /** @var bool */
-    /** @var bool */
     private static $order_review_rewrite_tag_registered = false;
 
     public static function init(): void
     {
-        // Review UI is the Bricks “Review Form” element only — no hooks into WordPress/WC comment_form.
         add_filter('preprocess_comment', [__CLASS__, 'validate_review_submission']);
         add_action('comment_post', [__CLASS__, 'save_review_meta'], 10, 3);
         add_action('delete_comment', [__CLASS__, 'cleanup_review_media'], 10, 1);
