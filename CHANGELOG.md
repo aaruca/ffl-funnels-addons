@@ -2,6 +2,18 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.9.3] - 2026-04-11
+
+### Added
+- **Product Reviews — Order review hub:** Shortcode `[ffla_order_reviews]` and Bricks element **Order reviews hub** for one page with a form per line item (parent products), signed links from email (`?ffla_ro=` or optional pretty `/slug/{token}/`), duplicate detection, billing name/email on submit, Turnstile bypass when the order token and product match.
+- **Product Reviews — Email:** Optional **one email per order** (bundle) with `{review_order_url}` and `{product_names_list}`; per-product mode now uses the same signed hub link. New scheduled action `ffla_send_order_review_bundle` (WP-Cron + Action Scheduler group `ffla-product-reviews`).
+- **Product Reviews — Admin:** Hold all reviews for moderation, hub page selector, pretty URL slug, optional extra criteria on hub forms, email mode (per product vs bundle), link to moderated comments queue.
+
+### Changed
+- **Product Reviews:** Core handles token validation, rewrites, `pre_comment_approved` for global moderation, and stricter `admin-post` flow for token-based submissions.
+- **Product Reviews:** Frontend assets also load on the configured hub page and when the hub shortcode is present.
+- **Uninstall:** Clears bundle review email hooks alongside existing Product Reviews cleanup.
+
 ## [1.9.2] - 2026-04-11
 
 ### Fixed

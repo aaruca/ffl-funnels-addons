@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.9.2-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.9.3-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -59,8 +59,8 @@ US sales tax resolution for WooCommerce using a shared Google Sheets ZIP dataset
 
 ### 8. Product Reviews
 Advanced WooCommerce product reviews with native Bricks elements and post-purchase review workflows.
-*   **Bricks Native Elements:** Rating Badge, Reviews List, and Review Form under the **`FFL Funnels`** element category (with partial star styling and style controls).
-*   **Post-Purchase Requests:** Schedules review reminder emails per purchased product after order completion.
+*   **Bricks Native Elements:** Rating Badge, Reviews List, Review Form, and **Order reviews hub** under the **`FFL Funnels`** element category (with partial star styling and style controls).
+*   **Post-Purchase Requests:** Schedules review reminders after order completion — per product or **one bundled email** with a signed link to a hub page (`[ffla_order_reviews]`).
 *   **Review Enrichment:** Multi-criteria fields (quality/value), verified-buyer tagging, and helpful votes.
 *   **Media Reviews:** Optional image/video uploads on reviews with moderation safeguards.
 *   **Cloudflare Turnstile:** Optional bot protection with server-side token verification.
@@ -119,6 +119,10 @@ Notes:
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.9.3
+
+*   **Product Reviews:** Order review hub — shortcode `[ffla_order_reviews]` + Bricks element, signed email links (query or pretty URLs), optional bundle email per order, global moderation toggle, admin hub/pretty URL settings, Turnstile bypass for valid token flows, verified purchase from order token, uninstall clears bundle hooks.
 
 ### v1.9.2
 
