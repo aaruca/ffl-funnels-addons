@@ -162,23 +162,29 @@ class WooBooster_Rule_List extends WP_List_Table
         $first_cond = reset($first_group);
 
         $attr = $first_cond->condition_attribute;
-        $attr_label = isset($attr_labels[$attr]) ? $attr_labels[$attr] : $attr;
         $operator = isset($first_cond->condition_operator) ? $first_cond->condition_operator : 'equals';
-        $op_label = ('not_equals' === $operator) ? __('is not', 'woobooster') : __('is', 'woobooster');
+        $value  = $first_cond->condition_value;
 
-        // Resolve value to human name.
-        $value = $first_cond->condition_value;
-        if ('specific_product' === $attr) {
-            $ids = array_filter(array_map('absint', explode(',', $value)));
-            $value = count($ids) . ' ' . _n('product', 'products', count($ids), 'woobooster');
+        if ('__store_all' === $attr && '1' === (string) $value) {
+            $html = 'not_equals' === $operator
+                ? esc_html__('Entire store (excluded)', 'woobooster')
+                : esc_html__('Entire store (all products)', 'woobooster');
         } else {
-            $term = get_term_by('slug', $value, $attr);
-            if ($term && !is_wp_error($term)) {
-                $value = $term->name;
-            }
-        }
+            $attr_label = isset($attr_labels[$attr]) ? $attr_labels[$attr] : $attr;
+            $op_label   = ('not_equals' === $operator) ? __('is not', 'woobooster') : __('is', 'woobooster');
 
-        $html = esc_html($attr_label) . ' <em>' . esc_html($op_label) . '</em> <code>' . esc_html($value) . '</code>';
+            if ('specific_product' === $attr) {
+                $ids   = array_filter(array_map('absint', explode(',', $value)));
+                $value = count($ids) . ' ' . _n('product', 'products', count($ids), 'woobooster');
+            } else {
+                $term = get_term_by('slug', $value, $attr);
+                if ($term && !is_wp_error($term)) {
+                    $value = $term->name;
+                }
+            }
+
+            $html = esc_html($attr_label) . ' <em>' . esc_html($op_label) . '</em> <code>' . esc_html($value) . '</code>';
+        }
 
         $total = 0;
         foreach ($groups as $g) {

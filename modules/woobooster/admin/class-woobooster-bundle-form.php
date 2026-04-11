@@ -202,7 +202,7 @@ class WooBooster_Bundle_Form
         // ── Conditions ──────────────────────────────────────────────────
         echo '<div class="wb-card__section" id="wb-bundle-conditions-section">';
         echo '<h3>' . esc_html__('Conditions', 'woobooster') . '</h3>';
-        echo '<p class="wb-section-desc">' . esc_html__('Define which products this bundle appears on. Leave empty for manual-only bundles (use "Specific Bundle" in Bricks). Groups = OR, within group = AND.', 'woobooster') . '</p>';
+        echo '<p class="wb-section-desc">' . esc_html__('Define which products this bundle appears on. Leave empty for manual-only bundles (use "Specific Bundle" in Bricks). Groups = OR, within group = AND. Use “Entire store” to match every product.', 'woobooster') . '</p>';
 
         $condition_groups = $bundle_id ? WooBooster_Bundle::get_conditions($bundle_id) : array();
 
@@ -269,12 +269,12 @@ class WooBooster_Bundle_Form
 
             $field_prefix = 'bundle_conditions[' . $group_index . '][' . $cond_index . ']';
 
-            echo '<div class="wb-condition-row" data-condition="' . esc_attr($cond_index) . '">';
-
             $c_type          = '';
             $c_attr_taxonomy = '';
             if ('specific_product' === $c_attr) {
                 $c_type = 'specific_product';
+            } elseif ('__store_all' === $c_attr && '1' === (string) $c_val) {
+                $c_type = 'store_all';
             } elseif ('product_cat' === $c_attr) {
                 $c_type = 'category';
             } elseif ('product_tag' === $c_attr) {
@@ -284,9 +284,19 @@ class WooBooster_Bundle_Form
                 $c_attr_taxonomy = $c_attr;
             }
 
+            if ('' === $c_type && '' === $c_attr && '' === (string) $c_val) {
+                $c_type = 'store_all';
+                $c_attr = '__store_all';
+                $c_val  = '1';
+            }
+
+            $row_extra_class = ('store_all' === $c_type) ? ' wb-condition-row--entire-store' : '';
+
+            echo '<div class="wb-condition-row' . esc_attr($row_extra_class) . '" data-condition="' . esc_attr($cond_index) . '">';
+
             // Condition Type.
             echo '<select class="wb-select wb-select--inline wb-condition-type" required>';
-            echo '<option value="">' . esc_html__('Type…', 'woobooster') . '</option>';
+            echo '<option value="store_all"' . selected($c_type, 'store_all', false) . '>' . esc_html__('Entire store (all products)', 'woobooster') . '</option>';
             echo '<option value="category"' . selected($c_type, 'category', false) . '>' . esc_html__('Category', 'woobooster') . '</option>';
             echo '<option value="tag"' . selected($c_type, 'tag', false) . '>' . esc_html__('Tag', 'woobooster') . '</option>';
             echo '<option value="attribute"' . selected($c_type, 'attribute', false) . '>' . esc_html__('Attribute', 'woobooster') . '</option>';
@@ -324,6 +334,8 @@ class WooBooster_Bundle_Form
             $chips_display = 'specific_product' === $c_type ? '' : 'display:none;';
             echo '<div class="wb-condition-product-chips wb-chips" style="' . esc_attr($chips_display) . '"></div>';
             echo '</div>';
+
+            echo '<span class="wb-condition-store-all-hint">' . esc_html__('Applies to every product. Use exclusions if this bundle should not appear everywhere.', 'woobooster') . '</span>';
 
             // Include children.
             echo '<label class="wb-checkbox wb-condition-children-label" style="display:none;">';

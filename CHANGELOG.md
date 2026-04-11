@@ -2,6 +2,14 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.9.5] - 2026-04-10
+
+### Added
+- **WooBooster — Conditions:** **Entire store (all products)** condition (`__store_all`) so rules and bundles can match every product without choosing a category, tag, or search value. Product matchers always carry the corresponding index key for correct candidate lookup.
+
+### Changed
+- **WooBooster — Admin:** Condition type selector defaults to **Entire store** for new rules and new condition rows; removed the inert “Type…” placeholder. Operator and value autocomplete stay hidden for that mode; list view shows a readable “Entire store” label.
+
 ## [1.9.4] - 2026-04-12
 
 ### Added

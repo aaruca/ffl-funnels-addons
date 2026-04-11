@@ -1043,7 +1043,7 @@
     function createConditionRow(gIdx, cIdx) {
       var prefix = 'conditions[' + gIdx + '][' + cIdx + ']';
       var row = document.createElement('div');
-      row.className = 'wb-condition-row';
+      row.className = 'wb-condition-row wb-condition-row--entire-store';
       row.dataset.condition = cIdx;
 
       // Build attribute taxonomy options from existing select.
@@ -1056,9 +1056,9 @@
       }
 
       row.innerHTML =
-        // Condition Type
+        // Condition Type (default: entire store)
         '<select class="wb-select wb-select--inline wb-condition-type" required>' +
-        '<option value="">Type\u2026</option>' +
+        '<option value="store_all" selected>Entire store (all products)</option>' +
         '<option value="category">Category</option>' +
         '<option value="tag">Tag</option>' +
         '<option value="attribute">Attribute</option>' +
@@ -1067,17 +1067,18 @@
         // Attribute Taxonomy (hidden unless type=attribute)
         '<select class="wb-select wb-select--inline wb-condition-attr-taxonomy" style="display:none;">' + attrTaxOptions + '</select>' +
         // Hidden attribute value
-        '<input type="hidden" name="' + prefix + '[attribute]" class="wb-condition-attr" value="">' +
+        '<input type="hidden" name="' + prefix + '[attribute]" class="wb-condition-attr" value="__store_all">' +
         '<select name="' + prefix + '[operator]" class="wb-select wb-select--operator wb-condition-operator">' +
         '<option value="equals">is</option>' +
         '<option value="not_equals">is not</option>' +
         '</select>' +
         '<div class="wb-autocomplete wb-condition-value-wrap">' +
         '<input type="text" class="wb-input wb-autocomplete__input wb-condition-value-display" placeholder="Value\u2026" autocomplete="off">' +
-        '<input type="hidden" name="' + prefix + '[value]" class="wb-condition-value-hidden">' +
+        '<input type="hidden" name="' + prefix + '[value]" class="wb-condition-value-hidden" value="1">' +
         '<div class="wb-autocomplete__dropdown"></div>' +
         '<div class="wb-condition-product-chips wb-chips" style="display:none;"></div>' +
         '</div>' +
+        '<span class="wb-condition-store-all-hint">Applies to every product. Use exclusions below if you need to narrow it.</span>' +
         '<label class="wb-checkbox wb-condition-children-label" style="display:none;">' +
         '<input type="checkbox" name="' + prefix + '[include_children]" value="1"> + Children' +
         '</label>' +
@@ -1138,6 +1139,10 @@
       var debounce = null;
 
       function doSearch(search) {
+        if (attrSelect.value === '__store_all') {
+          dropdown.style.display = 'none';
+          return;
+        }
         if (attrSelect.value === 'specific_product') {
           searchConditionProducts(display, hidden, dropdown, search);
         } else {
@@ -1168,7 +1173,7 @@
 
     function searchRowTerms(display, hidden, dropdown, attrSelect, search) {
       var taxonomy = attrSelect.value;
-      if (!taxonomy) { dropdown.style.display = 'none'; return; }
+      if (!taxonomy || taxonomy === '__store_all') { dropdown.style.display = 'none'; return; }
 
       var fd = new FormData();
       fd.append('action', 'woobooster_search_terms');
@@ -1243,6 +1248,7 @@
 
       function syncUI() {
         var type = typeSelect.value;
+        row.classList.toggle('wb-condition-row--entire-store', type === 'store_all');
         if (attrTaxSelect) {
           attrTaxSelect.style.display = type === 'attribute' ? '' : 'none';
         }
@@ -1271,31 +1277,38 @@
           hiddenAttr.value = 'product_tag';
         } else if (type === 'specific_product') {
           hiddenAttr.value = 'specific_product';
+        } else if (type === 'store_all') {
+          hiddenAttr.value = '__store_all';
         } else if (type === 'attribute' && attrTaxSelect) {
           hiddenAttr.value = attrTaxSelect.value;
         } else {
           hiddenAttr.value = '';
         }
         syncUI();
-        // Clear value when type changes.
+        // Clear value when type changes (entire store uses hidden value 1).
         var display = row.querySelector('.wb-condition-value-display');
         var hidden = row.querySelector('.wb-condition-value-hidden');
         var dropdown = row.querySelector('.wb-autocomplete__dropdown');
+        var opSel = row.querySelector('.wb-condition-operator');
         if (display) display.value = '';
-        if (hidden) hidden.value = '';
         if (dropdown) dropdown.innerHTML = '';
+        if (type === 'store_all') {
+          if (hidden) hidden.value = '1';
+          if (opSel) opSel.value = 'equals';
+        } else {
+          if (hidden) hidden.value = '';
+        }
         if (hiddenAttr.value === 'specific_product') {
           searchConditionProducts(display, hidden, dropdown, '');
-        } else if (hiddenAttr.value) {
+        } else if (hiddenAttr.value && hiddenAttr.value !== '__store_all') {
           searchRowTerms(display, hidden, dropdown, hiddenAttr, '');
         }
       });
 
       if (attrTaxSelect) {
         attrTaxSelect.addEventListener('change', function () {
-          if (typeSelect.value === 'attribute') {
-            hiddenAttr.value = attrTaxSelect.value;
-          }
+          if (typeSelect.value !== 'attribute') return;
+          hiddenAttr.value = attrTaxSelect.value;
           var display = row.querySelector('.wb-condition-value-display');
           var hidden = row.querySelector('.wb-condition-value-hidden');
           var dropdown = row.querySelector('.wb-autocomplete__dropdown');
@@ -1819,12 +1832,12 @@
       }
 
       var row = document.createElement('div');
-      row.className = 'wb-condition-row';
+      row.className = 'wb-condition-row wb-condition-row--entire-store';
       row.setAttribute('data-condition', condIdx);
 
       row.innerHTML =
         '<select class="wb-select wb-select--inline wb-condition-type" required>' +
-          '<option value="">Type\u2026</option>' +
+          '<option value="store_all" selected>Entire store (all products)</option>' +
           '<option value="category">Category</option>' +
           '<option value="tag">Tag</option>' +
           '<option value="attribute">Attribute</option>' +
@@ -1833,17 +1846,18 @@
         '<select class="wb-select wb-select--inline wb-condition-attr-taxonomy" style="display:none;">' +
           attrTaxOptions +
         '</select>' +
-        '<input type="hidden" name="' + prefix + '[attribute]" class="wb-condition-attr" value="">' +
+        '<input type="hidden" name="' + prefix + '[attribute]" class="wb-condition-attr" value="__store_all">' +
         '<select name="' + prefix + '[operator]" class="wb-select wb-select--operator wb-condition-operator">' +
           '<option value="equals">is</option>' +
           '<option value="not_equals">is not</option>' +
         '</select>' +
         '<div class="wb-autocomplete wb-condition-value-wrap">' +
           '<input type="text" class="wb-input wb-autocomplete__input wb-condition-value-display" placeholder="Value\u2026" autocomplete="off">' +
-          '<input type="hidden" name="' + prefix + '[value]" class="wb-condition-value-hidden" value="">' +
+          '<input type="hidden" name="' + prefix + '[value]" class="wb-condition-value-hidden" value="1">' +
           '<div class="wb-autocomplete__dropdown"></div>' +
           '<div class="wb-condition-product-chips wb-chips" style="display:none;"></div>' +
         '</div>' +
+        '<span class="wb-condition-store-all-hint">Applies to every product. Use exclusions if this bundle should not appear everywhere.</span>' +
         '<label class="wb-checkbox wb-condition-children-label" style="display:none;">' +
           '<input type="checkbox" name="' + prefix + '[include_children]" value="1"> + Children' +
         '</label>' +
@@ -1865,37 +1879,67 @@
     var typeSelect = row.querySelector('.wb-condition-type');
     var attrTaxSelect = row.querySelector('.wb-condition-attr-taxonomy');
     var hiddenAttr = row.querySelector('.wb-condition-attr');
+    var hiddenVal = row.querySelector('.wb-condition-value-hidden');
+    var displayVal = row.querySelector('.wb-condition-value-display');
     var childrenLabel = row.querySelector('.wb-condition-children-label');
     var chipsContainer = row.querySelector('.wb-condition-product-chips');
+    var opSel = row.querySelector('.wb-condition-operator');
+    var dropdown = row.querySelector('.wb-autocomplete__dropdown');
 
     if (!typeSelect) return;
 
     function update() {
       var val = typeSelect.value;
+      var isEntire = val === 'store_all';
+
+      row.classList.toggle('wb-condition-row--entire-store', isEntire);
 
       if (attrTaxSelect) attrTaxSelect.style.display = val === 'attribute' ? '' : 'none';
-      if (childrenLabel) childrenLabel.style.display = (val === 'category' || val === 'tag') ? '' : 'none';
+      if (childrenLabel) childrenLabel.style.display = !isEntire && (val === 'category' || val === 'tag') ? '' : 'none';
       if (chipsContainer) chipsContainer.style.display = val === 'specific_product' ? '' : 'none';
 
       if (hiddenAttr) {
         switch (val) {
+          case 'store_all':
+            hiddenAttr.value = '__store_all';
+            if (hiddenVal) hiddenVal.value = '1';
+            if (opSel) opSel.value = 'equals';
+            if (displayVal) displayVal.value = '';
+            if (dropdown) dropdown.innerHTML = '';
+            break;
           case 'category': hiddenAttr.value = 'product_cat'; break;
           case 'tag': hiddenAttr.value = 'product_tag'; break;
           case 'specific_product': hiddenAttr.value = 'specific_product'; break;
           case 'attribute':
             hiddenAttr.value = attrTaxSelect ? attrTaxSelect.value : '';
             break;
-          default: hiddenAttr.value = '';
+          default:
+            hiddenAttr.value = '';
         }
       }
     }
 
-    typeSelect.addEventListener('change', update);
+    typeSelect.addEventListener('change', function () {
+      var val = typeSelect.value;
+      if (val !== 'store_all') {
+        if (displayVal) displayVal.value = '';
+        if (hiddenVal) hiddenVal.value = '';
+        if (dropdown) dropdown.innerHTML = '';
+      }
+      update();
+    });
+
     if (attrTaxSelect) {
       attrTaxSelect.addEventListener('change', function () {
-        if (hiddenAttr) hiddenAttr.value = attrTaxSelect.value;
+        if (typeSelect.value !== 'attribute' || !hiddenAttr) return;
+        hiddenAttr.value = attrTaxSelect.value;
+        if (displayVal) displayVal.value = '';
+        if (hiddenVal) hiddenVal.value = '';
+        if (dropdown) dropdown.innerHTML = '';
       });
     }
+
+    update();
   }
 
   function initBundleConditionAutocomplete(row) {
@@ -1912,11 +1956,17 @@
 
     displayInput.addEventListener('input', function () {
       clearTimeout(debounce);
+      if (typeSelect && typeSelect.value === 'store_all') {
+        dropdown.style.display = 'none';
+        return;
+      }
       var term = displayInput.value.trim();
       if (term.length < 2) { dropdown.style.display = 'none'; return; }
 
       debounce = setTimeout(function () {
         var type = typeSelect ? typeSelect.value : '';
+
+        if (type === 'store_all') return;
 
         if (type === 'specific_product') {
           searchProductsForChips(term, hiddenInput, chipsContainer, dropdown);

@@ -46,13 +46,13 @@ class WooBooster_Rule_Form
         // Load condition groups from new conditions table.
         $condition_groups = $rule_id ? WooBooster_Rule::get_conditions($rule_id) : array();
         if (empty($condition_groups)) {
-            // Default: one group with one empty condition.
+            // Default: one group matching the whole catalog (clearer than an empty "Type…" row).
             $condition_groups = array(
                 0 => array(
                     (object) array(
-                        'condition_attribute' => '',
+                        'condition_attribute' => '__store_all',
                         'condition_operator' => 'equals',
-                        'condition_value' => '',
+                        'condition_value' => '1',
                         'include_children' => 0,
                     ),
                 ),
@@ -138,7 +138,7 @@ class WooBooster_Rule_Form
 
         echo '<div class="wb-card__section" id="wb-conditions-section">';
         echo '<h3>' . esc_html__('Conditions', 'woobooster') . '</h3>';
-        echo '<p class="wb-section-desc">' . esc_html__('Groups are combined with OR. Conditions within a group are combined with AND.', 'woobooster') . '</p>';
+        echo '<p class="wb-section-desc">' . esc_html__('Groups are combined with OR. Conditions within a group are combined with AND. Use “Entire store” when the rule should apply to every product (no category, tag, or search value needed).', 'woobooster') . '</p>';
 
         echo '<div id="wb-condition-groups">';
 
@@ -178,13 +178,13 @@ class WooBooster_Rule_Form
 
                 $field_prefix = 'conditions[' . $group_index . '][' . $cond_index . ']';
 
-                echo '<div class="wb-condition-row" data-condition="' . esc_attr($cond_index) . '">';
-
                 // Determine condition type from existing attribute.
                 $c_type = '';
                 $c_attr_taxonomy = '';
                 if ('specific_product' === $c_attr) {
                     $c_type = 'specific_product';
+                } elseif ('__store_all' === $c_attr && '1' === (string) $c_val) {
+                    $c_type = 'store_all';
                 } elseif ('product_cat' === $c_attr) {
                     $c_type = 'category';
                 } elseif ('product_tag' === $c_attr) {
@@ -194,9 +194,19 @@ class WooBooster_Rule_Form
                     $c_attr_taxonomy = $c_attr;
                 }
 
+                // Legacy rows with no attribute/value: same default as a new rule (entire store).
+                if ('' === $c_type && '' === $c_attr && '' === (string) $c_val) {
+                    $c_type = 'store_all';
+                    $c_attr = '__store_all';
+                    $c_val  = '1';
+                }
+
+                $row_extra_class = ('store_all' === $c_type) ? ' wb-condition-row--entire-store' : '';
+
                 // Condition Type select.
+                echo '<div class="wb-condition-row' . esc_attr($row_extra_class) . '" data-condition="' . esc_attr($cond_index) . '">';
                 echo '<select class="wb-select wb-select--inline wb-condition-type" required>';
-                echo '<option value="">' . esc_html__('Type…', 'woobooster') . '</option>';
+                echo '<option value="store_all"' . selected($c_type, 'store_all', false) . '>' . esc_html__('Entire store (all products)', 'woobooster') . '</option>';
                 echo '<option value="category"' . selected($c_type, 'category', false) . '>' . esc_html__('Category', 'woobooster') . '</option>';
                 echo '<option value="tag"' . selected($c_type, 'tag', false) . '>' . esc_html__('Tag', 'woobooster') . '</option>';
                 echo '<option value="attribute"' . selected($c_type, 'attribute', false) . '>' . esc_html__('Attribute', 'woobooster') . '</option>';
@@ -235,6 +245,8 @@ class WooBooster_Rule_Form
                 $chips_display = 'specific_product' === $c_type ? '' : 'display:none;';
                 echo '<div class="wb-condition-product-chips wb-chips" style="' . esc_attr($chips_display) . '"></div>';
                 echo '</div>';
+
+                echo '<span class="wb-condition-store-all-hint">' . esc_html__('Applies to every product. Use exclusions below if you need to narrow it.', 'woobooster') . '</span>';
 
                 // Include children.
                 echo '<label class="wb-checkbox wb-condition-children-label" style="display:none;">';

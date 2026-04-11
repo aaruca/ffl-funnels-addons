@@ -78,8 +78,7 @@ class WooBooster_Matcher
         $terms = $this->get_product_terms($product_id);
 
         if (empty($terms)) {
-            $this->debug_log("No terms found for product {$product_id}");
-            return array();
+            $this->debug_log("No taxonomy terms for product {$product_id}; store-wide rules can still match");
         }
 
         // Step 2: Build composite keys.
@@ -91,6 +90,8 @@ class WooBooster_Matcher
         $condition_keys[] = 'specific_product:' . $product_id;
         // Include sentinel so rules with not_equals conditions are always candidates.
         $condition_keys[] = '__not_equals__:1';
+        // Entire-store conditions match every product (even with no categories/tags).
+        $condition_keys[] = '__store_all:1';
 
         // Step 3: Find the winning rule via the lookup index.
         $rule = $this->find_matching_rule($condition_keys, $terms, $product_id);
@@ -386,6 +387,17 @@ class WooBooster_Matcher
                     }
 
                     $operator = isset($cond->condition_operator) ? $cond->condition_operator : 'equals';
+
+                    // Match every product (no category/tag/value needed).
+                    if ('__store_all' === sanitize_key($cond->condition_attribute) && '1' === sanitize_text_field($cond->condition_value)) {
+                        $condition_satisfied = ('not_equals' === $operator) ? false : true;
+                        if (!$condition_satisfied) {
+                            $group_satisfied = false;
+                            break;
+                        }
+                        continue;
+                    }
+
                     $key_matched = false;
 
                     // Handle comma-separated specific_product values.
@@ -1023,6 +1035,7 @@ class WooBooster_Matcher
         }
         $condition_keys[] = 'specific_product:' . $product_id;
         $condition_keys[] = '__not_equals__:1';
+        $condition_keys[] = '__store_all:1';
         $result['keys'] = $condition_keys;
 
         // Step 3: Find rule.

@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.9.4-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.9.5-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -120,6 +120,10 @@ Notes:
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.9.5
+
+*   **WooBooster:** **Entire store** condition for rules and bundles (match all products); admin defaults to that instead of an empty type row; clearer list column text.
 
 ### v1.9.4
 

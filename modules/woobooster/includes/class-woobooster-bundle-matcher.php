@@ -52,6 +52,7 @@ class WooBooster_Bundle_Matcher
         }
         $condition_keys[] = 'specific_product:' . $product_id;
         $condition_keys[] = '__not_equals__:1';
+        $condition_keys[] = '__store_all:1';
 
         $bundles = $this->find_matching_bundles($condition_keys, $terms, $product_id);
 
@@ -271,7 +272,17 @@ class WooBooster_Bundle_Matcher
                 $group_satisfied = true;
 
                 foreach ($conditions as $cond) {
-                    $operator    = isset($cond->condition_operator) ? $cond->condition_operator : 'equals';
+                    $operator = isset($cond->condition_operator) ? $cond->condition_operator : 'equals';
+
+                    if ('__store_all' === sanitize_key($cond->condition_attribute) && '1' === sanitize_text_field($cond->condition_value)) {
+                        $condition_satisfied = ('not_equals' === $operator) ? false : true;
+                        if (!$condition_satisfied) {
+                            $group_satisfied = false;
+                            break;
+                        }
+                        continue;
+                    }
+
                     $key_matched = false;
 
                     if ('specific_product' === $cond->condition_attribute && false !== strpos($cond->condition_value, ',')) {
