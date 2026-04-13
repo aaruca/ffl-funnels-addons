@@ -46,6 +46,14 @@ class WSS_Metabox
         $last_synced = get_post_meta($post->ID, '_wss_last_synced', true);
         $product     = wc_get_product($post->ID);
         $var_count   = $product && $product->is_type('variable') ? count($product->get_children()) : 1;
+
+        $parent_id = (int) $post->ID;
+        if ($product && $product->is_type('variation')) {
+            $parent_id = (int) $product->get_parent_id();
+        }
+        $sheet_tabs = class_exists('WSS_Sync_Groups')
+            ? WSS_Sync_Groups::get_tab_names_for_product_id($parent_id)
+            : [];
         ?>
 
         <p>
@@ -54,6 +62,17 @@ class WSS_Metabox
                 <?php esc_html_e('Sync with Google Sheets', 'ffl-funnels-addons'); ?>
             </label>
         </p>
+
+        <?php if ($sheet_tabs !== []): ?>
+            <p class="wss-metabox-info">
+                <strong><?php esc_html_e('Sheet tabs:', 'ffl-funnels-addons'); ?></strong>
+                <?php echo esc_html(implode(', ', $sheet_tabs)); ?>
+            </p>
+        <?php else: ?>
+            <p class="description" style="margin-top:8px;">
+                <?php esc_html_e('Tab membership is managed under WSS Dashboard → Sheet tab groups.', 'ffl-funnels-addons'); ?>
+            </p>
+        <?php endif; ?>
 
         <p class="wss-metabox-info">
             <strong><?php esc_html_e('Variations:', 'ffl-funnels-addons'); ?></strong>

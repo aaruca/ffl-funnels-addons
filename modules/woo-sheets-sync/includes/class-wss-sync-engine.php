@@ -29,6 +29,20 @@ class WSS_Sync_Engine
     /** @var string */
     private $tab_name;
 
+    /**
+     * When null, sync all products with _wss_sync_enabled (legacy).
+     * When int[], only these parent product IDs (simple or variable parent).
+     *
+     * @var int[]|null
+     */
+    private $allowed_parent_product_ids;
+
+    /** @var string */
+    private $group_id;
+
+    /** @var bool */
+    private $persist_last_sync;
+
     /** Column indices (0-based) matching the header layout. */
     private const COL_PRODUCT_ID      = 0;  // A
     private const COL_VARIATION_ID    = 1;  // B
@@ -55,12 +69,54 @@ class WSS_Sync_Engine
 
     private const VALID_STOCK_STATUSES = ['instock', 'outofstock', 'onbackorder'];
 
-    public function __construct(WSS_Google_Sheets $sheets, WSS_Logger $logger, array $settings)
+    /**
+     * @param array<string,mixed> $settings   wss_settings option.
+     * @param array<string,mixed> $context    Optional: tab_name, allowed_parent_product_ids, group_id, persist_last_sync.
+     */
+    public function __construct(WSS_Google_Sheets $sheets, WSS_Logger $logger, array $settings, array $context = [])
     {
         $this->sheets   = $sheets;
         $this->logger   = $logger;
         $this->sheet_id = $settings['sheet_id'] ?? '';
-        $this->tab_name = $settings['tab_name'] ?? 'Inventory';
+        $this->tab_name = isset($context['tab_name']) && (string) $context['tab_name'] !== ''
+            ? (string) $context['tab_name']
+            : ($settings['tab_name'] ?? 'Inventory');
+
+        if (array_key_exists('allowed_parent_product_ids', $context)) {
+            $raw = $context['allowed_parent_product_ids'];
+            $this->allowed_parent_product_ids = is_array($raw)
+                ? array_values(array_unique(array_map('intval', $raw)))
+                : null;
+        } else {
+            $this->allowed_parent_product_ids = null;
+        }
+
+        $this->group_id           = isset($context['group_id']) ? (string) $context['group_id'] : '';
+        $this->persist_last_sync  = !isset($context['persist_last_sync']) || !empty($context['persist_last_sync']);
+    }
+
+    /**
+     * Whether this parent product ID is in scope for the current sync run.
+     */
+    private function is_parent_allowed(int $parent_id): bool
+    {
+        if ($this->allowed_parent_product_ids === null) {
+            return true;
+        }
+
+        return $parent_id > 0 && in_array($parent_id, $this->allowed_parent_product_ids, true);
+    }
+
+    /**
+     * Parent post ID for a variation or simple product object.
+     *
+     * @param WC_Product $product Variation or simple.
+     */
+    private static function get_parent_product_id($product): int
+    {
+        $pid = (int) $product->get_parent_id();
+
+        return $pid > 0 ? $pid : (int) $product->get_id();
     }
 
     /**
@@ -108,12 +164,13 @@ class WSS_Sync_Engine
         // Phase 2: Woo → Sheet (write current WooCommerce state back).
         $stats_woo = $this->sync_woo_to_sheet($sheet_data, $row_map);
 
-        // Store last sync info.
-        update_option('wss_last_sync', [
-            'time'         => current_time('mysql'),
-            'woo_to_sheet' => $stats_woo,
-            'sheet_to_woo' => $stats_sheet,
-        ], false);
+        if ($this->persist_last_sync) {
+            update_option('wss_last_sync', [
+                'time'         => current_time('mysql'),
+                'woo_to_sheet' => $stats_woo,
+                'sheet_to_woo' => $stats_sheet,
+            ], false);
+        }
 
         return [
             'woo_to_sheet' => $stats_woo,
@@ -151,6 +208,12 @@ class WSS_Sync_Engine
                     continue; // No name → skip.
                 }
 
+                // New variation under existing parent: parent must be in this tab's scope.
+                if ($product_id > 0 && !$this->is_parent_allowed($product_id)) {
+                    $stats['skipped']++;
+                    continue;
+                }
+
                 $result = $this->create_product_from_row($row, $product_id, $row_number);
                 if (is_wp_error($result)) {
                     $stats['errors']++;
@@ -174,6 +237,12 @@ class WSS_Sync_Engine
             if (!$variation) {
                 $stats['errors']++;
                 $this->logger->log('sheet_to_woo', $product_id, $variation_id, 'error', 'Variation not found in WooCommerce.');
+                continue;
+            }
+
+            $parent_scope_id = self::get_parent_product_id($variation);
+            if (!$this->is_parent_allowed($parent_scope_id)) {
+                $stats['skipped']++;
                 continue;
             }
 
@@ -284,14 +353,18 @@ class WSS_Sync_Engine
     {
         $stats = ['updated' => 0, 'appended' => 0, 'skipped' => 0, 'errors' => 0];
 
-        $product_ids = get_posts([
-            'post_type'      => 'product',
-            'post_status'    => 'publish',
-            'meta_key'       => '_wss_sync_enabled',
-            'meta_value'     => '1',
-            'fields'         => 'ids',
-            'posts_per_page' => -1,
-        ]);
+        if ($this->allowed_parent_product_ids === null) {
+            $product_ids = get_posts([
+                'post_type'      => 'product',
+                'post_status'    => 'publish',
+                'meta_key'       => '_wss_sync_enabled',
+                'meta_value'     => '1',
+                'fields'         => 'ids',
+                'posts_per_page' => -1,
+            ]);
+        } else {
+            $product_ids = $this->allowed_parent_product_ids;
+        }
 
         if (empty($product_ids)) {
             return $stats;

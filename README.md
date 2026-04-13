@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.9.5-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.9.6-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -45,17 +45,18 @@ A visual element for Bricks Builder to help customers locate nearby FFL dealers 
 ### 6. Woo Sheets Sync
 *   Bidirectional synchronization between WooCommerce inventory and Google Sheets.
 *   OAuth 2.0 connection.
+*   **Multiple sheet tabs:** configure groups (tab name + products, categories, and tags per tab); the same product can sync to more than one tab; Sheet→Woo conflicts use **last tab in list wins** when the same variation appears in multiple tabs.
 *   Edit prices, stock, and SKU directly from Google Sheets.
 *   Create simple products and variations from the sheet.
 
 ### 7. Tax Address Resolver
-US sales tax resolution for WooCommerce using a shared Google Sheets ZIP dataset that is imported and stored locally in WordPress.
-*   **Local-first tax engine:** Checkout and Quote Lookup resolve from local tables, not live web requests.
-*   **Google Sheet sync:** Imports ZIP rows, city fallback rows, and state floor rows from the configured shared sheet CSV.
+US sales tax resolution for WooCommerce using live USGeocoder API lookups (JSON), with optional legacy local sheet tooling still available.
+*   **Live API mode:** Checkout and Quote Lookup can resolve from USGeocoder in real time.
+*   **Legacy sheet mode (optional):** Existing Google Sheet local dataset flow can remain as fallback if no API key is configured.
 *   **WooCommerce runtime taxes:** Applies resolved taxes directly in cart and checkout.
 *   **State controls:** Limit the resolver to only the states your store uses, and purge local datasets when a state is removed from selection.
 *   **Admin tooling:** Includes Quote Lookup, Coverage Matrix, Datasets, Audit Log, and Settings screens.
-*   **Monthly refresh:** Re-syncs the selected states automatically on a monthly schedule.
+*   **Cleanup tool:** Includes a one-click button to delete old legacy local tax database rows after migrating to USGeocoder.
 
 ### 8. Product Reviews
 Advanced WooCommerce product reviews with native Bricks elements and post-purchase review workflows.
@@ -94,15 +95,15 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 
 ### Tax Address Resolver
 1.  Go to **FFL Funnels > Tax Resolver > Settings**.
-2.  Set the shared Google Sheet URL used as the tax source.
+2.  Set **USGeocoder Auth Key** to enable live API mode.
 3.  Optionally enable **Limit resolver to selected states** and choose only the states your store uses.
 4.  Save settings.
-5.  Open **Datasets** and run **Sync Sheet Data** to import the selected states locally.
-6.  Use **Quote Lookup** to verify ZIP and city results before testing in WooCommerce checkout.
+5.  Use **Quote Lookup** to verify results before testing in WooCommerce checkout.
+6.  (Optional) If you are fully migrated, use **Delete Old Tax Database** in Settings to purge old legacy local tax data.
 
 Notes:
-*   Removing a state from the selected list deletes its local imported dataset.
-*   Checkout uses the local imported dataset; it does not query the sheet live.
+*   If no USGeocoder key is configured, the legacy local-sheet flow remains available.
+*   Removing a state from the selected list deletes its local imported dataset in legacy mode.
 *   The REST quote endpoint is admin-only.
 
 ### WooBooster Rules
@@ -120,6 +121,11 @@ Notes:
 *   (Optional) Bricks Builder for visual layout customization
 
 ## Changelog
+
+### v1.9.6
+
+*   **Woo Sheets Sync:** Sheet **tab groups** on the Dashboard — multiple Google Sheet tabs, per-tab product rules (search, categories, tags, link all / clear tab rules), migration from legacy single-tab + `_wss_sync_enabled`, orchestrated sync with per-tab stats and `wss_last_sync` group summary; product metabox shows which tabs include the product; docs updated for multi-tab behavior and Sheet→Woo priority.
+*   **Tax Address Resolver:** USGeocoder **live API** resolver class and related wiring (coverage, resolver DB, admin/JS updates).
 
 ### v1.9.5
 

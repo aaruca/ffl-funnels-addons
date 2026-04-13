@@ -446,4 +446,38 @@ class Tax_Resolver_DB
 
         return (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}");
     }
+
+    /**
+     * Delete legacy local-dataset records from the old tax flow.
+     *
+     * @return array<string,int>
+     */
+    public static function purge_legacy_local_data(): array
+    {
+        global $wpdb;
+
+        $datasets_table = self::table('dataset_versions');
+        $rates_table    = self::table('jurisdiction_rates');
+        $cache_table    = self::table('address_cache');
+        $audit_table    = self::table('quotes_audit');
+
+        $result = [
+            'dataset_versions_deleted' => 0,
+            'jurisdiction_rates_deleted' => 0,
+            'address_cache_deleted' => 0,
+            'quotes_audit_deleted' => 0,
+        ];
+
+        $result['dataset_versions_deleted'] = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$datasets_table}");
+        $result['jurisdiction_rates_deleted'] = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$rates_table}");
+        $result['address_cache_deleted'] = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$cache_table}");
+        $result['quotes_audit_deleted'] = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$audit_table}");
+
+        $wpdb->query("DELETE FROM {$rates_table}");
+        $wpdb->query("DELETE FROM {$datasets_table}");
+        $wpdb->query("DELETE FROM {$cache_table}");
+        $wpdb->query("DELETE FROM {$audit_table}");
+
+        return $result;
+    }
 }

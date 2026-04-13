@@ -32,6 +32,7 @@ class Tax_Coverage
      */
     const SOURCE_STRATEGY_NONE = 'none';
     const SOURCE_STRATEGY_SHEET = 'sheet_zip_dataset';
+    const SOURCE_STRATEGY_USGEOCODER = 'usgeocoder_api';
 
     /**
      * Canonical US state list including DC.
@@ -312,6 +313,20 @@ class Tax_Coverage
             ];
         }
 
+        if ($resolver_name === 'usgeocoder_api') {
+            return [
+                'key'             => 'usgeocoder_api',
+                'family'          => self::SOURCE_STRATEGY_USGEOCODER,
+                'label'           => 'USGeocoder live API',
+                'shortLabel'      => 'USGeo API',
+                'primary'         => 'usgeocoder_api',
+                'primaryLabel'    => 'Live tax rate lookup via USGeocoder JSON API',
+                'fallback'        => null,
+                'fallbackLabel'   => null,
+                'requiresGeocode' => $requires_geocode,
+            ];
+        }
+
         return [
             'key'             => self::SOURCE_STRATEGY_NONE,
             'family'          => self::SOURCE_STRATEGY_NONE,
@@ -341,6 +356,6 @@ class Tax_Coverage
             }
         }
 
-        return !in_array($resolver_name, ['sheet_zip_dataset'], true);
+        return !in_array($resolver_name, ['sheet_zip_dataset', 'usgeocoder_api'], true);
     }
 }

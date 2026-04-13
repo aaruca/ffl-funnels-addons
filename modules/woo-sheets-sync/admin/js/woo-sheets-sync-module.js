@@ -1,8 +1,7 @@
 /**
  * Woo Sheets Sync — Module admin JS.
  *
- * Handles Sync Now, Clear Log, Disconnect, Product linking via AJAX.
- * Uses the global `fflaAdmin` object for ajaxUrl and nonce.
+ * Sync Now, Clear Log, Disconnect, and sheet tab groups (per-tab product rules).
  */
 (function () {
     'use strict';
@@ -11,7 +10,7 @@
         initSyncNow();
         initClearLog();
         initDisconnect();
-        initProductLinker();
+        initTabGroups();
     });
 
     /* ── Sync Now ──────────────────────────────────── */
@@ -24,7 +23,7 @@
             if (btn.classList.contains('wss-loading')) return;
 
             btn.classList.add('wss-loading');
-            btn.textContent = fflaAdmin.i18n.activating || 'Syncing…';
+            btn.textContent = (fflaAdmin.i18n && fflaAdmin.i18n.activating) || 'Syncing…';
 
             var result = document.getElementById('wss-sync-result');
             if (result) result.innerHTML = '';
@@ -42,14 +41,39 @@
                     if (!result) return;
 
                     if (resp.success) {
-                        var d = resp.data;
+                        var d = resp.data || {};
                         var w = d.woo_to_sheet || {};
                         var s = d.sheet_to_woo || {};
-                        result.innerHTML =
-                            '<div class="wb-message wb-message--success">' +
-                            '<span>Sync complete. ' +
-                            'Woo\u2192Sheet: ' + (w.updated || 0) + ' updated, ' + (w.appended || 0) + ' appended. ' +
-                            'Sheet\u2192Woo: ' + (s.updated || 0) + ' updated.</span></div>';
+                        var parts = [
+                            '<div class="wb-message wb-message--success"><span>',
+                            'Sync complete. ',
+                            'Woo\u2192Sheet: ',
+                            (w.updated || 0),
+                            ' updated, ',
+                            (w.appended || 0),
+                            ' appended. ',
+                            'Sheet\u2192Woo: ',
+                            (s.updated || 0),
+                            ' updated.'
+                        ];
+
+                        if (d.groups && d.groups.length) {
+                            parts.push(' <strong>Per tab:</strong> ');
+                            parts.push(
+                                d.groups.map(function (g) {
+                                    var label = escapeHtml(String(g.tab_name || ''));
+                                    if (g.error) {
+                                        return label + ' (\u2014 ' + escapeHtml(String(g.error)) + ')';
+                                    }
+                                    var w2 = g.woo_to_sheet || {};
+                                    var s2 = g.sheet_to_woo || {};
+                                    return label + ' (W\u2192S ' + (w2.updated || 0) + '/' + (w2.appended || 0) + ', S\u2192W ' + (s2.updated || 0) + ')';
+                                }).join('; ')
+                            );
+                        }
+
+                        parts.push('</span></div>');
+                        result.innerHTML = parts.join('');
                     } else {
                         result.innerHTML =
                             '<div class="wb-message wb-message--danger">' +
@@ -112,63 +136,196 @@
         });
     }
 
-    /* ── Product Linker (Dashboard) ────────────────── */
+    /* ── Sheet tab groups (Dashboard) ──────────────── */
 
-    // Track linked product IDs in memory.
-    var linkedIds = (window.wssSyncedIds || []).slice();
+    function syncGroupsAjax(fd, onSuccessNoReload) {
+        fd.append('action', 'wss_sync_groups');
+        fd.append('nonce', fflaAdmin.nonce);
 
-    function initProductLinker() {
-        var container = document.getElementById('wss-linked-products');
-        if (!container) return;
+        return fetch(fflaAdmin.ajaxUrl, { method: 'POST', body: fd }).then(function (r) {
+            return r.json();
+        }).then(function (res) {
+            if (!res.success) {
+                var msg = (res.data && res.data.message) || 'Request failed.';
+                window.alert(msg);
+                return null;
+            }
+            if (typeof onSuccessNoReload === 'function') {
+                onSuccessNoReload(res.data);
+            } else {
+                window.location.reload();
+            }
+            return res.data;
+        }).catch(function () {
+            window.alert('Network error.');
+            return null;
+        });
+    }
 
-        // Load existing chips.
-        if (linkedIds.length) {
-            resolveAndRenderChips(linkedIds, container);
+    function getGroupId(card) {
+        return card.getAttribute('data-group-id') || '';
+    }
+
+    function getExplicitProductIds(card) {
+        var chips = card.querySelectorAll('.wss-group-product-chips .wss-chip[data-id]');
+        var ids = [];
+        chips.forEach(function (c) {
+            ids.push(String(c.getAttribute('data-id')));
+        });
+        return ids;
+    }
+
+    function initTabGroups() {
+        var root = document.getElementById('wss-groups-root');
+        if (!root) return;
+
+        var addBtn = document.getElementById('wss-add-tab-group');
+        if (addBtn) {
+            addBtn.addEventListener('click', function () {
+                var fd = new FormData();
+                fd.append('op', 'add_group');
+                syncGroupsAjax(fd);
+            });
         }
 
-        // Search autocomplete.
-        initProductSearch(container);
+        root.addEventListener('click', function (e) {
+            var rm = e.target.closest('.wss-remove-group-btn');
+            if (rm && !rm.disabled) {
+                if (!confirm('Remove this sheet tab group? Products may remain in other tabs.')) return;
+                var card = rm.closest('.wss-sync-group');
+                if (!card) return;
+                var fd = new FormData();
+                fd.append('op', 'remove_group');
+                fd.append('group_id', getGroupId(card));
+                syncGroupsAjax(fd);
+                return;
+            }
 
-        // Link All / Unlink All.
-        initBulkActions(container);
+            var linkAll = e.target.closest('.wss-group-link-all');
+            if (linkAll) {
+                if (!confirm('Link every published product to this tab only? (Other rules on this tab will be cleared.)')) return;
+                var c1 = linkAll.closest('.wss-sync-group');
+                if (!c1) return;
+                var fd1 = new FormData();
+                fd1.append('op', 'link_all');
+                fd1.append('group_id', getGroupId(c1));
+                syncGroupsAjax(fd1);
+                return;
+            }
 
-        // Link by taxonomy.
-        initTaxonomyLink(container);
-    }
+            var unlinkAll = e.target.closest('.wss-group-unlink-all');
+            if (unlinkAll) {
+                if (!confirm('Clear all rules for this tab (products, categories, tags)?')) return;
+                var c2 = unlinkAll.closest('.wss-sync-group');
+                if (!c2) return;
+                var fd2 = new FormData();
+                fd2.append('op', 'unlink_all');
+                fd2.append('group_id', getGroupId(c2));
+                syncGroupsAjax(fd2);
+                return;
+            }
 
-    function resolveAndRenderChips(ids, container) {
-        var fd = new FormData();
-        fd.append('action', 'wss_resolve_product_names');
-        fd.append('nonce', fflaAdmin.nonce);
-        fd.append('ids', ids.join(','));
+            var addCat = e.target.closest('.wss-group-add-category');
+            if (addCat) {
+                var c3 = addCat.closest('.wss-sync-group');
+                if (!c3) return;
+                var sel = c3.querySelector('.wss-group-category-select');
+                if (!sel || !sel.value) return;
+                var fd3 = new FormData();
+                fd3.append('op', 'link_category');
+                fd3.append('group_id', getGroupId(c3));
+                fd3.append('term_id', sel.value);
+                syncGroupsAjax(fd3);
+                return;
+            }
 
-        fetch(fflaAdmin.ajaxUrl, { method: 'POST', body: fd })
-            .then(function (r) { return r.json(); })
-            .then(function (res) {
-                if (res.success && res.data.names) {
-                    removeEmptyState();
-                    Object.keys(res.data.names).forEach(function (pid) {
-                        if (!container.querySelector('[data-id="' + pid + '"]')) {
-                            addChip(container, pid, res.data.names[pid]);
-                        }
-                    });
+            var addTag = e.target.closest('.wss-group-add-tag');
+            if (addTag) {
+                var c4 = addTag.closest('.wss-sync-group');
+                if (!c4) return;
+                var selT = c4.querySelector('.wss-group-tag-select');
+                if (!selT || !selT.value) return;
+                var fd4 = new FormData();
+                fd4.append('op', 'link_tag');
+                fd4.append('group_id', getGroupId(c4));
+                fd4.append('term_id', selT.value);
+                syncGroupsAjax(fd4);
+                return;
+            }
+
+            var taxRm = e.target.closest('.wss-chip--taxonomy .wss-chip__remove');
+            if (taxRm) {
+                var chip = taxRm.closest('.wss-chip--taxonomy');
+                var c5 = taxRm.closest('.wss-sync-group');
+                if (!chip || !c5) return;
+                var tid = chip.getAttribute('data-term-id');
+                var tax = chip.getAttribute('data-taxonomy');
+                var fd5 = new FormData();
+                fd5.append('group_id', getGroupId(c5));
+                if (tax === 'product_tag') {
+                    fd5.append('op', 'unlink_tag');
+                } else {
+                    fd5.append('op', 'unlink_category');
                 }
+                fd5.append('term_id', tid);
+                syncGroupsAjax(fd5);
+                return;
+            }
+
+            var prodRm = e.target.closest('.wss-group-product-chips .wss-chip__remove');
+            if (prodRm) {
+                var pchip = prodRm.closest('.wss-chip');
+                var c6 = prodRm.closest('.wss-sync-group');
+                if (!pchip || !c6 || pchip.classList.contains('wss-chip--taxonomy')) return;
+                var pid = pchip.getAttribute('data-id');
+                var fd6 = new FormData();
+                fd6.append('op', 'remove_product');
+                fd6.append('group_id', getGroupId(c6));
+                fd6.append('product_id', pid);
+                syncGroupsAjax(fd6);
+            }
+        });
+
+        var tabTimers = {};
+        root.querySelectorAll('.wss-sync-group').forEach(function (card) {
+            initGroupProductSearch(card);
+            var inp = card.querySelector('.wss-group-tab-name');
+            if (!inp) return;
+            var gid = getGroupId(card);
+            inp.addEventListener('input', function () {
+                clearTimeout(tabTimers[gid]);
+                tabTimers[gid] = setTimeout(function () {
+                    var v = inp.value.trim();
+                    if (!v) return;
+                    var fd = new FormData();
+                    fd.append('op', 'set_tab');
+                    fd.append('group_id', gid);
+                    fd.append('tab_name', v);
+                    syncGroupsAjax(fd, function () {});
+                }, 600);
             });
+        });
     }
 
-    function initProductSearch(chipsContainer) {
-        var searchEl = document.getElementById('wss-product-search');
-        if (!searchEl) return;
+    function initGroupProductSearch(card) {
+        var wrap = card.querySelector('.wss-product-search');
+        if (!wrap) return;
 
-        var input    = searchEl.querySelector('.wb-product-search__input');
-        var dropdown = searchEl.querySelector('.wb-autocomplete__dropdown');
+        var input = wrap.querySelector('.wb-product-search__input');
+        var dropdown = wrap.querySelector('.wb-autocomplete__dropdown');
         if (!input || !dropdown) return;
+
+        var chipsContainer = card.querySelector('.wss-group-product-chips');
+        if (!chipsContainer) return;
 
         var debounce;
         input.addEventListener('input', function () {
             clearTimeout(debounce);
             var term = input.value.trim();
-            if (term.length < 2) { dropdown.style.display = 'none'; return; }
+            if (term.length < 2) {
+                dropdown.style.display = 'none';
+                return;
+            }
 
             debounce = setTimeout(function () {
                 var fd = new FormData();
@@ -184,14 +341,21 @@
                             dropdown.style.display = 'none';
                             return;
                         }
+
+                        var linkedHere = getExplicitProductIds(card);
+
                         res.data.products.forEach(function (p) {
-                            var isLinked = linkedIds.indexOf(String(p.id)) >= 0;
+                            var isHere = linkedHere.indexOf(String(p.id)) >= 0;
                             var item = document.createElement('div');
                             item.className = 'wb-autocomplete__item';
-                            item.textContent = p.name + (isLinked ? ' \u2713' : '');
-                            if (!isLinked) {
+                            item.textContent = p.name + (isHere ? ' \u2713' : '');
+                            if (!isHere) {
                                 item.addEventListener('click', function () {
-                                    linkProduct(p.id, p.name, chipsContainer);
+                                    var fd2 = new FormData();
+                                    fd2.append('op', 'add_product');
+                                    fd2.append('group_id', getGroupId(card));
+                                    fd2.append('product_id', String(p.id));
+                                    syncGroupsAjax(fd2);
                                     dropdown.style.display = 'none';
                                     input.value = '';
                                 });
@@ -207,168 +371,10 @@
         });
 
         document.addEventListener('click', function (e) {
-            if (!e.target.closest('.wss-product-search')) {
+            if (!wrap.contains(e.target)) {
                 dropdown.style.display = 'none';
             }
         });
-    }
-
-    function linkProduct(id, name, chipsContainer) {
-        var fd = new FormData();
-        fd.append('action', 'wss_save_sync_products');
-        fd.append('nonce', fflaAdmin.nonce);
-        fd.append('sync_action', 'add');
-        fd.append('product_id', id);
-
-        fetch(fflaAdmin.ajaxUrl, { method: 'POST', body: fd })
-            .then(function (r) { return r.json(); })
-            .then(function (res) {
-                if (res.success) {
-                    linkedIds.push(String(id));
-                    removeEmptyState();
-                    addChip(chipsContainer, id, name);
-                    updateCount();
-                }
-            });
-    }
-
-    function unlinkProduct(id, chip) {
-        var fd = new FormData();
-        fd.append('action', 'wss_save_sync_products');
-        fd.append('nonce', fflaAdmin.nonce);
-        fd.append('sync_action', 'remove');
-        fd.append('product_id', id);
-
-        fetch(fflaAdmin.ajaxUrl, { method: 'POST', body: fd })
-            .then(function (r) { return r.json(); })
-            .then(function (res) {
-                if (res.success) {
-                    linkedIds = linkedIds.filter(function (v) { return v !== String(id); });
-                    chip.remove();
-                    updateCount();
-                    if (!linkedIds.length) showEmptyState();
-                }
-            });
-    }
-
-    function addChip(container, id, label) {
-        if (container.querySelector('[data-id="' + id + '"]')) return;
-
-        var chip = document.createElement('span');
-        chip.className = 'wss-chip';
-        chip.setAttribute('data-id', id);
-        chip.innerHTML = escapeHtml(label) + ' <button type="button" class="wss-chip__remove">&times;</button>';
-        chip.querySelector('.wss-chip__remove').addEventListener('click', function () {
-            unlinkProduct(id, chip);
-        });
-        container.appendChild(chip);
-    }
-
-    function initBulkActions(chipsContainer) {
-        var linkAll   = document.getElementById('wss-link-all');
-        var unlinkAll = document.getElementById('wss-unlink-all');
-
-        if (linkAll) {
-            linkAll.addEventListener('click', function () {
-                if (!confirm('Link ALL products for sync?')) return;
-                bulkAction('link_all', chipsContainer);
-            });
-        }
-
-        if (unlinkAll) {
-            unlinkAll.addEventListener('click', function () {
-                if (!confirm('Unlink ALL products from sync?')) return;
-                bulkAction('unlink_all', chipsContainer);
-            });
-        }
-    }
-
-    function bulkAction(action, chipsContainer) {
-        var fd = new FormData();
-        fd.append('action', 'wss_save_sync_products');
-        fd.append('nonce', fflaAdmin.nonce);
-        fd.append('sync_action', action);
-
-        fetch(fflaAdmin.ajaxUrl, { method: 'POST', body: fd })
-            .then(function (r) { return r.json(); })
-            .then(function (res) {
-                if (res.success) {
-                    // Reload page to refresh chips.
-                    window.location.reload();
-                }
-            });
-    }
-
-    function initTaxonomyLink(chipsContainer) {
-        var buttons = document.querySelectorAll('.wss-link-tax-btn');
-        buttons.forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                var taxonomy = btn.getAttribute('data-taxonomy');
-                var selectId = btn.getAttribute('data-select');
-                var select   = document.getElementById(selectId);
-                if (!select || !select.value) return;
-
-                var fd = new FormData();
-                fd.append('action', 'wss_link_by_taxonomy');
-                fd.append('nonce', fflaAdmin.nonce);
-                fd.append('taxonomy', taxonomy);
-                fd.append('term_id', select.value);
-
-                btn.disabled = true;
-                btn.textContent = 'Linking...';
-
-                fetch(fflaAdmin.ajaxUrl, { method: 'POST', body: fd })
-                    .then(function (r) { return r.json(); })
-                    .then(function (res) {
-                        btn.disabled = false;
-                        btn.textContent = 'Link';
-                        select.value = '';
-
-                        if (res.success) {
-                            // Add new IDs and chips.
-                            var names = res.data.names || {};
-                            Object.keys(names).forEach(function (pid) {
-                                if (linkedIds.indexOf(String(pid)) < 0) {
-                                    linkedIds.push(String(pid));
-                                }
-                                removeEmptyState();
-                                addChip(chipsContainer, pid, names[pid]);
-                            });
-                            updateCount();
-
-                            // Show feedback.
-                            var feedback = document.createElement('span');
-                            feedback.className = 'wss-bulk-link__feedback';
-                            feedback.textContent = res.data.message;
-                            btn.parentNode.appendChild(feedback);
-                            setTimeout(function () { feedback.remove(); }, 3000);
-                        }
-                    });
-            });
-        });
-    }
-
-    /* ── Helpers ────────────────────────────────────── */
-
-    function updateCount() {
-        var el = document.getElementById('wss-product-count');
-        if (el) el.textContent = linkedIds.length + ' linked';
-    }
-
-    function removeEmptyState() {
-        var empty = document.getElementById('wss-empty-state');
-        if (empty) empty.remove();
-    }
-
-    function showEmptyState() {
-        var container = document.getElementById('wss-linked-products');
-        if (container && !document.getElementById('wss-empty-state')) {
-            var p = document.createElement('p');
-            p.className = 'wss-empty-state';
-            p.id = 'wss-empty-state';
-            p.textContent = 'No products linked yet. Use the options above to add products.';
-            container.appendChild(p);
-        }
     }
 
     function escapeHtml(str) {

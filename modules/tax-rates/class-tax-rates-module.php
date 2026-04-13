@@ -63,9 +63,11 @@ class Tax_Rates_Module extends FFLA_Module
         // Resolvers.
         require_once $base . 'includes/resolvers/class-tax-resolver-base.php';
         require_once $base . 'includes/resolvers/class-sheet-zip-dataset-resolver.php';
+        require_once $base . 'includes/resolvers/class-usgeocoder-api-resolver.php';
 
         // Register resolvers.
         Tax_Resolver_Router::register(new Sheet_ZIP_Dataset_Resolver());
+        Tax_Resolver_Router::register(new USGeocoder_API_Resolver());
 
         // Register REST API routes.
         add_action('rest_api_init', ['Tax_REST_API', 'register_routes']);
@@ -82,7 +84,20 @@ class Tax_Rates_Module extends FFLA_Module
             Tax_Resolver_DB::install();
         }
 
+        $settings = get_option('ffla_tax_resolver_settings', []);
+        $api_key  = trim((string) ($settings['usgeocoder_auth_key'] ?? ''));
+
         foreach (Tax_Coverage::ALL_STATES as $state_code) {
+            if ($api_key !== '') {
+                Tax_Coverage::update_state(
+                    $state_code,
+                    Tax_Coverage::SUPPORTED_WITH_REMOTE,
+                    'usgeocoder_api',
+                    'USGeocoder live API is active for this state.'
+                );
+                continue;
+            }
+
             $has_dataset = Tax_Dataset_Pipeline::has_active_sheet_dataset($state_code);
             $status      = $has_dataset
                 ? Tax_Dataset_Pipeline::get_active_sheet_coverage_status($state_code)
@@ -103,7 +118,6 @@ class Tax_Rates_Module extends FFLA_Module
             );
         }
 
-        $settings = get_option('ffla_tax_resolver_settings', []);
         Tax_Quote_Engine::set_cache_ttl((int) ($settings['cache_ttl'] ?? 86400));
 
         // Admin UI.
@@ -137,6 +151,7 @@ class Tax_Rates_Module extends FFLA_Module
                 'restrict_states' => '0',
                 'enabled_states'  => [],
                 'sheet_source_url'=> Tax_Dataset_Pipeline::DEFAULT_SHEET_URL,
+                'usgeocoder_auth_key' => '',
             ]);
         }
     }

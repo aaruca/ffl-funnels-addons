@@ -26,6 +26,29 @@ class WSS_Admin
         add_action('wp_ajax_wss_resolve_product_names', [$this, 'ajax_resolve_product_names']);
         add_action('wp_ajax_wss_save_sync_products', [$this, 'ajax_save_sync_products']);
         add_action('wp_ajax_wss_link_by_taxonomy', [$this, 'ajax_link_by_taxonomy']);
+        add_action('wp_ajax_wss_sync_groups', [$this, 'ajax_sync_groups']);
+        add_action('admin_enqueue_scripts', [$this, 'enqueue_wss_dashboard'], 100);
+    }
+
+    /**
+     * Localize sync groups for the WSS Dashboard JS (after module script is registered).
+     */
+    public function enqueue_wss_dashboard(): void
+    {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        if (!isset($_GET['page']) || sanitize_key(wp_unslash($_GET['page'])) !== 'ffla-wss-dashboard') {
+            return;
+        }
+
+        if (!class_exists('WSS_Sync_Groups')) {
+            return;
+        }
+
+        WSS_Sync_Groups::ensure_migrated();
+
+        wp_localize_script('woo-sheets-sync-module', 'wssDashboard', [
+            'groups' => WSS_Sync_Groups::get_groups(),
+        ]);
     }
 
     // ──────────────────────────────────────────────────
@@ -109,10 +132,10 @@ class WSS_Admin
                     );
 
                     FFLA_Admin::render_text_field(
-                        __('Sheet Tab Name', 'ffl-funnels-addons'),
+                        __('Sheet Tab Name (first tab group)', 'ffl-funnels-addons'),
                         'wss_tab_name',
                         $settings['tab_name'] ?? 'Inventory',
-                        __('The name of the tab/sheet within the spreadsheet.', 'ffl-funnels-addons')
+                        __('When you save settings, this updates the first tab group on the WSS Dashboard. Use the Dashboard to add more sheet tabs or rename groups.', 'ffl-funnels-addons')
                     );
                     ?>
                 </div>
@@ -168,6 +191,15 @@ class WSS_Admin
         ]);
 
         update_option('wss_settings', $settings);
+
+        if (class_exists('WSS_Sync_Groups')) {
+            WSS_Sync_Groups::ensure_migrated();
+            $groups = WSS_Sync_Groups::get_groups();
+            if ($groups !== [] && isset($groups[0]['tab_name'])) {
+                $groups[0]['tab_name'] = $settings['tab_name'];
+                WSS_Sync_Groups::save_groups($groups);
+            }
+        }
 
         // Redirect to prevent resubmission.
         wp_safe_redirect(add_query_arg('wss_saved', '1', wp_get_referer() ?: admin_url('admin.php?page=ffla-wss-settings')));
@@ -266,18 +298,17 @@ class WSS_Admin
      */
     public function render_dashboard_page(): void
     {
+        if (class_exists('WSS_Sync_Groups')) {
+            WSS_Sync_Groups::ensure_migrated();
+        }
+
         $last_sync = get_option('wss_last_sync', []);
         $logger    = new WSS_Logger();
 
-        // Get synced product IDs for the product selector.
-        $synced_ids = get_posts([
-            'post_type'      => 'product',
-            'post_status'    => 'publish',
-            'meta_key'       => '_wss_sync_enabled',
-            'meta_value'     => '1',
-            'fields'         => 'ids',
-            'posts_per_page' => -1,
-        ]);
+        $sync_groups = class_exists('WSS_Sync_Groups') ? WSS_Sync_Groups::get_groups() : [];
+        $union_count = class_exists('WSS_Sync_Groups')
+            ? count(WSS_Sync_Groups::resolve_all_linked_parent_ids($sync_groups))
+            : 0;
 
         // Get categories and tags for bulk linking.
         $categories = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => true]);
@@ -335,6 +366,30 @@ class WSS_Admin
                                 ?>
                             </p>
                         <?php endif; ?>
+                        <?php if (!empty($last_sync['groups']) && is_array($last_sync['groups'])): ?>
+                            <details class="wss-last-sync-groups" style="margin-top:var(--wb-spacing-md)">
+                                <summary><?php esc_html_e('Per-tab results', 'ffl-funnels-addons'); ?></summary>
+                                <ul class="wss-last-sync-groups__list">
+                                    <?php foreach ($last_sync['groups'] as $gr): ?>
+                                        <li>
+                                            <strong><?php echo esc_html((string) ($gr['tab_name'] ?? '')); ?></strong>
+                                            <?php if (!empty($gr['error'])): ?>
+                                                — <span class="wss-status--error"><?php echo esc_html((string) $gr['error']); ?></span>
+                                            <?php else: ?>
+                                                <?php
+                                                $w = $gr['woo_to_sheet'] ?? [];
+                                                $s = $gr['sheet_to_woo'] ?? [];
+                                                ?>
+                                                — <?php esc_html_e('Woo→Sheet', 'ffl-funnels-addons'); ?>:
+                                                <?php echo (int) ($w['updated'] ?? 0); ?>/<?php echo (int) ($w['appended'] ?? 0); ?>/<?php echo (int) ($w['skipped'] ?? 0); ?>
+                                                · <?php esc_html_e('Sheet→Woo', 'ffl-funnels-addons'); ?>:
+                                                <?php echo (int) ($s['updated'] ?? 0); ?>/<?php echo (int) ($s['skipped'] ?? 0); ?>
+                                            <?php endif; ?>
+                                        </li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            </details>
+                        <?php endif; ?>
                     <?php endif; ?>
                 <?php else: ?>
                     <p><?php esc_html_e('No sync has been run yet.', 'ffl-funnels-addons'); ?></p>
@@ -352,75 +407,129 @@ class WSS_Admin
             </div>
         </div>
 
-        <!-- Products to Sync -->
+        <!-- Sheet tab groups -->
         <div class="wb-card">
             <div class="wb-card__header">
-                <h2><?php esc_html_e('Products to Sync', 'ffl-funnels-addons'); ?></h2>
+                <h2><?php esc_html_e('Sheet tab groups', 'ffl-funnels-addons'); ?></h2>
                 <span class="wss-product-count" id="wss-product-count">
-                    <?php printf(esc_html__('%d linked', 'ffl-funnels-addons'), count($synced_ids)); ?>
+                    <?php printf(esc_html__('%d products in all tabs', 'ffl-funnels-addons'), (int) $union_count); ?>
                 </span>
             </div>
             <div class="wb-card__body">
-
-                <!-- Bulk link by category / tag -->
-                <div class="wss-bulk-link">
-                    <div class="wss-bulk-link__row">
-                        <label class="wb-field__label"><?php esc_html_e('Link All Products', 'ffl-funnels-addons'); ?></label>
-                        <button type="button" class="wb-btn wb-btn--sm wb-btn--secondary" id="wss-link-all">
-                            <?php esc_html_e('Link All', 'ffl-funnels-addons'); ?>
-                        </button>
-                        <button type="button" class="wb-btn wb-btn--sm wb-btn--danger" id="wss-unlink-all">
-                            <?php esc_html_e('Unlink All', 'ffl-funnels-addons'); ?>
-                        </button>
-                    </div>
-
-                    <?php if (!empty($categories) && !is_wp_error($categories)): ?>
-                    <div class="wss-bulk-link__row">
-                        <label class="wb-field__label"><?php esc_html_e('Link by Category', 'ffl-funnels-addons'); ?></label>
-                        <select id="wss-link-category">
-                            <option value=""><?php esc_html_e('Select a category...', 'ffl-funnels-addons'); ?></option>
-                            <?php foreach ($categories as $cat): ?>
-                                <option value="<?php echo esc_attr($cat->term_id); ?>"><?php echo esc_html($cat->name); ?> (<?php echo esc_html($cat->count); ?>)</option>
-                            <?php endforeach; ?>
-                        </select>
-                        <button type="button" class="wb-btn wb-btn--sm wb-btn--secondary wss-link-tax-btn" data-taxonomy="product_cat" data-select="wss-link-category">
-                            <?php esc_html_e('Link', 'ffl-funnels-addons'); ?>
-                        </button>
-                    </div>
-                    <?php endif; ?>
-
-                    <?php if (!empty($tags) && !is_wp_error($tags)): ?>
-                    <div class="wss-bulk-link__row">
-                        <label class="wb-field__label"><?php esc_html_e('Link by Tag', 'ffl-funnels-addons'); ?></label>
-                        <select id="wss-link-tag">
-                            <option value=""><?php esc_html_e('Select a tag...', 'ffl-funnels-addons'); ?></option>
-                            <?php foreach ($tags as $tag): ?>
-                                <option value="<?php echo esc_attr($tag->term_id); ?>"><?php echo esc_html($tag->name); ?> (<?php echo esc_html($tag->count); ?>)</option>
-                            <?php endforeach; ?>
-                        </select>
-                        <button type="button" class="wb-btn wb-btn--sm wb-btn--secondary wss-link-tax-btn" data-taxonomy="product_tag" data-select="wss-link-tag">
-                            <?php esc_html_e('Link', 'ffl-funnels-addons'); ?>
-                        </button>
-                    </div>
-                    <?php endif; ?>
-                </div>
-
-                <hr class="wss-bulk-link__separator">
-
-                <!-- Search individual products -->
-                <div class="wss-product-search" id="wss-product-search">
-                    <input type="text" class="wb-product-search__input" placeholder="<?php esc_attr_e('Search products by name to add...', 'ffl-funnels-addons'); ?>" autocomplete="off">
-                    <div class="wb-autocomplete__dropdown"></div>
-                </div>
-
-                <!-- Linked products chips -->
-                <div class="wss-linked-products" id="wss-linked-products">
-                    <?php if (empty($synced_ids)): ?>
-                        <p class="wss-empty-state" id="wss-empty-state"><?php esc_html_e('No products linked yet. Use the options above to add products.', 'ffl-funnels-addons'); ?></p>
-                    <?php endif; ?>
-                </div>
-
+                <p class="wb-field__desc" style="margin-bottom:var(--wb-spacing-md)">
+                    <?php esc_html_e('Each group maps WooCommerce products to one Google Sheet tab. The same product can appear in multiple tabs. Sync runs each tab in order; if the same variation exists in more than one tab, Sheet→Woo uses the last tab in this list as the winner.', 'ffl-funnels-addons'); ?>
+                </p>
+                <button type="button" class="wb-btn wb-btn--secondary" id="wss-add-tab-group">
+                    <?php esc_html_e('Add sheet tab', 'ffl-funnels-addons'); ?>
+                </button>
             </div>
+        </div>
+
+        <div id="wss-groups-root">
+            <?php foreach ($sync_groups as $group): ?>
+                <?php
+                $gid   = isset($group['id']) ? (string) $group['id'] : '';
+                $gesc  = esc_attr($gid);
+                $pids  = $group['product_ids'] ?? [];
+                $cids  = $group['category_ids'] ?? [];
+                $tids  = $group['tag_ids'] ?? [];
+                ?>
+                <div class="wb-card wss-sync-group" style="margin-top:var(--wb-spacing-lg)" data-group-id="<?php echo $gesc; ?>">
+                    <div class="wb-card__header" style="display:flex;align-items:center;justify-content:space-between;gap:var(--wb-spacing-md);flex-wrap:wrap">
+                        <h3 class="wss-sync-group__title"><?php esc_html_e('Sheet tab', 'ffl-funnels-addons'); ?></h3>
+                        <button type="button" class="wb-btn wb-btn--sm wb-btn--danger wss-remove-group-btn"<?php echo count($sync_groups) <= 1 ? ' disabled' : ''; ?>>
+                            <?php esc_html_e('Remove tab group', 'ffl-funnels-addons'); ?>
+                        </button>
+                    </div>
+                    <div class="wb-card__body">
+                        <div class="wb-field" style="margin-bottom:var(--wb-spacing-md)">
+                            <label class="wb-field__label"><?php esc_html_e('Tab name (Google Sheet)', 'ffl-funnels-addons'); ?></label>
+                            <div class="wb-field__control">
+                                <input type="text" class="wb-input wss-group-tab-name" value="<?php echo esc_attr((string) ($group['tab_name'] ?? 'Inventory')); ?>" maxlength="99">
+                            </div>
+                        </div>
+
+                        <div class="wss-bulk-link">
+                            <div class="wss-bulk-link__row">
+                                <label class="wb-field__label"><?php esc_html_e('Link all products to this tab', 'ffl-funnels-addons'); ?></label>
+                                <button type="button" class="wb-btn wb-btn--sm wb-btn--secondary wss-group-link-all"><?php esc_html_e('Link all', 'ffl-funnels-addons'); ?></button>
+                                <button type="button" class="wb-btn wb-btn--sm wb-btn--danger wss-group-unlink-all"><?php esc_html_e('Clear tab rules', 'ffl-funnels-addons'); ?></button>
+                            </div>
+
+                            <?php if (!empty($categories) && !is_wp_error($categories)): ?>
+                            <div class="wss-bulk-link__row">
+                                <label class="wb-field__label"><?php esc_html_e('Add by category', 'ffl-funnels-addons'); ?></label>
+                                <select class="wss-group-category-select wb-input">
+                                    <option value=""><?php esc_html_e('Select a category...', 'ffl-funnels-addons'); ?></option>
+                                    <?php foreach ($categories as $cat): ?>
+                                        <option value="<?php echo esc_attr($cat->term_id); ?>"><?php echo esc_html($cat->name); ?> (<?php echo esc_html((string) $cat->count); ?>)</option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <button type="button" class="wb-btn wb-btn--sm wb-btn--secondary wss-group-add-category"><?php esc_html_e('Add', 'ffl-funnels-addons'); ?></button>
+                            </div>
+                            <?php endif; ?>
+
+                            <?php if (!empty($tags) && !is_wp_error($tags)): ?>
+                            <div class="wss-bulk-link__row">
+                                <label class="wb-field__label"><?php esc_html_e('Add by tag', 'ffl-funnels-addons'); ?></label>
+                                <select class="wss-group-tag-select wb-input">
+                                    <option value=""><?php esc_html_e('Select a tag...', 'ffl-funnels-addons'); ?></option>
+                                    <?php foreach ($tags as $tag): ?>
+                                        <option value="<?php echo esc_attr($tag->term_id); ?>"><?php echo esc_html($tag->name); ?> (<?php echo esc_html((string) $tag->count); ?>)</option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <button type="button" class="wb-btn wb-btn--sm wb-btn--secondary wss-group-add-tag"><?php esc_html_e('Add', 'ffl-funnels-addons'); ?></button>
+                            </div>
+                            <?php endif; ?>
+                        </div>
+
+                        <p class="wb-field__label" style="margin-top:var(--wb-spacing-md)"><?php esc_html_e('Rules (categories & tags)', 'ffl-funnels-addons'); ?></p>
+                        <div class="wss-group-tax-chips">
+                            <?php foreach ($cids as $cid): ?>
+                                <?php $term = get_term((int) $cid, 'product_cat'); ?>
+                                <?php if ($term && !is_wp_error($term)): ?>
+                                    <span class="wss-chip wss-chip--taxonomy" data-term-id="<?php echo esc_attr((string) $cid); ?>" data-taxonomy="product_cat">
+                                        <?php echo esc_html(sprintf(/* translators: %s: category name */ __('Cat: %s', 'ffl-funnels-addons'), $term->name)); ?>
+                                        <button type="button" class="wss-chip__remove" aria-label="<?php esc_attr_e('Remove', 'ffl-funnels-addons'); ?>">&times;</button>
+                                    </span>
+                                <?php endif; ?>
+                            <?php endforeach; ?>
+                            <?php foreach ($tids as $tid): ?>
+                                <?php $term = get_term((int) $tid, 'product_tag'); ?>
+                                <?php if ($term && !is_wp_error($term)): ?>
+                                    <span class="wss-chip wss-chip--taxonomy" data-term-id="<?php echo esc_attr((string) $tid); ?>" data-taxonomy="product_tag">
+                                        <?php echo esc_html(sprintf(/* translators: %s: tag name */ __('Tag: %s', 'ffl-funnels-addons'), $term->name)); ?>
+                                        <button type="button" class="wss-chip__remove" aria-label="<?php esc_attr_e('Remove', 'ffl-funnels-addons'); ?>">&times;</button>
+                                    </span>
+                                <?php endif; ?>
+                            <?php endforeach; ?>
+                        </div>
+
+                        <hr class="wss-bulk-link__separator">
+
+                        <p class="wb-field__label"><?php esc_html_e('Individual products', 'ffl-funnels-addons'); ?></p>
+                        <div class="wss-product-search">
+                            <input type="text" class="wb-product-search__input" placeholder="<?php esc_attr_e('Search products by name…', 'ffl-funnels-addons'); ?>" autocomplete="off">
+                            <div class="wb-autocomplete__dropdown"></div>
+                        </div>
+
+                        <div class="wss-linked-products wss-group-product-chips">
+                            <?php foreach ($pids as $pid): ?>
+                                <?php $product = wc_get_product((int) $pid); ?>
+                                <?php if ($product): ?>
+                                    <span class="wss-chip" data-id="<?php echo esc_attr((string) $pid); ?>">
+                                        <?php echo esc_html($product->get_name()); ?>
+                                        <button type="button" class="wss-chip__remove">&times;</button>
+                                    </span>
+                                <?php endif; ?>
+                            <?php endforeach; ?>
+                            <?php if (empty($pids) && empty($cids) && empty($tids)): ?>
+                                <p class="wss-empty-state wss-group-empty"><?php esc_html_e('No products in this tab yet. Add categories, tags, or search for a product.', 'ffl-funnels-addons'); ?></p>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+            <?php endforeach; ?>
         </div>
 
         <!-- Sync Log -->
@@ -436,10 +545,6 @@ class WSS_Admin
             </div>
         </div>
 
-        <script>
-            // Pass synced IDs to JS for chip rendering.
-            window.wssSyncedIds = <?php echo wp_json_encode(array_map('strval', $synced_ids)); ?>;
-        </script>
         <?php
     }
 
@@ -555,15 +660,216 @@ class WSS_Admin
 
         $sheets = new WSS_Google_Sheets($oauth);
         $logger = new WSS_Logger();
-        $engine = new WSS_Sync_Engine($sheets, $logger, $settings);
 
-        $result = $engine->run();
+        if (!class_exists('WSS_Sync_Orchestrator')) {
+            wp_send_json_error(['message' => __('Sync orchestrator not available.', 'ffl-funnels-addons')]);
+        }
+
+        $result = WSS_Sync_Orchestrator::run_all($sheets, $logger);
 
         if (isset($result['error'])) {
             wp_send_json_error(['message' => $result['error']]);
         }
 
         wp_send_json_success($result);
+    }
+
+    /**
+     * AJAX: CRUD for sheet tab sync groups.
+     */
+    public function ajax_sync_groups(): void
+    {
+        check_ajax_referer('ffla_admin_nonce', 'nonce');
+
+        if (!current_user_can('manage_woocommerce')) {
+            wp_send_json_error(['message' => __('Permission denied.', 'ffl-funnels-addons')]);
+        }
+
+        if (!class_exists('WSS_Sync_Groups')) {
+            wp_send_json_error(['message' => __('Sync groups not available.', 'ffl-funnels-addons')]);
+        }
+
+        WSS_Sync_Groups::ensure_migrated();
+
+        $op = sanitize_key($_POST['op'] ?? '');
+
+        if ($op === 'get') {
+            wp_send_json_success(['groups' => WSS_Sync_Groups::get_groups()]);
+        }
+
+        $groups = WSS_Sync_Groups::get_groups();
+        $gid    = isset($_POST['group_id']) ? sanitize_text_field(wp_unslash($_POST['group_id'])) : '';
+
+        if ($op === 'add_group') {
+            $n         = count($groups) + 1;
+            $default_tab = sprintf(
+                /* translators: %d: tab group index (1-based) */
+                __('Sheet tab %d', 'ffl-funnels-addons'),
+                $n
+            );
+
+            $groups[] = [
+                'id'            => wp_generate_uuid4(),
+                'tab_name'      => $default_tab,
+                'product_ids'   => [],
+                'category_ids'  => [],
+                'tag_ids'       => [],
+            ];
+            WSS_Sync_Groups::save_groups($groups);
+            wp_send_json_success(['groups' => WSS_Sync_Groups::get_groups()]);
+        }
+
+        if ($op === 'remove_group') {
+            if ($gid === '' || count($groups) <= 1) {
+                wp_send_json_error(['message' => __('You must keep at least one sheet tab group.', 'ffl-funnels-addons')]);
+            }
+
+            $groups = array_values(array_filter($groups, static function ($g) use ($gid) {
+                return ($g['id'] ?? '') !== $gid;
+            }));
+
+            WSS_Sync_Groups::save_groups($groups);
+            wp_send_json_success(['groups' => WSS_Sync_Groups::get_groups()]);
+        }
+
+        $idx = $this->wss_find_group_index($groups, $gid);
+        if ($idx < 0) {
+            wp_send_json_error(['message' => __('Group not found.', 'ffl-funnels-addons')]);
+        }
+
+        if ($op === 'set_tab') {
+            $tab = isset($_POST['tab_name']) ? trim(wp_strip_all_tags(wp_unslash($_POST['tab_name']))) : '';
+            $tab = preg_replace('/[\[\]\*\/\\\?\:]/', '', $tab) ?? '';
+            $tab = trim((string) $tab);
+            if ($tab === '') {
+                wp_send_json_error(['message' => __('Tab name is required.', 'ffl-funnels-addons')]);
+            }
+
+            $groups[$idx]['tab_name'] = $tab;
+            WSS_Sync_Groups::save_groups($groups);
+            wp_send_json_success(['groups' => WSS_Sync_Groups::get_groups()]);
+        }
+
+        if ($op === 'add_product') {
+            $pid = absint($_POST['product_id'] ?? 0);
+            if ($pid <= 0) {
+                wp_send_json_error(['message' => __('Invalid product.', 'ffl-funnels-addons')]);
+            }
+
+            if (!in_array($pid, $groups[$idx]['product_ids'], true)) {
+                $groups[$idx]['product_ids'][] = $pid;
+            }
+
+            WSS_Sync_Groups::save_groups($groups);
+            wp_send_json_success(['groups' => WSS_Sync_Groups::get_groups()]);
+        }
+
+        if ($op === 'remove_product') {
+            $pid = absint($_POST['product_id'] ?? 0);
+            $groups[$idx]['product_ids'] = array_values(array_filter(
+                $groups[$idx]['product_ids'],
+                static function ($v) use ($pid) {
+                    return (int) $v !== $pid;
+                }
+            ));
+
+            WSS_Sync_Groups::save_groups($groups);
+            wp_send_json_success(['groups' => WSS_Sync_Groups::get_groups()]);
+        }
+
+        if ($op === 'link_category') {
+            $term_id = absint($_POST['term_id'] ?? 0);
+            if ($term_id <= 0) {
+                wp_send_json_error(['message' => __('Invalid category.', 'ffl-funnels-addons')]);
+            }
+
+            if (!in_array($term_id, $groups[$idx]['category_ids'], true)) {
+                $groups[$idx]['category_ids'][] = $term_id;
+            }
+
+            WSS_Sync_Groups::save_groups($groups);
+            wp_send_json_success(['groups' => WSS_Sync_Groups::get_groups()]);
+        }
+
+        if ($op === 'unlink_category') {
+            $term_id = absint($_POST['term_id'] ?? 0);
+            $groups[$idx]['category_ids'] = array_values(array_filter(
+                $groups[$idx]['category_ids'],
+                static function ($v) use ($term_id) {
+                    return (int) $v !== $term_id;
+                }
+            ));
+
+            WSS_Sync_Groups::save_groups($groups);
+            wp_send_json_success(['groups' => WSS_Sync_Groups::get_groups()]);
+        }
+
+        if ($op === 'link_tag') {
+            $term_id = absint($_POST['term_id'] ?? 0);
+            if ($term_id <= 0) {
+                wp_send_json_error(['message' => __('Invalid tag.', 'ffl-funnels-addons')]);
+            }
+
+            if (!in_array($term_id, $groups[$idx]['tag_ids'], true)) {
+                $groups[$idx]['tag_ids'][] = $term_id;
+            }
+
+            WSS_Sync_Groups::save_groups($groups);
+            wp_send_json_success(['groups' => WSS_Sync_Groups::get_groups()]);
+        }
+
+        if ($op === 'unlink_tag') {
+            $term_id = absint($_POST['term_id'] ?? 0);
+            $groups[$idx]['tag_ids'] = array_values(array_filter(
+                $groups[$idx]['tag_ids'],
+                static function ($v) use ($term_id) {
+                    return (int) $v !== $term_id;
+                }
+            ));
+
+            WSS_Sync_Groups::save_groups($groups);
+            wp_send_json_success(['groups' => WSS_Sync_Groups::get_groups()]);
+        }
+
+        if ($op === 'link_all') {
+            $all = get_posts([
+                'post_type'      => 'product',
+                'post_status'    => 'publish',
+                'posts_per_page' => -1,
+                'fields'         => 'ids',
+            ]);
+            $groups[$idx]['product_ids']   = array_map('intval', $all ?: []);
+            $groups[$idx]['category_ids'] = [];
+            $groups[$idx]['tag_ids']      = [];
+
+            WSS_Sync_Groups::save_groups($groups);
+            wp_send_json_success(['groups' => WSS_Sync_Groups::get_groups()]);
+        }
+
+        if ($op === 'unlink_all') {
+            $groups[$idx]['product_ids']   = [];
+            $groups[$idx]['category_ids'] = [];
+            $groups[$idx]['tag_ids']      = [];
+
+            WSS_Sync_Groups::save_groups($groups);
+            wp_send_json_success(['groups' => WSS_Sync_Groups::get_groups()]);
+        }
+
+        wp_send_json_error(['message' => __('Invalid operation.', 'ffl-funnels-addons')]);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $groups
+     */
+    private function wss_find_group_index(array $groups, string $id): int
+    {
+        foreach ($groups as $i => $g) {
+            if (($g['id'] ?? '') === $id) {
+                return (int) $i;
+            }
+        }
+
+        return -1;
     }
 
     /**
@@ -802,20 +1108,17 @@ class WSS_Admin
                 <h3>2. Configure Your Spreadsheet</h3>
                 <ol>
                     <li>In <strong>WSS Settings</strong>, paste the full Google Sheet URL (or just the Sheet ID).</li>
-                    <li>Enter the <strong>Tab Name</strong> (the name of the sheet tab at the bottom, e.g. "Inventory"). This must match exactly (case-sensitive).</li>
+                    <li>Optional: the <strong>Sheet Tab Name</strong> field updates the <em>first</em> tab group; you can rename tabs and add more groups only on the Dashboard.</li>
                     <li>Click <strong>Save Settings</strong>.</li>
                 </ol>
 
-                <h3>3. Select Products to Sync</h3>
+                <h3>3. Sheet Tab Groups (Products per Tab)</h3>
                 <ol>
                     <li>Go to <strong>WSS Dashboard</strong>.</li>
-                    <li>In the <strong>Products to Sync</strong> section, use any of these methods:</li>
+                    <li>Each <strong>Sheet tab group</strong> has a <strong>Tab name</strong> that must match a tab at the bottom of your Google Sheet (case-sensitive, no characters <code>[ ] * / \\ ? :</code>).</li>
+                    <li>Use <strong>Add sheet tab</strong> to create another group. The same product can appear in multiple tabs; each tab syncs its own rows.</li>
+                    <li>Within a group, add products via <strong>Link all</strong>, <strong>Add by category/tag</strong>, or product search. <strong>Clear tab rules</strong> removes every rule for that tab only.</li>
                 </ol>
-                <ul>
-                    <li><strong>Link All</strong> &mdash; Links every published product.</li>
-                    <li><strong>Link by Category / Tag</strong> &mdash; Links all products in a specific category or tag.</li>
-                    <li><strong>Search</strong> &mdash; Search products by name and add them individually.</li>
-                </ul>
 
                 <h3>4. Run Your First Sync</h3>
                 <ol>
@@ -942,6 +1245,11 @@ class WSS_Admin
                 </ol>
                 <p>This means <strong>sheet edits take priority</strong>. If you change a price in both the sheet and WooCommerce between syncs, the sheet value wins.</p>
 
+                <h3>Multiple Tabs and Duplicates</h3>
+                <p>With several tab groups, the engine processes groups <strong>in the order shown on the Dashboard</strong> (top to bottom). For each tab it only reads and writes rows for products assigned to that tab.</p>
+                <p><strong>WooCommerce &rarr; Sheet:</strong> If a product is in two tabs, it gets <strong>one row per tab</strong> after sync.</p>
+                <p><strong>Sheet &rarr; WooCommerce:</strong> If the same <code>variation_id</code> appears in more than one tab with different values, <strong>the last tab in the list wins</strong> when writing back to WooCommerce. Keep conflicting edits in one tab, or reorder groups so the authoritative tab is last.</p>
+
                 <h3>Automatic Sync</h3>
                 <p>A daily cron job runs the sync automatically. You can see the next scheduled sync time on the Dashboard.</p>
 
@@ -963,7 +1271,7 @@ class WSS_Admin
                     <tbody>
                         <tr>
                             <td>"Unable to parse range" error</td>
-                            <td>The tab name in Settings doesn't match the actual tab name in your Google Sheet. Check for extra spaces, capitalization, or special characters.</td>
+                            <td>A tab name in <strong>Sheet tab groups</strong> (Dashboard) does not match the tab at the bottom of your Google Sheet. Check spelling, spaces, and invalid characters (<code>[ ] * / \\ ? :</code> are stripped when saving).</td>
                         </tr>
                         <tr>
                             <td>"Not connected to Google" error</td>
@@ -975,7 +1283,7 @@ class WSS_Admin
                         </tr>
                         <tr>
                             <td>Products not appearing in the sheet</td>
-                            <td>Make sure the products are linked in the <strong>Products to Sync</strong> section of the Dashboard.</td>
+                            <td>Confirm the product is included in that tab&rsquo;s group (search, category/tag rules, or Link all) on the <strong>WSS Dashboard</strong>, then run <strong>Sync Now</strong>.</td>
                         </tr>
                         <tr>
                             <td>Sheet edits not applying to WooCommerce</td>

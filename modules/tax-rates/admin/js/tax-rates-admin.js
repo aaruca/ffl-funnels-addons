@@ -167,6 +167,37 @@
                 });
         });
 
+        $('#ffla-purge-legacy-btn').on('click', function () {
+            var $btn = $(this);
+            var $status = $('#ffla-purge-legacy-status');
+
+            if (!window.confirm('This will permanently delete old local tax datasets, quote cache, and audit logs. Continue?')) {
+                return;
+            }
+
+            $btn.prop('disabled', true).text('Deleting old database...');
+            $status
+                .show()
+                .html('<div class="wb-ai-loading-message"><span>Deleting legacy local tax data.</span><span class="wb-ai-dots"><span></span><span></span><span></span></span></div>');
+
+            $.post(FflaTaxResolver.ajaxUrl, {
+                action: 'ffla_tax_purge_legacy_data',
+                security: FflaTaxResolver.nonce
+            })
+                .done(function (res) {
+                    var message = (res && res.data && res.data.message) ? res.data.message : 'Cleanup completed.';
+                    $status.html('<strong>Cleanup finished.</strong> ' + escHtml(message));
+                    alert(message);
+                })
+                .fail(function () {
+                    $status.html('<span class="ffla-tax-error">Cleanup request failed.</span>');
+                    alert('Request failed.');
+                })
+                .always(function () {
+                    $btn.prop('disabled', false).text('Delete Old Tax Database');
+                });
+        });
+
         var $restrictStates = $('input[name="restrict_states"]');
         var $statePicker = $('#ffla-tax-state-picker');
 

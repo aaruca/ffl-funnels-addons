@@ -18,6 +18,7 @@ class Tax_Rates_Admin
         add_action('admin_post_ffla_tax_resolver_save_settings', [$this, 'save_settings']);
         add_action('wp_ajax_ffla_tax_quote_lookup', [$this, 'ajax_quote_lookup']);
         add_action('wp_ajax_ffla_tax_run_sync', [$this, 'ajax_run_sync']);
+        add_action('wp_ajax_ffla_tax_purge_legacy_data', [$this, 'ajax_purge_legacy_data']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
     }
 
@@ -98,6 +99,7 @@ class Tax_Rates_Admin
             'restrict_states' => isset($_POST['restrict_states']) ? '1' : '0',
             'enabled_states'  => $enabled_states,
             'sheet_source_url'=> esc_url_raw(wp_unslash($_POST['sheet_source_url'] ?? Tax_Dataset_Pipeline::DEFAULT_SHEET_URL)),
+            'usgeocoder_auth_key' => sanitize_text_field(wp_unslash($_POST['usgeocoder_auth_key'] ?? '')),
         ];
 
         $removed_states = array_values(array_diff($previous_enabled_states, $enabled_states));
@@ -192,6 +194,28 @@ class Tax_Rates_Admin
             ),
             'results' => $results,
             'errors'  => $errors,
+        ]);
+    }
+
+    public function ajax_purge_legacy_data(): void
+    {
+        check_ajax_referer('ffla_tax_resolver_nonce', 'security');
+
+        if (!current_user_can('manage_woocommerce')) {
+            wp_send_json_error('Permission denied.');
+        }
+
+        $result = Tax_Resolver_DB::purge_legacy_local_data();
+
+        wp_send_json_success([
+            'message' => sprintf(
+                __('Legacy local tax data deleted. Datasets: %1$d, rates: %2$d, cache: %3$d, audit: %4$d.', 'ffl-funnels-addons'),
+                (int) ($result['dataset_versions_deleted'] ?? 0),
+                (int) ($result['jurisdiction_rates_deleted'] ?? 0),
+                (int) ($result['address_cache_deleted'] ?? 0),
+                (int) ($result['quotes_audit_deleted'] ?? 0)
+            ),
+            'result' => $result,
         ]);
     }
 
@@ -618,6 +642,7 @@ class Tax_Rates_Admin
             'restrict_states' => '0',
             'enabled_states'  => [],
             'sheet_source_url'=> Tax_Dataset_Pipeline::DEFAULT_SHEET_URL,
+            'usgeocoder_auth_key' => '',
         ]);
 
         $enabled_states = is_array($settings['enabled_states']) ? $settings['enabled_states'] : [];
@@ -652,6 +677,19 @@ class Tax_Rates_Admin
         );
 
         echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-sm)">' . esc_html__('WooCommerce checkout reads taxes from the runtime resolver and local imported datasets. Legacy WooCommerce tax-table sync is no longer part of the normal flow.', 'ffl-funnels-addons') . '</p>';
+        echo '</div></div>';
+
+        echo '<div class="wb-card" style="margin-top:var(--wb-spacing-xl)">';
+        echo '<div class="wb-card__header"><h3>' . esc_html__('USGeocoder API', 'ffl-funnels-addons') . '</h3></div>';
+        echo '<div class="wb-card__body">';
+        echo '<p class="wb-field__desc">' . esc_html__('When this key is set, Tax Resolver uses live USGeocoder JSON API responses as the primary tax source and bypasses the old local sheet dataset flow.', 'ffl-funnels-addons') . '</p>';
+
+        FFLA_Admin::render_text_field(
+            __('USGeocoder Auth Key', 'ffl-funnels-addons'),
+            'usgeocoder_auth_key',
+            (string) $settings['usgeocoder_auth_key'],
+            __('API key used for live tax lookup requests.', 'ffl-funnels-addons')
+        );
         echo '</div></div>';
 
         echo '<div class="wb-card" style="margin-top:var(--wb-spacing-xl)">';
@@ -720,6 +758,14 @@ class Tax_Rates_Admin
         echo '</div>';
 
         echo '</form>';
+
+        echo '<div class="wb-card" style="margin-top:var(--wb-spacing-xl)">';
+        echo '<div class="wb-card__header"><h3>' . esc_html__('Legacy Data Cleanup', 'ffl-funnels-addons') . '</h3></div>';
+        echo '<div class="wb-card__body">';
+        echo '<p class="wb-field__desc">' . esc_html__('Use this only after migrating to USGeocoder. It deletes old local tax datasets, cached quotes, and audit rows created by the legacy local dataset workflow.', 'ffl-funnels-addons') . '</p>';
+        echo '<button type="button" id="ffla-purge-legacy-btn" class="wb-btn wb-btn--danger">' . esc_html__('Delete Old Tax Database', 'ffl-funnels-addons') . '</button>';
+        echo '<div id="ffla-purge-legacy-status" class="ffla-tax-upload-status" style="display:none;margin-top:var(--wb-spacing-sm)"></div>';
+        echo '</div></div>';
     }
 
     private static function is_covered_state_status(string $status): bool

@@ -45,7 +45,9 @@ class WooSheets_Module extends FFLA_Module
         require_once $path . 'includes/class-wss-google-oauth.php';
         require_once $path . 'includes/class-wss-google-sheets.php';
         require_once $path . 'includes/class-wss-logger.php';
+        require_once $path . 'includes/class-wss-sync-groups.php';
         require_once $path . 'includes/class-wss-sync-engine.php';
+        require_once $path . 'includes/class-wss-sync-orchestrator.php';
         require_once $path . 'includes/class-wss-activator.php';
         require_once $path . 'includes/class-wss-cron.php';
 

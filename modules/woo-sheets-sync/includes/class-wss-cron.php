@@ -52,9 +52,8 @@ class WSS_Cron
             $oauth  = new WSS_Google_OAuth();
             $sheets = new WSS_Google_Sheets($oauth);
             $logger = new WSS_Logger();
-            $engine = new WSS_Sync_Engine($sheets, $logger, $settings);
 
-            $engine->run();
+            WSS_Sync_Orchestrator::run_all($sheets, $logger);
         } catch (\Throwable $e) {
             $logger = new WSS_Logger();
             $logger->log('woo_to_sheet', 0, 0, 'error', 'Cron sync failed: ' . $e->getMessage());
