@@ -120,6 +120,15 @@ class WSS_Sync_Engine
     }
 
     /**
+     * Build an A1 range using a safely quoted tab name.
+     */
+    private function a1_range(string $cells): string
+    {
+        $tab = str_replace("'", "''", (string) $this->tab_name);
+        return "'" . $tab . "'!" . $cells;
+    }
+
+    /**
      * Run a full bidirectional sync.
      *
      * Order: Sheet→Woo first (so sheet edits are applied), then Woo→Sheet.
@@ -139,7 +148,7 @@ class WSS_Sync_Engine
         }
 
         // Read the entire sheet once (reused by both phases).
-        $range      = $this->tab_name . '!A:L';
+        $range      = $this->a1_range('A:L');
         $sheet_data = $this->sheets->read_range($this->sheet_id, $range);
 
         if (is_wp_error($sheet_data)) {
@@ -222,11 +231,11 @@ class WSS_Sync_Engine
                     $stats['created']++;
                     // $result = ['product_id' => int, 'variation_id' => int]
                     $id_updates[] = [
-                        'range'  => sprintf('%s!A%d:B%d', $this->tab_name, $row_number, $row_number),
+                        'range'  => $this->a1_range(sprintf('A%d:B%d', $row_number, $row_number)),
                         'values' => [[(string) $result['product_id'], (string) $result['variation_id']]],
                     ];
                     $timestamp_updates[] = [
-                        'range'  => sprintf('%s!K%d', $this->tab_name, $row_number),
+                        'range'  => $this->a1_range(sprintf('K%d', $row_number)),
                         'values' => [[$now]],
                     ];
                 }
@@ -270,7 +279,7 @@ class WSS_Sync_Engine
             // Prepare timestamp update for this row.
             $row_number = $index + 2; // +2: 0-based index + header row
             $timestamp_updates[] = [
-                'range'  => sprintf('%s!K%d', $this->tab_name, $row_number),
+                'range'  => $this->a1_range(sprintf('K%d', $row_number)),
                 'values' => [[$now]],
             ];
         }
@@ -399,7 +408,7 @@ class WSS_Sync_Engine
 
                     $row_number = $row_map[$vid] + 2; // +2: 0-based index + header row
                     $batch_updates[] = [
-                        'range'  => sprintf('%s!A%d:L%d', $this->tab_name, $row_number, $row_number),
+                        'range'  => $this->a1_range(sprintf('A%d:L%d', $row_number, $row_number)),
                         'values' => [$row],
                     ];
                     $stats['updated']++;
@@ -424,7 +433,7 @@ class WSS_Sync_Engine
 
         // Append new rows.
         if (!empty($append_rows)) {
-            $result = $this->sheets->append_rows($this->sheet_id, $this->tab_name . '!A:L', $append_rows);
+            $result = $this->sheets->append_rows($this->sheet_id, $this->a1_range('A:L'), $append_rows);
             if (is_wp_error($result)) {
                 $this->logger->log('woo_to_sheet', 0, 0, 'error', 'Append failed: ' . $result->get_error_message());
                 $stats['errors']++;

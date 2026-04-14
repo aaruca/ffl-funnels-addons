@@ -176,7 +176,8 @@ class WSS_Google_Sheets
      */
     public function ensure_headers(string $spreadsheet_id, string $tab_name)
     {
-        $range  = $tab_name . '!A1:L1';
+        $safe_tab = str_replace("'", "''", $tab_name);
+        $range    = "'" . $safe_tab . "'!A1:L1";
         $result = $this->read_range($spreadsheet_id, $range);
 
         if (is_wp_error($result)) {
