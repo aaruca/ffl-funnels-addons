@@ -130,16 +130,12 @@ class WSS_Admin
                         $settings['sheet_id'] ?? '',
                         __('Paste the full Google Sheet link (or just the ID). Example: https://docs.google.com/spreadsheets/d/.../edit', 'ffl-funnels-addons')
                     );
-
-                    FFLA_Admin::render_text_field(
-                        __('Sheet Tab Name (first tab group)', 'ffl-funnels-addons'),
-                        'wss_tab_name',
-                        $settings['tab_name'] ?? 'Inventory',
-                        __('When you save settings, this updates the first tab group on the WSS Dashboard. Use the Dashboard to add more sheet tabs or rename groups.', 'ffl-funnels-addons')
-                    );
                     ?>
+                    <p class="wb-field__desc">
+                        <?php esc_html_e('Sheet tab names are managed in WSS Dashboard → Sheet tab groups.', 'ffl-funnels-addons'); ?>
+                    </p>
                 </div>
-                <div class="wb-card__footer">
+                <div class="wb-card__footer" style="display:flex;justify-content:flex-end;align-items:center;">
                     <button type="submit" name="wss_save" class="wb-btn wb-btn--primary">
                         <?php esc_html_e('Save Settings', 'ffl-funnels-addons'); ?>
                     </button>
@@ -187,19 +183,9 @@ class WSS_Admin
 
         $settings = array_merge($existing, [
             'sheet_id'  => $sheet_id,
-            'tab_name'  => sanitize_text_field(wp_unslash($_POST['wss_tab_name'] ?? 'Inventory')),
         ]);
 
         update_option('wss_settings', $settings);
-
-        if (class_exists('WSS_Sync_Groups')) {
-            WSS_Sync_Groups::ensure_migrated();
-            $groups = WSS_Sync_Groups::get_groups();
-            if ($groups !== [] && isset($groups[0]['tab_name'])) {
-                $groups[0]['tab_name'] = $settings['tab_name'];
-                WSS_Sync_Groups::save_groups($groups);
-            }
-        }
 
         // Redirect to prevent resubmission.
         wp_safe_redirect(add_query_arg('wss_saved', '1', wp_get_referer() ?: admin_url('admin.php?page=ffla-wss-settings')));

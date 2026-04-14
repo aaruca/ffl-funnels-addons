@@ -53,7 +53,7 @@ class WSS_Google_OAuth
             return '';
         }
 
-        return self::decrypt($encrypted);
+        return self::decrypt_maybe_plain($encrypted);
     }
 
     /**
@@ -68,7 +68,7 @@ class WSS_Google_OAuth
             return '';
         }
 
-        return self::decrypt($encrypted);
+        return self::decrypt_maybe_plain($encrypted);
     }
 
     /**
@@ -214,7 +214,7 @@ class WSS_Google_OAuth
             $tokens = get_option(self::TOKEN_OPTION, []);
         }
 
-        return self::decrypt($tokens['access_token']);
+        return self::decrypt_maybe_plain((string) $tokens['access_token']);
     }
 
     /**
@@ -241,7 +241,7 @@ class WSS_Google_OAuth
             'body' => [
                 'client_id'     => $client_id,
                 'client_secret' => $client_secret,
-                'refresh_token' => self::decrypt($tokens['refresh_token']),
+                'refresh_token' => self::decrypt_maybe_plain((string) $tokens['refresh_token']),
                 'grant_type'    => 'refresh_token',
             ],
             'timeout' => 30,
@@ -376,6 +376,22 @@ class WSS_Google_OAuth
         $plain  = openssl_decrypt($cipher, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
 
         return $plain !== false ? $plain : '';
+    }
+
+    /**
+     * Backward-compatible decrypt for legacy plain-text stored values.
+     *
+     * Older installs may already have unencrypted token/credential strings
+     * stored in options; if decryption fails we keep the original value.
+     */
+    private static function decrypt_maybe_plain(string $value): string
+    {
+        $decoded = self::decrypt($value);
+        if ($decoded !== '') {
+            return $decoded;
+        }
+
+        return $value;
     }
 
     /**
