@@ -176,6 +176,11 @@ class WSS_Google_Sheets
      */
     public function ensure_headers(string $spreadsheet_id, string $tab_name)
     {
+        $tab_result = $this->ensure_tab_exists($spreadsheet_id, $tab_name);
+        if (is_wp_error($tab_result)) {
+            return $tab_result;
+        }
+
         $safe_tab = str_replace("'", "''", $tab_name);
         $range    = "'" . $safe_tab . "'!A1:L1";
         $result = $this->read_range($spreadsheet_id, $range);
@@ -205,6 +210,61 @@ class WSS_Google_Sheets
             if (is_wp_error($write_result)) {
                 return $write_result;
             }
+        }
+
+        return true;
+    }
+
+    /**
+     * Create the sheet tab when it does not exist yet.
+     *
+     * @return true|WP_Error
+     */
+    private function ensure_tab_exists(string $spreadsheet_id, string $tab_name)
+    {
+        $url = sprintf(
+            '%s/%s?fields=sheets.properties.title',
+            self::API_BASE,
+            urlencode($spreadsheet_id)
+        );
+
+        $meta = $this->request('GET', $url);
+        if (is_wp_error($meta)) {
+            return $meta;
+        }
+
+        $existing = [];
+        foreach (($meta['sheets'] ?? []) as $sheet) {
+            $title = (string) ($sheet['properties']['title'] ?? '');
+            if ($title !== '') {
+                $existing[] = $title;
+            }
+        }
+
+        if (in_array($tab_name, $existing, true)) {
+            return true;
+        }
+
+        $batch_url = sprintf(
+            '%s/%s:batchUpdate',
+            self::API_BASE,
+            urlencode($spreadsheet_id)
+        );
+
+        $create = $this->request('POST', $batch_url, [
+            'requests' => [
+                [
+                    'addSheet' => [
+                        'properties' => [
+                            'title' => $tab_name,
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        if (is_wp_error($create)) {
+            return $create;
         }
 
         return true;
