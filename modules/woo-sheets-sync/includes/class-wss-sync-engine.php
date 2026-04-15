@@ -108,6 +108,23 @@ class WSS_Sync_Engine
     }
 
     /**
+     * Add a parent product to in-memory sync scope for this run.
+     *
+     * This allows products/variations created from the sheet during Phase 1
+     * to be included in Phase 2 (Woo→Sheet) of the same execution.
+     */
+    private function add_parent_to_scope(int $parent_id): void
+    {
+        if ($parent_id <= 0 || $this->allowed_parent_product_ids === null) {
+            return;
+        }
+
+        if (!in_array($parent_id, $this->allowed_parent_product_ids, true)) {
+            $this->allowed_parent_product_ids[] = $parent_id;
+        }
+    }
+
+    /**
      * Parent post ID for a variation or simple product object.
      *
      * @param WC_Product $product Variation or simple.
@@ -217,18 +234,13 @@ class WSS_Sync_Engine
                     continue; // No name → skip.
                 }
 
-                // New variation under existing parent: parent must be in this tab's scope.
-                if ($product_id > 0 && !$this->is_parent_allowed($product_id)) {
-                    $stats['skipped']++;
-                    continue;
-                }
-
                 $result = $this->create_product_from_row($row, $product_id, $row_number);
                 if (is_wp_error($result)) {
                     $stats['errors']++;
                     $this->logger->log('sheet_to_woo', $product_id, 0, 'error', $result->get_error_message());
                 } else {
                     $stats['created']++;
+                    $this->add_parent_to_scope((int) ($result['product_id'] ?? 0));
                     // $result = ['product_id' => int, 'variation_id' => int]
                     $id_updates[] = [
                         'range'  => $this->a1_range(sprintf('A%d:B%d', $row_number, $row_number)),

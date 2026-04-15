@@ -710,12 +710,42 @@ class WSS_Admin
                 wp_send_json_error(['message' => __('You must keep at least one sheet tab group.', 'ffl-funnels-addons')]);
             }
 
+            $removed_tab = '';
+            foreach ($groups as $g) {
+                if (($g['id'] ?? '') === $gid) {
+                    $removed_tab = (string) ($g['tab_name'] ?? '');
+                    break;
+                }
+            }
+
             $groups = array_values(array_filter($groups, static function ($g) use ($gid) {
                 return ($g['id'] ?? '') !== $gid;
             }));
 
             WSS_Sync_Groups::save_groups($groups);
-            wp_send_json_success(['groups' => WSS_Sync_Groups::get_groups()]);
+
+            $delete_warning = '';
+            $settings       = get_option('wss_settings', []);
+            if (
+                $removed_tab !== ''
+                && !empty($settings['sheet_id'])
+                && class_exists('WSS_Google_OAuth')
+                && class_exists('WSS_Google_Sheets')
+            ) {
+                $oauth = new WSS_Google_OAuth();
+                if ($oauth->is_connected()) {
+                    $sheets = new WSS_Google_Sheets($oauth);
+                    $deleted = $sheets->delete_tab_if_exists((string) $settings['sheet_id'], $removed_tab);
+                    if (is_wp_error($deleted)) {
+                        $delete_warning = $deleted->get_error_message();
+                    }
+                }
+            }
+
+            wp_send_json_success([
+                'groups'  => WSS_Sync_Groups::get_groups(),
+                'warning' => $delete_warning,
+            ]);
         }
 
         $idx = $this->wss_find_group_index($groups, $gid);

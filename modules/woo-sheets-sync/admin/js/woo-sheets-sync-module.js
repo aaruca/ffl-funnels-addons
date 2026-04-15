@@ -150,6 +150,9 @@
                 window.alert(msg);
                 return null;
             }
+            if (res.data && res.data.warning) {
+                window.alert(res.data.warning);
+            }
             if (typeof onSuccessNoReload === 'function') {
                 onSuccessNoReload(res.data);
             } else {

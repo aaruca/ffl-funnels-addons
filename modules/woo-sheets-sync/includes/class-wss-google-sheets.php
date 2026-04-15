@@ -269,4 +269,59 @@ class WSS_Google_Sheets
 
         return true;
     }
+
+    /**
+     * Delete a sheet tab by title if it exists.
+     *
+     * @return true|WP_Error
+     */
+    public function delete_tab_if_exists(string $spreadsheet_id, string $tab_name)
+    {
+        $url = sprintf(
+            '%s/%s?fields=sheets.properties(sheetId,title)',
+            self::API_BASE,
+            urlencode($spreadsheet_id)
+        );
+
+        $meta = $this->request('GET', $url);
+        if (is_wp_error($meta)) {
+            return $meta;
+        }
+
+        $sheets = is_array($meta['sheets'] ?? null) ? $meta['sheets'] : [];
+        if (count($sheets) <= 1) {
+            return true; // Never attempt deleting the last remaining tab.
+        }
+
+        $sheet_id = 0;
+        foreach ($sheets as $sheet) {
+            $title = (string) ($sheet['properties']['title'] ?? '');
+            if ($title === $tab_name) {
+                $sheet_id = (int) ($sheet['properties']['sheetId'] ?? 0);
+                break;
+            }
+        }
+
+        if ($sheet_id <= 0) {
+            return true; // Nothing to delete.
+        }
+
+        $batch_url = sprintf(
+            '%s/%s:batchUpdate',
+            self::API_BASE,
+            urlencode($spreadsheet_id)
+        );
+
+        $result = $this->request('POST', $batch_url, [
+            'requests' => [
+                [
+                    'deleteSheet' => [
+                        'sheetId' => $sheet_id,
+                    ],
+                ],
+            ],
+        ]);
+
+        return is_wp_error($result) ? $result : true;
+    }
 }
