@@ -46,10 +46,20 @@ class WooSheets_Module extends FFLA_Module
         require_once $path . 'includes/class-wss-google-sheets.php';
         require_once $path . 'includes/class-wss-logger.php';
         require_once $path . 'includes/class-wss-sync-groups.php';
+        require_once $path . 'includes/services/class-wss-attribute-upsert-service.php';
+        require_once $path . 'includes/services/class-wss-product-upsert-service.php';
+        require_once $path . 'includes/services/class-wss-variation-upsert-service.php';
+        require_once $path . 'includes/api/class-wss-rest-routes.php';
         require_once $path . 'includes/class-wss-sync-engine.php';
         require_once $path . 'includes/class-wss-sync-orchestrator.php';
         require_once $path . 'includes/class-wss-activator.php';
         require_once $path . 'includes/class-wss-cron.php';
+
+        $attr_service = new WSS_Attribute_Upsert_Service();
+        $product_service = new WSS_Product_Upsert_Service($attr_service);
+        $variation_service = new WSS_Variation_Upsert_Service($attr_service, $product_service);
+        $rest_routes = new WSS_REST_Routes($attr_service, $product_service, $variation_service);
+        $rest_routes->init();
 
         // Admin.
         if (is_admin()) {

@@ -43,6 +43,15 @@ class WSS_Sync_Engine
     /** @var bool */
     private $persist_last_sync;
 
+    /** @var WSS_Attribute_Upsert_Service|null */
+    private $attribute_upsert_service;
+
+    /** @var WSS_Product_Upsert_Service|null */
+    private $product_upsert_service;
+
+    /** @var WSS_Variation_Upsert_Service|null */
+    private $variation_upsert_service;
+
     /** Column indices (0-based) matching the header layout. */
     private const COL_PRODUCT_ID      = 0;  // A
     private const COL_VARIATION_ID    = 1;  // B
@@ -93,6 +102,16 @@ class WSS_Sync_Engine
 
         $this->group_id           = isset($context['group_id']) ? (string) $context['group_id'] : '';
         $this->persist_last_sync  = !isset($context['persist_last_sync']) || !empty($context['persist_last_sync']);
+
+        $this->attribute_upsert_service = class_exists('WSS_Attribute_Upsert_Service')
+            ? new WSS_Attribute_Upsert_Service()
+            : null;
+        $this->product_upsert_service = $this->attribute_upsert_service && class_exists('WSS_Product_Upsert_Service')
+            ? new WSS_Product_Upsert_Service($this->attribute_upsert_service)
+            : null;
+        $this->variation_upsert_service = $this->attribute_upsert_service && $this->product_upsert_service && class_exists('WSS_Variation_Upsert_Service')
+            ? new WSS_Variation_Upsert_Service($this->attribute_upsert_service, $this->product_upsert_service)
+            : null;
     }
 
     /**
@@ -274,7 +293,12 @@ class WSS_Sync_Engine
             }
 
             // Sheet has different data — apply it to WooCommerce.
-            $applied = $this->apply_sheet_data_to_variation($variation, $row);
+            $parent_for_attrs = null;
+            if ($variation->is_type('variation')) {
+                $parent_for_attrs = wc_get_product((int) $variation->get_parent_id());
+            }
+
+            $applied = $this->apply_sheet_data_to_variation($variation, $row, $parent_for_attrs);
             if (is_wp_error($applied)) {
                 $stats['errors']++;
                 $this->logger->log('sheet_to_woo', $product_id, $variation_id, 'error', $applied->get_error_message());
@@ -599,7 +623,7 @@ class WSS_Sync_Engine
      * @param array      $row       Sheet row data.
      * @return true|WP_Error
      */
-    private function apply_sheet_data_to_variation($variation, array $row)
+    private function apply_sheet_data_to_variation($variation, array $row, $parent = null)
     {
         // Regular price.
         $regular_price = trim($row[self::COL_REGULAR_PRICE] ?? '');
@@ -647,6 +671,21 @@ class WSS_Sync_Engine
             $variation->set_stock_status($stock_status);
         }
 
+        // Attributes from Sheet (global pa_*), primarily for existing variations.
+        $attr_string = trim((string) ($row[self::COL_ATTRIBUTES] ?? ''));
+        if (
+            $attr_string !== ''
+            && $variation->is_type('variation')
+            && $this->attribute_upsert_service
+            && $parent instanceof WC_Product
+            && $parent->is_type('variable')
+        ) {
+            $meta_attrs = $this->attribute_upsert_service->build_variation_attributes_and_sync_parent($parent, $attr_string);
+            foreach ($meta_attrs as $meta_key => $meta_value) {
+                update_post_meta((int) $variation->get_id(), $meta_key, $meta_value);
+            }
+        }
+
         return true;
     }
 
@@ -664,30 +703,32 @@ class WSS_Sync_Engine
      */
     private function create_product_from_row(array $row, int $product_id, int $row_number)
     {
-        $name = trim($row[self::COL_PRODUCT_NAME] ?? '');
-        $sku  = trim($row[self::COL_SKU] ?? '');
+        $payload = [
+            'name'          => (string) ($row[self::COL_PRODUCT_NAME] ?? ''),
+            'sku'           => (string) ($row[self::COL_SKU] ?? ''),
+            'regular_price' => (string) ($row[self::COL_REGULAR_PRICE] ?? ''),
+            'sale_price'    => (string) ($row[self::COL_SALE_PRICE] ?? ''),
+            'stock_qty'     => (string) ($row[self::COL_STOCK_QTY] ?? ''),
+            'stock_status'  => (string) ($row[self::COL_STOCK_STATUS] ?? ''),
+            'manage_stock'  => (string) ($row[self::COL_MANAGE_STOCK] ?? ''),
+            'attributes'    => (string) ($row[self::COL_ATTRIBUTES] ?? ''),
+        ];
 
-        // Duplicate SKU check.
-        if ($sku !== '') {
-            $existing_id = wc_get_product_id_by_sku($sku);
-            if ($existing_id) {
-                $existing = wc_get_product($existing_id);
-                if ($existing) {
-                    $pid = $existing->get_parent_id() ?: $existing_id;
-                    $vid = $existing_id;
-                    $this->logger->log('sheet_to_woo', $pid, $vid, 'skipped', sprintf('SKU "%s" already exists (product #%d). Updated sheet row with existing IDs.', $sku, $existing_id));
-                    update_post_meta($existing_id, '_wss_sync_enabled', '1');
-                    return ['product_id' => $pid, 'variation_id' => $vid];
-                }
-            }
+        if ($product_id === 0 && $this->product_upsert_service) {
+            return $this->product_upsert_service->upsert_simple($payload);
         }
 
+        if ($product_id > 0 && $this->variation_upsert_service) {
+            return $this->variation_upsert_service->upsert_variation($product_id, $payload);
+        }
+
+        // Legacy fallback when services are not available.
+        $name = trim($payload['name']);
+        $sku  = trim($payload['sku']);
         if ($product_id === 0) {
-            // Create new simple product.
             return $this->create_simple_product($row, $name, $sku, $row_number);
         }
 
-        // Create variation under existing variable product.
         $parent = wc_get_product($product_id);
         if (!$parent || !$parent->is_type('variable')) {
             return new WP_Error('wss_create', sprintf(

@@ -130,6 +130,21 @@ class WSS_Admin
                         $settings['sheet_id'] ?? '',
                         __('Paste the full Google Sheet link (or just the ID). Example: https://docs.google.com/spreadsheets/d/.../edit', 'ffl-funnels-addons')
                     );
+
+                    $sync_time = isset($settings['sync_time']) ? (string) $settings['sync_time'] : '02:00';
+                    if (!preg_match('/^\d{2}:\d{2}$/', $sync_time)) {
+                        $sync_time = '02:00';
+                    }
+                    ?>
+                    <div class="wb-field">
+                        <label class="wb-field__label" for="wss_sync_time"><?php esc_html_e('Automatic Sync Time', 'ffl-funnels-addons'); ?></label>
+                        <div class="wb-field__control">
+                            <input type="time" id="wss_sync_time" name="wss_sync_time" value="<?php echo esc_attr($sync_time); ?>" class="wb-input" step="60">
+                            <p class="wb-field__desc"><?php esc_html_e('Choose the daily sync time (site timezone).', 'ffl-funnels-addons'); ?></p>
+                        </div>
+                    </div>
+
+                    <?php
                     ?>
                     <p class="wb-field__desc">
                         <?php esc_html_e('Sheet tab names are managed in WSS Dashboard → Sheet tab groups.', 'ffl-funnels-addons'); ?>
@@ -180,12 +195,20 @@ class WSS_Admin
 
         $raw_sheet = sanitize_text_field(wp_unslash($_POST['wss_sheet_id'] ?? ''));
         $sheet_id  = self::extract_sheet_id($raw_sheet);
+        $sync_time = sanitize_text_field(wp_unslash($_POST['wss_sync_time'] ?? '02:00'));
+        if (!preg_match('/^\d{2}:\d{2}$/', $sync_time)) {
+            $sync_time = '02:00';
+        }
 
         $settings = array_merge($existing, [
             'sheet_id'  => $sheet_id,
+            'sync_time' => $sync_time,
         ]);
 
         update_option('wss_settings', $settings);
+        if (class_exists('WSS_Cron')) {
+            WSS_Cron::reschedule();
+        }
 
         // Redirect to prevent resubmission.
         wp_safe_redirect(add_query_arg('wss_saved', '1', wp_get_referer() ?: admin_url('admin.php?page=ffla-wss-settings')));
