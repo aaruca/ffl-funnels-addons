@@ -11,6 +11,7 @@
         initClearLog();
         initDisconnect();
         initTabGroups();
+        initApiDocsTest();
     });
 
     /* ── Sync Now ──────────────────────────────────── */
@@ -132,6 +133,56 @@
                 .then(function (r) { return r.json(); })
                 .then(function (resp) {
                     if (resp.success) window.location.reload();
+                });
+        });
+    }
+
+    /* ── API docs test (Settings) ─────────────────── */
+
+    function initApiDocsTest() {
+        var btn = document.getElementById('wss-api-test-btn');
+        var out = document.getElementById('wss-api-test-result');
+        if (!btn || !out || !window.wssRest || !window.wssRest.base || !window.wssRest.nonce) return;
+
+        btn.addEventListener('click', function () {
+            btn.disabled = true;
+            out.innerHTML = '<div class="wb-message wb-message--info"><span>Testing endpoint...</span></div>';
+
+            var payload = {
+                label: 'Manufacturer',
+                value: 'Demo Manufacturer ' + new Date().toISOString().slice(0, 10)
+            };
+
+            fetch(String(window.wssRest.base).replace(/\/$/, '') + '/attributes/upsert', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-WP-Nonce': String(window.wssRest.nonce)
+                },
+                body: JSON.stringify(payload)
+            })
+                .then(function (r) {
+                    return r.json().then(function (json) {
+                        return { ok: r.ok, json: json };
+                    });
+                })
+                .then(function (res) {
+                    btn.disabled = false;
+                    if (!res.ok) {
+                        var msg = (res.json && res.json.error) || (res.json && res.json.message) || 'Request failed.';
+                        out.innerHTML = '<div class="wb-message wb-message--danger"><span>' + escapeHtml(String(msg)) + '</span></div>';
+                        return;
+                    }
+
+                    var data = res.json && res.json.data ? res.json.data : {};
+                    out.innerHTML = '<div class="wb-message wb-message--success"><span>OK. taxonomy: ' +
+                        escapeHtml(String(data.taxonomy || '')) + ', term_id: ' +
+                        escapeHtml(String(data.term_id || '')) + ', slug: ' +
+                        escapeHtml(String(data.slug || '')) + '</span></div>';
+                })
+                .catch(function () {
+                    btn.disabled = false;
+                    out.innerHTML = '<div class="wb-message wb-message--danger"><span>Network error while testing API.</span></div>';
                 });
         });
     }

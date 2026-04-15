@@ -157,6 +157,44 @@ class WSS_Admin
                 </div>
             </div>
         </form>
+
+        <!-- Internal API -->
+        <div class="wb-card">
+            <div class="wb-card__header">
+                <h2><?php esc_html_e('Internal API (WSS)', 'ffl-funnels-addons'); ?></h2>
+            </div>
+            <div class="wb-card__body">
+                <p class="wb-field__desc">
+                    <?php esc_html_e('These are internal REST endpoints registered by the Woo Sheets Sync module. They do not appear under WooCommerce settings pages by default.', 'ffl-funnels-addons'); ?>
+                </p>
+
+                <p><code><?php echo esc_html(rest_url('wss/v1')); ?></code></p>
+                <ul>
+                    <li><code>POST /wss/v1/products/upsert</code></li>
+                    <li><code>POST /wss/v1/variations/upsert</code></li>
+                    <li><code>POST /wss/v1/attributes/upsert</code></li>
+                    <li><code>POST /wss/v1/batch/upsert</code></li>
+                </ul>
+
+                <p class="wb-field__desc"><?php esc_html_e('Quick test (creates/reuses a Manufacturer term):', 'ffl-funnels-addons'); ?></p>
+                <pre style="white-space:pre-wrap;"><code>{
+  "label": "Manufacturer",
+  "value": "Demo Manufacturer"
+}</code></pre>
+
+                <button type="button" class="wb-btn wb-btn--secondary" id="wss-api-test-btn">
+                    <?php esc_html_e('Test API now', 'ffl-funnels-addons'); ?>
+                </button>
+                <div id="wss-api-test-result" style="margin-top:var(--wb-spacing-sm);"></div>
+            </div>
+        </div>
+
+        <script>
+            window.wssRest = {
+                base: <?php echo wp_json_encode(esc_url_raw(rest_url('wss/v1'))); ?>,
+                nonce: <?php echo wp_json_encode(wp_create_nonce('wp_rest')); ?>
+            };
+        </script>
         <?php
     }
 
