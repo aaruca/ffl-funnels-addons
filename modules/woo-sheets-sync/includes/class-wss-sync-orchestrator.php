@@ -37,11 +37,31 @@ class WSS_Sync_Orchestrator
         $totals_w       = ['updated' => 0, 'appended' => 0, 'skipped' => 0, 'errors' => 0];
         $totals_s       = ['updated' => 0, 'created' => 0, 'skipped' => 0, 'errors' => 0];
 
+        // Skip duplicate tab targets in the same run so we never issue two
+        // full Google Sheets reads against the same spreadsheet+tab.
+        $processed_tabs = [];
+
         foreach ($groups as $group) {
             $tab = trim((string) ($group['tab_name'] ?? ''));
             if ($tab === '') {
                 continue;
             }
+
+            $tab_key = strtolower($tab);
+            if (isset($processed_tabs[$tab_key])) {
+                $group_results[] = [
+                    'group_id' => (string) ($group['id'] ?? ''),
+                    'tab_name' => $tab,
+                    'skipped'  => true,
+                    'reason'   => sprintf(
+                        /* translators: %s: tab name. */
+                        __('Skipped duplicate sync for tab "%s" (already processed in this run).', 'ffl-funnels-addons'),
+                        $tab
+                    ),
+                ];
+                continue;
+            }
+            $processed_tabs[$tab_key] = true;
 
             $allowed = WSS_Sync_Groups::resolve_parent_product_ids($group);
             $gid     = (string) ($group['id'] ?? '');

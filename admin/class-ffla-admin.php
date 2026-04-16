@@ -115,9 +115,13 @@ class FFLA_Admin
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('ffla_admin_nonce'),
             'i18n' => [
-                'activating' => __('Activating...', 'ffl-funnels-addons'),
-                'deactivating' => __('Deactivating...', 'ffl-funnels-addons'),
-                'checking' => __('Checking...', 'ffl-funnels-addons'),
+                'activating'        => __('Activating...', 'ffl-funnels-addons'),
+                'deactivating'      => __('Deactivating...', 'ffl-funnels-addons'),
+                'checking'          => __('Checking...', 'ffl-funnels-addons'),
+                'checkForUpdates'   => __('Check for Updates Now', 'ffl-funnels-addons'),
+                'genericError'      => __('An unexpected error occurred. Please try again.', 'ffl-funnels-addons'),
+                'networkError'      => __('Network error. Check your connection and try again.', 'ffl-funnels-addons'),
+                'done'              => __('Done', 'ffl-funnels-addons'),
             ],
         ]);
 

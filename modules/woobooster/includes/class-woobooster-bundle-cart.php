@@ -5,7 +5,7 @@
  * Handles adding bundle items to cart via AJAX and applying
  * bundle discounts as negative fees.
  *
- * @package WooBooster
+ * @package FFL_Funnels_Addons
  */
 
 if (!defined('ABSPATH')) {

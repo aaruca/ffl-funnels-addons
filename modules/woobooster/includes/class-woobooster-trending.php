@@ -5,7 +5,7 @@
  * Calculates trending/bestselling products per category and stores
  * results in transients. Zero new database tables.
  *
- * @package WooBooster
+ * @package FFL_Funnels_Addons
  */
 
 if (!defined('ABSPATH')) {

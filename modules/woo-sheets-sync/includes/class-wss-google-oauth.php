@@ -117,27 +117,27 @@ class WSS_Google_OAuth
         $stored_state = get_transient('wss_oauth_state');
         delete_transient('wss_oauth_state');
 
-        self::debug_log("handle_proxy_callback: stored_state=" . ($stored_state ?: '(empty)') . " | received_state={$state}");
-        self::debug_log("handle_proxy_callback: payload length=" . strlen($encrypted_payload));
+        self::debug_log('handle_proxy_callback: state stored=' . ($stored_state ? 'yes' : 'no') . ', received=' . ($state !== '' ? 'yes' : 'no'));
+        self::debug_log('handle_proxy_callback: payload length=' . strlen($encrypted_payload));
 
         if (!$stored_state || !hash_equals($stored_state, $state)) {
-            self::debug_log("ERROR: State mismatch! stored=" . ($stored_state ?: '(empty)') . " vs received={$state}");
+            self::debug_log('ERROR: state mismatch');
             return new WP_Error('wss_oauth', __('Invalid OAuth state. Please try again.', 'ffl-funnels-addons'));
         }
 
         // Decrypt the proxy payload.
         $json = self::proxy_decrypt($encrypted_payload);
 
-        self::debug_log("handle_proxy_callback: decrypted length=" . strlen($json));
+        self::debug_log('handle_proxy_callback: decrypted length=' . strlen($json));
 
         if ($json === '') {
-            self::debug_log("ERROR: proxy_decrypt returned empty. Payload first 100 chars: " . substr($encrypted_payload, 0, 100));
+            self::debug_log('ERROR: proxy_decrypt returned empty');
             return new WP_Error('wss_oauth', __('Failed to decrypt proxy response.', 'ffl-funnels-addons'));
         }
 
         $data = json_decode($json, true);
 
-        self::debug_log("handle_proxy_callback: JSON keys=" . (is_array($data) ? implode(',', array_keys($data)) : 'DECODE FAILED'));
+        self::debug_log('handle_proxy_callback: JSON keys=' . (is_array($data) ? implode(',', array_keys($data)) : 'DECODE FAILED'));
 
         if (empty($data['access_token']) || empty($data['refresh_token'])) {
             self::debug_log("ERROR: Missing tokens in decrypted data");
@@ -169,27 +169,52 @@ class WSS_Google_OAuth
 
     /**
      * Debug log helper.
+     *
+     * Writes to the PHP error log only when WSS_OAUTH_DEBUG is explicitly
+     * enabled. File logging is further gated by WSS_OAUTH_DEBUG_FILE to avoid
+     * writing sensitive data under wp-content/uploads unless opted in.
      */
     private static function debug_log(string $message): void
     {
-        if (!defined('WP_DEBUG') || !WP_DEBUG) {
+        $enabled = (defined('WSS_OAUTH_DEBUG') && WSS_OAUTH_DEBUG)
+            || (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG);
+        if (!$enabled) {
             return;
         }
 
-        $line = '[WSS OAuth ' . gmdate('Y-m-d H:i:s') . '] ' . $message;
+        $line = '[WSS OAuth ' . gmdate('Y-m-d H:i:s') . '] ' . self::redact($message);
         error_log($line);
 
-        // Write to a log file in the private uploads dir, only in debug mode.
+        // File logging is strictly opt-in to avoid leaking data in uploads dir.
+        if (!defined('WSS_OAUTH_DEBUG_FILE') || !WSS_OAUTH_DEBUG_FILE) {
+            return;
+        }
+
         $upload_dir = wp_upload_dir();
         $log_dir    = $upload_dir['basedir'] . '/wss-logs';
         if (!is_dir($log_dir)) {
             wp_mkdir_p($log_dir);
             // Protect directory from public access.
-            @file_put_contents($log_dir . '/.htaccess', 'deny from all'); // phpcs:ignore WordPress.WP.AlternativeFunctions
+            @file_put_contents($log_dir . '/.htaccess', "Order allow,deny\nDeny from all\n"); // phpcs:ignore WordPress.WP.AlternativeFunctions
+            @file_put_contents($log_dir . '/web.config', '<configuration><system.webServer><authorization><deny users="*" /></authorization></system.webServer></configuration>'); // phpcs:ignore WordPress.WP.AlternativeFunctions
             @file_put_contents($log_dir . '/index.php', '<?php // Silence is golden.'); // phpcs:ignore WordPress.WP.AlternativeFunctions
         }
         $log_file = $log_dir . '/wss-oauth-debug.log';
         file_put_contents($log_file, $line . "\n", FILE_APPEND | LOCK_EX); // phpcs:ignore WordPress.WP.AlternativeFunctions
+    }
+
+    /**
+     * Redact likely-sensitive values from log messages.
+     *
+     * Removes long opaque strings (state, tokens, payloads) while keeping
+     * structural info like keys and lengths intact.
+     */
+    private static function redact(string $message): string
+    {
+        $message = preg_replace('/(state=)[A-Za-z0-9_\-]+/i', '$1[REDACTED]', $message) ?? $message;
+        $message = preg_replace('/(payload[^=]*=)[A-Za-z0-9+\/=_\-]{16,}/i', '$1[REDACTED]', $message) ?? $message;
+        $message = preg_replace('/(access_token|refresh_token|client_secret|token)(["\']?\s*[:=]\s*["\']?)[A-Za-z0-9._\-]+/i', '$1$2[REDACTED]', $message) ?? $message;
+        return $message;
     }
 
     /**

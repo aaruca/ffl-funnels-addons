@@ -6,7 +6,7 @@
  * automatically applying and removing the corresponding WooCommerce coupons
  * based on current cart contents.
  *
- * @package WooBooster
+ * @package FFL_Funnels_Addons
  */
 
 if (!defined('ABSPATH')) {
@@ -428,7 +428,7 @@ class WooBooster_Coupon
                 wc_add_notice(
                     sprintf(
                         /* translators: %s: coupon code */
-                        __('Coupon "%s" has been automatically applied based on your cart!', 'woobooster'),
+                        __('Coupon "%s" has been automatically applied based on your cart!', 'ffl-funnels-addons'),
                         esc_html(strtoupper($coupon_code))
                     ),
                     'success'

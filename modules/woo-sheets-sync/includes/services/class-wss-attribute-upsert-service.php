@@ -14,6 +14,33 @@ if (!defined('ABSPATH')) {
 class WSS_Attribute_Upsert_Service
 {
     /**
+     * Per-request memoization of label => taxonomy resolution.
+     *
+     * Avoids hammering wc_get_attribute_taxonomies() (a full option read plus
+     * DB hit on first miss) once per sheet row during a sync run.
+     *
+     * @var array<string,string>
+     */
+    private $label_taxonomy_cache = [];
+
+    /**
+     * Cached index of taxonomies by various normalized keys.
+     *
+     * @var array<string,string>|null
+     */
+    private $taxonomy_index = null;
+
+    /**
+     * Drop the in-memory caches. Useful when new attributes/terms are created
+     * inside a long-lived request.
+     */
+    public function flush_cache(): void
+    {
+        $this->label_taxonomy_cache = [];
+        $this->taxonomy_index       = null;
+    }
+
+    /**
      * Parse "Label: Value | Label2: Value2" into pairs.
      *
      * @return array<int,array{label:string,value:string}>
@@ -37,6 +64,9 @@ class WSS_Attribute_Upsert_Service
 
     /**
      * Resolve taxonomy name (pa_*) from a human label.
+     *
+     * Results are memoized per request so repeated rows that reference the
+     * same labels do not re-scan the attributes table.
      */
     public function resolve_global_taxonomy_by_label(string $label): string
     {
@@ -45,6 +75,20 @@ class WSS_Attribute_Upsert_Service
             return '';
         }
 
+        $cache_key = $this->normalize_key($label);
+        if ($cache_key !== '' && array_key_exists($cache_key, $this->label_taxonomy_cache)) {
+            return $this->label_taxonomy_cache[$cache_key];
+        }
+
+        $taxonomy = $this->do_resolve_global_taxonomy_by_label($label);
+        if ($cache_key !== '') {
+            $this->label_taxonomy_cache[$cache_key] = $taxonomy;
+        }
+        return $taxonomy;
+    }
+
+    private function do_resolve_global_taxonomy_by_label(string $label): string
+    {
         // Direct taxonomy notation from payload/sheet (e.g. "pa_manufacturer").
         if (strpos($label, 'pa_') === 0 && taxonomy_exists($label)) {
             return $label;
@@ -57,7 +101,33 @@ class WSS_Attribute_Upsert_Service
         }
 
         $needle = $this->normalize_key($label);
+        $index  = $this->get_taxonomy_index();
 
+        if ($needle !== '') {
+            if (isset($index[$needle])) {
+                return $index[$needle];
+            }
+            $singularized = rtrim($needle, 's');
+            if ($singularized !== '' && isset($index[$singularized])) {
+                return $index[$singularized];
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Build a normalized key => taxonomy index once per request.
+     *
+     * @return array<string,string>
+     */
+    private function get_taxonomy_index(): array
+    {
+        if (is_array($this->taxonomy_index)) {
+            return $this->taxonomy_index;
+        }
+
+        $index = [];
         foreach (wc_get_attribute_taxonomies() as $tax) {
             $name     = isset($tax->attribute_name) ? (string) $tax->attribute_name : '';
             $taxonomy = $name !== '' ? wc_attribute_taxonomy_name($name) : '';
@@ -65,32 +135,24 @@ class WSS_Attribute_Upsert_Service
                 continue;
             }
 
-            $tax_label = isset($tax->attribute_label) ? (string) $tax->attribute_label : '';
-            if (
-                strcasecmp($tax_label, $label) === 0
-                || strcasecmp($name, $label) === 0
-                || strcasecmp($taxonomy, $label) === 0
-                || strcasecmp(str_replace('pa_', '', $taxonomy), $label) === 0
-            ) {
-                return $taxonomy;
-            }
-
-            // Normalized fallback: handles punctuation/plural/case differences.
             $candidates = [
-                $tax_label,
+                isset($tax->attribute_label) ? (string) $tax->attribute_label : '',
                 $name,
                 $taxonomy,
                 str_replace('pa_', '', $taxonomy),
             ];
             foreach ($candidates as $candidate) {
-                $cand = $this->normalize_key((string) $candidate);
-                if ($cand === $needle || rtrim($cand, 's') === rtrim($needle, 's')) {
-                    return $taxonomy;
+                $key = $this->normalize_key($candidate);
+                if ($key === '') {
+                    continue;
                 }
+                $index[$key]              = $taxonomy;
+                $index[rtrim($key, 's')]  = $taxonomy;
             }
         }
 
-        return '';
+        $this->taxonomy_index = $index;
+        return $index;
     }
 
     /**

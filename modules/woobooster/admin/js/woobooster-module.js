@@ -7,6 +7,20 @@
 
   var cfg = window.wooboosterAdmin || {};
 
+  /**
+   * Resolve an i18n string from wooboosterAdmin.i18n with an English fallback.
+   *
+   * @param {string} key      Key inside wooboosterAdmin.i18n.
+   * @param {string} fallback Fallback English text.
+   * @returns {string}
+   */
+  function t(key, fallback) {
+    if (cfg && cfg.i18n && typeof cfg.i18n[key] === 'string' && cfg.i18n[key] !== '') {
+      return cfg.i18n[key];
+    }
+    return fallback;
+  }
+
   /* ── Rule Toggle (inline) ─────────────────────────────────────────── */
 
   function initRuleToggles() {
@@ -183,7 +197,7 @@
           actionRow.remove();
           renumberActionFields();
         } else {
-          alert('At least one action is required in a group.');
+          alert(t('actionRequired', 'At least one action is required in a group.'));
         }
       }
       if (e.target.classList.contains('wb-remove-action-group')) {
@@ -1358,10 +1372,10 @@
     var deleteAllBtn = document.getElementById('wb-delete-all-rules');
     if (deleteAllBtn) {
       deleteAllBtn.addEventListener('click', function () {
-        if (!confirm('Are you sure you want to DELETE ALL RULES? This action cannot be undone.')) return;
+        if (!confirm(t('confirmDeleteAll', 'Are you sure you want to DELETE ALL RULES? This action cannot be undone.'))) return;
 
         deleteAllBtn.disabled = true;
-        deleteAllBtn.textContent = 'Deleting…';
+        deleteAllBtn.textContent = t('deleting', 'Deleting…');
 
         var fd = new FormData();
         fd.append('action', 'woobooster_delete_all_rules');
@@ -1375,14 +1389,14 @@
               window.location.reload();
             } else {
               deleteAllBtn.disabled = false;
-              deleteAllBtn.textContent = 'Delete All';
-              alert(res.data.message || 'Error deleting rules.');
+              deleteAllBtn.textContent = t('deleteAll', 'Delete All');
+              alert((res.data && res.data.message) || t('errorDelete', 'Error deleting rules.'));
             }
           })
           .catch(function () {
             deleteAllBtn.disabled = false;
-            deleteAllBtn.textContent = 'Delete All';
-            alert('Network error.');
+            deleteAllBtn.textContent = t('deleteAll', 'Delete All');
+            alert(t('networkError', 'Network error.'));
           });
       });
     }
@@ -1403,7 +1417,7 @@
         var file = fileInput.files[0];
 
         if (file.type !== 'application/json' && !file.name.endsWith('.json')) {
-          alert('Please select a valid JSON file.');
+          alert(t('invalidJsonFile', 'Please select a valid JSON file.'));
           return;
         }
 
@@ -1417,7 +1431,7 @@
     }
 
     function uploadImport(jsonContent) {
-      if (!confirm('Are you sure you want to import rules? This will add to existing rules.')) return;
+      if (!confirm(t('confirmImport', 'Are you sure you want to import rules? This will add to existing rules.'))) return;
 
       var fd = new FormData();
       fd.append('action', 'woobooster_import_rules');
@@ -1425,26 +1439,26 @@
       fd.append('json', jsonContent);
 
       importBtn.disabled = true;
-      importBtn.textContent = 'Importing…';
+      importBtn.textContent = t('importing', 'Importing…');
 
       fetch(cfg.ajaxUrl, { method: 'POST', body: fd })
         .then(function (r) { return r.json(); })
         .then(function (res) {
           importBtn.disabled = false;
-          importBtn.textContent = 'Import';
+          importBtn.textContent = t('import', 'Import');
           fileInput.value = '';
 
           if (res.success) {
             alert(res.data.message);
             window.location.reload();
           } else {
-            alert(res.data.message || 'Error importing rules.');
+            alert((res.data && res.data.message) || t('errorImport', 'Error importing rules.'));
           }
         })
         .catch(function () {
           importBtn.disabled = false;
-          importBtn.textContent = 'Import';
-          alert('Network error.');
+          importBtn.textContent = t('import', 'Import');
+          alert(t('networkError', 'Network error.'));
         });
     }
   }
@@ -1459,7 +1473,7 @@
     if (rebuildBtn) {
       rebuildBtn.addEventListener('click', function () {
         rebuildBtn.disabled = true;
-        rebuildBtn.textContent = 'Building…';
+        rebuildBtn.textContent = t('building', 'Building…');
         if (statusEl) statusEl.textContent = '';
 
         var fd = new FormData();
@@ -1470,7 +1484,7 @@
           .then(function (r) { return r.json(); })
           .then(function (res) {
             rebuildBtn.disabled = false;
-            rebuildBtn.textContent = 'Rebuild Now';
+            rebuildBtn.textContent = t('rebuildNow', 'Rebuild Now');
             if (statusEl) {
               statusEl.style.color = res.success ? '#00a32a' : '#d63638';
               statusEl.textContent = res.data.message;
@@ -1478,10 +1492,10 @@
           })
           .catch(function () {
             rebuildBtn.disabled = false;
-            rebuildBtn.textContent = 'Rebuild Now';
+            rebuildBtn.textContent = t('rebuildNow', 'Rebuild Now');
             if (statusEl) {
               statusEl.style.color = '#d63638';
-              statusEl.textContent = 'Network error.';
+              statusEl.textContent = t('networkError', 'Network error.');
             }
           });
       });
@@ -1489,10 +1503,10 @@
 
     if (purgeBtn) {
       purgeBtn.addEventListener('click', function () {
-        if (!confirm('Are you sure you want to clear all Smart Recommendations data?')) return;
+        if (!confirm(t('confirmPurge', 'Are you sure you want to clear all Smart Recommendations data?'))) return;
 
         purgeBtn.disabled = true;
-        purgeBtn.textContent = 'Clearing…';
+        purgeBtn.textContent = t('clearing', 'Clearing…');
 
         var fd = new FormData();
         fd.append('action', 'woobooster_purge_index');
@@ -1502,7 +1516,7 @@
           .then(function (r) { return r.json(); })
           .then(function (res) {
             purgeBtn.disabled = false;
-            purgeBtn.textContent = 'Clear All Data';
+            purgeBtn.textContent = t('clearAllData', 'Clear All Data');
             if (statusEl) {
               statusEl.style.color = res.success ? '#00a32a' : '#d63638';
               statusEl.textContent = res.data.message;
@@ -1510,10 +1524,10 @@
           })
           .catch(function () {
             purgeBtn.disabled = false;
-            purgeBtn.textContent = 'Clear All Data';
+            purgeBtn.textContent = t('clearAllData', 'Clear All Data');
             if (statusEl) {
               statusEl.style.color = '#d63638';
-              statusEl.textContent = 'Network error.';
+              statusEl.textContent = t('networkError', 'Network error.');
             }
           });
       });
@@ -1586,7 +1600,7 @@
         // Deduplicate.
         var unique = [];
         errors.forEach(function (msg) { if (unique.indexOf(msg) === -1) unique.push(msg); });
-        alert('Please fix the following:\n\n• ' + unique.join('\n• '));
+        alert(t('pleaseFix', 'Please fix the following:') + '\n\n• ' + unique.join('\n• '));
       }
     });
   }
@@ -1620,7 +1634,7 @@
   function initBundleDeleteConfirm() {
     document.querySelectorAll('.wb-delete-bundle').forEach(function (link) {
       link.addEventListener('click', function (e) {
-        if (!confirm('Are you sure you want to delete this bundle?')) {
+        if (!confirm(t('confirmDeleteBundle', 'Are you sure you want to delete this bundle?'))) {
           e.preventDefault();
         }
       });

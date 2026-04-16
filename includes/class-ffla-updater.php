@@ -184,7 +184,7 @@ class FFLA_Updater
     public function maybe_show_token_notice(): void
     {
         $error = get_transient('ffla_github_api_error');
-        if (!$error || !current_user_can('manage_options')) {
+        if (!$error || !current_user_can('manage_woocommerce')) {
             return;
         }
 
@@ -221,7 +221,7 @@ class FFLA_Updater
     {
         check_ajax_referer('ffla_dismiss_api_notice', '_wpnonce');
 
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can('manage_woocommerce')) {
             wp_die('', '', 403);
         }
 

@@ -5,7 +5,7 @@
  * Tracks which WooBooster recommendations lead to add-to-cart and purchases.
  * Uses JS attribution via wp_localize_script to intercept WooCommerce AJAX events.
  *
- * @package WooBooster
+ * @package FFL_Funnels_Addons
  */
 
 if (!defined('ABSPATH')) {

@@ -22,7 +22,7 @@ class WooBooster_Module extends FFLA_Module
 
     public function get_name(): string
     {
-        return 'WooBooster';
+        return __('WooBooster', 'ffl-funnels-addons');
     }
 
     public function get_description(): string

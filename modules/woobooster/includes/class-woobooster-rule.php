@@ -4,7 +4,7 @@
  *
  * Handles CRUD operations for recommendation rules and lookup index management.
  *
- * @package WooBooster
+ * @package FFL_Funnels_Addons
  */
 
 if (!defined('ABSPATH')) {
@@ -868,8 +868,8 @@ class WooBooster_Rule
         $taxonomies = array();
 
         // Product categories & tags.
-        $taxonomies['product_cat'] = __('Product Category', 'woobooster');
-        $taxonomies['product_tag'] = __('Product Tag', 'woobooster');
+        $taxonomies['product_cat'] = __('Product Category', 'ffl-funnels-addons');
+        $taxonomies['product_tag'] = __('Product Tag', 'ffl-funnels-addons');
 
         // Product attributes.
         $attribute_taxonomies = wc_get_attribute_taxonomies();

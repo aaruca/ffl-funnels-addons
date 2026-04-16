@@ -23,7 +23,7 @@ class USGeocoder_API_Resolver extends Tax_Resolver_Base
 
     public function get_name(): string
     {
-        return 'USGeocoder Live API';
+        return __('USGeocoder Live API', 'ffl-funnels-addons');
     }
 
     public function get_source_code(): string

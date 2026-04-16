@@ -21,7 +21,7 @@ class Product_Reviews_Module extends FFLA_Module
 
     public function get_name(): string
     {
-        return 'Product Reviews';
+        return __('Product Reviews', 'ffl-funnels-addons');
     }
 
     public function get_description(): string

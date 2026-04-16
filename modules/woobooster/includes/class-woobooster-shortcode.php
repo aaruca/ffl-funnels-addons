@@ -4,7 +4,7 @@
  *
  * [woobooster product_id="123" limit="6" fallback="recent"]
  *
- * @package WooBooster
+ * @package FFL_Funnels_Addons
  */
 
 if (!defined('ABSPATH')) {
@@ -37,7 +37,7 @@ class WooBooster_Shortcode
                 'fallback' => 'none',
             ),
             $atts,
-            'woobooster'
+            'ffl-funnels-addons'
         );
 
         // Resolve product ID.
@@ -86,7 +86,7 @@ class WooBooster_Shortcode
         // Render output.
         ob_start();
 
-        $section_title = woobooster_get_option('section_title', __('You May Also Like', 'woobooster'));
+        $section_title = woobooster_get_option('section_title', __('You May Also Like', 'ffl-funnels-addons'));
         $columns = min(count($product_ids), 4);
 
         echo '<section class="woobooster-related products">';

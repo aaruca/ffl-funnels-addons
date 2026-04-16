@@ -2,7 +2,7 @@
 /**
  * WooBooster Cron — Manages scheduled events for Smart Recommendations.
  *
- * @package WooBooster
+ * @package FFL_Funnels_Addons
  */
 
 if (!defined('ABSPATH')) {
@@ -32,7 +32,7 @@ class WooBooster_Cron
     {
         $schedules['woobooster_6hours'] = array(
             'interval' => 6 * HOUR_IN_SECONDS,
-            'display' => __('Every 6 Hours', 'woobooster'),
+            'display' => __('Every 6 Hours', 'ffl-funnels-addons'),
         );
         return $schedules;
     }

@@ -90,10 +90,24 @@ if (in_array('tax-rates', $ffla_active_modules, true)) {
 
 // ── Woo Sheets Sync cleanup ────────────────────────────────────────
 if (in_array('woo-sheets-sync', $ffla_active_modules, true)) {
+    // Active runtime options used by the module.
     delete_option('wss_settings');
+    delete_option('wss_google_tokens');
+    delete_option('wss_last_sync');
+    // Legacy option keys kept for backward-compat cleanup.
     delete_option('wss_oauth_tokens');
     delete_option('wss_field_map');
     delete_option('wss_sync_status');
+
+    // Transients used during OAuth/sync.
+    delete_transient('wss_oauth_state');
+
+    // Unschedule cron events.
+    wp_clear_scheduled_hook('wss_daily_sync');
+
+    // Clean up any leftover per-product sync meta.
+    // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+    $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key = '_wss_sync_enabled'");
 
     // Clean up debug log files.
     $upload_dir = wp_upload_dir();

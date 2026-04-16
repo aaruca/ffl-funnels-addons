@@ -104,28 +104,29 @@ class Tax_Dataset_Pipeline
      */
     public static function sync_state(string $state_code): array
     {
-        $rows = self::fetch_sheet_rows(self::get_sheet_export_url());
-        if (is_wp_error($rows)) {
+        $source_url = self::get_sheet_export_url();
+        $state_code = strtoupper($state_code);
+        $grouped    = self::stream_sheet_rows_by_state($source_url, [$state_code]);
+
+        if (is_wp_error($grouped)) {
             return [
                 'success'             => false,
                 'skipped'             => false,
-                'state'               => strtoupper($state_code),
+                'state'               => $state_code,
                 'rows'                => 0,
                 'version_id'          => null,
                 'city_rows'           => 0,
                 'zip_rows'            => 0,
                 'updated'             => '',
-                'source_url'          => self::get_sheet_export_url(),
-                'error'               => $rows->get_error_message(),
+                'source_url'          => $source_url,
+                'error'               => $grouped->get_error_message(),
             ];
         }
 
-        $grouped = self::group_rows_by_state($rows);
-
         return self::import_sheet_state(
-            strtoupper($state_code),
-            $grouped[strtoupper($state_code)] ?? [],
-            self::get_sheet_export_url()
+            $state_code,
+            $grouped[$state_code] ?? [],
+            $source_url
         );
     }
 
@@ -342,9 +343,9 @@ class Tax_Dataset_Pipeline
         $results     = [];
         $target_keys = self::get_target_sheet_states();
         $source_url  = self::get_sheet_export_url();
-        $sheet_rows  = self::fetch_sheet_rows($source_url);
+        $grouped     = self::stream_sheet_rows_by_state($source_url, $target_keys);
 
-        if (is_wp_error($sheet_rows)) {
+        if (is_wp_error($grouped)) {
             foreach ($target_keys as $state_code) {
                 $results[$state_code] = [
                     'success'             => false,
@@ -356,14 +357,12 @@ class Tax_Dataset_Pipeline
                     'zip_rows'            => 0,
                     'updated'             => '',
                     'source_url'          => $source_url,
-                    'error'               => $sheet_rows->get_error_message(),
+                    'error'               => $grouped->get_error_message(),
                 ];
             }
 
             return $results;
         }
-
-        $grouped = self::group_rows_by_state($sheet_rows);
 
         foreach ($target_keys as $state_code) {
             $results[$state_code] = self::import_sheet_state(
@@ -371,6 +370,9 @@ class Tax_Dataset_Pipeline
                 $grouped[$state_code] ?? [],
                 $source_url
             );
+            // Free the per-state slice as soon as it has been imported to keep
+            // peak memory bounded while the rest of the states are processed.
+            unset($grouped[$state_code]);
         }
 
         return $results;
@@ -1017,16 +1019,41 @@ class Tax_Dataset_Pipeline
     }
 
     /**
-     * Fetch and parse the public Google Sheets CSV.
+     * Stream the Google Sheets CSV to a temp file and group rows by state.
      *
-     * @return array<int,array<string,string>>|\WP_Error
+     * Previously the full response body and the full parsed row array were
+     * held in memory simultaneously; on a ~US-wide sheet this easily exceeded
+     * 200 MB. Here we:
+     *   1. Stream the HTTP body to a local tmp file (no in-memory body).
+     *   2. Open the file with fopen + fgetcsv so only one row is in memory
+     *      at any given time.
+     *   3. Push each row straight into the per-state bucket for the requested
+     *      states and drop rows for any state we are not importing.
+     *
+     * @param  string[] $state_filter Optional list of state codes to keep.
+     * @return array<string,array<int,array<string,string>>>|\WP_Error
      */
-    private static function fetch_sheet_rows(string $source_url)
+    private static function stream_sheet_rows_by_state(string $source_url, array $state_filter = [])
     {
+        $wanted = [];
+        foreach ($state_filter as $code) {
+            $code = strtoupper(trim((string) $code));
+            if ($code !== '' && isset(self::STATE_NAMES[$code])) {
+                $wanted[$code] = true;
+            }
+        }
+
+        $tmp_file = wp_tempnam('ffla-tax-dataset-');
+        if (!$tmp_file) {
+            return new \WP_Error('sheet_tmp_failed', 'Could not create a temporary file for the tax sheet download.');
+        }
+
         $response = wp_remote_get($source_url, [
-            'timeout'     => 60,
+            'timeout'     => 90,
             'redirection' => 5,
             'decompress'  => true,
+            'stream'      => true,
+            'filename'    => $tmp_file,
             'headers'     => [
                 'Accept'          => 'text/csv,text/plain;q=0.9,*/*;q=0.8',
                 'Accept-Language' => 'en-US,en;q=0.9',
@@ -1037,6 +1064,7 @@ class Tax_Dataset_Pipeline
         ]);
 
         if (is_wp_error($response)) {
+            @unlink($tmp_file);
             return new \WP_Error(
                 'sheet_fetch_failed',
                 'Could not fetch the shared tax sheet: ' . $response->get_error_message()
@@ -1044,55 +1072,50 @@ class Tax_Dataset_Pipeline
         }
 
         $code = (int) wp_remote_retrieve_response_code($response);
-        $body = (string) wp_remote_retrieve_body($response);
-
         if ($code !== 200) {
+            @unlink($tmp_file);
             return new \WP_Error(
                 'sheet_fetch_http_error',
                 sprintf('The shared tax sheet returned HTTP %d.', $code)
             );
         }
 
-        if (trim($body) === '') {
-            return new \WP_Error(
-                'sheet_fetch_empty',
-                'The shared tax sheet returned an empty CSV.'
-            );
+        if (!is_readable($tmp_file) || filesize($tmp_file) === 0) {
+            @unlink($tmp_file);
+            return new \WP_Error('sheet_fetch_empty', 'The shared tax sheet returned an empty CSV.');
         }
 
-        $rows = self::parse_csv_body($body);
+        $grouped = self::parse_csv_file_by_state($tmp_file, $wanted);
+        @unlink($tmp_file);
 
-        if (empty($rows)) {
-            return new \WP_Error(
-                'sheet_csv_empty',
-                'The shared tax sheet CSV did not contain any data rows.'
-            );
+        if (is_wp_error($grouped)) {
+            return $grouped;
         }
 
-        return $rows;
+        if (empty($grouped)) {
+            return new \WP_Error('sheet_csv_empty', 'The shared tax sheet CSV did not contain any data rows.');
+        }
+
+        return $grouped;
     }
 
     /**
-     * Parse CSV text into associative rows.
+     * Parse a CSV file on disk into a per-state associative row bucket.
      *
-     * @return array<int,array<string,string>>
+     * @param  array<string,bool> $wanted Set of state codes to keep (empty = all known).
+     * @return array<string,array<int,array<string,string>>>|\WP_Error
      */
-    private static function parse_csv_body(string $csv): array
+    private static function parse_csv_file_by_state(string $file, array $wanted)
     {
-        $rows = [];
-        $handle = fopen('php://temp', 'r+');
-
+        $handle = fopen($file, 'r');
         if ($handle === false) {
-            return [];
+            return new \WP_Error('sheet_csv_open_failed', 'Could not open the tax sheet CSV for reading.');
         }
-
-        fwrite($handle, $csv);
-        rewind($handle);
 
         $headers = fgetcsv($handle);
         if (!is_array($headers)) {
             fclose($handle);
-            return [];
+            return new \WP_Error('sheet_csv_no_headers', 'The tax sheet CSV has no header row.');
         }
 
         $headers = array_map(static function ($header): string {
@@ -1101,9 +1124,24 @@ class Tax_Dataset_Pipeline
             return trim($header);
         }, $headers);
 
+        $state_index = array_search('State', $headers, true);
+        $grouped     = [];
+
         while (($row = fgetcsv($handle)) !== false) {
             if (!is_array($row) || count($row) === 0) {
                 continue;
+            }
+
+            if ($state_index !== false) {
+                $state_code = strtoupper(trim((string) ($row[$state_index] ?? '')));
+                if ($state_code === '' || !isset(self::STATE_NAMES[$state_code])) {
+                    continue;
+                }
+                if (!empty($wanted) && !isset($wanted[$state_code])) {
+                    continue;
+                }
+            } else {
+                $state_code = '';
             }
 
             $assoc = [];
@@ -1111,42 +1149,27 @@ class Tax_Dataset_Pipeline
                 if ($header === '') {
                     continue;
                 }
-
                 $assoc[$header] = isset($row[$index]) ? trim((string) $row[$index]) : '';
             }
 
-            if (!empty($assoc)) {
-                $rows[] = $assoc;
-            }
-        }
-
-        fclose($handle);
-
-        return $rows;
-    }
-
-    /**
-     * Group parsed CSV rows by supported state code.
-     *
-     * @param  array<int,array<string,string>> $rows
-     * @return array<string,array<int,array<string,string>>>
-     */
-    private static function group_rows_by_state(array $rows): array
-    {
-        $grouped = [];
-
-        foreach ($rows as $row) {
-            $state_code = strtoupper(trim((string) ($row['State'] ?? '')));
-            if (!isset(self::STATE_NAMES[$state_code])) {
+            if (empty($assoc)) {
                 continue;
             }
 
-            if (!isset($grouped[$state_code])) {
-                $grouped[$state_code] = [];
+            if ($state_code === '') {
+                $state_code = strtoupper(trim((string) ($assoc['State'] ?? '')));
+                if ($state_code === '' || !isset(self::STATE_NAMES[$state_code])) {
+                    continue;
+                }
+                if (!empty($wanted) && !isset($wanted[$state_code])) {
+                    continue;
+                }
             }
 
-            $grouped[$state_code][] = $row;
+            $grouped[$state_code][] = $assoc;
         }
+
+        fclose($handle);
 
         return $grouped;
     }

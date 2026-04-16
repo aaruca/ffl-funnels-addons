@@ -92,9 +92,17 @@ class FFLA_Dashboard
         echo '<span class="wb-status ' . esc_attr($status_class) . '">' . esc_html($status_label) . '</span>';
         echo '</div>';
         echo '<div class="ffla-module-card__toggle">';
+        $toggle_label = sprintf(
+            /* translators: %s: module name. */
+            __('Enable %s module', 'ffl-funnels-addons'),
+            $module->get_name()
+        );
         echo '<label class="wb-toggle">';
-        echo '<input type="checkbox" class="ffla-module-toggle" data-module="' . esc_attr($module->get_id()) . '"' . checked($is_active, true, false) . '>';
-        echo '<span class="wb-toggle__slider"></span>';
+        echo '<span class="screen-reader-text">' . esc_html($toggle_label) . '</span>';
+        echo '<input type="checkbox" class="ffla-module-toggle" data-module="' . esc_attr($module->get_id()) . '"'
+            . ' aria-label="' . esc_attr($toggle_label) . '"'
+            . checked($is_active, true, false) . '>';
+        echo '<span class="wb-toggle__slider" aria-hidden="true"></span>';
         echo '</label>';
         echo '</div>';
         echo '</div>'; // header

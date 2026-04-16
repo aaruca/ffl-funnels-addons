@@ -241,6 +241,19 @@ class WSS_Sync_Engine
         $id_updates        = [];
         $now = gmdate('c');
 
+        // Prime caches for every variation/simple product the sheet references
+        // so we avoid N individual `get_post` + meta fetches inside the loop.
+        $variation_ids = [];
+        foreach ($sheet_data as $row) {
+            $vid = (int) ($row[self::COL_VARIATION_ID] ?? 0);
+            if ($vid > 0) {
+                $variation_ids[$vid] = true;
+            }
+        }
+        if (!empty($variation_ids) && function_exists('_prime_post_caches')) {
+            _prime_post_caches(array_keys($variation_ids), false, true);
+        }
+
         foreach ($sheet_data as $index => $row) {
             $variation_id = (int) ($row[self::COL_VARIATION_ID] ?? 0);
             $product_id   = (int) ($row[self::COL_PRODUCT_ID] ?? 0);
@@ -399,20 +412,33 @@ class WSS_Sync_Engine
         $stats = ['updated' => 0, 'appended' => 0, 'skipped' => 0, 'errors' => 0];
 
         if ($this->allowed_parent_product_ids === null) {
-            $product_ids = get_posts([
-                'post_type'      => 'product',
-                'post_status'    => 'publish',
-                'meta_key'       => '_wss_sync_enabled',
-                'meta_value'     => '1',
-                'fields'         => 'ids',
-                'posts_per_page' => -1,
-            ]);
+            global $wpdb;
+            // Direct SQL avoids posts_per_page=-1 + all the WP_Query overhead
+            // for sites with hundreds of synced parents.
+            $product_ids = $wpdb->get_col($wpdb->prepare(
+                "SELECT p.ID
+                 FROM {$wpdb->posts} p
+                 INNER JOIN {$wpdb->postmeta} pm ON pm.post_id = p.ID
+                 WHERE p.post_type = 'product'
+                   AND p.post_status = 'publish'
+                   AND pm.meta_key = %s
+                   AND pm.meta_value = %s",
+                '_wss_sync_enabled',
+                '1'
+            ));
+            $product_ids = array_map('intval', (array) $product_ids);
         } else {
             $product_ids = $this->allowed_parent_product_ids;
         }
 
         if (empty($product_ids)) {
             return $stats;
+        }
+
+        // Warm the post/meta caches for all parent IDs in a single round-trip
+        // so each wc_get_product() call below does not hit the DB one at a time.
+        if (function_exists('_prime_post_caches')) {
+            _prime_post_caches($product_ids, false, true);
         }
 
         $batch_updates = [];

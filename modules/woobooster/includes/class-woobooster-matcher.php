@@ -4,7 +4,7 @@
  *
  * Resolves the winning rule for a given product and executes the product query.
  *
- * @package WooBooster
+ * @package FFL_Funnels_Addons
  */
 
 if (!defined('ABSPATH')) {
@@ -29,6 +29,21 @@ class WooBooster_Matcher
     private static $term_slug_cache = [];
 
     /**
+     * Per-request cache of rule rows keyed by id. Populated in bulk before
+     * the candidate loop so each candidate does not fire its own SELECT.
+     *
+     * @var array<int,object|null>
+     */
+    private static $rule_row_cache = [];
+
+    /**
+     * Per-request cache of conditions per rule id.
+     *
+     * @var array<int,array>
+     */
+    private static $conditions_cache = [];
+
+    /**
      * Cached get_term_by() to avoid N+1 queries in condition loops.
      */
     private static function get_term_cached(string $slug, string $taxonomy)
@@ -38,6 +53,71 @@ class WooBooster_Matcher
             self::$term_slug_cache[$key] = get_term_by('slug', $slug, $taxonomy);
         }
         return self::$term_slug_cache[$key];
+    }
+
+    /**
+     * Flush the per-request caches. Useful when rules/conditions change
+     * mid-request (e.g. during rebuild).
+     */
+    public static function flush_request_cache(): void
+    {
+        self::$term_slug_cache  = [];
+        self::$rule_row_cache   = [];
+        self::$conditions_cache = [];
+    }
+
+    /**
+     * Bulk-load active rules by id into the per-request cache.
+     *
+     * @param int[] $ids
+     */
+    private function prefetch_rules(array $ids): void
+    {
+        $ids = array_values(array_unique(array_map('absint', $ids)));
+        $ids = array_values(array_filter($ids, function ($id) {
+            return $id > 0 && !array_key_exists($id, self::$rule_row_cache);
+        }));
+
+        if (empty($ids)) {
+            return;
+        }
+
+        global $wpdb;
+        $rules_table = $wpdb->prefix . 'woobooster_rules';
+        $placeholders = implode(',', array_fill(0, count($ids), '%d'));
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT * FROM {$rules_table} WHERE status = 1 AND id IN ({$placeholders})",
+                ...$ids
+            )
+        );
+
+        foreach ($ids as $id) {
+            self::$rule_row_cache[$id] = null;
+        }
+        if ($rows) {
+            foreach ($rows as $row) {
+                self::$rule_row_cache[(int) $row->id] = $row;
+            }
+        }
+    }
+
+    /**
+     * Fetch conditions for a rule with per-request caching.
+     *
+     * @param int $rule_id
+     * @return array
+     */
+    private function get_conditions_cached(int $rule_id): array
+    {
+        if (array_key_exists($rule_id, self::$conditions_cache)) {
+            return self::$conditions_cache[$rule_id];
+        }
+        $groups = WooBooster_Rule::get_conditions($rule_id);
+        self::$conditions_cache[$rule_id] = is_array($groups) ? $groups : [];
+        return self::$conditions_cache[$rule_id];
     }
 
     /**
@@ -65,7 +145,7 @@ class WooBooster_Matcher
         // Try object cache first.
         $args_hash = md5(wp_json_encode($args));
         $cache_key = 'woobooster_rec_' . $product_id . '_' . $args_hash;
-        $cached = wp_cache_get($cache_key, 'woobooster');
+        $cached = wp_cache_get($cache_key, 'ffl-funnels-addons');
 
         if (false !== $cached) {
             $this->debug_log("Cache hit for product {$product_id}");
@@ -145,7 +225,7 @@ class WooBooster_Matcher
         }
 
         // Step 5: Cache the result.
-        wp_cache_set($cache_key, $all_product_ids, 'woobooster', HOUR_IN_SECONDS);
+        wp_cache_set($cache_key, $all_product_ids, 'ffl-funnels-addons', HOUR_IN_SECONDS);
 
         $total_actions = 0;
         if (!empty($action_groups)) {
@@ -188,7 +268,7 @@ class WooBooster_Matcher
         // Cache check (distinct key from auto-match).
         $args_hash = md5(wp_json_encode($args));
         $cache_key = 'woobooster_rule_' . $rule_id . '_' . $product_id . '_' . $args_hash;
-        $cached    = wp_cache_get($cache_key, 'woobooster');
+        $cached    = wp_cache_get($cache_key, 'ffl-funnels-addons');
 
         if (false !== $cached) {
             $this->debug_log("Cache hit for rule #{$rule_id}, product {$product_id}");
@@ -255,7 +335,7 @@ class WooBooster_Matcher
             $all_product_ids = array_slice($all_product_ids, 0, absint($args['limit']));
         }
 
-        wp_cache_set($cache_key, $all_product_ids, 'woobooster', HOUR_IN_SECONDS);
+        wp_cache_set($cache_key, $all_product_ids, 'ffl-funnels-addons', HOUR_IN_SECONDS);
 
         $elapsed = round((microtime(true) - $start_time) * 1000, 2);
         $this->debug_log("Specific rule #{$rule_id} for product {$product_id}: {$elapsed}ms, returned " . count($all_product_ids) . ' products');
@@ -345,21 +425,21 @@ class WooBooster_Matcher
             }
         }
 
+        // Bulk-prefetch every candidate rule in a single query instead of one
+        // SELECT per candidate (previously N+1 when many rules matched).
+        $candidate_ids_int = array_map('absint', $candidate_ids);
+        $this->prefetch_rules($candidate_ids_int);
+        $now = current_time('mysql', true);
+
         // Verify each candidate rule against the product's condition keys.
-        foreach ($candidate_ids as $rule_id) {
-            $rule = $wpdb->get_row(
-                $wpdb->prepare(
-                    "SELECT * FROM {$rules_table} WHERE id = %d AND status = 1",
-                    absint($rule_id)
-                )
-            );
+        foreach ($candidate_ids_int as $rule_id) {
+            $rule = self::$rule_row_cache[$rule_id] ?? null;
 
             if (!$rule) {
                 continue;
             }
 
             // Check scheduling dates — skip if rule is outside its active window.
-            $now = current_time('mysql', true);
             if (!empty($rule->start_date) && $now < $rule->start_date) {
                 continue;
             }
@@ -367,8 +447,8 @@ class WooBooster_Matcher
                 continue;
             }
 
-            // Get condition groups for this rule.
-            $groups = WooBooster_Rule::get_conditions($rule_id);
+            // Get condition groups for this rule (memoized).
+            $groups = $this->get_conditions_cached($rule_id);
 
             if (empty($groups)) {
                 continue;
@@ -476,9 +556,9 @@ class WooBooster_Matcher
 
         // Exclude categories.
         if (!empty($cond->exclude_categories)) {
-            $slugs = array_filter(explode(',', $cond->exclude_categories));
+            $slugs = array_filter(array_map('trim', explode(',', $cond->exclude_categories)));
             foreach ($slugs as $slug) {
-                $term = get_term_by('slug', $slug, 'product_cat');
+                $term = self::get_term_cached($slug, 'product_cat');
                 if ($term && !is_wp_error($term) && in_array((int) $term->term_id, $product_cat_ids, true)) {
                     return true;
                 }
@@ -1018,7 +1098,7 @@ class WooBooster_Matcher
 
         $product = wc_get_product($product_id);
         if (!$product) {
-            $result['error'] = __('Product not found.', 'woobooster');
+            $result['error'] = __('Product not found.', 'ffl-funnels-addons');
             return $result;
         }
 

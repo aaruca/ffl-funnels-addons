@@ -50,11 +50,37 @@ class WooBooster_Admin
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('woobooster_admin'),
             'i18n' => array(
-                'confirmDelete' => __('Are you sure you want to delete this rule?', 'ffl-funnels-addons'),
-                'searching' => __('Searching...', 'ffl-funnels-addons'),
-                'noResults' => __('No results found.', 'ffl-funnels-addons'),
-                'loading' => __('Loading...', 'ffl-funnels-addons'),
-                'testing' => __('Testing...', 'ffl-funnels-addons'),
+                'confirmDelete'        => __('Are you sure you want to delete this rule?', 'ffl-funnels-addons'),
+                'confirmDeleteBundle'  => __('Are you sure you want to delete this bundle?', 'ffl-funnels-addons'),
+                'confirmDeleteAll'     => __('Are you sure you want to DELETE ALL RULES? This action cannot be undone.', 'ffl-funnels-addons'),
+                'confirmImport'        => __('Are you sure you want to import rules? This will add to existing rules.', 'ffl-funnels-addons'),
+                'confirmPurge'         => __('Are you sure you want to clear all Smart Recommendations data?', 'ffl-funnels-addons'),
+                'searching'            => __('Searching…', 'ffl-funnels-addons'),
+                'noResults'            => __('No results found.', 'ffl-funnels-addons'),
+                'loading'              => __('Loading…', 'ffl-funnels-addons'),
+                'testing'              => __('Testing…', 'ffl-funnels-addons'),
+                'deleting'             => __('Deleting…', 'ffl-funnels-addons'),
+                'deleteAll'            => __('Delete All', 'ffl-funnels-addons'),
+                'importing'            => __('Importing…', 'ffl-funnels-addons'),
+                'import'               => __('Import', 'ffl-funnels-addons'),
+                'building'             => __('Building…', 'ffl-funnels-addons'),
+                'rebuildNow'           => __('Rebuild Now', 'ffl-funnels-addons'),
+                'clearing'             => __('Clearing…', 'ffl-funnels-addons'),
+                'clearAllData'         => __('Clear All Data', 'ffl-funnels-addons'),
+                'actionRequired'       => __('At least one action is required in a group.', 'ffl-funnels-addons'),
+                'invalidJsonFile'      => __('Please select a valid JSON file.', 'ffl-funnels-addons'),
+                'errorImport'          => __('Error importing rules.', 'ffl-funnels-addons'),
+                'errorDelete'          => __('Error deleting rules.', 'ffl-funnels-addons'),
+                'error'                => __('Error', 'ffl-funnels-addons'),
+                'networkError'        => __('Network error.', 'ffl-funnels-addons'),
+                'actionGroup'          => __('Action Group', 'ffl-funnels-addons'),
+                'or'                   => __('— OR —', 'ffl-funnels-addons'),
+                'and'                  => __('AND', 'ffl-funnels-addons'),
+                'addAndAction'         => __('+ AND Action', 'ffl-funnels-addons'),
+                'addAndCondition'      => __('+ AND Condition', 'ffl-funnels-addons'),
+                'addAndSource'         => __('+ AND Source', 'ffl-funnels-addons'),
+                'exclusions'           => __('Exclusions', 'ffl-funnels-addons'),
+                'pleaseFix'            => __('Please fix the following:', 'ffl-funnels-addons'),
             ),
         ));
 
@@ -399,7 +425,7 @@ class WooBooster_Admin
                 echo '<div class="wb-card__body wb-card__body--table">';
                 echo '<form method="get">';
                 echo '<input type="hidden" name="page" value="ffla-woobooster-rules" />';
-                $list->search_box(__('Search Rules', 'woobooster'), 'rule');
+                $list->search_box(__('Search Rules', 'ffl-funnels-addons'), 'rule');
                 $list->display();
                 echo '</form>';
                 echo '</div></div>';
@@ -530,7 +556,9 @@ class WooBooster_Admin
             $options['smart_max_relations'] = isset($_POST['woobooster_smart_max_relations']) ? absint($_POST['woobooster_smart_max_relations']) : 20;
         }
 
-        update_option('woobooster_settings', $options);
+        // Explicitly persist with autoload=false so sensitive keys (OpenAI/Tavily)
+        // are not loaded on every request via wp_options autoload cache.
+        update_option('woobooster_settings', $options, false);
 
         if (isset($_POST['woobooster_smart_save'])) {
             WooBooster_Cron::schedule();
@@ -585,6 +613,12 @@ class WooBooster_Admin
         }
 
         $json = isset($_POST['json']) ? wp_unslash($_POST['json']) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+
+        // Cap raw payload size to ~2 MB to avoid DoS via giant JSON uploads.
+        if (!is_string($json) || strlen($json) > 2 * 1024 * 1024) {
+            wp_send_json_error(array('message' => __('Import payload too large (max 2 MB).', 'ffl-funnels-addons')));
+        }
+
         $data = json_decode($json, true);
 
         if (!$data || !isset($data['rules']) || !is_array($data['rules'])) {
@@ -600,11 +634,27 @@ class WooBooster_Admin
             )));
         }
 
+        // Allowlist of fields accepted on the rule row itself. Anything else is
+        // dropped before reaching WooBooster_Rule::create() to avoid arbitrary
+        // column injection even if the DB layer ever regresses.
+        $allowed_rule_fields = array(
+            'name', 'priority', 'status',
+            'condition_attribute', 'condition_operator', 'condition_value', 'include_children',
+            'action_source', 'action_value', 'action_orderby', 'action_limit',
+        );
+        $max_conditions_per_group = 50;
+        $max_actions_per_rule     = 50;
+
         $count = 0;
         foreach ($data['rules'] as $rule_data) {
-            $conditions = isset($rule_data['conditions']) ? $rule_data['conditions'] : array();
-            $actions = isset($rule_data['actions']) ? $rule_data['actions'] : array();
-            unset($rule_data['id'], $rule_data['conditions'], $rule_data['actions'], $rule_data['created_at'], $rule_data['updated_at']);
+            if (!is_array($rule_data)) {
+                continue;
+            }
+            $conditions = isset($rule_data['conditions']) && is_array($rule_data['conditions']) ? $rule_data['conditions'] : array();
+            $actions    = isset($rule_data['actions']) && is_array($rule_data['actions']) ? $rule_data['actions'] : array();
+
+            // Strict allowlist of top-level fields.
+            $rule_data = array_intersect_key($rule_data, array_flip($allowed_rule_fields));
 
             if (empty($rule_data['name'])) {
                 continue;
@@ -615,8 +665,14 @@ class WooBooster_Admin
                 if (!empty($conditions)) {
                     $clean_conditions = array();
                     foreach ($conditions as $group_id => $group) {
+                        if (!is_array($group)) {
+                            continue;
+                        }
                         $group_arr = array();
                         foreach ($group as $cond) {
+                            if (count($group_arr) >= $max_conditions_per_group) {
+                                break;
+                            }
                             $cond = (array) $cond;
                             $group_arr[] = array(
                                 'condition_attribute' => sanitize_key($cond['condition_attribute'] ?? ''),
@@ -637,6 +693,9 @@ class WooBooster_Admin
                 if (!empty($actions)) {
                     $clean_actions = array();
                     foreach ($actions as $action) {
+                        if (count($clean_actions) >= $max_actions_per_rule) {
+                            break;
+                        }
                         $action = (array) $action;
                         $clean_actions[] = array(
                             'action_source' => sanitize_key($action['action_source'] ?? 'category'),

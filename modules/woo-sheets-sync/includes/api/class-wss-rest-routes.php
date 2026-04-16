@@ -37,36 +37,132 @@ class WSS_REST_Routes
         add_action('rest_api_init', [$this, 'register_routes']);
     }
 
+    /** Maximum number of items accepted in a single batch request. */
+    private const BATCH_MAX_ITEMS = 200;
+
     public function register_routes(): void
     {
         register_rest_route('wss/v1', '/products/upsert', [
             'methods'             => 'POST',
             'permission_callback' => [$this, 'can_manage'],
             'callback'            => [$this, 'upsert_product'],
+            'args'                => $this->product_args(),
         ]);
 
         register_rest_route('wss/v1', '/variations/upsert', [
             'methods'             => 'POST',
             'permission_callback' => [$this, 'can_manage'],
             'callback'            => [$this, 'upsert_variation'],
+            'args'                => $this->variation_args(),
         ]);
 
         register_rest_route('wss/v1', '/attributes/upsert', [
             'methods'             => 'POST',
             'permission_callback' => [$this, 'can_manage'],
             'callback'            => [$this, 'upsert_attribute'],
+            'args'                => $this->attribute_args(),
         ]);
 
         register_rest_route('wss/v1', '/batch/upsert', [
             'methods'             => 'POST',
             'permission_callback' => [$this, 'can_manage'],
             'callback'            => [$this, 'batch_upsert'],
+            'args'                => [
+                'items' => [
+                    'type'     => 'array',
+                    'required' => true,
+                    'validate_callback' => function ($value) {
+                        if (!is_array($value)) {
+                            return new WP_Error('wss_rest_invalid', __('items must be an array.', 'ffl-funnels-addons'));
+                        }
+                        if (count($value) > self::BATCH_MAX_ITEMS) {
+                            return new WP_Error(
+                                'wss_rest_too_many',
+                                sprintf(/* translators: %d: max items. */ __('Too many items (max %d).', 'ffl-funnels-addons'), self::BATCH_MAX_ITEMS)
+                            );
+                        }
+                        return true;
+                    },
+                ],
+            ],
         ]);
     }
 
     public function can_manage(): bool
     {
         return current_user_can('manage_woocommerce');
+    }
+
+    /** @return array<string, array<string, mixed>> */
+    private function product_args(): array
+    {
+        return [
+            'product_id'   => ['type' => 'integer', 'required' => false, 'sanitize_callback' => 'absint'],
+            'sku'          => ['type' => 'string',  'required' => false, 'sanitize_callback' => 'sanitize_text_field'],
+            'name'         => ['type' => 'string',  'required' => false, 'sanitize_callback' => 'sanitize_text_field'],
+            'type'         => ['type' => 'string',  'required' => false, 'sanitize_callback' => 'sanitize_key'],
+            'status'       => ['type' => 'string',  'required' => false, 'sanitize_callback' => 'sanitize_key'],
+            'regular_price'=> ['type' => 'string',  'required' => false, 'sanitize_callback' => 'sanitize_text_field'],
+            'stock_status' => ['type' => 'string',  'required' => false, 'sanitize_callback' => 'sanitize_key'],
+            'stock_qty'    => ['type' => 'integer', 'required' => false, 'sanitize_callback' => 'intval'],
+            'manage_stock' => ['type' => 'boolean', 'required' => false],
+            'attributes'   => ['type' => ['array', 'string'], 'required' => false],
+        ];
+    }
+
+    /** @return array<string, array<string, mixed>> */
+    private function variation_args(): array
+    {
+        return [
+            'parent_id'    => ['type' => 'integer', 'required' => true,  'sanitize_callback' => 'absint'],
+            'variation_id' => ['type' => 'integer', 'required' => false, 'sanitize_callback' => 'absint'],
+            'sku'          => ['type' => 'string',  'required' => false, 'sanitize_callback' => 'sanitize_text_field'],
+            'regular_price'=> ['type' => 'string',  'required' => false, 'sanitize_callback' => 'sanitize_text_field'],
+            'stock_status' => ['type' => 'string',  'required' => false, 'sanitize_callback' => 'sanitize_key'],
+            'stock_qty'    => ['type' => 'integer', 'required' => false, 'sanitize_callback' => 'intval'],
+            'manage_stock' => ['type' => 'boolean', 'required' => false],
+            'attributes'   => ['type' => ['array', 'string'], 'required' => false],
+        ];
+    }
+
+    /** @return array<string, array<string, mixed>> */
+    private function attribute_args(): array
+    {
+        return [
+            'taxonomy' => [
+                'type'              => 'string',
+                'required'          => false,
+                'sanitize_callback' => 'sanitize_key',
+                'validate_callback' => function ($value) {
+                    if ($value === '' || $value === null) {
+                        return true;
+                    }
+                    if (!is_string($value) || strpos($value, 'pa_') !== 0) {
+                        return new WP_Error('wss_rest_invalid_taxonomy', __('taxonomy must be a global attribute (pa_*).', 'ffl-funnels-addons'));
+                    }
+                    return true;
+                },
+            ],
+            'label' => [
+                'type'              => 'string',
+                'required'          => false,
+                'sanitize_callback' => 'sanitize_text_field',
+            ],
+            'value' => [
+                'type'              => 'string',
+                'required'          => true,
+                'sanitize_callback' => 'sanitize_text_field',
+                'validate_callback' => function ($value) {
+                    if (!is_string($value) || trim($value) === '') {
+                        return new WP_Error('wss_rest_invalid_value', __('value is required.', 'ffl-funnels-addons'));
+                    }
+                    if (strlen($value) > 200) {
+                        return new WP_Error('wss_rest_value_too_long', __('value exceeds 200 characters.', 'ffl-funnels-addons'));
+                    }
+                    return true;
+                },
+            ],
+        ];
     }
 
     public function upsert_product(WP_REST_Request $request): WP_REST_Response
@@ -126,6 +222,11 @@ class WSS_REST_Routes
     {
         $payload = $request->get_json_params();
         $items   = is_array($payload['items'] ?? null) ? $payload['items'] : [];
+        if (count($items) > self::BATCH_MAX_ITEMS) {
+            return new WP_REST_Response([
+                'error' => sprintf(/* translators: %d: max items. */ __('Too many items (max %d).', 'ffl-funnels-addons'), self::BATCH_MAX_ITEMS),
+            ], 400);
+        }
         $results = [];
 
         foreach ($items as $idx => $item) {

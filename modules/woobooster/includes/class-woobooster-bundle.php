@@ -5,7 +5,7 @@
  * Handles CRUD operations for product bundles, including items, actions,
  * conditions, and lookup index management.
  *
- * @package WooBooster
+ * @package FFL_Funnels_Addons
  */
 
 if (!defined('ABSPATH')) {

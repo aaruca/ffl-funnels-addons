@@ -23,7 +23,7 @@ class Sheet_ZIP_Dataset_Resolver extends Tax_Resolver_Base
 
     public function get_name(): string
     {
-        return 'Google Sheet ZIP Dataset';
+        return __('Google Sheet ZIP Dataset', 'ffl-funnels-addons');
     }
 
     public function get_source_code(): string

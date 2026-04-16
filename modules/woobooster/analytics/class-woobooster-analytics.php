@@ -8,7 +8,7 @@
  * v1.1.1 — Single-pass queries, trend indicators, donut chart,
  *           funnel visual, thumbnails, expanded presets.
  *
- * @package WooBooster
+ * @package FFL_Funnels_Addons
  */
 
 if (!defined('ABSPATH')) {

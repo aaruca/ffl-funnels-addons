@@ -5,7 +5,7 @@
  * "Frequently Bought Together" style widget with checkboxes per item
  * and a single Add to Cart button.
  *
- * @package WooBooster
+ * @package FFL_Funnels_Addons
  */
 
 namespace Bricks;

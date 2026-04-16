@@ -24,7 +24,7 @@ class WooSheets_Module extends FFLA_Module
 
     public function get_name(): string
     {
-        return 'Woo Sheets Sync';
+        return __('Woo Sheets Sync', 'ffl-funnels-addons');
     }
 
     public function get_description(): string

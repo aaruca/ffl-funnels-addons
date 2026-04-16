@@ -367,12 +367,30 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     /**
+     * Escape HTML special characters so the input can be safely embedded into
+     * innerHTML after the controlled markdown transformation below.
+     */
+    function escapeHtml(text) {
+        if (text === null || text === undefined) return '';
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    /**
      * Basic markdown: **bold**, newlines → <br>.
+     *
+     * The input is first HTML-escaped, then we re-introduce a strictly limited
+     * set of safe tags (<strong>, <br>). This prevents any HTML or script the
+     * server may have let through wp_kses_post from executing in admin.
      */
     function formatMarkdown(text) {
         if (!text) return '';
-        return text
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        return escapeHtml(text)
+            .replace(/\*\*([\s\S]*?)\*\*/g, '<strong>$1</strong>')
             .replace(/\n/g, '<br>');
     }
 

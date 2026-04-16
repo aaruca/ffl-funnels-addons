@@ -186,13 +186,19 @@ window.AlgWishlist = {
                             card.remove();
 
                             // Check if grid is now empty
-                            const grid = document.querySelector('.alg-wishlist-grid');
+                                const grid = document.querySelector('.alg-wishlist-grid');
                             if (grid && grid.querySelectorAll('.alg-wishlist-card').length === 0) {
-                                grid.innerHTML = '<div class="alg-wishlist-empty"><p>' +
-                                    (AlgWishlistSettings.i18n && AlgWishlistSettings.i18n.empty_wishlist
-                                        ? AlgWishlistSettings.i18n.empty_wishlist
-                                        : 'Your wishlist is currently empty.') +
-                                    '</p></div>';
+                                const emptyText = (AlgWishlistSettings.i18n && AlgWishlistSettings.i18n.empty_wishlist)
+                                    ? AlgWishlistSettings.i18n.empty_wishlist
+                                    : 'Your wishlist is currently empty.';
+                                // Avoid innerHTML with server-provided translations to stay XSS-safe.
+                                const wrap = document.createElement('div');
+                                wrap.className = 'alg-wishlist-empty';
+                                const p = document.createElement('p');
+                                p.textContent = emptyText;
+                                wrap.appendChild(p);
+                                grid.innerHTML = '';
+                                grid.appendChild(wrap);
                             }
                         }, 300);
                     }

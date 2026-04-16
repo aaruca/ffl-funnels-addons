@@ -6,6 +6,12 @@
 (function () {
   'use strict';
 
+  var i18n = (window.fflaAdmin && window.fflaAdmin.i18n) || {};
+
+  function t(key, fallback) {
+    return (i18n && i18n[key]) ? String(i18n[key]) : (fallback || '');
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     initModuleToggles();
     initCheckUpdate();
@@ -20,6 +26,7 @@
         var moduleId = this.dataset.module;
         var active = this.checked ? 1 : 0;
         var card = this.closest('.ffla-module-card');
+        var self = this;
 
         // Visual feedback
         if (card) {
@@ -39,21 +46,28 @@
         })
           .then(function (r) { return r.json(); })
           .then(function (data) {
-            if (data.success && data.data.reload) {
+            if (data && data.success && data.data && data.data.reload) {
               window.location.reload();
-            } else {
-              if (card) {
-                card.style.opacity = '1';
-                card.style.pointerEvents = '';
-              }
-              alert(data.data ? data.data.message : 'Error');
+              return;
             }
+            if (card) {
+              card.style.opacity = '1';
+              card.style.pointerEvents = '';
+            }
+            // Revert the toggle so the UI reflects actual server state.
+            self.checked = !self.checked;
+            var msg = (data && data.data && data.data.message)
+              ? data.data.message
+              : t('genericError', 'An unexpected error occurred.');
+            window.alert(msg);
           })
           .catch(function () {
             if (card) {
               card.style.opacity = '1';
               card.style.pointerEvents = '';
             }
+            self.checked = !self.checked;
+            window.alert(t('networkError', 'Network error. Please try again.'));
           });
       });
     });
@@ -66,9 +80,11 @@
 
     if (!btn) return;
 
+    var defaultLabel = t('checkForUpdates', 'Check for Updates Now');
+
     btn.addEventListener('click', function () {
       btn.disabled = true;
-      btn.textContent = fflaAdmin.i18n.checking;
+      btn.textContent = t('checking', 'Checking...');
       if (result) result.textContent = '';
 
       fetch(fflaAdmin.ajaxUrl, {
@@ -82,18 +98,24 @@
         .then(function (r) { return r.json(); })
         .then(function (data) {
           btn.disabled = false;
-          btn.textContent = 'Check for Updates Now';
+          btn.textContent = defaultLabel;
 
           if (result) {
-            result.textContent = data.data ? data.data.message : 'Done';
-            result.style.color = (data.data && data.data.status === 'update_available')
+            result.textContent = (data && data.data && data.data.message)
+              ? data.data.message
+              : t('done', 'Done');
+            result.style.color = (data && data.data && data.data.status === 'update_available')
               ? 'var(--wb-color-brand-foreground)'
               : 'var(--wb-color-success-foreground)';
           }
         })
         .catch(function () {
           btn.disabled = false;
-          btn.textContent = 'Check for Updates Now';
+          btn.textContent = defaultLabel;
+          if (result) {
+            result.textContent = t('networkError', 'Network error.');
+            result.style.color = 'var(--wb-color-danger-foreground)';
+          }
         });
     });
   }

@@ -5,7 +5,7 @@
  * Finds matching bundles for a given product and resolves their items
  * (static items + dynamic action-based items).
  *
- * @package WooBooster
+ * @package FFL_Funnels_Addons
  */
 
 if (!defined('ABSPATH')) {
@@ -38,7 +38,7 @@ class WooBooster_Bundle_Matcher
         }
 
         $cache_key = 'woobooster_bundles_' . $product_id;
-        $cached    = wp_cache_get($cache_key, 'woobooster');
+        $cached    = wp_cache_get($cache_key, 'ffl-funnels-addons');
         if (false !== $cached) {
             return $cached;
         }
@@ -62,7 +62,7 @@ class WooBooster_Bundle_Matcher
         }
         unset($bundle);
 
-        wp_cache_set($cache_key, $bundles, 'woobooster', HOUR_IN_SECONDS);
+        wp_cache_set($cache_key, $bundles, 'ffl-funnels-addons', HOUR_IN_SECONDS);
 
         return $bundles;
     }
@@ -84,7 +84,7 @@ class WooBooster_Bundle_Matcher
         }
 
         $cache_key = 'woobooster_bundle_' . $bundle_id . '_' . $product_id;
-        $cached    = wp_cache_get($cache_key, 'woobooster');
+        $cached    = wp_cache_get($cache_key, 'ffl-funnels-addons');
         if (false !== $cached) {
             return $cached;
         }
@@ -106,7 +106,7 @@ class WooBooster_Bundle_Matcher
         $terms = $product_id ? $this->get_product_terms($product_id) : array();
         $bundle->resolved_items = $this->resolve_bundle_items($bundle, $product_id, $terms);
 
-        wp_cache_set($cache_key, $bundle, 'woobooster', HOUR_IN_SECONDS);
+        wp_cache_set($cache_key, $bundle, 'ffl-funnels-addons', HOUR_IN_SECONDS);
 
         return $bundle;
     }

@@ -211,15 +211,36 @@ class Tax_REST_API
         return new \WP_REST_Response(['entries' => $rows ?: []], 200);
     }
 
+    /**
+     * Count requests in a rolling window and reject once the cap is hit.
+     *
+     * When a persistent object cache is available this uses atomic
+     * wp_cache_add + wp_cache_incr so concurrent requests cannot race past
+     * the limit. Otherwise it falls back to the transient counter, which is
+     * slightly racy but functional.
+     */
     private static function check_rate_limit(string $identifier, int $max_requests, int $window_seconds): bool
     {
-        $key = 'ffla_tax_rl_' . md5($identifier);
-        $count = (int) get_transient($key);
+        $key   = 'ffla_tax_rl_' . md5($identifier);
+        $group = 'ffla_tax_ratelimit';
 
+        if (function_exists('wp_using_ext_object_cache') && wp_using_ext_object_cache()) {
+            // Seed the counter if missing so wp_cache_incr has something to
+            // increment. wp_cache_add is atomic against concurrent seeders.
+            wp_cache_add($key, 0, $group, $window_seconds);
+            $count = wp_cache_incr($key, 1, $group);
+            if ($count === false) {
+                // Extremely rare: fall through to transient path below.
+            } else {
+                return ((int) $count) <= $max_requests;
+            }
+        }
+
+        // Fallback (no persistent object cache): transient counter.
+        $count = (int) get_transient($key);
         if ($count >= $max_requests) {
             return false;
         }
-
         set_transient($key, $count + 1, $window_seconds);
         return true;
     }

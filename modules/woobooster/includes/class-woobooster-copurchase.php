@@ -5,7 +5,7 @@
  * Scans completed orders and builds a "frequently bought together" index
  * stored in product postmeta. Zero new database tables.
  *
- * @package WooBooster
+ * @package FFL_Funnels_Addons
  */
 
 if (!defined('ABSPATH')) {

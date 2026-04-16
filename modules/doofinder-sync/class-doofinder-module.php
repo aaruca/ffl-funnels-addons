@@ -22,7 +22,7 @@ class Doofinder_Module extends FFLA_Module
 
     public function get_name(): string
     {
-        return 'Doofinder Sync';
+        return __('Doofinder Sync', 'ffl-funnels-addons');
     }
 
     public function get_description(): string

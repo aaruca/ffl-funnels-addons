@@ -16,9 +16,24 @@ class WSS_Google_Sheets
     /** @var WSS_Google_OAuth */
     private $oauth;
 
+    /**
+     * Per-request cache of sheet titles keyed by spreadsheet id.
+     *
+     * @var array<string,array<string,bool>>
+     */
+    private $tab_title_cache = [];
+
     public function __construct(WSS_Google_OAuth $oauth)
     {
         $this->oauth = $oauth;
+    }
+
+    /**
+     * Invalidate the in-memory sheet title cache for a spreadsheet.
+     */
+    private function invalidate_tab_title_cache(string $spreadsheet_id): void
+    {
+        unset($this->tab_title_cache[$spreadsheet_id]);
     }
 
     /**
@@ -49,14 +64,43 @@ class WSS_Google_Sheets
             $args['body'] = wp_json_encode($body);
         }
 
-        $response = wp_remote_request($url, $args);
+        // Retry transient failures (429 / 5xx / network errors) with
+        // exponential backoff. Non-mutating (GET) requests get more retries
+        // since they are always idempotent.
+        $max_attempts = ($method === 'GET') ? 3 : 2;
+        $attempt      = 0;
+        $response     = null;
+        $status_code  = 0;
+        $decoded      = null;
 
-        if (is_wp_error($response)) {
-            return $response;
+        while ($attempt < $max_attempts) {
+            $attempt++;
+            $response = wp_remote_request($url, $args);
+
+            if (is_wp_error($response)) {
+                if ($attempt >= $max_attempts) {
+                    return $response;
+                }
+                usleep(250000 * (1 << ($attempt - 1))); // 250ms, 500ms, 1s...
+                continue;
+            }
+
+            $status_code = (int) wp_remote_retrieve_response_code($response);
+            $decoded     = json_decode(wp_remote_retrieve_body($response), true);
+
+            $retryable = ($status_code === 429 || ($status_code >= 500 && $status_code < 600));
+            if (!$retryable || $attempt >= $max_attempts) {
+                break;
+            }
+
+            // Honor Retry-After header when present.
+            $retry_after = (int) wp_remote_retrieve_header($response, 'retry-after');
+            if ($retry_after > 0 && $retry_after <= 10) {
+                sleep($retry_after);
+            } else {
+                usleep(500000 * (1 << ($attempt - 1))); // 500ms, 1s, 2s...
+            }
         }
-
-        $status_code = (int) wp_remote_retrieve_response_code($response);
-        $decoded     = json_decode(wp_remote_retrieve_body($response), true);
 
         if ($status_code < 200 || $status_code >= 300) {
             $error_msg = $decoded['error']['message']
@@ -222,26 +266,34 @@ class WSS_Google_Sheets
      */
     private function ensure_tab_exists(string $spreadsheet_id, string $tab_name)
     {
-        $url = sprintf(
-            '%s/%s?fields=sheets.properties.title',
-            self::API_BASE,
-            urlencode($spreadsheet_id)
-        );
-
-        $meta = $this->request('GET', $url);
-        if (is_wp_error($meta)) {
-            return $meta;
+        // Fast-path: hit the per-request cache when we already know this tab.
+        if (isset($this->tab_title_cache[$spreadsheet_id][$tab_name])) {
+            return true;
         }
 
-        $existing = [];
-        foreach (($meta['sheets'] ?? []) as $sheet) {
-            $title = (string) ($sheet['properties']['title'] ?? '');
-            if ($title !== '') {
-                $existing[] = $title;
+        if (!isset($this->tab_title_cache[$spreadsheet_id])) {
+            $url = sprintf(
+                '%s/%s?fields=sheets.properties.title',
+                self::API_BASE,
+                urlencode($spreadsheet_id)
+            );
+
+            $meta = $this->request('GET', $url);
+            if (is_wp_error($meta)) {
+                return $meta;
             }
+
+            $titles = [];
+            foreach (($meta['sheets'] ?? []) as $sheet) {
+                $title = (string) ($sheet['properties']['title'] ?? '');
+                if ($title !== '') {
+                    $titles[$title] = true;
+                }
+            }
+            $this->tab_title_cache[$spreadsheet_id] = $titles;
         }
 
-        if (in_array($tab_name, $existing, true)) {
+        if (isset($this->tab_title_cache[$spreadsheet_id][$tab_name])) {
             return true;
         }
 
@@ -267,6 +319,7 @@ class WSS_Google_Sheets
             return $create;
         }
 
+        $this->tab_title_cache[$spreadsheet_id][$tab_name] = true;
         return true;
     }
 
@@ -321,6 +374,9 @@ class WSS_Google_Sheets
                 ],
             ],
         ]);
+
+        // Invalidate cached titles — the tab list just changed.
+        $this->invalidate_tab_title_cache($spreadsheet_id);
 
         return is_wp_error($result) ? $result : true;
     }

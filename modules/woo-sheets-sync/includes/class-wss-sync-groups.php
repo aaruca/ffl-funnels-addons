@@ -45,6 +45,7 @@ class WSS_Sync_Groups
         }
 
         update_option(self::SETTINGS_KEY, $settings, false);
+        self::flush_cache();
         self::sync_enabled_meta_from_groups();
     }
 
@@ -91,13 +92,33 @@ class WSS_Sync_Groups
     }
 
     /**
+     * Per-request cache of resolved parent IDs for a group signature.
+     *
+     * @var array<string,int[]>
+     */
+    private static $resolved_cache = [];
+
+    /**
      * Resolve parent product IDs for a single group (explicit + category + tag).
+     *
+     * Results are memoized per-request using a stable signature of the group's
+     * membership fields so repeated calls (e.g. from get_tab_names_for_product_id)
+     * do not re-run the tax queries for every product.
      *
      * @param array<string,mixed> $group
      * @return int[]
      */
     public static function resolve_parent_product_ids(array $group): array
     {
+        $signature = md5(wp_json_encode([
+            'p' => isset($group['product_ids']) ? (array) $group['product_ids'] : [],
+            'c' => isset($group['category_ids']) ? (array) $group['category_ids'] : [],
+            't' => isset($group['tag_ids']) ? (array) $group['tag_ids'] : [],
+        ]));
+        if (isset(self::$resolved_cache[$signature])) {
+            return self::$resolved_cache[$signature];
+        }
+
         $ids = [];
 
         foreach ($group['product_ids'] ?? [] as $pid) {
@@ -117,7 +138,16 @@ class WSS_Sync_Groups
 
         $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
 
+        self::$resolved_cache[$signature] = $ids;
         return $ids;
+    }
+
+    /**
+     * Clear the per-request resolution cache (e.g. after saving groups).
+     */
+    public static function flush_cache(): void
+    {
+        self::$resolved_cache = [];
     }
 
     /**
@@ -165,28 +195,44 @@ class WSS_Sync_Groups
     }
 
     /**
-     * Set _wss_sync_enabled for every product in the union of groups; remove for others that were enabled.
+     * Set _wss_sync_enabled for every product in the union of groups; remove for
+     * others that were previously enabled.
+     *
+     * Diff-based: only writes meta for products that are newly enabled or need
+     * to be removed, avoiding a full pass over every enabled product and keeping
+     * the query count bounded on large catalogs.
      */
     public static function sync_enabled_meta_from_groups(): void
     {
-        $union = self::resolve_all_linked_parent_ids(self::get_groups());
+        global $wpdb;
 
-        foreach ($union as $pid) {
-            update_post_meta((int) $pid, '_wss_sync_enabled', '1');
+        $union       = array_map('intval', self::resolve_all_linked_parent_ids(self::get_groups()));
+        $union_set   = array_flip($union);
+
+        // Pull current enabled product IDs via a single SQL query to avoid
+        // loading full WP_Post objects and hitting `posts_per_page => -1`.
+        $current_rows = $wpdb->get_col($wpdb->prepare(
+            "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value = %s",
+            '_wss_sync_enabled',
+            '1'
+        ));
+        $current = array_map('intval', $current_rows ?: []);
+        $current_set = array_flip($current);
+
+        // Compute the two diffs we actually need to write. Keys are IDs because
+        // we used array_flip() above; we want those keys, not the values.
+        $to_add    = array_keys(array_diff_key($union_set, $current_set));
+        $to_remove = array_keys(array_diff_key($current_set, $union_set));
+
+        foreach ($to_add as $pid) {
+            if ($pid > 0) {
+                update_post_meta($pid, '_wss_sync_enabled', '1');
+            }
         }
 
-        $enabled_posts = get_posts([
-            'post_type'      => 'product',
-            'post_status'    => 'any',
-            'meta_key'       => '_wss_sync_enabled',
-            'meta_value'     => '1',
-            'fields'         => 'ids',
-            'posts_per_page' => -1,
-        ]);
-
-        foreach ($enabled_posts as $pid) {
-            if (!in_array((int) $pid, $union, true)) {
-                delete_post_meta((int) $pid, '_wss_sync_enabled');
+        foreach ($to_remove as $pid) {
+            if ($pid > 0) {
+                delete_post_meta($pid, '_wss_sync_enabled');
             }
         }
     }

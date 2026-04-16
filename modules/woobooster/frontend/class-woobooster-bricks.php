@@ -5,7 +5,7 @@
  * Registers the "WooBooster Recommendations" custom Query Loop type in Bricks Builder.
  * Handles query execution, loop context setup, and editor control registration.
  *
- * @package WooBooster
+ * @package FFL_Funnels_Addons
  */
 
 if (!defined('ABSPATH')) {
@@ -51,8 +51,8 @@ class WooBooster_Bricks
      */
     public function register_query_type($control_options)
     {
-        $control_options['queryTypes'][self::QUERY_TYPE] = esc_html__('WooBooster Recommendations', 'woobooster');
-        $control_options['queryTypes'][self::BUNDLE_QUERY_TYPE] = esc_html__('WooBooster Bundles', 'woobooster');
+        $control_options['queryTypes'][self::QUERY_TYPE] = esc_html__('WooBooster Recommendations', 'ffl-funnels-addons');
+        $control_options['queryTypes'][self::BUNDLE_QUERY_TYPE] = esc_html__('WooBooster Bundles', 'ffl-funnels-addons');
         return $control_options;
     }
 
@@ -72,14 +72,14 @@ class WooBooster_Bricks
         $controls['woobooster_settings_group'] = array(
             'tab' => 'content',
             'type' => 'separator',
-            'label' => esc_html__('WooBooster Settings', 'woobooster'),
+            'label' => esc_html__('WooBooster Settings', 'ffl-funnels-addons'),
             'required' => array('query.objectType', '=', self::QUERY_TYPE),
         );
 
         // 2. Add controls to this group.
 
         // Specific Rule (pin this loop to a specific rule).
-        $rule_options = array('' => esc_html__('Auto (first matching rule)', 'woobooster'));
+        $rule_options = array('' => esc_html__('Auto (first matching rule)', 'ffl-funnels-addons'));
         $rules = WooBooster_Rule::get_all(array('status' => 1, 'limit' => 200, 'orderby' => 'name', 'order' => 'ASC'));
         if (!empty($rules)) {
             foreach ($rules as $r) {
@@ -89,23 +89,23 @@ class WooBooster_Bricks
 
         $controls['woobooster_rule_id'] = array(
             'tab'         => 'content',
-            'label'       => esc_html__('Specific Rule', 'woobooster'),
+            'label'       => esc_html__('Specific Rule', 'ffl-funnels-addons'),
             'type'        => 'select',
             'options'     => $rule_options,
             'default'     => '',
-            'description' => esc_html__('Pin this loop to a specific rule. Use "Auto" for normal priority matching.', 'woobooster'),
+            'description' => esc_html__('Pin this loop to a specific rule. Use "Auto" for normal priority matching.', 'ffl-funnels-addons'),
             'required'    => array('query.objectType', '=', self::QUERY_TYPE),
         );
 
         // Product Source.
         $controls['woobooster_source'] = array(
             'tab' => 'content',
-            'label' => esc_html__('Product Source', 'woobooster'),
+            'label' => esc_html__('Product Source', 'ffl-funnels-addons'),
             'type' => 'select',
             'options' => array(
-                'current' => esc_html__('Current Product (auto-detect)', 'woobooster'),
-                'manual' => esc_html__('Manual Product ID', 'woobooster'),
-                'cart' => esc_html__('Last Added to Cart', 'woobooster'),
+                'current' => esc_html__('Current Product (auto-detect)', 'ffl-funnels-addons'),
+                'manual' => esc_html__('Manual Product ID', 'ffl-funnels-addons'),
+                'cart' => esc_html__('Last Added to Cart', 'ffl-funnels-addons'),
             ),
             'default' => 'current',
             'required' => array('query.objectType', '=', self::QUERY_TYPE),
@@ -114,7 +114,7 @@ class WooBooster_Bricks
         // Manual Product ID.
         $controls['woobooster_product_id'] = array(
             'tab' => 'content',
-            'label' => esc_html__('Product ID', 'woobooster'),
+            'label' => esc_html__('Product ID', 'ffl-funnels-addons'),
             'type' => 'number',
             'required' => array(
                 array('query.objectType', '=', self::QUERY_TYPE),
@@ -125,17 +125,17 @@ class WooBooster_Bricks
         // Override Limit.
         $controls['woobooster_limit'] = array(
             'tab' => 'content',
-            'label' => esc_html__('Max Products (override)', 'woobooster'),
+            'label' => esc_html__('Max Products (override)', 'ffl-funnels-addons'),
             'type' => 'number',
             'default' => '',
-            'placeholder' => esc_html__('Use rule default', 'woobooster'),
+            'placeholder' => esc_html__('Use rule default', 'ffl-funnels-addons'),
             'required' => array('query.objectType', '=', self::QUERY_TYPE),
         );
 
         // Exclude Out of Stock.
         $controls['woobooster_exclude_outofstock'] = array(
             'tab' => 'content',
-            'label' => esc_html__('Exclude Out of Stock', 'woobooster'),
+            'label' => esc_html__('Exclude Out of Stock', 'ffl-funnels-addons'),
             'type' => 'checkbox',
             'default' => true,
             'required' => array('query.objectType', '=', self::QUERY_TYPE),
@@ -144,13 +144,13 @@ class WooBooster_Bricks
         // Fallback.
         $controls['woobooster_fallback'] = array(
             'tab' => 'content',
-            'label' => esc_html__('Fallback if No Match', 'woobooster'),
+            'label' => esc_html__('Fallback if No Match', 'ffl-funnels-addons'),
             'type' => 'select',
             'options' => array(
-                'none' => esc_html__('Show Nothing', 'woobooster'),
-                'woo_related' => esc_html__('WooCommerce Related', 'woobooster'),
-                'recent' => esc_html__('Recent Products', 'woobooster'),
-                'bestselling' => esc_html__('Bestselling Products', 'woobooster'),
+                'none' => esc_html__('Show Nothing', 'ffl-funnels-addons'),
+                'woo_related' => esc_html__('WooCommerce Related', 'ffl-funnels-addons'),
+                'recent' => esc_html__('Recent Products', 'ffl-funnels-addons'),
+                'bestselling' => esc_html__('Bestselling Products', 'ffl-funnels-addons'),
             ),
             'default' => 'woo_related',
             'required' => array('query.objectType', '=', self::QUERY_TYPE),
@@ -161,11 +161,11 @@ class WooBooster_Bricks
         $controls['woobooster_bundle_settings_group'] = array(
             'tab' => 'content',
             'type' => 'separator',
-            'label' => esc_html__('WooBooster Bundle Settings', 'woobooster'),
+            'label' => esc_html__('WooBooster Bundle Settings', 'ffl-funnels-addons'),
             'required' => array('query.objectType', '=', self::BUNDLE_QUERY_TYPE),
         );
 
-        $bundle_options = array('' => esc_html__('Auto (first matching bundle)', 'woobooster'));
+        $bundle_options = array('' => esc_html__('Auto (first matching bundle)', 'ffl-funnels-addons'));
         $bundles = WooBooster_Bundle::get_all(array('status' => 1, 'limit' => 200, 'orderby' => 'name', 'order' => 'ASC'));
         if (!empty($bundles)) {
             foreach ($bundles as $b) {
@@ -175,21 +175,21 @@ class WooBooster_Bricks
 
         $controls['woobooster_bundle_id'] = array(
             'tab'         => 'content',
-            'label'       => esc_html__('Specific Bundle', 'woobooster'),
+            'label'       => esc_html__('Specific Bundle', 'ffl-funnels-addons'),
             'type'        => 'select',
             'options'     => $bundle_options,
             'default'     => '',
-            'description' => esc_html__('Pin this loop to a specific bundle. Use "Auto" for condition-based matching.', 'woobooster'),
+            'description' => esc_html__('Pin this loop to a specific bundle. Use "Auto" for condition-based matching.', 'ffl-funnels-addons'),
             'required'    => array('query.objectType', '=', self::BUNDLE_QUERY_TYPE),
         );
 
         $controls['woobooster_bundle_source'] = array(
             'tab' => 'content',
-            'label' => esc_html__('Product Source', 'woobooster'),
+            'label' => esc_html__('Product Source', 'ffl-funnels-addons'),
             'type' => 'select',
             'options' => array(
-                'current' => esc_html__('Current Product (auto-detect)', 'woobooster'),
-                'manual' => esc_html__('Manual Product ID', 'woobooster'),
+                'current' => esc_html__('Current Product (auto-detect)', 'ffl-funnels-addons'),
+                'manual' => esc_html__('Manual Product ID', 'ffl-funnels-addons'),
             ),
             'default' => 'current',
             'required' => array('query.objectType', '=', self::BUNDLE_QUERY_TYPE),
@@ -197,7 +197,7 @@ class WooBooster_Bricks
 
         $controls['woobooster_bundle_product_id'] = array(
             'tab' => 'content',
-            'label' => esc_html__('Product ID', 'woobooster'),
+            'label' => esc_html__('Product ID', 'ffl-funnels-addons'),
             'type' => 'number',
             'required' => array(
                 array('query.objectType', '=', self::BUNDLE_QUERY_TYPE),

@@ -4,7 +4,7 @@
  *
  * Renders recommendations via standard WooCommerce hooks for non-Bricks themes.
  *
- * @package WooBooster
+ * @package FFL_Funnels_Addons
  */
 
 if (!defined('ABSPATH')) {
@@ -112,7 +112,7 @@ class WooBooster_Frontend
             );
         }
 
-        $section_title = woobooster_get_option('section_title', __('You May Also Like', 'woobooster'));
+        $section_title = woobooster_get_option('section_title', __('You May Also Like', 'ffl-funnels-addons'));
         $columns = min(count($product_ids), 4);
 
         echo '<section class="woobooster-related products">';

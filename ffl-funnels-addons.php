@@ -3,7 +3,7 @@
  * Plugin Name:       FFL Funnels Addons
  * Plugin URI:        https://github.com/aaruca/ffl-funnels-addons
  * Description:       Modular WooCommerce toolkit with WooBooster, Wishlist, Checkout, Sheets Sync, Tax Resolver, and Product Reviews.
- * Version:           1.10.3
+ * Version:           1.11.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants.
-define('FFLA_VERSION', '1.10.3');
+define('FFLA_VERSION', '1.11.0');
 define('FFLA_FILE', __FILE__);
 define('FFLA_PATH', plugin_dir_path(__FILE__));
 define('FFLA_URL', plugin_dir_url(__FILE__));
@@ -351,9 +351,38 @@ endif;
 
 // Backward-compatible helper for WooBooster options.
 if (!function_exists('woobooster_get_option')) {
+    /**
+     * Return a single WooBooster setting, memoized per request.
+     *
+     * The options array is fetched exactly once per request and also refreshed
+     * on the `update_option_woobooster_settings` hook so callers see live writes
+     * without another DB round-trip.
+     *
+     * @param string $key     Option key inside the woobooster_settings array.
+     * @param mixed  $default Value to return when the key is missing.
+     * @return mixed
+     */
     function woobooster_get_option($key, $default = '')
     {
-        $options = get_option('woobooster_settings', []);
-        return $options[$key] ?? $default;
+        static $cache = null;
+
+        if ($cache === null) {
+            $cache = get_option('woobooster_settings', []);
+            if (!is_array($cache)) {
+                $cache = [];
+            }
+
+            if (!did_action('woobooster_options_cache_primed')) {
+                add_action('update_option_woobooster_settings', function ($old, $new) use (&$cache) {
+                    $cache = is_array($new) ? $new : [];
+                }, 10, 2);
+                add_action('add_option_woobooster_settings', function ($name, $new) use (&$cache) {
+                    $cache = is_array($new) ? $new : [];
+                }, 10, 2);
+                do_action('woobooster_options_cache_primed');
+            }
+        }
+
+        return array_key_exists($key, $cache) ? $cache[$key] : $default;
     }
 }

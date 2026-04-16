@@ -269,8 +269,9 @@ class WSS_Admin
             return;
         }
 
-        // Debug: log all GET params for this callback.
-        self::debug_log('OAuth callback triggered. GET params: ' . wp_json_encode(array_map('sanitize_text_field', wp_unslash($_GET))));
+        // Debug: only log keys received, never raw values.
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        self::debug_log('OAuth callback triggered. GET keys: ' . implode(',', array_keys((array) $_GET)));
 
         // Check for proxy error redirect.
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
@@ -284,8 +285,8 @@ class WSS_Admin
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $state   = sanitize_text_field(wp_unslash($_GET['state'] ?? ''));
 
-        self::debug_log('Payload length: ' . strlen($payload) . ' | State: ' . $state);
-        self::debug_log('Stored transient state: ' . (get_transient('wss_oauth_state') ?: '(empty/expired)'));
+        self::debug_log('Payload length: ' . strlen($payload) . ' | state present: ' . ($state !== '' ? 'yes' : 'no'));
+        self::debug_log('Stored transient state: ' . (get_transient('wss_oauth_state') ? 'present' : 'empty/expired'));
 
         if (empty($payload) || empty($state)) {
             self::debug_log('ERROR: Missing payload or state');
@@ -319,20 +320,36 @@ class WSS_Admin
     }
 
     /**
-     * Write a debug log entry to the WordPress debug log and a dedicated WSS log file.
+     * Write a debug log entry to the WordPress debug log.
+     *
+     * Gated by WSS_OAUTH_DEBUG (or WP_DEBUG + WP_DEBUG_LOG). File logging under
+     * wp-content/uploads is strictly opt-in via WSS_OAUTH_DEBUG_FILE to avoid
+     * leaking auth data into a web-reachable directory.
      */
     private static function debug_log(string $message): void
     {
-        $line = '[WSS OAuth ' . gmdate('Y-m-d H:i:s') . '] ' . $message;
-
-        // WordPress debug.log (if WP_DEBUG_LOG is enabled).
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log($line);
+        $enabled = (defined('WSS_OAUTH_DEBUG') && WSS_OAUTH_DEBUG)
+            || (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG);
+        if (!$enabled) {
+            return;
         }
 
-        // Dedicated log file in uploads dir.
+        $line = '[WSS OAuth ' . gmdate('Y-m-d H:i:s') . '] ' . $message;
+        error_log($line);
+
+        if (!defined('WSS_OAUTH_DEBUG_FILE') || !WSS_OAUTH_DEBUG_FILE) {
+            return;
+        }
+
         $upload_dir = wp_upload_dir();
-        $log_file   = $upload_dir['basedir'] . '/wss-oauth-debug.log';
+        $log_dir    = $upload_dir['basedir'] . '/wss-logs';
+        if (!is_dir($log_dir)) {
+            wp_mkdir_p($log_dir);
+            @file_put_contents($log_dir . '/.htaccess', "Order allow,deny\nDeny from all\n"); // phpcs:ignore WordPress.WP.AlternativeFunctions
+            @file_put_contents($log_dir . '/web.config', '<configuration><system.webServer><authorization><deny users="*" /></authorization></system.webServer></configuration>'); // phpcs:ignore WordPress.WP.AlternativeFunctions
+            @file_put_contents($log_dir . '/index.php', '<?php // Silence is golden.'); // phpcs:ignore WordPress.WP.AlternativeFunctions
+        }
+        $log_file = $log_dir . '/wss-oauth-debug.log';
         file_put_contents($log_file, $line . "\n", FILE_APPEND | LOCK_EX); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
     }
 

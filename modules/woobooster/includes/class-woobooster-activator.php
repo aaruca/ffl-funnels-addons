@@ -4,7 +4,7 @@
  *
  * Handles plugin activation — database table creation and updates.
  *
- * @package WooBooster
+ * @package FFL_Funnels_Addons
  */
 
 if (!defined('ABSPATH')) {
@@ -21,7 +21,29 @@ class WooBooster_Activator
         self::create_tables();
         self::migrate_tables();
         self::set_default_options();
+        self::migrate_settings_autoload();
         update_option('woobooster_version', WOOBOOSTER_VERSION);
+    }
+
+    /**
+     * Ensure woobooster_settings is not autoloaded.
+     *
+     * Older installs stored the option with autoload='yes', keeping
+     * potentially sensitive API keys in the alloptions cache. Flip it to
+     * autoload='no' exactly once by re-saving the current value.
+     */
+    private static function migrate_settings_autoload()
+    {
+        global $wpdb;
+        $autoload = $wpdb->get_var($wpdb->prepare(
+            "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s LIMIT 1",
+            'woobooster_settings'
+        ));
+        if ($autoload !== null && $autoload !== 'no') {
+            $value = get_option('woobooster_settings', array());
+            delete_option('woobooster_settings');
+            add_option('woobooster_settings', $value, '', false);
+        }
     }
 
     /**
@@ -379,7 +401,9 @@ class WooBooster_Activator
             $defaults = array(
                 'debug_mode' => '0',
             );
-            update_option('woobooster_settings', $defaults);
+            // Keep settings off the autoloaded options cache — they may store
+            // API keys (OpenAI/Tavily) that should not be loaded on every request.
+            update_option('woobooster_settings', $defaults, false);
         }
     }
 }

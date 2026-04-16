@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.9.6-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.11.0-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -120,7 +120,66 @@ Notes:
 *   PHP 7.4 or higher
 *   (Optional) Bricks Builder for visual layout customization
 
+## Internal REST API (Woo Sheets Sync)
+
+The Woo Sheets Sync module registers private REST endpoints under the
+`wss/v1` namespace. They are gated by the `manage_woocommerce` capability
+and meant to be consumed from the same site (Sheet→Woo flow, admin-side
+tooling, or integrations you write yourself).
+
+Base URL: `https://<your-site>/wp-json/wss/v1/`
+
+| Method | Endpoint                  | Purpose                                                              |
+| ------ | ------------------------- | -------------------------------------------------------------------- |
+| POST   | `/products/upsert`        | Create or update a simple product.                                   |
+| POST   | `/variations/upsert`      | Create or update a variation (requires `parent_id`).                 |
+| POST   | `/attributes/upsert`      | Resolve a global attribute (`pa_*`) and ensure a term exists/reused. |
+| POST   | `/batch/upsert`           | Array of `{kind, payload}` — max 200 items per call.                 |
+
+All requests must include the `X-WP-Nonce` header (WordPress REST nonce)
+and be authenticated as a user with `manage_woocommerce`.
+
+Example — ensure a `pa_manufacturer` term:
+
+```json
+POST /wss/v1/attributes/upsert
+{ "label": "Manufacturer", "value": "Demo Manufacturer" }
+```
+
+### Debug logging
+
+OAuth debug output is disabled by default. To enable it temporarily, add
+these constants to `wp-config.php` — file logging is opt-in so nothing is
+written to `wp-content/uploads` unless you explicitly ask for it:
+
+```php
+define('WSS_OAUTH_DEBUG', true);       // error_log only
+define('WSS_OAUTH_DEBUG_FILE', true);  // also write wp-content/uploads/wss-logs/
+```
+
 ## Changelog
+
+### v1.11.0
+
+*   **Security:** WooBooster AI chat now HTML-escapes assistant output before applying a strictly limited markdown renderer (bold + line breaks), preventing stray HTML/script execution in admin even if it slipped past server-side `wp_kses_post`.
+*   **Security:** Wishlist empty-state message is rendered via `textContent` on a dedicated DOM node instead of assigning the translated string into `innerHTML`, removing a latent XSS path if a translation/i18n entry were ever hostile.
+*   **Admin capabilities:** Updater notice display and the `ffla_dismiss_api_notice` handler now consistently require `manage_woocommerce`, matching the capability used by every other FFLA admin surface.
+*   **Performance (WooBooster):** `woobooster_get_option()` memoizes `woobooster_settings` per request and auto-refreshes the cache on `update_option_woobooster_settings` / `add_option_woobooster_settings`, collapsing repeated reads into a single DB fetch per request.
+*   **Performance (WooBooster Matcher):** Added per-request caches for rule rows (`$rule_row_cache`), conditions (`$conditions_cache`), and `get_term_by()` slug lookups (`$term_slug_cache`), plus a bulk `prefetch_rules()` that loads all candidate rules in a single `IN(...)` query — eliminating the per-candidate `SELECT` and per-condition term lookups that showed up as N+1 on stores with many rules.
+*   **Performance (Tax Rates):** `Tax_Dataset_Pipeline` no longer loads the full Google-Sheets CSV export into memory. The HTTP response is streamed to a `wp_tempnam()` file and parsed line-by-line via `fgetcsv`, grouping rows by state incrementally and freeing each state's slice as soon as it is imported.
+*   **Performance (Woo Sheets Sync):** `sync_woo_to_sheet()` replaces the unbounded `get_posts(posts_per_page=-1)` with a direct `wpdb->get_col()` over `posts`+`postmeta`, and both sync directions now call `_prime_post_caches()` once on the full ID set so the subsequent `wc_get_product()` loop hits the object cache instead of issuing per-product SELECTs.
+*   **Performance (Woo Sheets Sync):** `WSS_Sync_Orchestrator::run_all()` tracks processed tab names and skips any later group pointing at a tab that has already been synced in the same run, with an explicit `skipped` entry in the report — avoids duplicate full-sheet reads when groups are misconfigured.
+*   **i18n (PHP):** All module `get_name()` / `get_description()` strings (Woo Sheets Sync, Tax Rates, Product Reviews, WooBooster, Wishlist, FFL Checkout, Doofinder Sync) and the USGeocoder / Sheet ZIP dataset resolver labels are now wrapped in `__(..., 'ffl-funnels-addons')` and translatable.
+*   **i18n (JS):** WooBooster admin (`woobooster-module.js`) gained a `t(key, fallback)` helper and all previously hardcoded confirm/alert/status strings (`Deleting…`, `Delete All`, `Importing…`, `Rebuild Now`, `Clear All Data`, `Network error.`, `Please fix the following:`, `At least one action is required in a group.`, `Are you sure you want to delete this bundle?`, etc.) now resolve through `wooboosterAdmin.i18n`, populated via `wp_localize_script`. Wishlist empty-state and fallback labels read from `AlgWishlistSettings.i18n`.
+
+### v1.10.4
+
+*   **Woo Sheets Sync:** REST endpoints (`wss/v1`) now declare `args` with `validate_callback`/`sanitize_callback`; `/batch/upsert` caps items at 200; OAuth debug logs redact state/payload/tokens and require explicit `WSS_OAUTH_DEBUG`; file logging requires `WSS_OAUTH_DEBUG_FILE` and protects the directory with `.htaccess` + `web.config`.
+*   **Woo Sheets Sync:** Per-request cache for label→taxonomy resolution and for Google Sheets tab metadata; HTTP client retries 429/5xx with exponential backoff (and honors `Retry-After`).
+*   **Woo Sheets Sync:** `sync_enabled_meta_from_groups()` replaces the full enabled-products scan with a diff-based SQL query; group resolution is memoized per request.
+*   **WooBooster:** `import_rules` AJAX enforces a 2 MB payload cap, strict top-level field allowlist, and per-rule limits (≤50 conditions per group, ≤50 actions); settings option is persisted with `autoload=no` and migrated on activation.
+*   **Tax Resolver:** `/quote` rate limit uses atomic `wp_cache_add`+`wp_cache_incr` when a persistent object cache is available; transient fallback preserved.
+*   **Uninstall:** Cleans up the correct keys (`wss_google_tokens`, `wss_last_sync`), removes `_wss_sync_enabled` post meta, unschedules `wss_daily_sync`, deletes `wss_oauth_state` transient.
 
 ### v1.9.6
 

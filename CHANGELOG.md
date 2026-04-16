@@ -2,6 +2,27 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.11.0] - 2026-04-14
+
+### Security
+- **WooBooster AI (admin):** Assistant responses are HTML-escaped before the limited markdown renderer re-introduces only `<strong>` / `<br>`, so any HTML that slipped past server-side `wp_kses_post` can no longer execute inside the admin modal.
+- **Wishlist (frontend):** The "empty wishlist" message is now written via `textContent` on a dedicated DOM node instead of being injected into `innerHTML`, eliminating a theoretical XSS path via hostile translations.
+
+### Changed
+- **Updater capabilities:** `maybe_show_token_notice()` and the `ffla_dismiss_api_notice` handler both require `manage_woocommerce` now, matching every other FFLA admin surface (previously `manage_options`).
+
+### Performance
+- **WooBooster options:** `woobooster_get_option()` memoizes `woobooster_settings` per request and refreshes its cache on `update_option_woobooster_settings` / `add_option_woobooster_settings`, collapsing repeated reads into a single DB fetch per request.
+- **WooBooster Matcher:** New per-request caches for rule rows, conditions and term-slug lookups, plus a bulk `prefetch_rules()` that loads every candidate rule with one `IN(...)` query — removes the N+1 `SELECT`s that previously ran per candidate and per category-exclusion slug.
+- **Tax Rates — Dataset Pipeline:** The Google Sheets CSV is now streamed to `wp_tempnam()` via `wp_remote_get([ 'stream' => true, 'filename' => $tmp ])` and parsed line-by-line with `fgetcsv`, grouping rows by state incrementally. Each state's slice is freed immediately after import; large national datasets no longer load into memory.
+- **Woo Sheets Sync — Engine:** Replaced `get_posts([ 'posts_per_page' => -1 ])` with a direct `wpdb->get_col()` over `posts`+`postmeta` to list sync-enabled products; both sync directions now call `_prime_post_caches()` once over the full ID set so subsequent `wc_get_product()` calls resolve from the object cache instead of issuing per-product `SELECT`s.
+- **Woo Sheets Sync — Orchestrator:** `run_all()` now tracks processed tab names and skips any later group that targets a tab already synced in the same run, recording an explicit `skipped` entry. Avoids duplicate full-sheet reads from misconfigured groups.
+
+### Internationalization
+- **PHP module metadata:** All module `get_name()` / `get_description()` strings (Woo Sheets Sync, Tax Rates, Product Reviews, WooBooster, Wishlist, FFL Checkout, Doofinder Sync) and the USGeocoder / Sheet ZIP dataset resolver labels are wrapped in `__(..., 'ffl-funnels-addons')` and translatable.
+- **WooBooster admin JS:** New `t(key, fallback)` helper in `woobooster-module.js`; previously hardcoded confirmation dialogs, status messages and button labels (`Deleting…`, `Delete All`, `Importing…`, `Rebuild Now`, `Clear All Data`, `Network error.`, `Please fix the following:`, `At least one action is required in a group.`, `Are you sure you want to delete this bundle?`, etc.) now resolve through `wooboosterAdmin.i18n` populated via `wp_localize_script`.
+- **Wishlist frontend JS:** Empty-state text and fallback strings read from `AlgWishlistSettings.i18n` instead of being hardcoded in English.
+
 ## [1.9.5] - 2026-04-10
 
 ### Added
