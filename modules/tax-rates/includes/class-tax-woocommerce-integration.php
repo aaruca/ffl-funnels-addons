@@ -73,6 +73,16 @@ class Tax_WooCommerce_Integration
             return $matched_tax_rates;
         }
 
+        // Role-based tax gate: when the admin opted into role-restricted
+        // charging, customers whose role isn't in the allowed list get an
+        // empty rate set. We also wipe the runtime tax meta so Woo doesn't
+        // read stale synthetic rates from a previous request.
+        if (class_exists('Tax_Role_Gate') && Tax_Role_Gate::is_active()
+            && !Tax_Role_Gate::should_charge_for_current_customer()) {
+            self::store_runtime_tax_meta([]);
+            return [];
+        }
+
         if (!Tax_Coverage::is_enabled_for_store($state)) {
             self::store_runtime_tax_meta([]);
             return $matched_tax_rates;

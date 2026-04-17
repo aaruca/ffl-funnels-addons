@@ -60,6 +60,7 @@ class Tax_Rates_Module extends FFLA_Module
         require_once $base . 'includes/class-tax-rest-api.php';
         require_once $base . 'includes/class-tax-woocommerce-integration.php';
         require_once $base . 'includes/class-tax-usgeocoder-usage.php';
+        require_once $base . 'includes/class-tax-role-gate.php';
 
         // Resolvers.
         require_once $base . 'includes/resolvers/class-tax-resolver-base.php';
@@ -134,6 +135,8 @@ class Tax_Rates_Module extends FFLA_Module
                 'enabled_states'  => [],
                 'sheet_source_url'=> Tax_Dataset_Pipeline::DEFAULT_SHEET_URL,
                 'usgeocoder_auth_key' => '',
+                'tax_role_restrict' => '0',
+                'taxed_roles'       => [],
             ]);
         }
 

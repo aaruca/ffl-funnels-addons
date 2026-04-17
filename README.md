@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.13.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.14.0-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -193,6 +193,11 @@ define('WSS_OAUTH_DEBUG_FILE', true);  // also write wp-content/uploads/wss-logs
 ```
 
 ## Changelog
+
+### v1.14.0
+
+*   **Tax Rates — role-based charging:** New opt-in setting under Tax Resolver → Settings ("Tax charges by user role") that lets stores charge tax only to specific WordPress user roles. The card shows every role on the site plus a "Guest (not logged in)" row; checked roles pay tax, unchecked roles (and guests, unless Guest is checked) see `$0` tax at checkout. When the feature is off the plugin behaves exactly like before — every customer is taxed. Common use case: a wholesale store that taxes retail customers but not B2B accounts.
+*   **Tax Rates — role gate helper:** New `Tax_Role_Gate` class (`includes/class-tax-role-gate.php`) exposing `is_active()`, `get_allowed_roles()`, `get_role_choices()`, and `should_charge_for_current_customer()`. The WooCommerce integration now short-circuits `woocommerce_matched_tax_rates` to an empty rate set when the gate is active and the current customer's role isn't in the allowed list; the synthetic runtime tax metadata is cleared at the same time so stale rates from a previous request don't leak through. Users with multiple roles pay tax as long as *any* of their roles is checked.
 
 ### v1.13.0
 

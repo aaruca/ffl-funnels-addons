@@ -2,6 +2,15 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.14.0] - 2026-04-14
+
+### Tax Rates — Role-based tax charging
+- **New opt-in setting:** Tax Resolver → Settings now exposes a "Tax charges by user role" card with a toggle plus a checklist of every WordPress role on the site, including a special "Guest (not logged in)" row. When the toggle is off (default) every customer is taxed exactly like before — nothing changes for existing installs.
+- **When the gate is on:** only the roles that are checked get charged tax at checkout; unchecked roles (and guests, unless Guest is checked) see `$0` tax. Users that have multiple roles pay tax as long as any of their roles is in the checked list.
+- **Safe fallback:** if the gate is turned on but nothing is selected, the UI surfaces a red warning and every customer sees `$0` tax — the admin explicitly opted into restriction, so we honor it instead of silently charging everyone.
+- **Implementation:** new `Tax_Role_Gate` helper (`includes/class-tax-role-gate.php`) with `is_active()`, `get_allowed_roles()`, `get_role_choices()`, and `should_charge_for_current_customer()`. `Tax_WooCommerce_Integration::filter_matched_tax_rates()` now short-circuits to an empty matched-rate array when the gate is active and the current customer isn't in the allowed list, and clears the synthetic `ffla_runtime_tax_rates` session entry at the same time so stale rates from a previous request can't leak through. Settings key: `tax_role_restrict` (`'0'`/`'1'`) + `taxed_roles` (string[] of role slugs, with `guest` as a pseudo-role for non-logged-in visitors).
+- **Default values:** activation seeds `tax_role_restrict = '0'` and `taxed_roles = []` for brand-new installs; existing installs keep their current settings untouched.
+
 ## [1.13.0] - 2026-04-14
 
 ### Tax Rates — Bring Your Own USGeocoder Key

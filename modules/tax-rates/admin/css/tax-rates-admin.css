@@ -617,6 +617,48 @@
     font-size: var(--wb-font-size-sm, 13px);
 }
 
+/* ── Role picker ─────────────────────────────────────────────────── */
+.ffla-tax-role-picker {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: var(--wb-spacing-xs, 6px);
+    margin-top: var(--wb-spacing-sm, 10px);
+}
+
+.ffla-tax-role-picker__item {
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    padding: 0.5em 0.75em;
+    border: 1px solid var(--wb-color-border-subtle, #e1e4e8);
+    border-radius: var(--wb-radius-sm, 6px);
+    background: var(--wb-color-surface, #fff);
+    cursor: pointer;
+    transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.ffla-tax-role-picker__item:hover {
+    border-color: #0969da;
+    background: rgba(9, 105, 218, 0.04);
+}
+
+.ffla-tax-role-picker__item:has(input:checked) {
+    border-color: #0969da;
+    background: rgba(9, 105, 218, 0.08);
+}
+
+.ffla-tax-role-picker__label {
+    flex: 1;
+    font-weight: 500;
+}
+
+.ffla-tax-role-picker__slug {
+    font-size: 0.85em;
+    color: var(--wb-color-neutral-foreground-2, #57606a);
+    background: transparent;
+    padding: 0;
+}
+
 /* ── Responsive ──────────────────────────────────────────────────── */
 @media (max-width: 768px) {
     .ffla-tax-row--inline {
