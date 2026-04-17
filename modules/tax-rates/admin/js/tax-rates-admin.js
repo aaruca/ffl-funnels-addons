@@ -67,6 +67,67 @@
             }
         });
 
+        // "Test key" button next to the USGeocoder auth key field. Validates
+        // the pending key against the USGeocoder sample address without
+        // needing to save the settings form first — so admins can confirm the
+        // key is valid before committing to reconcile + cache flush.
+        var $testBtn    = $('#ffla-tax-test-key');
+        var $testStatus = $('#ffla-tax-test-key-status');
+        var $keyInput   = $('input[name="usgeocoder_auth_key"]');
+
+        if ($testBtn.length && $keyInput.length) {
+            $testBtn.on('click', function () {
+                var key = String($keyInput.val() || '').trim();
+
+                $testStatus
+                    .removeClass('ffla-tax-test-key__status--ok ffla-tax-test-key__status--error')
+                    .text('');
+
+                if (!key) {
+                    $testStatus
+                        .addClass('ffla-tax-test-key__status--error')
+                        .text(t('testKeyEmpty', 'Enter a USGeocoder key first.'));
+                    return;
+                }
+
+                $testBtn.prop('disabled', true);
+                var originalLabel = $testBtn.text();
+                $testBtn.text(t('testKeyTesting', 'Testing…'));
+                $testStatus
+                    .removeClass('ffla-tax-test-key__status--error')
+                    .text(t('testKeyTesting', 'Testing…'));
+
+                $.post(FflaTaxResolver.ajaxUrl, {
+                    action: 'ffla_tax_test_usgeocoder',
+                    security: FflaTaxResolver.nonce,
+                    key: key
+                })
+                    .done(function (res) {
+                        var payload = (res && res.data) ? res.data : {};
+                        if (res && res.success) {
+                            $testStatus
+                                .removeClass('ffla-tax-test-key__status--error')
+                                .addClass('ffla-tax-test-key__status--ok')
+                                .text(String(payload.message || t('testKeyOk', 'Key works. Sample lookup succeeded.')));
+                        } else {
+                            $testStatus
+                                .removeClass('ffla-tax-test-key__status--ok')
+                                .addClass('ffla-tax-test-key__status--error')
+                                .text(String(payload.message || t('testKeyFailed', 'Key test failed.')));
+                        }
+                    })
+                    .fail(function () {
+                        $testStatus
+                            .removeClass('ffla-tax-test-key__status--ok')
+                            .addClass('ffla-tax-test-key__status--error')
+                            .text(t('testKeyRequestFailed', 'Test request failed. Check your network and try again.'));
+                    })
+                    .always(function () {
+                        $testBtn.prop('disabled', false).text(originalLabel || t('testKey', 'Test key'));
+                    });
+            });
+        }
+
         function renderQuoteResult(data) {
             var html = '';
             var isSuccess = (data.outcomeCode === 'SUCCESS' || data.outcomeCode === 'NO_SALES_TAX');

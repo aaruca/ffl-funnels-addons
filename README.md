@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.12.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.13.0-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -193,6 +193,18 @@ define('WSS_OAUTH_DEBUG_FILE', true);  // also write wp-content/uploads/wss-logs
 ```
 
 ## Changelog
+
+### v1.13.0
+
+*   **Tax Rates (BYOK):** "Bring your own USGeocoder key" flow is now productionized. Leaving the key empty keeps the shared monthly-refreshed Google Sheet dataset (free); pasting a key upgrades the matching states to live address-level precision via the USGeocoder JSON API.
+*   **Runtime fallback (critical):** `Tax_Quote_Engine::quote()` now retries failed USGeocoder attempts against the Sheet ZIP dataset when the outcome is `SOURCE_UNAVAILABLE`, `RATE_NOT_DETERMINABLE`, or `INTERNAL_ERROR`. Both attempts are recorded in `trace.fallbackChain` and the fallback result is tagged `sourceVersion = "sheet_fallback"` so the admin audit row makes the fallback visible.
+*   **Coverage reconcile:** The per-request `Tax_Coverage` write loop that used to run inside `boot()` was replaced by `Tax_Coverage::reconcile_from_settings()`, invoked on activation and through `update_option_ffla_tax_resolver_settings`. Writes are diffed so only rows whose resolver/status/notes actually changed are touched.
+*   **Respect restrict_states for USGeocoder:** With `restrict_states = 1`, only states listed in `enabled_states` route to `usgeocoder_api`; the rest fall back to `sheet_zip_dataset`. The resolver itself also refuses to hit the paid endpoint for disabled states as a defense in depth.
+*   **Cache invalidation:** The address cache (`wp_ffla_tax_address_cache`) is now flushed via `Tax_Resolver_DB::flush_address_cache()` whenever `usgeocoder_auth_key`, `restrict_states`, or `enabled_states` change; the stored transient from the Test-key button is cleared at the same time. The settings page surfaces an info notice listing the reasons so the admin understands why cached quotes were dropped.
+*   **Admin UX:** New mode badge ("Sheet Mode (free)" / "USGeocoder Mode (live API)" / "USGeocoder Mode (key invalid)") on the settings card, reworded help text that explains both modes, external link to usgeocoder.com, and a clear note about per-call pricing + runtime fallback.
+*   **Test-key validator:** New `wp_ajax_ffla_tax_test_usgeocoder` action and "Test key" button next to the auth key field. It calls the USGeocoder sample address from the official docs and reports `ok` / `network_error` / `http_error` / `empty_payload` / `no_rate` with the specific reason. The result is cached in a `ffla_tax_key_validation` transient for 1 hour so the page can show a persistent status badge without re-hitting the paid API on every reload.
+*   **USGeocoder call counter:** New `Tax_USGeocoder_Usage` class. Every real HTTP call increments both a `YYYY-MM` bucket in `ffla_tax_usgeocoder_usage` (trimmed to 24 months, split into success/failed) and is visible through a live rolling-30d query against `wp_ffla_tax_quotes_audit` filtered on `source_code = 'usgeocoder_api'` + `cache_hit = 0`. An "API Usage" card on the settings page renders the rolling-30d badge and the last 6 months. Cache hits never reach the resolver so they cannot inflate the counter.
+*   **Resolver cleanup:** Removed hardcoded `SUPPORTED_WITH_REMOTE_LOOKUP` from the USGeocoder resolver — the result now reads `Tax_Coverage::get_state($state)['coverage_status']` so per-state configuration drives the response shape. Extracted a shared `USGeocoder_API_Resolver::fetch_api()` helper reused by both `resolve()` and the admin Test-key action.
 
 ### v1.12.0
 

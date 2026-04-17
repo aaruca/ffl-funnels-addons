@@ -246,6 +246,26 @@ class Tax_Resolver_DB
     }
 
     /**
+     * Flush every entry in the address_cache table.
+     *
+     * Called when settings change in a way that would otherwise surface stale
+     * quotes — for example toggling the USGeocoder key or editing the
+     * restrict-states list, both of which change the resolver that should
+     * produce quotes for a given address.
+     *
+     * @return int Number of rows removed.
+     */
+    public static function flush_address_cache(): int
+    {
+        global $wpdb;
+
+        $table   = self::table('address_cache');
+        $deleted = (int) $wpdb->query("DELETE FROM {$table}");
+
+        return max(0, $deleted);
+    }
+
+    /**
      * Clear cached quote entries for a state.
      */
     public static function clear_state_cache(string $state_code): void

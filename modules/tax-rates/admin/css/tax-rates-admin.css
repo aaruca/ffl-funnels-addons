@@ -556,6 +556,67 @@
     font-size: var(--wb-font-size-sm);
 }
 
+/* ── USGeocoder Mode Badge ───────────────────────────────────────── */
+.ffla-tax-mode-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    padding: 0.25em 0.65em;
+    border-radius: 999px;
+    font-size: var(--wb-font-size-xs, 12px);
+    font-weight: 600;
+    line-height: 1.4;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+
+.ffla-tax-mode-badge--sheet {
+    background: rgba(26, 127, 55, 0.12);
+    color: #1a7f37;
+    border-color: rgba(26, 127, 55, 0.25);
+}
+
+.ffla-tax-mode-badge--api {
+    background: rgba(9, 105, 218, 0.12);
+    color: #0969da;
+    border-color: rgba(9, 105, 218, 0.25);
+}
+
+.ffla-tax-mode-badge--warn {
+    background: rgba(189, 86, 0, 0.14);
+    color: #bd5600;
+    border-color: rgba(189, 86, 0, 0.28);
+}
+
+.ffla-tax-test-key__status {
+    font-size: var(--wb-font-size-sm, 13px);
+}
+
+.ffla-tax-test-key__status--ok {
+    color: #1a7f37;
+}
+
+.ffla-tax-test-key__status--error {
+    color: #c6300b;
+}
+
+.ffla-tax-usage-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25em 0.65em;
+    border-radius: 999px;
+    background: rgba(9, 105, 218, 0.12);
+    color: #0969da;
+    font-size: var(--wb-font-size-xs, 12px);
+    font-weight: 600;
+}
+
+.ffla-tax-usage-list {
+    font-size: var(--wb-font-size-sm, 13px);
+}
+
 /* ── Responsive ──────────────────────────────────────────────────── */
 @media (max-width: 768px) {
     .ffla-tax-row--inline {

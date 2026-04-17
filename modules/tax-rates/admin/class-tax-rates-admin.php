@@ -19,6 +19,7 @@ class Tax_Rates_Admin
         add_action('wp_ajax_ffla_tax_quote_lookup', [$this, 'ajax_quote_lookup']);
         add_action('wp_ajax_ffla_tax_run_sync', [$this, 'ajax_run_sync']);
         add_action('wp_ajax_ffla_tax_purge_legacy_data', [$this, 'ajax_purge_legacy_data']);
+        add_action('wp_ajax_ffla_tax_test_usgeocoder', [$this, 'ajax_test_usgeocoder']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
     }
 
@@ -85,6 +86,12 @@ class Tax_Rates_Admin
                 'cleanupCompleted'     => __('Cleanup completed.', 'ffl-funnels-addons'),
                 'cleanupRequestFailed' => __('Cleanup request failed.', 'ffl-funnels-addons'),
                 'deleteOldTaxDb'       => __('Delete Old Tax Database', 'ffl-funnels-addons'),
+                'testKey'              => __('Test key', 'ffl-funnels-addons'),
+                'testKeyTesting'       => __('Testing…', 'ffl-funnels-addons'),
+                'testKeyEmpty'         => __('Enter a USGeocoder key first.', 'ffl-funnels-addons'),
+                'testKeyOk'            => __('Key works. Sample lookup succeeded.', 'ffl-funnels-addons'),
+                'testKeyFailed'        => __('Key test failed.', 'ffl-funnels-addons'),
+                'testKeyRequestFailed' => __('Test request failed. Check your network and try again.', 'ffl-funnels-addons'),
             ],
         ]);
 
@@ -154,6 +161,33 @@ class Tax_Rates_Admin
             }
         }
 
+        // Detect setting changes that invalidate cached quotes before the
+        // option write (so we know what changed, not just the final state).
+        $prev_key      = trim((string) ($previous_settings['usgeocoder_auth_key'] ?? ''));
+        $new_key       = trim((string) $settings['usgeocoder_auth_key']);
+        $prev_restrict = (string) ($previous_settings['restrict_states'] ?? '0');
+        $new_restrict  = (string) $settings['restrict_states'];
+
+        $cache_flushed  = 0;
+        $flush_reasons  = [];
+
+        if ($prev_key !== $new_key) {
+            $flush_reasons[] = $new_key === ''
+                ? 'api_key_removed'
+                : ($prev_key === '' ? 'api_key_added' : 'api_key_changed');
+
+            // Any previous per-key validation result is no longer meaningful.
+            delete_transient('ffla_tax_key_validation');
+        }
+
+        if ($prev_restrict !== $new_restrict || $previous_enabled_states !== $enabled_states) {
+            $flush_reasons[] = 'enabled_states_changed';
+        }
+
+        if (!empty($flush_reasons) && class_exists('Tax_Resolver_DB')) {
+            $cache_flushed = Tax_Resolver_DB::flush_address_cache();
+        }
+
         update_option(self::SETTINGS_KEY, $settings);
         Tax_Rates_Cron::maybe_schedule();
 
@@ -163,6 +197,8 @@ class Tax_Rates_Admin
                 'tab'           => 'settings',
                 'saved'         => '1',
                 'purged_states' => (string) $purged_states,
+                'cache_flushed' => (string) $cache_flushed,
+                'flush_reason'  => !empty($flush_reasons) ? implode(',', $flush_reasons) : '',
             ],
             admin_url('admin.php')
         ));
@@ -261,6 +297,222 @@ class Tax_Rates_Admin
         ]);
     }
 
+    /**
+     * AJAX "Test key" handler: validates a USGeocoder key against a known-good
+     * sample address before the admin commits it to settings. Result is cached
+     * for 1 hour in a transient so the settings page can show a persistent
+     * status badge without re-hitting the paid API on every reload.
+     */
+    public function ajax_test_usgeocoder(): void
+    {
+        check_ajax_referer('ffla_tax_resolver_nonce', 'security');
+
+        if (!current_user_can('manage_woocommerce')) {
+            wp_send_json_error(['message' => __('Permission denied.', 'ffl-funnels-addons')]);
+        }
+
+        $key = isset($_POST['key']) ? trim(sanitize_text_field(wp_unslash((string) $_POST['key']))) : '';
+
+        if ($key === '') {
+            wp_send_json_error([
+                'status'  => 'empty',
+                'message' => __('Enter a USGeocoder key first.', 'ffl-funnels-addons'),
+            ]);
+        }
+
+        if (!class_exists('USGeocoder_API_Resolver')) {
+            wp_send_json_error([
+                'status'  => 'boot',
+                'message' => __('USGeocoder resolver is not loaded.', 'ffl-funnels-addons'),
+            ]);
+        }
+
+        // Sample address from the USGeocoder documentation; any valid key
+        // should resolve it to a usable tax rate.
+        $response = USGeocoder_API_Resolver::fetch_api($key, [
+            'address' => '1591 Williamsport Dr',
+            'zipcode' => '95131',
+        ]);
+
+        $payload = [
+            'status'    => 'ok',
+            'http_code' => (int) ($response['http_code'] ?? 0),
+            'checkedAt' => current_time('mysql'),
+            'message'   => __('Key works. Sample lookup succeeded.', 'ffl-funnels-addons'),
+        ];
+
+        if (!empty($response['wp_error'])) {
+            $payload['status']  = 'network_error';
+            $payload['message'] = sprintf(
+                /* translators: %s: wp_error message from the HTTP call. */
+                __('Network error while contacting USGeocoder: %s', 'ffl-funnels-addons'),
+                (string) $response['error']
+            );
+        } elseif ((int) $response['http_code'] !== 200) {
+            $payload['status']  = 'http_error';
+            $payload['message'] = sprintf(
+                /* translators: %d: HTTP status code returned by USGeocoder. */
+                __('USGeocoder returned HTTP %d. The key is likely invalid or inactive.', 'ffl-funnels-addons'),
+                (int) $response['http_code']
+            );
+        } elseif (!is_array($response['payload'] ?? null)) {
+            $payload['status']  = 'empty_payload';
+            $payload['message'] = __('USGeocoder returned an empty response. Try again in a moment.', 'ffl-funnels-addons');
+        } else {
+            $rate = USGeocoder_API_Resolver::extract_total_rate($response['payload']);
+            if ($rate === null) {
+                $payload['status']  = 'no_rate';
+                $payload['message'] = __('USGeocoder responded but did not return a usable rate. The key may be disabled.', 'ffl-funnels-addons');
+            } else {
+                $payload['rate'] = $rate;
+            }
+        }
+
+        set_transient('ffla_tax_key_validation', $payload, HOUR_IN_SECONDS);
+
+        if ($payload['status'] === 'ok') {
+            wp_send_json_success($payload);
+        }
+
+        wp_send_json_error($payload);
+    }
+
+    /**
+     * Render the USGeocoder card with mode badge, explanation, key field,
+     * Test-key button and the usage card when the key is in effect.
+     */
+    private function render_usgeocoder_card(array $settings): void
+    {
+        $auth_key = trim((string) ($settings['usgeocoder_auth_key'] ?? ''));
+        $mode     = $auth_key === '' ? 'sheet' : 'api';
+        $test     = get_transient('ffla_tax_key_validation');
+        $test     = is_array($test) ? $test : null;
+
+        $badge_class = 'ffla-tax-mode-badge ffla-tax-mode-badge--sheet';
+        $badge_label = __('Sheet Mode (free)', 'ffl-funnels-addons');
+
+        if ($mode === 'api') {
+            $has_failure = $test && ($test['status'] ?? '') !== 'ok';
+            if ($has_failure) {
+                $badge_class = 'ffla-tax-mode-badge ffla-tax-mode-badge--warn';
+                $badge_label = __('USGeocoder Mode (key invalid)', 'ffl-funnels-addons');
+            } else {
+                $badge_class = 'ffla-tax-mode-badge ffla-tax-mode-badge--api';
+                $badge_label = __('USGeocoder Mode (live API)', 'ffl-funnels-addons');
+            }
+        }
+
+        echo '<div class="wb-card" style="margin-top:var(--wb-spacing-xl)">';
+        echo '<div class="wb-card__header" style="display:flex;align-items:center;justify-content:space-between;gap:var(--wb-spacing-md);">';
+        echo '<h3>' . esc_html__('USGeocoder API', 'ffl-funnels-addons') . '</h3>';
+        echo '<span class="' . esc_attr($badge_class) . '">' . esc_html($badge_label) . '</span>';
+        echo '</div>';
+        echo '<div class="wb-card__body">';
+
+        echo '<p class="wb-field__desc">' . wp_kses(
+            __('Leave the key empty to use our shared <strong>Google Sheet dataset</strong> — it is free, refreshed monthly, and covers ZIP-level rates for every state your store sells to. Paste a <strong>USGeocoder auth key</strong> to upgrade to address-level precision using live JSON responses.', 'ffl-funnels-addons'),
+            ['strong' => []]
+        ) . '</p>';
+
+        echo '<p class="wb-field__desc">' . wp_kses(
+            sprintf(
+                /* translators: %s: USGeocoder website link */
+                __('USGeocoder is a paid service (per-call pricing). You can create an account and manage your key at %s. If the live API ever fails during checkout the resolver automatically falls back to the Sheet dataset so orders keep going through.', 'ffl-funnels-addons'),
+                '<a href="https://www.usgeocoder.com/" target="_blank" rel="noopener noreferrer">usgeocoder.com</a>'
+            ),
+            ['a' => ['href' => [], 'target' => [], 'rel' => []]]
+        ) . '</p>';
+
+        FFLA_Admin::render_text_field(
+            __('USGeocoder Auth Key', 'ffl-funnels-addons'),
+            'usgeocoder_auth_key',
+            $auth_key,
+            __('32-character authkey from your USGeocoder account. Example: 0e3152f320d173d00885ed2926c90887.', 'ffl-funnels-addons')
+        );
+
+        echo '<p class="wb-field__actions" style="margin-top:var(--wb-spacing-sm);display:flex;gap:var(--wb-spacing-sm);align-items:center;flex-wrap:wrap;">';
+        echo '<button type="button" class="button button-secondary" id="ffla-tax-test-key" data-test-key>'
+            . esc_html__('Test key', 'ffl-funnels-addons') . '</button>';
+        echo '<span class="ffla-tax-test-key__status" id="ffla-tax-test-key-status" aria-live="polite"></span>';
+        echo '</p>';
+
+        if ($test) {
+            $is_ok = ($test['status'] ?? '') === 'ok';
+            echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-sm);">';
+            echo '<strong>' . esc_html__('Last test:', 'ffl-funnels-addons') . '</strong> ';
+            echo '<span style="color:' . ($is_ok ? '#1a7f37' : '#c6300b') . '">';
+            echo esc_html((string) ($test['message'] ?? ''));
+            echo '</span>';
+            if (!empty($test['checkedAt'])) {
+                echo ' <span class="wb-field__hint">(' . esc_html((string) $test['checkedAt']) . ')</span>';
+            }
+            echo '</p>';
+        }
+
+        echo '</div></div>';
+
+        if ($mode === 'api') {
+            $this->render_usgeocoder_usage_card();
+        }
+    }
+
+    /**
+     * Render the "API Usage" card with rolling-30d badge and per-month history.
+     */
+    private function render_usgeocoder_usage_card(): void
+    {
+        if (!class_exists('Tax_USGeocoder_Usage')) {
+            return;
+        }
+
+        $last_30  = Tax_USGeocoder_Usage::get_last_30d();
+        $history  = Tax_USGeocoder_Usage::get_monthly(6);
+
+        echo '<div class="wb-card" style="margin-top:var(--wb-spacing-xl)">';
+        echo '<div class="wb-card__header" style="display:flex;align-items:center;justify-content:space-between;gap:var(--wb-spacing-md);">';
+        echo '<h3>' . esc_html__('API Usage', 'ffl-funnels-addons') . '</h3>';
+        echo '<span class="ffla-tax-usage-badge">'
+            . esc_html(sprintf(
+                /* translators: %s: number of API calls in the last 30 days. */
+                _n('Last 30 days: %s call', 'Last 30 days: %s calls', $last_30, 'ffl-funnels-addons'),
+                number_format_i18n($last_30)
+            ))
+            . '</span>';
+        echo '</div>';
+        echo '<div class="wb-card__body">';
+
+        echo '<p class="wb-field__desc">'
+            . esc_html__('Counts every real call against the USGeocoder API. Cached quotes do not count — the local 24-hour address cache absorbs repeats for free.', 'ffl-funnels-addons')
+            . '</p>';
+
+        if (empty($history)) {
+            echo '<p class="wb-field__desc">' . esc_html__('No calls recorded yet.', 'ffl-funnels-addons') . '</p>';
+        } else {
+            echo '<ul class="ffla-tax-usage-list" style="margin:0;padding:0;list-style:none;">';
+            foreach ($history as $row) {
+                $label = (string) ($row['label'] ?? $row['month']);
+                $total = (int) ($row['total'] ?? 0);
+                $fail  = (int) ($row['failed'] ?? 0);
+
+                echo '<li style="display:flex;justify-content:space-between;gap:var(--wb-spacing-md);padding:var(--wb-spacing-xs) 0;border-bottom:1px solid var(--wb-color-border-subtle,#eee);">';
+                echo '<span>' . esc_html($label) . '</span>';
+                echo '<span>' . esc_html(number_format_i18n($total)) . ' ' . esc_html(_n('call', 'calls', $total, 'ffl-funnels-addons'));
+                if ($fail > 0) {
+                    echo ' <span class="wb-field__hint">(' . esc_html(sprintf(
+                        /* translators: %s: number of failed API calls. */
+                        __('%s failed', 'ffl-funnels-addons'),
+                        number_format_i18n($fail)
+                    )) . ')</span>';
+                }
+                echo '</span>';
+                echo '</li>';
+            }
+            echo '</ul>';
+        }
+
+        echo '</div></div>';
+    }
+
     public function render_settings_page(): void
     {
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
@@ -277,6 +529,28 @@ class Tax_Rates_Admin
                     /* translators: %d: number of deselected states whose datasets were deleted */
                     __('Removed local datasets for %d deselected states.', 'ffl-funnels-addons'),
                     (int) $_GET['purged_states'] // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+                )
+            );
+        }
+
+        if (!empty($_GET['cache_flushed']) && !empty($_GET['flush_reason'])) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+            $flushed = (int) $_GET['cache_flushed']; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+            $reasons = array_filter(array_map('sanitize_key', explode(',', (string) $_GET['flush_reason']))); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+            $labels  = [
+                'api_key_added'          => __('USGeocoder key added', 'ffl-funnels-addons'),
+                'api_key_removed'        => __('USGeocoder key removed', 'ffl-funnels-addons'),
+                'api_key_changed'        => __('USGeocoder key changed', 'ffl-funnels-addons'),
+                'enabled_states_changed' => __('enabled states changed', 'ffl-funnels-addons'),
+            ];
+            $labels = array_intersect_key($labels, array_flip($reasons));
+
+            FFLA_Admin::render_notice(
+                'info',
+                sprintf(
+                    /* translators: 1: reasons list, 2: number of cached rows removed */
+                    __('Address cache flushed (%1$s). %2$d cached quotes removed so new settings apply immediately.', 'ffl-funnels-addons'),
+                    !empty($labels) ? implode(', ', $labels) : __('settings changed', 'ffl-funnels-addons'),
+                    $flushed
                 )
             );
         }
@@ -721,18 +995,7 @@ class Tax_Rates_Admin
         echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-sm)">' . esc_html__('WooCommerce checkout reads taxes from the runtime resolver and local imported datasets. Legacy WooCommerce tax-table sync is no longer part of the normal flow.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
-        echo '<div class="wb-card" style="margin-top:var(--wb-spacing-xl)">';
-        echo '<div class="wb-card__header"><h3>' . esc_html__('USGeocoder API', 'ffl-funnels-addons') . '</h3></div>';
-        echo '<div class="wb-card__body">';
-        echo '<p class="wb-field__desc">' . esc_html__('When this key is set, Tax Resolver uses live USGeocoder JSON API responses as the primary tax source and bypasses the old local sheet dataset flow.', 'ffl-funnels-addons') . '</p>';
-
-        FFLA_Admin::render_text_field(
-            __('USGeocoder Auth Key', 'ffl-funnels-addons'),
-            'usgeocoder_auth_key',
-            (string) $settings['usgeocoder_auth_key'],
-            __('API key used for live tax lookup requests.', 'ffl-funnels-addons')
-        );
-        echo '</div></div>';
+        $this->render_usgeocoder_card($settings);
 
         echo '<div class="wb-card" style="margin-top:var(--wb-spacing-xl)">';
         echo '<div class="wb-card__header"><h3>' . esc_html__('Google Sheet Source', 'ffl-funnels-addons') . '</h3></div>';

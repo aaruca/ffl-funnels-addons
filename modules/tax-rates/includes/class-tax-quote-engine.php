@@ -85,21 +85,49 @@ class Tax_Quote_Engine
             return self::audit($result, $start_time);
         }
 
-        $geocode = $resolver->requires_geocode()
-            ? Tax_Geocoder::geocode($normalized)
-            : Tax_Geocoder::empty_result();
+        $result = self::run_resolver($resolver, $input, $normalized, $state_code);
 
-        try {
-            $result = $resolver->resolve($normalized, $geocode);
-        } catch (\Throwable $e) {
-            $result = new Tax_Quote_Result();
-            $result->inputAddress = $input;
-            $result->normalizedAddress = $normalized;
-            $result->state = $state_code;
-            $result->set_error(
-                Tax_Quote_Result::OUTCOME_INTERNAL_ERROR,
-                'Resolver error: ' . $e->getMessage()
-            );
+        // Runtime fallback: if the USGeocoder live API failed with a
+        // recoverable outcome (network down, rate-limit, malformed response,
+        // missing rate), retry once against the Sheet ZIP dataset so the
+        // checkout still gets a tax quote instead of an error. Both attempts
+        // are recorded in trace['fallbackChain'] for the audit row.
+        if (self::should_fallback_to_sheet($resolver, $result)) {
+            $primary_attempt = [
+                'resolver'    => $resolver->get_id(),
+                'source'      => $result->source,
+                'outcomeCode' => $result->outcomeCode,
+                'error'       => $result->errorMessage,
+            ];
+
+            $resolvers = Tax_Resolver_Router::get_all();
+            $fallback  = $resolvers['sheet_zip_dataset'] ?? null;
+
+            if ($fallback instanceof Tax_Resolver_Base) {
+                $fallback_geocode = $fallback->requires_geocode()
+                    ? Tax_Geocoder::geocode($normalized)
+                    : Tax_Geocoder::empty_result();
+
+                $fallback_result = self::run_resolver($fallback, $input, $normalized, $state_code, $fallback_geocode);
+
+                if ($fallback_result->is_success()) {
+                    $fallback_result->trace['fallbackChain'] = [
+                        $primary_attempt,
+                        [
+                            'resolver'    => $fallback->get_id(),
+                            'source'      => $fallback_result->source,
+                            'outcomeCode' => $fallback_result->outcomeCode,
+                        ],
+                    ];
+                    $fallback_result->sourceVersion = 'sheet_fallback';
+                    $fallback_result->limitations[] = sprintf(
+                        /* translators: %s: primary resolver id that failed. */
+                        __('Resolved from the Sheet ZIP dataset as a fallback after the %s resolver failed.', 'ffl-funnels-addons'),
+                        (string) $primary_attempt['resolver']
+                    );
+                    $result = $fallback_result;
+                }
+            }
         }
 
         $result->trace['durationMs'] = self::elapsed($start_time);
@@ -139,6 +167,63 @@ class Tax_Quote_Engine
         }
 
         return $results;
+    }
+
+    /**
+     * Execute a single resolver and normalize thrown exceptions into an
+     * OUTCOME_INTERNAL_ERROR result so callers can uniformly decide whether
+     * to retry with another resolver.
+     */
+    private static function run_resolver(
+        Tax_Resolver_Base $resolver,
+        array $input,
+        array $normalized,
+        string $state_code,
+        ?array $geocode = null
+    ): Tax_Quote_Result {
+        if ($geocode === null) {
+            $geocode = $resolver->requires_geocode()
+                ? Tax_Geocoder::geocode($normalized)
+                : Tax_Geocoder::empty_result();
+        }
+
+        try {
+            return $resolver->resolve($normalized, $geocode);
+        } catch (\Throwable $e) {
+            $result                    = new Tax_Quote_Result();
+            $result->inputAddress      = $input;
+            $result->normalizedAddress = $normalized;
+            $result->state             = $state_code;
+            $result->trace['resolver'] = $resolver->get_id();
+            $result->set_error(
+                Tax_Quote_Result::OUTCOME_INTERNAL_ERROR,
+                'Resolver error: ' . $e->getMessage()
+            );
+            return $result;
+        }
+    }
+
+    /**
+     * Decide whether a failed USGeocoder attempt should be retried against
+     * the Sheet ZIP dataset. Only recoverable outcomes flip the switch so we
+     * don't paper over validation errors (bad input), disabled-state, or
+     * unsupported-state results.
+     */
+    private static function should_fallback_to_sheet(Tax_Resolver_Base $primary, Tax_Quote_Result $result): bool
+    {
+        if ($primary->get_id() !== 'usgeocoder_api') {
+            return false;
+        }
+
+        if ($result->is_success()) {
+            return false;
+        }
+
+        return in_array($result->outcomeCode, [
+            Tax_Quote_Result::OUTCOME_SOURCE_UNAVAILABLE,
+            Tax_Quote_Result::OUTCOME_RATE_NOT_DETERMINABLE,
+            Tax_Quote_Result::OUTCOME_INTERNAL_ERROR,
+        ], true);
     }
 
     /* Cache Methods */

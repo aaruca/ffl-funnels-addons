@@ -13,8 +13,8 @@ if (!defined('ABSPATH')) {
 
 class USGeocoder_API_Resolver extends Tax_Resolver_Base
 {
-    private const API_ENDPOINT = 'https://api.usgeocoder.com/api/get_info.php';
-    private const TIMEOUT = 20;
+    public const API_ENDPOINT = 'https://api.usgeocoder.com/api/get_info.php';
+    public const TIMEOUT = 20;
 
     public function get_id(): string
     {
@@ -49,96 +49,86 @@ class USGeocoder_API_Resolver extends Tax_Resolver_Base
         $settings   = get_option('ffla_tax_resolver_settings', []);
         $auth_key   = trim((string) ($settings['usgeocoder_auth_key'] ?? ''));
 
+        // Use the state's configured coverage status instead of a hardcoded
+        // value so admin reconfiguration (restrict_states / enabled_states)
+        // drives the response shape.
+        $coverage_status = $this->resolve_coverage_status($state_code);
+
         if ($auth_key === '') {
-            $result = new Tax_Quote_Result();
-            $result->inputAddress      = $normalized;
-            $result->normalizedAddress = $normalized;
-            $result->state             = $state_code;
-            $result->coverageStatus    = Tax_Coverage::SUPPORTED_WITH_REMOTE;
-            $result->source            = $this->get_source_code();
-            $result->trace['resolver'] = $this->get_id();
-            $result->trace['geocodeUsed'] = false;
-            $result->set_error(
+            return $this->error_result(
+                $normalized,
+                $state_code,
+                $coverage_status,
                 Tax_Quote_Result::OUTCOME_SOURCE_UNAVAILABLE,
                 'USGeocoder auth key is missing. Add it in Tax Resolver settings.'
             );
-            return $result;
         }
 
-        $query = [
-            'authkey' => $auth_key,
-            'format'  => 'json',
-        ];
+        // Respect the restrict_states / enabled_states gate: when the admin
+        // disables a state for the store, refuse to hit the paid API even if
+        // the router accidentally routed us here.
+        if (class_exists('Tax_Coverage') && !Tax_Coverage::is_enabled_for_store($state_code)) {
+            return $this->error_result(
+                $normalized,
+                $state_code,
+                $coverage_status,
+                Tax_Quote_Result::OUTCOME_STATE_DISABLED,
+                sprintf('State %s is not enabled for this store. Enable it in Tax Resolver settings.', $state_code)
+            );
+        }
 
         $street = trim((string) ($normalized['street'] ?? ''));
         $zip5   = substr(preg_replace('/[^0-9]/', '', (string) ($normalized['zip'] ?? '')), 0, 5);
 
-        if ($street !== '' && $zip5 !== '') {
-            $query['address'] = $street;
-            $query['zipcode'] = $zip5;
-        } else {
-            $result = new Tax_Quote_Result();
-            $result->inputAddress      = $normalized;
-            $result->normalizedAddress = $normalized;
-            $result->state             = $state_code;
-            $result->coverageStatus    = Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED;
-            $result->source            = $this->get_source_code();
-            $result->trace['resolver'] = $this->get_id();
-            $result->trace['geocodeUsed'] = false;
-            $result->set_error(
+        if ($street === '' || $zip5 === '') {
+            return $this->error_result(
+                $normalized,
+                $state_code,
+                Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED,
                 Tax_Quote_Result::OUTCOME_VALIDATION_ERROR,
                 'USGeocoder resolution requires street and ZIP code.'
             );
-            return $result;
         }
 
-        $url = self::API_ENDPOINT . '?' . http_build_query($query);
-        $response = wp_remote_get($url, [
-            'timeout' => self::TIMEOUT,
-            'headers' => ['Accept' => 'application/json'],
+        $response = self::fetch_api($auth_key, [
+            'address' => $street,
+            'zipcode' => $zip5,
         ]);
 
-        if (is_wp_error($response)) {
-            $result = new Tax_Quote_Result();
-            $result->inputAddress      = $normalized;
-            $result->normalizedAddress = $normalized;
-            $result->state             = $state_code;
-            $result->coverageStatus    = Tax_Coverage::DEGRADED;
-            $result->source            = $this->get_source_code();
-            $result->trace['resolver'] = $this->get_id();
-            $result->trace['geocodeUsed'] = false;
-            $result->set_error(
-                Tax_Quote_Result::OUTCOME_SOURCE_UNAVAILABLE,
-                'USGeocoder request failed: ' . $response->get_error_message()
-            );
-            return $result;
+        // Every real HTTP attempt counts toward the monthly/rolling usage
+        // totals, regardless of outcome. Cache hits never reach here because
+        // Tax_Quote_Engine short-circuits them upstream.
+        if (class_exists('Tax_USGeocoder_Usage')) {
+            Tax_USGeocoder_Usage::record_call($response['ok'] ?? false);
         }
 
-        $http_code = (int) wp_remote_retrieve_response_code($response);
-        $body_raw  = (string) wp_remote_retrieve_body($response);
-        $payload   = json_decode($body_raw, true);
-
-        if ($http_code !== 200 || !is_array($payload)) {
-            $result = new Tax_Quote_Result();
-            $result->inputAddress      = $normalized;
-            $result->normalizedAddress = $normalized;
-            $result->state             = $state_code;
-            $result->coverageStatus    = Tax_Coverage::DEGRADED;
-            $result->source            = $this->get_source_code();
-            $result->trace['resolver'] = $this->get_id();
-            $result->trace['geocodeUsed'] = false;
-            $result->set_error(
+        if (!empty($response['wp_error'])) {
+            return $this->error_result(
+                $normalized,
+                $state_code,
+                Tax_Coverage::DEGRADED,
                 Tax_Quote_Result::OUTCOME_SOURCE_UNAVAILABLE,
-                sprintf('USGeocoder returned an invalid response (HTTP %d).', $http_code)
+                'USGeocoder request failed: ' . $response['error']
             );
-            return $result;
         }
+
+        if (($response['http_code'] ?? 0) !== 200 || !is_array($response['payload'] ?? null)) {
+            return $this->error_result(
+                $normalized,
+                $state_code,
+                Tax_Coverage::DEGRADED,
+                Tax_Quote_Result::OUTCOME_SOURCE_UNAVAILABLE,
+                sprintf('USGeocoder returned an invalid response (HTTP %d).', (int) ($response['http_code'] ?? 0))
+            );
+        }
+
+        $payload = $response['payload'];
 
         $result = new Tax_Quote_Result();
-        $result->inputAddress      = $normalized;
-        $result->normalizedAddress = $normalized;
-        $result->state             = $state_code;
-        $result->coverageStatus    = Tax_Coverage::SUPPORTED_WITH_REMOTE;
+        $result->inputAddress       = $normalized;
+        $result->normalizedAddress  = $normalized;
+        $result->state              = $state_code;
+        $result->coverageStatus     = $coverage_status;
         $result->determinationScope = 'address_rate_only';
         $result->resolutionMode     = 'usgeocoder_live_api';
         $result->source             = $this->get_source_code();
@@ -146,7 +136,7 @@ class USGeocoder_API_Resolver extends Tax_Resolver_Base
         $result->confidence         = Tax_Quote_Result::CONFIDENCE_MEDIUM;
         $result->trace['resolver']  = $this->get_id();
         $result->trace['geocodeUsed'] = false;
-        $result->trace['sourceUrl'] = self::API_ENDPOINT;
+        $result->trace['sourceUrl']   = self::API_ENDPOINT;
 
         $matched_address = self::pick_first_string($payload, [
             ['result', 'address'],
@@ -188,6 +178,97 @@ class USGeocoder_API_Resolver extends Tax_Resolver_Base
         $result->limitations[] = 'Resolved from live USGeocoder API response.';
 
         return $result;
+    }
+
+    /**
+     * Fetch the USGeocoder endpoint and normalize the response envelope.
+     *
+     * Shared by `resolve()` and the admin "Test key" AJAX action.
+     *
+     * @param string               $auth_key Raw authkey value.
+     * @param array<string,string> $query    Additional query arguments.
+     * @return array{ok:bool,http_code:int,payload:array|null,error:string,wp_error:bool,body:string}
+     */
+    public static function fetch_api(string $auth_key, array $query): array
+    {
+        $query = array_merge($query, [
+            'authkey' => $auth_key,
+            'format'  => 'json',
+        ]);
+
+        $url = self::API_ENDPOINT . '?' . http_build_query($query);
+
+        $response = wp_remote_get($url, [
+            'timeout' => self::TIMEOUT,
+            'headers' => ['Accept' => 'application/json'],
+        ]);
+
+        if (is_wp_error($response)) {
+            return [
+                'ok'        => false,
+                'http_code' => 0,
+                'payload'   => null,
+                'error'     => $response->get_error_message(),
+                'wp_error'  => true,
+                'body'      => '',
+            ];
+        }
+
+        $http_code = (int) wp_remote_retrieve_response_code($response);
+        $body_raw  = (string) wp_remote_retrieve_body($response);
+        $payload   = json_decode($body_raw, true);
+        $is_ok     = $http_code === 200 && is_array($payload);
+
+        return [
+            'ok'        => $is_ok,
+            'http_code' => $http_code,
+            'payload'   => is_array($payload) ? $payload : null,
+            'error'     => $is_ok ? '' : sprintf('HTTP %d', $http_code),
+            'wp_error'  => false,
+            'body'      => $body_raw,
+        ];
+    }
+
+    /**
+     * Build an error Tax_Quote_Result populated with the shared trace fields.
+     */
+    private function error_result(
+        array $normalized,
+        string $state_code,
+        string $coverage_status,
+        string $outcome,
+        string $message
+    ): Tax_Quote_Result {
+        $result = new Tax_Quote_Result();
+        $result->inputAddress      = $normalized;
+        $result->normalizedAddress = $normalized;
+        $result->state             = $state_code;
+        $result->coverageStatus    = $coverage_status;
+        $result->source            = $this->get_source_code();
+        $result->trace['resolver'] = $this->get_id();
+        $result->trace['geocodeUsed'] = false;
+        $result->set_error($outcome, $message);
+
+        return $result;
+    }
+
+    /**
+     * Read the effective coverage status for the state from the DB, with a
+     * sensible fallback when the row is missing (e.g. first boot before
+     * Tax_Coverage::reconcile_from_settings() runs).
+     */
+    private function resolve_coverage_status(string $state_code): string
+    {
+        if (!class_exists('Tax_Coverage')) {
+            return 'SUPPORTED_WITH_REMOTE_LOOKUP';
+        }
+
+        $rule = Tax_Coverage::get_state($state_code);
+        if ($rule && !empty($rule['coverage_status'])) {
+            return (string) $rule['coverage_status'];
+        }
+
+        return Tax_Coverage::SUPPORTED_WITH_REMOTE;
     }
 
     /**
@@ -241,7 +322,6 @@ class USGeocoder_API_Resolver extends Tax_Resolver_Base
             ];
         }
 
-        // Avoid huge noisy payloads.
         if (count($items) > 8) {
             $items = array_slice($items, 0, 8);
         }
@@ -249,7 +329,7 @@ class USGeocoder_API_Resolver extends Tax_Resolver_Base
         return $items;
     }
 
-    private static function extract_total_rate(array $payload): ?float
+    public static function extract_total_rate(array $payload): ?float
     {
         $preferred = self::find_numeric_by_key_pattern($payload, '/(total|combined).*(tax|rate)|(tax|rate).*(total|combined)/i');
         if ($preferred !== null) {

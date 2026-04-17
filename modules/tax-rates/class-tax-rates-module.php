@@ -59,6 +59,7 @@ class Tax_Rates_Module extends FFLA_Module
         require_once $base . 'includes/class-tax-dataset-pipeline.php';
         require_once $base . 'includes/class-tax-rest-api.php';
         require_once $base . 'includes/class-tax-woocommerce-integration.php';
+        require_once $base . 'includes/class-tax-usgeocoder-usage.php';
 
         // Resolvers.
         require_once $base . 'includes/resolvers/class-tax-resolver-base.php';
@@ -79,46 +80,21 @@ class Tax_Rates_Module extends FFLA_Module
         require_once $base . 'includes/class-tax-rates-cron.php';
         Tax_Rates_Cron::init();
 
-        // Check if DB needs upgrade.
+        // Check if DB needs upgrade. When schema changes land, reconcile
+        // coverage rows right after install so the new settings apply before
+        // the first request lands.
         if (Tax_Resolver_DB::needs_upgrade()) {
             Tax_Resolver_DB::install();
+            Tax_Coverage::reconcile_from_settings();
         }
 
         $settings = get_option('ffla_tax_resolver_settings', []);
-        $api_key  = trim((string) ($settings['usgeocoder_auth_key'] ?? ''));
-
-        foreach (Tax_Coverage::ALL_STATES as $state_code) {
-            if ($api_key !== '') {
-                Tax_Coverage::update_state(
-                    $state_code,
-                    Tax_Coverage::SUPPORTED_WITH_REMOTE,
-                    'usgeocoder_api',
-                    'USGeocoder live API is active for this state.'
-                );
-                continue;
-            }
-
-            $has_dataset = Tax_Dataset_Pipeline::has_active_sheet_dataset($state_code);
-            $status      = $has_dataset
-                ? Tax_Dataset_Pipeline::get_active_sheet_coverage_status($state_code)
-                : Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED;
-            $note        = 'Run sheet sync to build the local ZIP dataset for this state.';
-
-            if ($has_dataset) {
-                $note = $status === Tax_Coverage::NO_SALES_TAX
-                    ? 'A zero-tax Google Sheet dataset is active for this state.'
-                    : 'Google Sheet ZIP dataset is active for this state.';
-            }
-
-            Tax_Coverage::update_state(
-                $state_code,
-                $status,
-                'sheet_zip_dataset',
-                $note
-            );
-        }
-
         Tax_Quote_Engine::set_cache_ttl((int) ($settings['cache_ttl'] ?? 86400));
+
+        // Reconcile coverage rows when the settings option changes instead of
+        // writing to the DB on every request (the old boot() loop).
+        add_action('update_option_ffla_tax_resolver_settings', [__CLASS__, 'on_settings_updated'], 10, 2);
+        add_action('add_option_ffla_tax_resolver_settings', [__CLASS__, 'on_settings_added'], 10, 2);
 
         // Admin UI.
         if (is_admin()) {
@@ -138,6 +114,12 @@ class Tax_Rates_Module extends FFLA_Module
         if (!class_exists('Tax_Resolver_DB')) {
             require_once $base . 'includes/class-tax-resolver-db.php';
         }
+        if (!class_exists('Tax_Coverage')) {
+            require_once $base . 'includes/class-tax-coverage.php';
+        }
+        if (!class_exists('Tax_Dataset_Pipeline')) {
+            require_once $base . 'includes/class-tax-dataset-pipeline.php';
+        }
 
         // Create custom tables.
         Tax_Resolver_DB::install();
@@ -154,6 +136,32 @@ class Tax_Rates_Module extends FFLA_Module
                 'usgeocoder_auth_key' => '',
             ]);
         }
+
+        // Reconcile coverage rows so the first request already sees the
+        // correct routing without needing to go through the boot() fallback.
+        Tax_Coverage::reconcile_from_settings();
+    }
+
+    /**
+     * Hook callback for `update_option_ffla_tax_resolver_settings`.
+     */
+    public static function on_settings_updated($old_value, $new_value): void
+    {
+        if (!class_exists('Tax_Coverage')) {
+            return;
+        }
+        Tax_Coverage::reconcile_from_settings(is_array($new_value) ? $new_value : []);
+    }
+
+    /**
+     * Hook callback for `add_option_ffla_tax_resolver_settings` (first save).
+     */
+    public static function on_settings_added($option, $value): void
+    {
+        if (!class_exists('Tax_Coverage')) {
+            return;
+        }
+        Tax_Coverage::reconcile_from_settings(is_array($value) ? $value : []);
     }
 
     public function deactivate(): void

@@ -240,6 +240,87 @@ class Tax_Coverage
     }
 
     /**
+     * Reconcile coverage rows from the current settings payload.
+     *
+     * Replaces the per-request loop that used to live in `Tax_Rates_Module::boot()`.
+     * Runs on plugin activation, on DB install, and whenever the settings option
+     * changes (hooked via `update_option_ffla_tax_resolver_settings`). Only writes
+     * rows whose resolver/status actually changed so we avoid useless UPDATEs.
+     *
+     * Routing rules:
+     *   - Empty `usgeocoder_auth_key`  -> every state falls back to the Sheet ZIP
+     *     dataset (or SUPPORTED_CONTEXT_REQUIRED when the state has no dataset).
+     *   - Non-empty `usgeocoder_auth_key` + `restrict_states = 0`
+     *                                  -> every state routes to `usgeocoder_api`.
+     *   - Non-empty `usgeocoder_auth_key` + `restrict_states = 1`
+     *                                  -> states in `enabled_states` route to
+     *                                     `usgeocoder_api`; the rest fall back
+     *                                     to the Sheet ZIP dataset.
+     *
+     * @param array|null $settings Optional settings payload; defaults to the stored option.
+     * @return array Summary: ['updated' => int, 'api_states' => int, 'sheet_states' => int]
+     */
+    public static function reconcile_from_settings(?array $settings = null): array
+    {
+        $settings = is_array($settings) ? $settings : (array) get_option(self::SETTINGS_KEY, []);
+
+        $api_key          = trim((string) ($settings['usgeocoder_auth_key'] ?? ''));
+        $restrict         = !empty($settings['restrict_states']) && (string) $settings['restrict_states'] === '1';
+        $enabled_raw      = is_array($settings['enabled_states'] ?? null) ? $settings['enabled_states'] : [];
+        $enabled_set      = [];
+        foreach ($enabled_raw as $state_code) {
+            $state_code = strtoupper(sanitize_text_field((string) $state_code));
+            if (in_array($state_code, self::ALL_STATES, true)) {
+                $enabled_set[$state_code] = true;
+            }
+        }
+
+        $summary = ['updated' => 0, 'api_states' => 0, 'sheet_states' => 0];
+
+        foreach (self::ALL_STATES as $state_code) {
+            $use_api = $api_key !== '' && (!$restrict || isset($enabled_set[$state_code]));
+
+            if ($use_api) {
+                $status   = self::SUPPORTED_WITH_REMOTE;
+                $resolver = self::SOURCE_STRATEGY_USGEOCODER;
+                $note     = 'USGeocoder live API is active for this state.';
+                $summary['api_states']++;
+            } else {
+                $has_dataset = class_exists('Tax_Dataset_Pipeline')
+                    && Tax_Dataset_Pipeline::has_active_sheet_dataset($state_code);
+
+                if ($has_dataset) {
+                    $status = Tax_Dataset_Pipeline::get_active_sheet_coverage_status($state_code);
+                    $note   = $status === self::NO_SALES_TAX
+                        ? 'A zero-tax Google Sheet dataset is active for this state.'
+                        : 'Google Sheet ZIP dataset is active for this state.';
+                } else {
+                    $status = self::SUPPORTED_CONTEXT_REQUIRED;
+                    $note   = 'Run sheet sync to build the local ZIP dataset for this state.';
+                }
+
+                $resolver = self::SOURCE_STRATEGY_SHEET;
+                $summary['sheet_states']++;
+            }
+
+            $existing = self::get_state($state_code);
+            if (
+                $existing
+                && (string) $existing['coverage_status'] === (string) $status
+                && (string) $existing['resolver_name']   === (string) $resolver
+                && (string) ($existing['notes'] ?? '')   === (string) $note
+            ) {
+                continue;
+            }
+
+            self::update_state($state_code, $status, $resolver, $note);
+            $summary['updated']++;
+        }
+
+        return $summary;
+    }
+
+    /**
      * Update coverage status for a state.
      */
     public static function update_state(string $state_code, string $status, string $resolver = '', ?string $notes = null): bool
