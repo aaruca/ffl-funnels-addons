@@ -140,10 +140,10 @@ class Tax_Rates_Admin
         $enabled_states = array_values(array_unique($enabled_states));
         sort($enabled_states);
 
-        $taxed_roles = [];
-        if (!empty($_POST['taxed_roles']) && is_array($_POST['taxed_roles'])) {
+        $tax_exempt_roles = [];
+        if (!empty($_POST['tax_exempt_roles']) && is_array($_POST['tax_exempt_roles'])) {
             $choices = class_exists('Tax_Role_Gate') ? Tax_Role_Gate::get_role_choices() : [];
-            foreach (wp_unslash($_POST['taxed_roles']) as $slug) {
+            foreach (wp_unslash($_POST['tax_exempt_roles']) as $slug) {
                 if (!is_scalar($slug)) {
                     continue;
                 }
@@ -154,11 +154,11 @@ class Tax_Rates_Admin
                 if (!empty($choices) && !isset($choices[$slug])) {
                     continue;
                 }
-                $taxed_roles[] = $slug;
+                $tax_exempt_roles[] = $slug;
             }
         }
-        $taxed_roles = array_values(array_unique($taxed_roles));
-        sort($taxed_roles);
+        $tax_exempt_roles = array_values(array_unique($tax_exempt_roles));
+        sort($tax_exempt_roles);
 
         $settings = [
             'cache_ttl'       => max(60, (int) ($_POST['cache_ttl'] ?? 86400)),
@@ -170,7 +170,7 @@ class Tax_Rates_Admin
             'sheet_source_url'=> esc_url_raw(wp_unslash($_POST['sheet_source_url'] ?? Tax_Dataset_Pipeline::DEFAULT_SHEET_URL)),
             'usgeocoder_auth_key' => sanitize_text_field(wp_unslash($_POST['usgeocoder_auth_key'] ?? '')),
             'tax_role_restrict'   => isset($_POST['tax_role_restrict']) ? '1' : '0',
-            'taxed_roles'         => $taxed_roles,
+            'tax_exempt_roles'    => $tax_exempt_roles,
         ];
 
         $removed_states = array_values(array_diff($previous_enabled_states, $enabled_states));
@@ -536,12 +536,13 @@ class Tax_Rates_Admin
     }
 
     /**
-     * Render the "Tax charges by user role" card so admins can opt into
-     * role-restricted tax collection (e.g. wholesale stores that tax retail
-     * customers but not B2B accounts).
+     * Render the "Tax exemptions by user role" card so admins can opt into
+     * role-based tax exemptions (e.g. wholesale stores that tax retail
+     * customers by default but exempt B2B accounts).
      *
-     * When the feature is off, behavior matches the old default: every
-     * customer pays tax exactly as before.
+     * Semantics: checked roles are EXEMPT from tax. Everyone else is taxed
+     * exactly like before. When the feature is off, the whole gate is
+     * ignored — every customer pays tax just like on a fresh install.
      */
     private function render_role_gate_card(array $settings): void
     {
@@ -549,47 +550,47 @@ class Tax_Rates_Admin
             return;
         }
 
-        $is_active    = (string) ($settings['tax_role_restrict'] ?? '0') === '1';
-        $taxed_roles  = is_array($settings['taxed_roles'] ?? null) ? $settings['taxed_roles'] : [];
-        $checked_set  = array_flip(array_map('sanitize_key', array_map('strval', $taxed_roles)));
-        $role_choices = Tax_Role_Gate::get_role_choices();
+        $is_active     = (string) ($settings['tax_role_restrict'] ?? '0') === '1';
+        $exempt_roles  = is_array($settings['tax_exempt_roles'] ?? null) ? $settings['tax_exempt_roles'] : [];
+        $checked_set   = array_flip(array_map('sanitize_key', array_map('strval', $exempt_roles)));
+        $role_choices  = Tax_Role_Gate::get_role_choices();
 
         echo '<div class="wb-card" style="margin-top:var(--wb-spacing-xl)">';
         echo '<div class="wb-card__header" style="display:flex;align-items:center;justify-content:space-between;gap:var(--wb-spacing-md);">';
-        echo '<h3>' . esc_html__('Tax charges by user role', 'ffl-funnels-addons') . '</h3>';
+        echo '<h3>' . esc_html__('Tax exemptions by user role', 'ffl-funnels-addons') . '</h3>';
         $badge_label = $is_active
-            ? __('Role gate ON', 'ffl-funnels-addons')
-            : __('Role gate OFF', 'ffl-funnels-addons');
+            ? __('Exemptions ON', 'ffl-funnels-addons')
+            : __('Exemptions OFF', 'ffl-funnels-addons');
         $badge_class = $is_active ? 'ffla-tax-mode-badge--api' : 'ffla-tax-mode-badge--sheet';
         echo '<span class="ffla-tax-mode-badge ' . esc_attr($badge_class) . '">' . esc_html($badge_label) . '</span>';
         echo '</div>';
         echo '<div class="wb-card__body">';
 
         FFLA_Admin::render_toggle_field(
-            __('Restrict tax charges by user role', 'ffl-funnels-addons'),
+            __('Exempt certain user roles from tax', 'ffl-funnels-addons'),
             'tax_role_restrict',
             $is_active ? '1' : '0',
-            __('Turn this on to charge taxes only to the user roles checked below. When off, every customer is taxed exactly like before — this is the safe default.', 'ffl-funnels-addons')
+            __('Turn this on to skip tax charges for the user roles checked below. When off, every customer is taxed exactly like before — this is the safe default.', 'ffl-funnels-addons')
         );
 
         echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-sm);">'
-            . esc_html__('Checked roles will be charged tax. Unchecked roles (and guests, unless you check "Guest") will see $0 tax at checkout. Users with multiple roles pay tax as long as any of their roles is checked.', 'ffl-funnels-addons')
+            . esc_html__('Checked roles will NOT be charged tax. Unchecked roles (and guests, unless you check "Guest") will be taxed normally. Users with multiple roles are exempt as long as any of their roles is checked.', 'ffl-funnels-addons')
             . '</p>';
 
         echo '<div class="ffla-tax-role-picker" id="ffla-tax-role-picker">';
         foreach ($role_choices as $slug => $label) {
             $checked = isset($checked_set[$slug]) ? ' checked' : '';
             echo '<label class="ffla-tax-role-picker__item">';
-            echo '<input type="checkbox" name="taxed_roles[]" value="' . esc_attr($slug) . '"' . $checked . '>';
+            echo '<input type="checkbox" name="tax_exempt_roles[]" value="' . esc_attr($slug) . '"' . $checked . '>';
             echo '<span class="ffla-tax-role-picker__label">' . esc_html($label) . '</span>';
             echo '<code class="ffla-tax-role-picker__slug">' . esc_html($slug) . '</code>';
             echo '</label>';
         }
         echo '</div>';
 
-        if ($is_active && empty($taxed_roles)) {
-            echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-sm);color:#c6300b;">'
-                . esc_html__('The role gate is ON but no roles are checked. Every customer will see $0 tax until you select at least one role.', 'ffl-funnels-addons')
+        if ($is_active && empty($exempt_roles)) {
+            echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-sm);">'
+                . esc_html__('No roles are exempt yet — every customer is taxed normally. Check a role above to exempt it from tax collection.', 'ffl-funnels-addons')
                 . '</p>';
         }
 

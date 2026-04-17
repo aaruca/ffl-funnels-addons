@@ -2,6 +2,16 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.14.1] - 2026-04-14
+
+### Tax Rates — Role gate semantics flipped (exemption list)
+- **Why:** Store owners reason about this feature as "everyone pays, except these roles." The v1.14.0 allow-list required them to re-check the list every time they added a new role to the site, and the "gate on + empty list" edge case silently set every customer's tax to `$0` — a footgun. The new model mirrors how exemptions actually work in real stores.
+- **Card renamed:** "Tax charges by user role" → **"Tax exemptions by user role"**. Toggle label changed to "Exempt certain user roles from tax". Mode badge now reads `Exemptions ON` / `Exemptions OFF`.
+- **Semantics inverted:** Checked roles are now **exempt** from tax (they see `$0`). Unchecked roles — and guests, unless the `Guest (not logged in)` pseudo-role is checked — are taxed normally. Users with multiple roles are exempt as long as *any* of their roles is checked. When the toggle is off, nothing in the tax pipeline changes at all.
+- **Setting key renamed:** `ffla_tax_resolver_settings[taxed_roles]` → `ffla_tax_resolver_settings[tax_exempt_roles]`. `Tax_Role_Gate::get_allowed_roles()` was renamed to `Tax_Role_Gate::get_exempt_roles()`; `should_charge_for_current_customer()` now returns `false` only when at least one of the customer's roles is in the exempt list. Activation defaults updated to `tax_exempt_roles = []`.
+- **Safer empty-state:** The previous red warning ("gate on but nothing selected → everyone sees `$0` tax") is gone. Under the new model an empty exempt list is a harmless no-op — every customer is taxed normally. The card shows a neutral hint instead.
+- **No migration:** v1.14.0 shipped for less than a day before being flipped, so the legacy `taxed_roles` key is intentionally **not** migrated (its meaning is the opposite of the new key and converting it automatically would silently invert who gets taxed). Admins with v1.14.0 data simply re-pick their exempt roles in the new card.
+
 ## [1.14.0] - 2026-04-14
 
 ### Tax Rates — Role-based tax charging

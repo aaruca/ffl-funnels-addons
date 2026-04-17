@@ -1,15 +1,15 @@
 <?php
 /**
- * User-role tax gate.
+ * User-role tax gate (exemption list).
  *
- * Lets the store owner restrict tax collection to a subset of WordPress
- * user roles (plus an optional "guest" pseudo-role for non-logged-in
- * customers). When the gate is inactive, every customer pays tax exactly
+ * Lets the store owner exempt a subset of WordPress user roles (plus an
+ * optional "guest" pseudo-role for non-logged-in customers) from tax
+ * collection. When the gate is inactive, every customer pays tax exactly
  * like before — the feature is opt-in so existing sites don't change
  * behavior on upgrade.
  *
- * Example use case: a wholesale store that only charges tax to retail
- * customers ("customer" role) but leaves wholesale/B2B roles untaxed.
+ * Example use case: a wholesale store that taxes retail customers by
+ * default and exempts wholesale / B2B roles from tax collection.
  *
  * @package FFL_Funnels_Addons
  */
@@ -38,16 +38,26 @@ class Tax_Role_Gate
     }
 
     /**
-     * Roles that should pay tax when the gate is active, normalized to a
-     * list of slugs. Includes the special `self::GUEST_ROLE_KEY` value for
-     * non-logged-in customers when the admin explicitly selected it.
+     * Roles that should be exempt from tax when the gate is active,
+     * normalized to a list of slugs. Includes the special
+     * `self::GUEST_ROLE_KEY` value for non-logged-in customers when the
+     * admin explicitly selected it.
      *
      * @return string[]
      */
-    public static function get_allowed_roles(): array
+    public static function get_exempt_roles(): array
     {
         $settings = get_option(self::SETTINGS_KEY, []);
-        $raw      = is_array($settings) ? ($settings['taxed_roles'] ?? []) : [];
+        if (!is_array($settings)) {
+            return [];
+        }
+
+        // Canonical key is `tax_exempt_roles`. Older 1.14.0 installs used
+        // `taxed_roles` with inverted semantics (opt-in list). Since the
+        // feature shipped to production for less than a day before being
+        // flipped, we simply ignore the legacy key — it would have the
+        // wrong meaning under the new model.
+        $raw = $settings['tax_exempt_roles'] ?? [];
 
         if (!is_array($raw)) {
             return [];
@@ -99,7 +109,9 @@ class Tax_Role_Gate
      * user, falling back to the logged-in WP user) should be charged tax.
      *
      * When the gate is inactive, always returns true so the tax resolver
-     * keeps running exactly like before.
+     * keeps running exactly like before. When the gate is active, returns
+     * false only when the customer has at least one role that appears in
+     * the configured exempt list.
      */
     public static function should_charge_for_current_customer(): bool
     {
@@ -107,32 +119,35 @@ class Tax_Role_Gate
             return true;
         }
 
-        $allowed = self::get_allowed_roles();
-        if (empty($allowed)) {
-            // Gate is on but nothing is checked: safest default is "no one
-            // pays tax" rather than "everyone pays tax" — the admin
-            // explicitly opted into restriction so we honor it.
-            return false;
+        $exempt = self::get_exempt_roles();
+        if (empty($exempt)) {
+            // Gate is on but no role is exempt yet — functionally a no-op,
+            // so everyone pays tax just like when the feature is off.
+            return true;
         }
 
         $user_id = self::resolve_customer_user_id();
 
         if ($user_id <= 0) {
-            return in_array(self::GUEST_ROLE_KEY, $allowed, true);
+            // Guest customer: exempt only if the admin explicitly checked
+            // the Guest pseudo-role.
+            return !in_array(self::GUEST_ROLE_KEY, $exempt, true);
         }
 
         $user = get_userdata($user_id);
         if (!$user || empty($user->roles) || !is_array($user->roles)) {
-            return in_array(self::GUEST_ROLE_KEY, $allowed, true);
+            // Logged-in user with no role — treat like a guest for the
+            // exemption decision.
+            return !in_array(self::GUEST_ROLE_KEY, $exempt, true);
         }
 
         foreach ($user->roles as $role) {
-            if (in_array(sanitize_key((string) $role), $allowed, true)) {
-                return true;
+            if (in_array(sanitize_key((string) $role), $exempt, true)) {
+                return false;
             }
         }
 
-        return false;
+        return true;
     }
 
     /**

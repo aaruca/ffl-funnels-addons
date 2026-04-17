@@ -136,7 +136,7 @@ class Tax_Rates_Module extends FFLA_Module
                 'sheet_source_url'=> Tax_Dataset_Pipeline::DEFAULT_SHEET_URL,
                 'usgeocoder_auth_key' => '',
                 'tax_role_restrict' => '0',
-                'taxed_roles'       => [],
+                'tax_exempt_roles'  => [],
             ]);
         }
 

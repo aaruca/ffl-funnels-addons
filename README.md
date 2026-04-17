@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.14.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.14.1-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -193,6 +193,11 @@ define('WSS_OAUTH_DEBUG_FILE', true);  // also write wp-content/uploads/wss-logs
 ```
 
 ## Changelog
+
+### v1.14.1
+
+*   **Tax Rates — role gate semantics flipped (exemption list):** The role gate card now models **exemptions** instead of an allow-list, which matches how storeowners actually think about the feature ("everyone pays tax except these roles"). The card was renamed to "Tax exemptions by user role" and the toggle to "Exempt certain user roles from tax". Checked roles are **exempt** (see `$0` tax); unchecked roles (and guests, unless you check "Guest") are taxed normally. Users with multiple roles are exempt as long as *any* of their roles is checked. When the toggle is off, every customer is taxed — identical to a fresh install.
+*   **Tax Rates — setting key renamed:** The persisted option moved from `ffla_tax_resolver_settings[taxed_roles]` to `ffla_tax_resolver_settings[tax_exempt_roles]` to reflect the new meaning. `Tax_Role_Gate` now exposes `get_exempt_roles()` and its `should_charge_for_current_customer()` returns `false` only when at least one of the customer's roles appears in the exempt list. The "gate on but list empty" case is a harmless no-op (every customer is taxed normally) instead of the previous everyone-sees-$0 footgun. The legacy `taxed_roles` key is intentionally ignored — its semantics are the opposite of the new key and v1.14.0 shipped for less than a day, so no migration is applied.
 
 ### v1.14.0
 
