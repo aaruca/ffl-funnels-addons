@@ -13,6 +13,24 @@ document.addEventListener('DOMContentLoaded', function () {
     const suggestionBtns = document.querySelectorAll('.wb-ai-suggestion-btn');
     const submitBtn = document.getElementById('wb-ai-submit-btn');
 
+    /**
+     * Resolve a localized string from wooboosterAdmin.i18n with an English fallback.
+     */
+    function t(key, fallback) {
+        var i18n = (window.wooboosterAdmin && wooboosterAdmin.i18n) || {};
+        if (typeof i18n[key] === 'string' && i18n[key] !== '') {
+            return i18n[key];
+        }
+        return fallback;
+    }
+
+    /**
+     * Simple sprintf replacement for the first %s only.
+     */
+    function fmt(str, value) {
+        return String(str).replace('%s', value);
+    }
+
     // Detect mode from hidden input.
     const modeInput = document.getElementById('wb-ai-mode');
     const MODE = modeInput ? modeInput.value : 'rule';
@@ -22,7 +40,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const BLOCK_TAG = IS_BUNDLE ? 'BUNDLE' : 'RULE';
     const CREATE_ACTION = IS_BUNDLE ? 'woobooster_ai_create_bundle' : 'woobooster_ai_create_rule';
     const DATA_PARAM = IS_BUNDLE ? 'bundle_data' : 'rule_data';
-    const ENTITY_LABEL = IS_BUNDLE ? 'Bundle' : 'Rule';
+    const ENTITY_LABEL = IS_BUNDLE ? t('entityBundle', 'Bundle') : t('entityRule', 'Rule');
+    const ENTITY_LABEL_LOWER = IS_BUNDLE ? t('entityBundleLower', 'bundle') : t('entityRuleLower', 'rule');
 
     let messages = [];
 
@@ -77,7 +96,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (clearBtn) {
         clearBtn.addEventListener('click', function () {
-            if (!confirm('Are you sure you want to clear the chat history?')) return;
+            if (!confirm(t('aiConfirmClearChat', 'Are you sure you want to clear the chat history?'))) return;
             messages = [];
             saveHistory();
             var msgs = chatBody.querySelectorAll('.wb-ai-message:not(#wb-ai-typing-indicator)');
@@ -129,7 +148,7 @@ document.addEventListener('DOMContentLoaded', function () {
         saveHistory();
 
         showTyping();
-        showLoadingMessage('Searching for information...');
+        showLoadingMessage(t('aiSearchingInfo', 'Searching for information…'));
 
         try {
             var formData = new FormData();
@@ -158,7 +177,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     messages.push({ role: 'assistant', content: result.data.message });
                     saveHistory();
 
-                    appendSystemMessage('success', ENTITY_LABEL + ' created! Opening editor...');
+                    appendSystemMessage('success', fmt(t('aiCreatedOpening', '%s created! Opening editor…'), ENTITY_LABEL));
 
                     if (result.data.edit_url && result.data.edit_url.startsWith(window.location.origin)) {
                         setTimeout(function () {
@@ -175,12 +194,12 @@ document.addEventListener('DOMContentLoaded', function () {
                     saveHistory();
                 }
             } else {
-                appendSystemMessage('error', result.data.message || 'Unknown error occurred.');
+                appendSystemMessage('error', (result.data && result.data.message) || t('aiUnknownError', 'Unknown error occurred.'));
             }
         } catch (error) {
             hideTyping();
             removeLoadingMessage();
-            appendSystemMessage('error', 'Connection error. Please check your internet and try again.');
+            appendSystemMessage('error', t('aiConnectionError', 'Connection error. Please check your internet and try again.'));
         }
     });
 
@@ -233,7 +252,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 var btn = document.createElement('button');
                 btn.type = 'button';
                 btn.className = 'wb-ai-create-rule-btn';
-                btn.textContent = 'Create This ' + ENTITY_LABEL;
+                btn.textContent = fmt(t('aiCreateThis', 'Create This %s'), ENTITY_LABEL);
                 btn.dataset.ruleData = JSON.stringify(blockData);
 
                 btn.addEventListener('click', function () {
@@ -256,11 +275,11 @@ document.addEventListener('DOMContentLoaded', function () {
      */
     function createEntityFromAI(data) {
         if (!data || !data.name) {
-            alert('Invalid data. Please try again.');
+            alert(t('aiInvalidData', 'Invalid data. Please try again.'));
             return;
         }
 
-        appendSystemMessage('info', 'Creating ' + ENTITY_LABEL.toLowerCase() + '...');
+        appendSystemMessage('info', fmt(t('aiCreating', 'Creating %s…'), ENTITY_LABEL_LOWER));
 
         fetch(wooboosterAdmin.ajaxUrl, {
             method: 'POST',
@@ -274,7 +293,7 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(function (r) { return r.json(); })
             .then(function (result) {
                 if (result.success) {
-                    appendSystemMessage('success', ENTITY_LABEL + ' created! Opening editor...');
+                    appendSystemMessage('success', fmt(t('aiCreatedOpening', '%s created! Opening editor…'), ENTITY_LABEL));
                     if (result.data.edit_url && result.data.edit_url.startsWith(window.location.origin)) {
                         setTimeout(function () {
                             window.location.href = result.data.edit_url;
@@ -285,11 +304,12 @@ document.addEventListener('DOMContentLoaded', function () {
                         }, 1500);
                     }
                 } else {
-                    appendSystemMessage('error', result.data ? result.data.message : 'Failed to create ' + ENTITY_LABEL.toLowerCase());
+                    var fallback = fmt(t('aiFailedCreate', 'Failed to create %s.'), ENTITY_LABEL_LOWER);
+                    appendSystemMessage('error', (result.data && result.data.message) ? result.data.message : fallback);
                 }
             })
             .catch(function () {
-                appendSystemMessage('error', 'Connection error. Please try again.');
+                appendSystemMessage('error', t('aiConnectionRetry', 'Connection error. Please try again.'));
             });
     }
 

@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.11.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.12.0-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -120,30 +120,65 @@ Notes:
 *   PHP 7.4 or higher
 *   (Optional) Bricks Builder for visual layout customization
 
-## Internal REST API (Woo Sheets Sync)
+## REST API
 
-The Woo Sheets Sync module registers private REST endpoints under the
-`wss/v1` namespace. They are gated by the `manage_woocommerce` capability
-and meant to be consumed from the same site (Sheet→Woo flow, admin-side
-tooling, or integrations you write yourself).
+All FFL Funnels Addons REST endpoints are registered under site-local
+namespaces and require the `manage_woocommerce` capability with a
+standard WordPress REST nonce in the `X-WP-Nonce` header. They are
+intended to be consumed from the same site (admin tooling, Sheet→Woo
+flow, dealer integrations you write yourself) and are not public APIs.
+
+### Woo Sheets Sync — `wss/v1`
+
+Private endpoints used by the admin JS, the Sheet→Woo import flow, and
+any site-local integrations that need to create or update Woo products
+programmatically.
 
 Base URL: `https://<your-site>/wp-json/wss/v1/`
 
-| Method | Endpoint                  | Purpose                                                              |
-| ------ | ------------------------- | -------------------------------------------------------------------- |
-| POST   | `/products/upsert`        | Create or update a simple product.                                   |
-| POST   | `/variations/upsert`      | Create or update a variation (requires `parent_id`).                 |
-| POST   | `/attributes/upsert`      | Resolve a global attribute (`pa_*`) and ensure a term exists/reused. |
-| POST   | `/batch/upsert`           | Array of `{kind, payload}` — max 200 items per call.                 |
-
-All requests must include the `X-WP-Nonce` header (WordPress REST nonce)
-and be authenticated as a user with `manage_woocommerce`.
+| Method | Endpoint                  | Capability          | Purpose                                                              |
+| ------ | ------------------------- | ------------------- | -------------------------------------------------------------------- |
+| POST   | `/products/upsert`        | `manage_woocommerce`| Create or update a simple product (by `product_id` or `sku`).        |
+| POST   | `/variations/upsert`      | `manage_woocommerce`| Create or update a variation (requires `parent_id`).                 |
+| POST   | `/attributes/upsert`      | `manage_woocommerce`| Resolve a global attribute (`pa_*`) and ensure a term exists/reused. |
+| POST   | `/batch/upsert`           | `manage_woocommerce`| Array of `{kind, payload}` — max 200 items per call.                 |
 
 Example — ensure a `pa_manufacturer` term:
 
 ```json
 POST /wss/v1/attributes/upsert
 { "label": "Manufacturer", "value": "Demo Manufacturer" }
+```
+
+### Tax Address Resolver — `ffl-tax/v1`
+
+Used by WooCommerce's cart/checkout integration and the admin dashboard
+for quoting sales tax against the local dataset + optional external
+resolvers. `/quote` is rate-limited to 60 requests per minute per IP
+(via object cache when available, transients as a fallback).
+
+Base URL: `https://<your-site>/wp-json/ffl-tax/v1/`
+
+| Method | Endpoint          | Capability          | Purpose                                                                                         |
+| ------ | ----------------- | ------------------- | ----------------------------------------------------------------------------------------------- |
+| POST   | `/quote`          | `manage_woocommerce`| Resolve the total sales-tax rate and breakdown for a single address (rate-limited, 60/min/IP). |
+| POST   | `/quote/batch`    | `manage_woocommerce`| Resolve a batch of addresses at once. Body: `{ "addresses": [ ... ] }`.                         |
+| GET    | `/coverage`       | `manage_woocommerce`| State coverage matrix (which states have local datasets, resolver priority, freshness).         |
+| GET    | `/health`         | `manage_woocommerce`| Datasets freshness, resolver health, and 24h usage stats.                                       |
+| GET    | `/datasets`       | `manage_woocommerce`| Last 50 dataset versions loaded from the sheet source.                                          |
+| POST   | `/admin/sync`     | `manage_woocommerce`| Re-run the sheet→local dataset sync (same operation as the admin "Sync Sheet Data" button).   |
+| GET    | `/admin/audit`    | `manage_woocommerce`| Recent quote audit entries. Supports `?limit=1..100` (default 25) and `?state=XX`.             |
+
+Example — quote a single address:
+
+```json
+POST /ffl-tax/v1/quote
+{
+  "street": "1600 Pennsylvania Ave NW",
+  "city":   "Washington",
+  "state":  "DC",
+  "zip":    "20500"
+}
 ```
 
 ### Debug logging
@@ -158,6 +193,16 @@ define('WSS_OAUTH_DEBUG_FILE', true);  // also write wp-content/uploads/wss-logs
 ```
 
 ## Changelog
+
+### v1.12.0
+
+*   **i18n (Admin Docs):** Every literal string in the Woo Sheets Sync docs tab (`WSS_Admin::render_docs_page()`) is now wrapped with `esc_html_e()` / `wp_kses()` + `sprintf()` so the whole onboarding/troubleshooting guide becomes translatable while preserving the existing `<strong>`, `<em>` and `<code>` markup.
+*   **i18n (JS):** Added `t(key, fallback)` helpers to `woo-sheets-sync-module.js`, `tax-rates-admin.js` and `woobooster-ai.js`; every previously hardcoded confirm/alert/status/button label now resolves through `wssDashboard.i18n`, `FflaTaxResolver.i18n` and `wooboosterAdmin.i18n` (expanded via `wp_localize_script`). The WooBooster AI "Create This Rule/Bundle" label is driven by an `fmt()` helper using a translatable `%s` format so the entity label flows from a single localized source.
+*   **REST:** Added a full "REST API" section to `README.md` documenting both the `wss/v1` (products/variations/attributes/batch upsert) and `ffl-tax/v1` (quote/quote batch/coverage/health/datasets/admin sync/admin audit) namespaces, their capability requirements, and the `ffl-tax/v1/quote` 60 req/min/IP rate limit.
+*   **Performance (Woo Sheets Sync):** Introduced `WSS_Google_Sheets::read_range_paginated()` that walks the target tab in 2000-row chunks (configurable via `wss_sheet_read_chunk_size`) and stops on the first short chunk — `WSS_Sync_Engine::run()` now uses it so large sheets no longer risk hitting the Sheets API ~10MB single-range response cap.
+*   **Async sync:** New `WSS_Sync_Job` helper. When Action Scheduler is available (bundled with WooCommerce) the admin "Sync Now" button enqueues an async `wss_run_sync_job` action and returns a `job_id`; the admin JS then polls `wp_ajax_wss_sync_status` with a progress bar until completion. Environments without Action Scheduler keep the previous synchronous behavior automatically.
+*   **Options:** New `FFLA_Options` helper (`includes/class-ffla-options.php`) with `get()` / `update()` / `delete()` that prefer a canonical `ffla_*` key but transparently fall back to legacy names (`wss_*`, `alg_wishlist_*`, …) — new code can migrate key-by-key without touching existing production data.
+*   **Tooling:** Added `composer.json` (wp-coding-standards, PHPCompatibilityWP, PHPStan + phpstan-wordpress), `.phpcs.xml.dist`, `phpstan.neon.dist` with a lightweight `tests/phpstan/bootstrap.php`, `package.json` + `.eslintrc.json`, and an opt-in `.github/workflows/lint.yml` that runs PHPCS, PHPStan and ESLint on push/PR (using `|| true` so existing non-compliant code doesn't block merges until the codebase is tightened).
 
 ### v1.11.0
 

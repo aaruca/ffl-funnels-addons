@@ -1,0 +1,19 @@
+parameters:
+    level: 5
+    paths:
+        - ffl-funnels-addons.php
+        - admin
+        - includes
+        - modules
+    excludePaths:
+        - vendor
+        - node_modules
+        - modules/*/tests
+    bootstrapFiles:
+        - tests/phpstan/bootstrap.php
+    # WordPress core + WooCommerce functions live outside this repo, so we
+    # ignore "function not found" errors for them via phpstan-wordpress.
+    treatPhpDocTypesAsCertain: false
+
+includes:
+    - vendor/szepeviktor/phpstan-wordpress/extension.neon

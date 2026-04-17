@@ -1,0 +1,41 @@
+{
+    "root": true,
+    "env": {
+        "browser": true,
+        "jquery": true,
+        "es2020": true
+    },
+    "parserOptions": {
+        "ecmaVersion": 2020,
+        "sourceType": "script"
+    },
+    "extends": ["eslint:recommended"],
+    "globals": {
+        "wp": "readonly",
+        "jQuery": "readonly",
+        "$": "readonly",
+        "ajaxurl": "readonly",
+        "wc_add_to_cart_params": "readonly",
+        "wssDashboard": "readonly",
+        "wooboosterAdmin": "readonly",
+        "FflaTaxResolver": "readonly",
+        "WooBoosterTracking": "readonly",
+        "AlgWishlistSettings": "readonly",
+        "fflaAdmin": "readonly"
+    },
+    "rules": {
+        "no-unused-vars": ["warn", { "args": "none" }],
+        "no-undef": "error",
+        "no-console": "off",
+        "no-empty": "warn",
+        "no-useless-escape": "warn",
+        "semi": ["warn", "always"],
+        "eqeqeq": ["warn", "smart"]
+    },
+    "ignorePatterns": [
+        "node_modules/",
+        "vendor/",
+        "**/*.min.js",
+        "modules/**/assets/js/vendor/**"
+    ]
+}

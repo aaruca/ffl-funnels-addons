@@ -1,0 +1,27 @@
+{
+    "name": "ffl-funnels/ffl-funnels-addons",
+    "description": "Custom addons and integrations for FFL Funnels WooCommerce stores.",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "php": ">=7.4"
+    },
+    "require-dev": {
+        "wp-coding-standards/wpcs": "^3.1",
+        "phpcompatibility/phpcompatibility-wp": "^2.1",
+        "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
+        "phpstan/phpstan": "^1.11",
+        "szepeviktor/phpstan-wordpress": "^1.3"
+    },
+    "config": {
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true
+        }
+    },
+    "scripts": {
+        "lint:php": "phpcs --standard=.phpcs.xml.dist",
+        "lint:php:fix": "phpcbf --standard=.phpcs.xml.dist",
+        "lint:php:stan": "phpstan analyse --memory-limit=1G",
+        "lint:js": "eslint ."
+    }
+}

@@ -138,6 +138,65 @@ class WSS_Google_Sheets
     }
 
     /**
+     * Read a full tab in chunked row ranges to stay under the Google Sheets
+     * response size limit (about 10MB / 5M cells per call). Returns the full
+     * values array with the header row still in position 0 (same shape as
+     * read_range) and stops as soon as a chunk comes back empty.
+     *
+     * @param string $spreadsheet_id Google Sheet ID.
+     * @param string $tab_name       Tab name (without quotes).
+     * @param string $columns        A1 column span (e.g. "A:L").
+     * @param int    $chunk_size     Rows per request (default 2000).
+     * @return array|WP_Error
+     */
+    public function read_range_paginated(string $spreadsheet_id, string $tab_name, string $columns = 'A:L', int $chunk_size = 2000)
+    {
+        $chunk_size = max(100, min(5000, $chunk_size));
+        $safe_tab   = str_replace("'", "''", $tab_name);
+
+        // Extract the column letters from "A:L"-style specs; fall back to defaults.
+        $col_parts = explode(':', $columns);
+        $col_start = isset($col_parts[0]) ? preg_replace('/[^A-Z]/i', '', $col_parts[0]) : 'A';
+        $col_end   = isset($col_parts[1]) ? preg_replace('/[^A-Z]/i', '', $col_parts[1]) : 'L';
+        if ($col_start === '') {
+            $col_start = 'A';
+        }
+        if ($col_end === '') {
+            $col_end = 'L';
+        }
+
+        $all_rows  = [];
+        $row_start = 1;
+        $safety    = 0;
+
+        while ($safety++ < 500) { // hard cap ~1M rows with chunk_size=2000
+            $row_end = $row_start + $chunk_size - 1;
+            $range   = "'" . $safe_tab . "'!" . $col_start . $row_start . ':' . $col_end . $row_end;
+
+            $chunk = $this->read_range($spreadsheet_id, $range);
+            if (is_wp_error($chunk)) {
+                return $chunk;
+            }
+
+            if (empty($chunk)) {
+                break;
+            }
+
+            $all_rows = array_merge($all_rows, $chunk);
+
+            // A shorter-than-requested chunk means there are no more data rows
+            // below; the API omits trailing empty rows.
+            if (count($chunk) < $chunk_size) {
+                break;
+            }
+
+            $row_start = $row_end + 1;
+        }
+
+        return $all_rows;
+    }
+
+    /**
      * Write values to a specific range (overwrites existing data).
      *
      * @param string $spreadsheet_id Google Sheet ID.

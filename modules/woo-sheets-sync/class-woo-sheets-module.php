@@ -52,8 +52,12 @@ class WooSheets_Module extends FFLA_Module
         require_once $path . 'includes/api/class-wss-rest-routes.php';
         require_once $path . 'includes/class-wss-sync-engine.php';
         require_once $path . 'includes/class-wss-sync-orchestrator.php';
+        require_once $path . 'includes/class-wss-sync-job.php';
         require_once $path . 'includes/class-wss-activator.php';
         require_once $path . 'includes/class-wss-cron.php';
+
+        // Register the Action Scheduler hook so async Sync Now jobs fire.
+        WSS_Sync_Job::init();
 
         $attr_service = new WSS_Attribute_Upsert_Service();
         $product_service = new WSS_Product_Upsert_Service($attr_service);

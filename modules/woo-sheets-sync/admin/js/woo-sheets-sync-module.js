@@ -6,6 +6,18 @@
 (function () {
     'use strict';
 
+    var i18n = (window.wssDashboard && window.wssDashboard.i18n) || {};
+
+    /**
+     * Resolve a localized string with an English fallback.
+     */
+    function t(key, fallback) {
+        if (i18n && typeof i18n[key] === 'string' && i18n[key] !== '') {
+            return i18n[key];
+        }
+        return fallback;
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         initSyncNow();
         initClearLog();
@@ -24,7 +36,7 @@
             if (btn.classList.contains('wss-loading')) return;
 
             btn.classList.add('wss-loading');
-            btn.textContent = (fflaAdmin.i18n && fflaAdmin.i18n.activating) || 'Syncing…';
+            btn.textContent = t('syncing', 'Syncing…');
 
             var result = document.getElementById('wss-sync-result');
             if (result) result.innerHTML = '';
@@ -36,60 +48,142 @@
             fetch(fflaAdmin.ajaxUrl, { method: 'POST', body: body })
                 .then(function (r) { return r.json(); })
                 .then(function (resp) {
-                    btn.classList.remove('wss-loading');
-                    btn.textContent = 'Sync Now';
-
-                    if (!result) return;
-
-                    if (resp.success) {
-                        var d = resp.data || {};
-                        var w = d.woo_to_sheet || {};
-                        var s = d.sheet_to_woo || {};
-                        var parts = [
-                            '<div class="wb-message wb-message--success"><span>',
-                            'Sync complete. ',
-                            'Woo\u2192Sheet: ',
-                            (w.updated || 0),
-                            ' updated, ',
-                            (w.appended || 0),
-                            ' appended. ',
-                            'Sheet\u2192Woo: ',
-                            (s.updated || 0),
-                            ' updated.'
-                        ];
-
-                        if (d.groups && d.groups.length) {
-                            parts.push(' <strong>Per tab:</strong> ');
-                            parts.push(
-                                d.groups.map(function (g) {
-                                    var label = escapeHtml(String(g.tab_name || ''));
-                                    if (g.error) {
-                                        return label + ' (\u2014 ' + escapeHtml(String(g.error)) + ')';
-                                    }
-                                    var w2 = g.woo_to_sheet || {};
-                                    var s2 = g.sheet_to_woo || {};
-                                    return label + ' (W\u2192S ' + (w2.updated || 0) + '/' + (w2.appended || 0) + ', S\u2192W ' + (s2.updated || 0) + ')';
-                                }).join('; ')
-                            );
-                        }
-
-                        parts.push('</span></div>');
-                        result.innerHTML = parts.join('');
-                    } else {
-                        result.innerHTML =
-                            '<div class="wb-message wb-message--danger">' +
-                            '<span>' + (resp.data && resp.data.message || 'Sync failed.') + '</span></div>';
+                    if (!resp || !resp.success) {
+                        finishWithError(result, btn, (resp && resp.data && resp.data.message) || t('syncFailed', 'Sync failed.'));
+                        return;
                     }
+
+                    var d = resp.data || {};
+                    if (d.mode === 'async' && d.job_id) {
+                        renderRunning(result, 0);
+                        pollSyncStatus(d.job_id, result, btn);
+                        return;
+                    }
+
+                    // Synchronous fallback (no Action Scheduler).
+                    finishWithResult(d, result, btn);
                 })
                 .catch(function () {
-                    btn.classList.remove('wss-loading');
-                    btn.textContent = 'Sync Now';
-                    if (result) {
-                        result.innerHTML =
-                            '<div class="wb-message wb-message--danger"><span>Network error.</span></div>';
-                    }
+                    finishWithError(result, btn, t('networkError', 'Network error.'));
                 });
         });
+    }
+
+    function pollSyncStatus(jobId, result, btn) {
+        var delay = 1500;
+        var attempts = 0;
+        var maxAttempts = 240; // up to ~6 minutes with 1.5s interval.
+
+        function tick() {
+            attempts++;
+            if (attempts > maxAttempts) {
+                finishWithError(result, btn, t('syncLost', 'Sync status was lost. It may still be running in the background — reload to see results.'));
+                return;
+            }
+
+            var body = new FormData();
+            body.append('action', 'wss_sync_status');
+            body.append('nonce', fflaAdmin.nonce);
+            body.append('job_id', jobId);
+
+            fetch(fflaAdmin.ajaxUrl, { method: 'POST', body: body })
+                .then(function (r) { return r.json(); })
+                .then(function (resp) {
+                    if (!resp || !resp.success) {
+                        finishWithError(result, btn, (resp && resp.data && resp.data.message) || t('syncFailed', 'Sync failed.'));
+                        return;
+                    }
+
+                    var data = resp.data || {};
+                    if (data.status === 'done') {
+                        finishWithResult(data, result, btn);
+                        return;
+                    }
+
+                    renderRunning(result, Number(data.progress) || 0);
+                    setTimeout(tick, delay);
+                })
+                .catch(function () {
+                    // Transient network blip: keep polling a few more times.
+                    setTimeout(tick, delay);
+                });
+        }
+
+        setTimeout(tick, delay);
+    }
+
+    function renderRunning(result, progress) {
+        if (!result) return;
+        var label = progress > 0
+            ? t('syncRunning', 'Running…')
+            : t('syncQueued', 'Queued…');
+        result.innerHTML =
+            '<div class="wb-message wb-message--info"><span>' +
+            escapeHtml(label) + ' ' +
+            escapeHtml(t('syncPolling', 'Sync is running in the background…')) +
+            ' (' + Math.min(99, Math.max(0, progress)) + '%)' +
+            '</span></div>';
+    }
+
+    function finishWithResult(d, result, btn) {
+        btn.classList.remove('wss-loading');
+        btn.textContent = t('syncNow', 'Sync Now');
+
+        if (!result) return;
+
+        var w = d.woo_to_sheet || {};
+        var s = d.sheet_to_woo || {};
+        var parts = [
+            '<div class="wb-message wb-message--success"><span>',
+            escapeHtml(t('syncComplete', 'Sync complete.')),
+            ' ',
+            escapeHtml(t('wooToSheet', 'Woo→Sheet:')),
+            ' ',
+            (w.updated || 0),
+            ' ',
+            escapeHtml(t('updated', 'updated')),
+            ', ',
+            (w.appended || 0),
+            ' ',
+            escapeHtml(t('appended', 'appended')),
+            '. ',
+            escapeHtml(t('sheetToWoo', 'Sheet→Woo:')),
+            ' ',
+            (s.updated || 0),
+            ' ',
+            escapeHtml(t('updated', 'updated')),
+            '.'
+        ];
+
+        if (d.groups && d.groups.length) {
+            parts.push(' <strong>');
+            parts.push(escapeHtml(t('perTab', 'Per tab:')));
+            parts.push('</strong> ');
+            parts.push(
+                d.groups.map(function (g) {
+                    var label = escapeHtml(String(g.tab_name || ''));
+                    if (g.error) {
+                        return label + ' (\u2014 ' + escapeHtml(String(g.error)) + ')';
+                    }
+                    var w2 = g.woo_to_sheet || {};
+                    var s2 = g.sheet_to_woo || {};
+                    return label + ' (W\u2192S ' + (w2.updated || 0) + '/' + (w2.appended || 0) + ', S\u2192W ' + (s2.updated || 0) + ')';
+                }).join('; ')
+            );
+        }
+
+        parts.push('</span></div>');
+        result.innerHTML = parts.join('');
+    }
+
+    function finishWithError(result, btn, message) {
+        btn.classList.remove('wss-loading');
+        btn.textContent = t('syncNow', 'Sync Now');
+        if (!result) return;
+        result.innerHTML =
+            '<div class="wb-message wb-message--danger"><span>' +
+            escapeHtml(String(message || t('syncFailed', 'Sync failed.'))) +
+            '</span></div>';
     }
 
     /* ── Clear Log ─────────────────────────────────── */
@@ -99,7 +193,7 @@
         if (!btn) return;
 
         btn.addEventListener('click', function () {
-            if (!confirm('Clear all sync log entries?')) return;
+            if (!confirm(t('confirmClearLog', 'Clear all sync log entries?'))) return;
 
             var body = new FormData();
             body.append('action', 'wss_clear_log');
@@ -110,7 +204,12 @@
                 .then(function (resp) {
                     if (resp.success) {
                         var container = document.getElementById('wss-log-container');
-                        if (container) container.innerHTML = '<p>No log entries yet.</p>';
+                        if (container) {
+                            container.innerHTML = '';
+                            var p = document.createElement('p');
+                            p.textContent = t('noLogEntries', 'No log entries yet.');
+                            container.appendChild(p);
+                        }
                     }
                 });
         });
@@ -123,7 +222,7 @@
         if (!btn) return;
 
         btn.addEventListener('click', function () {
-            if (!confirm('Disconnect your Google account?')) return;
+            if (!confirm(t('confirmDisconnect', 'Disconnect your Google account?'))) return;
 
             var body = new FormData();
             body.append('action', 'wss_disconnect');
@@ -146,7 +245,9 @@
 
         btn.addEventListener('click', function () {
             btn.disabled = true;
-            out.innerHTML = '<div class="wb-message wb-message--info"><span>Testing endpoint...</span></div>';
+            out.innerHTML = '<div class="wb-message wb-message--info"><span>' +
+                escapeHtml(t('testingEndpoint', 'Testing endpoint…')) +
+                '</span></div>';
 
             var payload = {
                 label: 'Manufacturer',
@@ -169,20 +270,24 @@
                 .then(function (res) {
                     btn.disabled = false;
                     if (!res.ok) {
-                        var msg = (res.json && res.json.error) || (res.json && res.json.message) || 'Request failed.';
+                        var msg = (res.json && res.json.error) || (res.json && res.json.message) || t('requestFailed', 'Request failed.');
                         out.innerHTML = '<div class="wb-message wb-message--danger"><span>' + escapeHtml(String(msg)) + '</span></div>';
                         return;
                     }
 
                     var data = res.json && res.json.data ? res.json.data : {};
-                    out.innerHTML = '<div class="wb-message wb-message--success"><span>OK. taxonomy: ' +
-                        escapeHtml(String(data.taxonomy || '')) + ', term_id: ' +
-                        escapeHtml(String(data.term_id || '')) + ', slug: ' +
-                        escapeHtml(String(data.slug || '')) + '</span></div>';
+                    var fmt = t('apiOkFormat', 'OK. taxonomy: %1$s, term_id: %2$s, slug: %3$s');
+                    var html = fmt
+                        .replace('%1$s', escapeHtml(String(data.taxonomy || '')))
+                        .replace('%2$s', escapeHtml(String(data.term_id || '')))
+                        .replace('%3$s', escapeHtml(String(data.slug || '')));
+                    out.innerHTML = '<div class="wb-message wb-message--success"><span>' + html + '</span></div>';
                 })
                 .catch(function () {
                     btn.disabled = false;
-                    out.innerHTML = '<div class="wb-message wb-message--danger"><span>Network error while testing API.</span></div>';
+                    out.innerHTML = '<div class="wb-message wb-message--danger"><span>' +
+                        escapeHtml(t('apiNetworkError', 'Network error while testing API.')) +
+                        '</span></div>';
                 });
         });
     }
@@ -197,7 +302,7 @@
             return r.json();
         }).then(function (res) {
             if (!res.success) {
-                var msg = (res.data && res.data.message) || 'Request failed.';
+                var msg = (res.data && res.data.message) || t('requestFailed', 'Request failed.');
                 window.alert(msg);
                 return null;
             }
@@ -211,7 +316,7 @@
             }
             return res.data;
         }).catch(function () {
-            window.alert('Network error.');
+            window.alert(t('networkError', 'Network error.'));
             return null;
         });
     }
@@ -245,7 +350,7 @@
         root.addEventListener('click', function (e) {
             var rm = e.target.closest('.wss-remove-group-btn');
             if (rm && !rm.disabled) {
-                if (!confirm('Remove this sheet tab group? Products may remain in other tabs.')) return;
+                if (!confirm(t('confirmRemoveGroup', 'Remove this sheet tab group? Products may remain in other tabs.'))) return;
                 var card = rm.closest('.wss-sync-group');
                 if (!card) return;
                 var fd = new FormData();
@@ -257,7 +362,7 @@
 
             var linkAll = e.target.closest('.wss-group-link-all');
             if (linkAll) {
-                if (!confirm('Link every published product to this tab only? (Other rules on this tab will be cleared.)')) return;
+                if (!confirm(t('confirmLinkAll', 'Link every published product to this tab only? (Other rules on this tab will be cleared.)'))) return;
                 var c1 = linkAll.closest('.wss-sync-group');
                 if (!c1) return;
                 var fd1 = new FormData();
@@ -269,7 +374,7 @@
 
             var unlinkAll = e.target.closest('.wss-group-unlink-all');
             if (unlinkAll) {
-                if (!confirm('Clear all rules for this tab (products, categories, tags)?')) return;
+                if (!confirm(t('confirmUnlinkAll', 'Clear all rules for this tab (products, categories, tags)?'))) return;
                 var c2 = unlinkAll.closest('.wss-sync-group');
                 if (!c2) return;
                 var fd2 = new FormData();

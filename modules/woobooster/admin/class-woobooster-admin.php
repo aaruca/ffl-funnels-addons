@@ -81,6 +81,25 @@ class WooBooster_Admin
                 'addAndSource'         => __('+ AND Source', 'ffl-funnels-addons'),
                 'exclusions'           => __('Exclusions', 'ffl-funnels-addons'),
                 'pleaseFix'            => __('Please fix the following:', 'ffl-funnels-addons'),
+                // AI chat modal.
+                'aiSearchingInfo'      => __('Searching for information…', 'ffl-funnels-addons'),
+                'aiConfirmClearChat'   => __('Are you sure you want to clear the chat history?', 'ffl-funnels-addons'),
+                /* translators: %s: entity label (e.g. Rule, Bundle) */
+                'aiCreateThis'         => __('Create This %s', 'ffl-funnels-addons'),
+                'aiInvalidData'        => __('Invalid data. Please try again.', 'ffl-funnels-addons'),
+                /* translators: %s: lowercased entity label (rule, bundle) */
+                'aiCreating'           => __('Creating %s…', 'ffl-funnels-addons'),
+                /* translators: %s: entity label (e.g. Rule, Bundle) */
+                'aiCreatedOpening'     => __('%s created! Opening editor…', 'ffl-funnels-addons'),
+                /* translators: %s: lowercased entity label (rule, bundle) */
+                'aiFailedCreate'       => __('Failed to create %s.', 'ffl-funnels-addons'),
+                'aiUnknownError'       => __('Unknown error occurred.', 'ffl-funnels-addons'),
+                'aiConnectionError'    => __('Connection error. Please check your internet and try again.', 'ffl-funnels-addons'),
+                'aiConnectionRetry'    => __('Connection error. Please try again.', 'ffl-funnels-addons'),
+                'entityRule'           => __('Rule', 'ffl-funnels-addons'),
+                'entityRuleLower'      => __('rule', 'ffl-funnels-addons'),
+                'entityBundle'         => __('Bundle', 'ffl-funnels-addons'),
+                'entityBundleLower'    => __('bundle', 'ffl-funnels-addons'),
             ),
         ));
 

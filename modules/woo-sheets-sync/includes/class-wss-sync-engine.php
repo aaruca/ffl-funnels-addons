@@ -183,9 +183,11 @@ class WSS_Sync_Engine
             return ['error' => $header_result->get_error_message()];
         }
 
-        // Read the entire sheet once (reused by both phases).
-        $range      = $this->a1_range('A:L');
-        $sheet_data = $this->sheets->read_range($this->sheet_id, $range);
+        // Read the entire sheet once (reused by both phases). Paginated in
+        // 2000-row chunks so we stay well under the Sheets API ~10MB cap on
+        // single-range reads even for very large tabs.
+        $chunk_size = (int) apply_filters('wss_sheet_read_chunk_size', 2000, $this->tab_name);
+        $sheet_data = $this->sheets->read_range_paginated($this->sheet_id, $this->tab_name, 'A:L', $chunk_size);
 
         if (is_wp_error($sheet_data)) {
             return ['error' => $sheet_data->get_error_message()];

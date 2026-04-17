@@ -2,6 +2,17 @@
 (function ($) {
     'use strict';
 
+    /**
+     * Resolve a localized string with an English fallback.
+     */
+    function t(key, fallback) {
+        var i18n = (window.FflaTaxResolver && FflaTaxResolver.i18n) || {};
+        if (typeof i18n[key] === 'string' && i18n[key] !== '') {
+            return i18n[key];
+        }
+        return fallback;
+    }
+
     $(function () {
         var $lookupBtn = $('#ffla-tax-lookup-btn');
         var $resultCard = $('#ffla-tax-result-card');
@@ -14,13 +25,15 @@
             var zip = $('#ffla-tax-zip').val().trim();
 
             if (!state) {
-                alert('Please enter a state code.');
+                alert(t('enterStateCode', 'Please enter a state code.'));
                 return;
             }
 
-            $lookupBtn.prop('disabled', true).text('Looking up...');
+            $lookupBtn.prop('disabled', true).text(t('lookingUp', 'Looking up…'));
             $resultCard.show();
-            $resultBody.html('<div class="wb-ai-loading-message"><span>Resolving address</span><span class="wb-ai-dots"><span></span><span></span><span></span></span></div>');
+            $resultBody.html('<div class="wb-ai-loading-message"><span>' +
+                escHtml(t('resolvingAddress', 'Resolving address')) +
+                '</span><span class="wb-ai-dots"><span></span><span></span><span></span></span></div>');
 
             $.post(FflaTaxResolver.ajaxUrl, {
                 action: 'ffla_tax_quote_lookup',
@@ -34,14 +47,16 @@
                     if (res.success) {
                         renderQuoteResult(res.data);
                     } else {
-                        $resultBody.html('<div class="ffla-tax-error">' + escHtml(res.data || 'Request failed.') + '</div>');
+                        $resultBody.html('<div class="ffla-tax-error">' + escHtml(res.data || t('requestFailed', 'Request failed.')) + '</div>');
                     }
                 })
                 .fail(function () {
-                    $resultBody.html('<div class="ffla-tax-error">Request failed. Check console for details.</div>');
+                    $resultBody.html('<div class="ffla-tax-error">' +
+                        escHtml(t('requestFailedConsole', 'Request failed. Check console for details.')) +
+                        '</div>');
                 })
                 .always(function () {
-                    $lookupBtn.prop('disabled', false).text('Look Up Tax Rate');
+                    $lookupBtn.prop('disabled', false).text(t('lookUpTaxRate', 'Look Up Tax Rate'));
                 });
         });
 
@@ -64,18 +79,22 @@
 
                 html += '<div class="ffla-tax-result__total">';
                 html += '<span class="ffla-tax-result__rate">' + ratePct + '</span>';
-                html += '<span class="ffla-tax-result__label">Total Sales Tax Rate</span>';
+                html += '<span class="ffla-tax-result__label">' + escHtml(t('totalSalesTaxRate', 'Total Sales Tax Rate')) + '</span>';
                 html += '</div>';
 
                 if (data.matchedAddress) {
                     html += '<div class="ffla-tax-result__matched">';
-                    html += '<strong>Matched:</strong> ' + escHtml(data.matchedAddress);
+                    html += '<strong>' + escHtml(t('matched', 'Matched:')) + '</strong> ' + escHtml(data.matchedAddress);
                     html += '</div>';
                 }
 
                 if (data.breakdown && data.breakdown.length > 0) {
                     html += '<table class="wb-table ffla-tax-breakdown-table">';
-                    html += '<thead><tr><th>Jurisdiction</th><th>Type</th><th>Rate</th></tr></thead>';
+                    html += '<thead><tr>' +
+                        '<th>' + escHtml(t('jurisdiction', 'Jurisdiction')) + '</th>' +
+                        '<th>' + escHtml(t('type', 'Type')) + '</th>' +
+                        '<th>' + escHtml(t('rate', 'Rate')) + '</th>' +
+                        '</tr></thead>';
                     html += '<tbody>';
 
                     for (var i = 0; i < data.breakdown.length; i++) {
@@ -92,26 +111,26 @@
                 }
 
                 html += '<div class="ffla-tax-meta">';
-                html += metaItem('Coverage', data.coverageStatus);
-                html += metaItem('Source', data.source || '-');
-                html += metaItem('Version', data.sourceVersion || '-');
-                html += metaItem('Confidence', data.confidence || '-');
-                html += metaItem('Scope', data.determinationScope || '-');
-                html += metaItem('Mode', data.resolutionMode || '-');
+                html += metaItem(t('coverage', 'Coverage'), data.coverageStatus);
+                html += metaItem(t('source', 'Source'), data.source || '-');
+                html += metaItem(t('version', 'Version'), data.sourceVersion || '-');
+                html += metaItem(t('confidence', 'Confidence'), data.confidence || '-');
+                html += metaItem(t('scope', 'Scope'), data.determinationScope || '-');
+                html += metaItem(t('mode', 'Mode'), data.resolutionMode || '-');
                 html += '</div>';
 
                 if (data.trace) {
                     html += '<div class="ffla-tax-trace">';
-                    html += 'Resolver: ' + escHtml(data.trace.resolver || '-');
-                    html += ' | Geocode: ' + (data.trace.geocodeUsed ? 'Yes' : 'No');
-                    html += ' | Cache: ' + (data.trace.cacheHit ? 'Hit' : 'Miss');
+                    html += escHtml(t('resolver', 'Resolver:')) + ' ' + escHtml(data.trace.resolver || '-');
+                    html += ' | ' + escHtml(t('geocode', 'Geocode:')) + ' ' + (data.trace.geocodeUsed ? escHtml(t('yes', 'Yes')) : escHtml(t('no', 'No')));
+                    html += ' | ' + escHtml(t('cache', 'Cache:')) + ' ' + (data.trace.cacheHit ? escHtml(t('hit', 'Hit')) : escHtml(t('miss', 'Miss')));
                     html += ' | ' + (data.trace.durationMs || 0) + 'ms';
                     html += '</div>';
                 }
 
                 if (data.limitations && data.limitations.length > 0) {
                     html += '<div class="ffla-tax-limitations">';
-                    html += '<strong>Limitations:</strong>';
+                    html += '<strong>' + escHtml(t('limitations', 'Limitations:')) + '</strong>';
                     html += '<ul>';
                     for (var j = 0; j < data.limitations.length; j++) {
                         html += '<li>' + escHtml(data.limitations[j]) + '</li>';
@@ -121,9 +140,9 @@
             } else {
                 html += '<div class="ffla-tax-error-detail">';
                 html += '<span class="ffla-tax-error-code">' + escHtml(data.outcomeCode) + '</span>';
-                html += '<p>' + escHtml(data.error || 'Unknown error.') + '</p>';
+                html += '<p>' + escHtml(data.error || t('unknownError', 'Unknown error.')) + '</p>';
                 if (data.state) {
-                    html += '<p>State: <strong>' + escHtml(data.state) + '</strong></p>';
+                    html += '<p>' + escHtml(t('state', 'State:')) + ' <strong>' + escHtml(data.state) + '</strong></p>';
                 }
                 html += '</div>';
             }
@@ -133,37 +152,39 @@
         }
 
         function metaItem(label, value) {
-            return '<span class="ffla-tax-meta__item"><span class="ffla-tax-meta__label">' + label + '</span><span class="ffla-tax-meta__value">' + escHtml(value) + '</span></span>';
+            return '<span class="ffla-tax-meta__item"><span class="ffla-tax-meta__label">' + escHtml(label) + '</span><span class="ffla-tax-meta__value">' + escHtml(value) + '</span></span>';
         }
 
         $('#ffla-sync-btn').on('click', function () {
             var $btn = $(this);
             var $status = $('#ffla-upload-status');
 
-            $btn.prop('disabled', true).text('Syncing sheet data...');
+            $btn.prop('disabled', true).text(t('syncingSheetData', 'Syncing sheet data…'));
             $status
                 .show()
-                .html('<div class="wb-ai-loading-message"><span>Downloading the shared CSV and rebuilding local state datasets. This can take a minute.</span><span class="wb-ai-dots"><span></span><span></span><span></span></span></div>');
+                .html('<div class="wb-ai-loading-message"><span>' +
+                    escHtml(t('syncingCsvDescription', 'Downloading the shared CSV and rebuilding local state datasets. This can take a minute.')) +
+                    '</span><span class="wb-ai-dots"><span></span><span></span><span></span></span></div>');
 
             $.post(FflaTaxResolver.ajaxUrl, {
                 action: 'ffla_tax_run_sync',
                 security: FflaTaxResolver.nonce
             })
                 .done(function (res) {
-                    var message = (res && res.data && res.data.message) ? res.data.message : (res.data || 'Sync failed.');
+                    var message = (res && res.data && res.data.message) ? res.data.message : (res.data || t('syncFailed', 'Sync failed.'));
                     if (res && res.data && Array.isArray(res.data.errors) && res.data.errors.length) {
                         message += '\n\n' + res.data.errors.join('\n');
                     }
-                    $status.html('<strong>Sync finished.</strong> ' + escHtml(message));
+                    $status.html('<strong>' + escHtml(t('syncFinished', 'Sync finished.')) + '</strong> ' + escHtml(message));
                     alert(message);
                     location.reload();
                 })
                 .fail(function () {
-                    $status.html('<span class="ffla-tax-error">Sheet sync request failed.</span>');
-                    alert('Request failed.');
+                    $status.html('<span class="ffla-tax-error">' + escHtml(t('sheetSyncFailed', 'Sheet sync request failed.')) + '</span>');
+                    alert(t('requestFailed', 'Request failed.'));
                 })
                 .always(function () {
-                    $btn.prop('disabled', false).text('Sync Sheet Data');
+                    $btn.prop('disabled', false).text(t('syncSheetData', 'Sync Sheet Data'));
                 });
         });
 
@@ -171,30 +192,32 @@
             var $btn = $(this);
             var $status = $('#ffla-purge-legacy-status');
 
-            if (!window.confirm('This will permanently delete old local tax datasets, quote cache, and audit logs. Continue?')) {
+            if (!window.confirm(t('confirmPurgeLegacy', 'This will permanently delete old local tax datasets, quote cache, and audit logs. Continue?'))) {
                 return;
             }
 
-            $btn.prop('disabled', true).text('Deleting old database...');
+            $btn.prop('disabled', true).text(t('deletingOldDatabase', 'Deleting old database…'));
             $status
                 .show()
-                .html('<div class="wb-ai-loading-message"><span>Deleting legacy local tax data.</span><span class="wb-ai-dots"><span></span><span></span><span></span></span></div>');
+                .html('<div class="wb-ai-loading-message"><span>' +
+                    escHtml(t('deletingLegacyData', 'Deleting legacy local tax data.')) +
+                    '</span><span class="wb-ai-dots"><span></span><span></span><span></span></span></div>');
 
             $.post(FflaTaxResolver.ajaxUrl, {
                 action: 'ffla_tax_purge_legacy_data',
                 security: FflaTaxResolver.nonce
             })
                 .done(function (res) {
-                    var message = (res && res.data && res.data.message) ? res.data.message : 'Cleanup completed.';
-                    $status.html('<strong>Cleanup finished.</strong> ' + escHtml(message));
+                    var message = (res && res.data && res.data.message) ? res.data.message : t('cleanupCompleted', 'Cleanup completed.');
+                    $status.html('<strong>' + escHtml(t('cleanupFinished', 'Cleanup finished.')) + '</strong> ' + escHtml(message));
                     alert(message);
                 })
                 .fail(function () {
-                    $status.html('<span class="ffla-tax-error">Cleanup request failed.</span>');
-                    alert('Request failed.');
+                    $status.html('<span class="ffla-tax-error">' + escHtml(t('cleanupRequestFailed', 'Cleanup request failed.')) + '</span>');
+                    alert(t('requestFailed', 'Request failed.'));
                 })
                 .always(function () {
-                    $btn.prop('disabled', false).text('Delete Old Tax Database');
+                    $btn.prop('disabled', false).text(t('deleteOldTaxDb', 'Delete Old Tax Database'));
                 });
         });
 

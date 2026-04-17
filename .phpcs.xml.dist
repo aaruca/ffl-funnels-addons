@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<ruleset name="FFL Funnels Addons">
+    <description>Coding standards for the FFL Funnels Addons plugin.</description>
+
+    <!-- What to scan. -->
+    <file>.</file>
+    <arg name="extensions" value="php"/>
+    <arg name="colors"/>
+    <arg value="sp"/>
+
+    <!-- What to ignore. -->
+    <exclude-pattern>*/vendor/*</exclude-pattern>
+    <exclude-pattern>*/node_modules/*</exclude-pattern>
+    <exclude-pattern>*/tests/fixtures/*</exclude-pattern>
+    <exclude-pattern>*.min.js</exclude-pattern>
+    <exclude-pattern>*.min.css</exclude-pattern>
+
+    <!-- WordPress base rules (pragmatic subset). -->
+    <rule ref="WordPress-Core">
+        <!-- Allow our preferred indentation & brace style; we do not enforce
+             full WPCS formatting because this codebase already has its own
+             conventions. -->
+        <exclude name="Generic.WhiteSpace.DisallowSpaceIndent"/>
+        <exclude name="Generic.WhiteSpace.ScopeIndent"/>
+        <exclude name="WordPress.WhiteSpace.ControlStructureSpacing"/>
+        <exclude name="Squiz.Commenting.InlineComment"/>
+        <exclude name="Squiz.Commenting.FunctionComment"/>
+        <exclude name="Squiz.Commenting.VariableComment"/>
+        <exclude name="WordPress.NamingConventions.ValidVariableName"/>
+        <exclude name="WordPress.Files.FileName"/>
+    </rule>
+    <rule ref="WordPress.Security"/>
+    <rule ref="WordPress.DB"/>
+    <rule ref="WordPress.WP.I18n"/>
+
+    <config name="text_domain" value="ffl-funnels-addons"/>
+    <config name="minimum_supported_wp_version" value="6.2"/>
+    <config name="testVersion" value="7.4-"/>
+
+    <rule ref="PHPCompatibilityWP"/>
+</ruleset>

@@ -2,6 +2,30 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.12.0] - 2026-04-14
+
+### Internationalization (i18n)
+- **Woo Sheets Sync docs page:** Every literal string in `WSS_Admin::render_docs_page()` is now wrapped with `esc_html_e()` or `wp_kses()` + `sprintf()`, preserving the existing `<strong>`, `<em>` and `<code>` markup while making the whole onboarding/troubleshooting guide translatable.
+- **JS helpers:** Added a `t(key, fallback)` helper to `woo-sheets-sync-module.js`, `tax-rates-admin.js` and `woobooster-ai.js`. Every previously hardcoded confirm/alert/status/button label now resolves through `wssDashboard.i18n`, `FflaTaxResolver.i18n` and `wooboosterAdmin.i18n`, which are expanded via `wp_localize_script`.
+- **WooBooster AI entity label:** The "Create This Rule/Bundle" button now uses an `fmt()` helper against a translatable `%s` format so the entity label flows from a single localized source for both Rules and Bundles.
+
+### REST API
+- **README:** New "REST API" section documenting both the `wss/v1` namespace (products/variations/attributes/batch upsert) and the `ffl-tax/v1` namespace (quote, quote/batch, coverage, health, datasets, admin/sync, admin/audit), their capability requirements (`manage_woocommerce` + `X-WP-Nonce`), and the 60 req/min/IP rate limit on `ffl-tax/v1/quote`.
+
+### Performance
+- **Woo Sheets Sync — paginated reads:** `WSS_Google_Sheets::read_range_paginated()` walks the target tab in 2000-row chunks (configurable via the `wss_sheet_read_chunk_size` filter) and stops on the first short chunk. `WSS_Sync_Engine::run()` uses it so very large sheets no longer risk hitting the Sheets API's ~10MB single-range response cap.
+
+### Async
+- **Woo Sheets Sync — background Sync Now:** New `WSS_Sync_Job` helper. When Action Scheduler is available (bundled with WooCommerce) the admin "Sync Now" button enqueues a single async `wss_run_sync_job` action and returns a `job_id`; the admin JS polls `wp_ajax_wss_sync_status` every ~1.5s (up to ~6 minutes) with a queued/running progress indicator. Environments without Action Scheduler fall back automatically to the previous synchronous flow.
+
+### Options
+- **Legacy key fallback:** New `FFLA_Options` helper (`includes/class-ffla-options.php`) with `get()` / `update()` / `delete()` methods that prefer a canonical `ffla_*` key but transparently read from the legacy key (`wss_*`, `alg_wishlist_*`, …) when the canonical one isn't set. Writes mirror both keys so rollbacks and gradual per-module migrations are painless without a forced data migration.
+
+### Tooling
+- **PHP:** Added `composer.json` with dev dependencies on wp-coding-standards/wpcs, phpcompatibility/phpcompatibility-wp, dealerdirect/phpcodesniffer-composer-installer, phpstan/phpstan and szepeviktor/phpstan-wordpress. New `.phpcs.xml.dist` (pragmatic WordPress-Core subset + WordPress.Security / DB / I18n + PHPCompatibilityWP) and `phpstan.neon.dist` (level 5, phpstan-wordpress extension) with a lightweight `tests/phpstan/bootstrap.php` that defines plugin constants for static analysis.
+- **JS:** Added `package.json` with ESLint ^8.57 and `.eslintrc.json` tuned for browser + jQuery with `wp`, `jQuery`, `ajaxurl`, `wssDashboard`, `wooboosterAdmin`, `FflaTaxResolver`, `AlgWishlistSettings`, `fflaAdmin` and `WooBoosterTracking` as known globals.
+- **CI:** New opt-in `.github/workflows/lint.yml` running PHPCS (PHP 7.4), PHPStan (PHP 8.1) and ESLint (Node 20) on push/PR. Each step is guarded with `|| true` so existing non-compliant code won't block merges while the codebase is incrementally tightened.
+
 ## [1.11.0] - 2026-04-14
 
 ### Security

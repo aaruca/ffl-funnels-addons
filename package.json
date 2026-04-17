@@ -1,0 +1,13 @@
+{
+  "name": "ffl-funnels-addons",
+  "version": "1.12.0",
+  "private": true,
+  "description": "Custom addons and integrations for FFL Funnels WooCommerce stores.",
+  "scripts": {
+    "lint:js": "eslint .",
+    "lint:js:fix": "eslint . --fix"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0"
+  }
+}
