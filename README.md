@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.15.1-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.15.2-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -193,6 +193,10 @@ define('WSS_OAUTH_DEBUG_FILE', true);  // also write wp-content/uploads/wss-logs
 ```
 
 ## Changelog
+
+### v1.15.2
+
+*   **WooBooster — HPOS:** Index Diagnostics and co-purchase SQL now detect **actual** HPOS usage via WooCommerce `OrderUtil`, not merely whether `wp_wc_orders` exists. Stores still authoritative on `wp_posts` (or mid-migration) no longer show false zero order counts.
 
 ### v1.15.1
 

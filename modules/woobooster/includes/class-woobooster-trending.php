@@ -70,7 +70,7 @@ class WooBooster_Trending
             $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
 
             $hpos_table = $wpdb->prefix . 'wc_orders';
-            $use_hpos = $wpdb->get_var("SHOW TABLES LIKE '{$hpos_table}'") === $hpos_table;
+            $use_hpos = WooBooster_Copurchase::is_custom_orders_table_in_use();
 
             if ($use_hpos) {
                 // HPOS stores status without the `wc-` prefix; match both forms.

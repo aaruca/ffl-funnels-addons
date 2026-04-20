@@ -16,6 +16,23 @@ class WooBooster_Copurchase
 {
 
     /**
+     * Whether WooCommerce stores orders in the HPOS table as the authoritative source.
+     *
+     * Do not infer this from whether `wp_wc_orders` exists — the table may exist while
+     * orders still live in `wp_posts` (migration, compatibility, or sync).
+     *
+     * @return bool
+     */
+    public static function is_custom_orders_table_in_use(): bool
+    {
+        if (!class_exists('\Automattic\WooCommerce\Utilities\OrderUtil')) {
+            return false;
+        }
+
+        return \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled();
+    }
+
+    /**
      * Build the co-purchase index.
      *
      * Scans orders from the last N days, counts product co-occurrences,
@@ -44,7 +61,7 @@ class WooBooster_Copurchase
 
         // Use HPOS table if available, otherwise fall back to posts.
         $hpos_table = $wpdb->prefix . 'wc_orders';
-        $use_hpos = $wpdb->get_var("SHOW TABLES LIKE '{$hpos_table}'") === $hpos_table;
+        $use_hpos = self::is_custom_orders_table_in_use();
 
         $statuses = self::get_order_statuses();
         $statuses_hpos = self::expand_statuses_for_hpos($statuses);
@@ -263,7 +280,7 @@ class WooBooster_Copurchase
         $date_cutoff = gmdate('Y-m-d H:i:s', strtotime("-{$days} days"));
 
         $hpos_table = $wpdb->prefix . 'wc_orders';
-        $use_hpos = $wpdb->get_var("SHOW TABLES LIKE '{$hpos_table}'") === $hpos_table;
+        $use_hpos = self::is_custom_orders_table_in_use();
 
         // HPOS stores status without the `wc-` prefix; include both forms.
         $statuses_queried = $use_hpos ? self::expand_statuses_for_hpos($statuses) : $statuses;

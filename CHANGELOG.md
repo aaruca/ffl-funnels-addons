@@ -2,6 +2,11 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.15.2] - 2026-04-20
+
+### WooBooster — HPOS detection
+- **Fix:** Co-purchase diagnostics and builds now use WooCommerce `OrderUtil::custom_orders_table_usage_is_enabled()` to decide whether orders live in `wp_wc_orders`. Checking only that the table exists was wrong while orders still authoritative in `wp_posts` (common during HPOS rollout), which produced zero counts despite healthy sales. Trending could still show data because the fast path uses `wc_order_product_lookup`, which does not rely on that branch.
+
 ## [1.15.1] - 2026-04-20
 
 ### WooBooster — HPOS order statuses
