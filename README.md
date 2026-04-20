@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.14.1-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.15.0-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -13,11 +13,11 @@ This plugin is a modular suite of tools designed to enhance FFL Funnels stores. 
 
 ### 1. WooBooster Module
 An intelligent product recommendation engine that goes beyond simple "related products".
-*   **AI Rule Generator:** Create robust recommendation rules using natural language (powered by OpenAI and Tavily) for smart compatibility resolution.
+*   **AI Rule Generator:** Create robust recommendation rules using natural language (powered by OpenAI and Tavily) for smart compatibility resolution. Web search uses the current site date and supports Tavily freshness options (`time_range`, `topic`) for up-to-date answers.
 *   **Targeted Rules:** Create specific recommendation rules based on Categories, Tags, and Attributes (e.g., recommend specific holsters for Glock 19).
-*   **Smart Recommendations:** Automatically display "Bought Together", "Trending", "Recently Viewed", and "Similar Products" without manual curation.
+*   **Smart Recommendations:** Automatically display "Bought Together", "Trending", "Recently Viewed", and "Similar Products" without manual curation. WB Settings includes **index diagnostics** (orders in window, multi-line vs single-line orders) and filterable order statuses for co-purchase / trending builds.
 *   **High Performance:** Uses custom index tables and aggressive caching to ensure zero impact on page load speed.
-*   **Bricks Integration:** Fully compatible with Bricks Builder via a custom "WooBooster Recommendations" Query Type.
+*   **Bricks Integration:** Fully compatible with Bricks Builder via **WooBooster Recommendations** (rules-based) and **WooBooster Smart Recommendations** (pick one Smart strategy with fallbacks, no rule required). Smart loops roll up attribution to a single **Smart (all)** row in WooBooster analytics.
 
 ### 2. Wishlist Module
 A lightweight wishlist implementation optimized for performance.
@@ -193,6 +193,13 @@ define('WSS_OAUTH_DEBUG_FILE', true);  // also write wp-content/uploads/wss-logs
 ```
 
 ## Changelog
+
+### v1.15.0
+
+*   **WooBooster — Bricks:** New **WooBooster Smart Recommendations** query type: pick one Smart strategy (similar, co-purchase, trending, recently viewed) with product source, limit, out-of-stock filter, and fallbacks — no rule matching. Existing **WooBooster Recommendations** (rules) unchanged.
+*   **WooBooster — Smart index:** Admin **Index Diagnostics** (orders in window, multi-line vs single-line orders); filterable order statuses via `woobooster_copurchase_order_statuses` and `woobooster_trending_order_statuses`; Rebuild AJAX surfaces a reason when a build returns zero products.
+*   **WooBooster — AI:** System prompt includes the current date; Tavily `search_web` accepts `time_range`, `topic`, and `search_depth` for fresher web answers.
+*   **WooBooster — Analytics:** Smart Bricks loops use pseudo rule id `-1` and appear as a single **Smart (all)** row in Top Rules; cart/order attribution uses signed integers so `-1` is preserved.
 
 ### v1.14.1
 
