@@ -21,7 +21,11 @@
         "FflaTaxResolver": "readonly",
         "WooBoosterTracking": "readonly",
         "AlgWishlistSettings": "readonly",
-        "fflaAdmin": "readonly"
+        "fflaAdmin": "readonly",
+        "fflCheckoutMapbox": "readonly",
+        "fflVendor": "readonly",
+        "WBAnalyticsChart": "readonly",
+        "Chart": "readonly"
     },
     "rules": {
         "no-unused-vars": ["warn", { "args": "none" }],
