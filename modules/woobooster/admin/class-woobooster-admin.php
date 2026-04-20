@@ -326,12 +326,19 @@ class WooBooster_Admin
                         </strong>
                         <ul class="wb-list" style="margin:0; font-size:13px;">
                             <li><?php
-                                /* translators: 1: orders count, 2: days window, 3: statuses */
+                                $displayed_statuses = !empty($diagnostics['statuses_queried'])
+                                    ? $diagnostics['statuses_queried']
+                                    : $diagnostics['statuses'];
+                                $storage_label = isset($diagnostics['storage']) && 'hpos' === $diagnostics['storage']
+                                    ? __('HPOS', 'ffl-funnels-addons')
+                                    : __('posts', 'ffl-funnels-addons');
+                                /* translators: 1: orders count, 2: days window, 3: statuses, 4: storage label */
                                 printf(
-                                    esc_html__('Orders in window: %1$d (last %2$d days, statuses: %3$s)', 'ffl-funnels-addons'),
+                                    esc_html__('Orders in window: %1$d (last %2$d days, storage: %4$s, statuses: %3$s)', 'ffl-funnels-addons'),
                                     (int) $diagnostics['orders_in_window'],
                                     (int) $diagnostics['days'],
-                                    esc_html(implode(', ', $diagnostics['statuses']))
+                                    esc_html(implode(', ', $displayed_statuses)),
+                                    esc_html($storage_label)
                                 );
                             ?></li>
                             <li><?php

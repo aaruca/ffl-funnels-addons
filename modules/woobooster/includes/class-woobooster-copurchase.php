@@ -47,7 +47,9 @@ class WooBooster_Copurchase
         $use_hpos = $wpdb->get_var("SHOW TABLES LIKE '{$hpos_table}'") === $hpos_table;
 
         $statuses = self::get_order_statuses();
+        $statuses_hpos = self::expand_statuses_for_hpos($statuses);
         $status_placeholders = implode(', ', array_fill(0, count($statuses), '%s'));
+        $status_placeholders_hpos = implode(', ', array_fill(0, count($statuses_hpos), '%s'));
 
         $pairs = array();
         $offset = 0;
@@ -57,20 +59,20 @@ class WooBooster_Copurchase
 
         do {
             if ($use_hpos) {
-                // HPOS: get order IDs from wc_orders table.
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- status_placeholders built from a trusted whitelist.
+                // HPOS: wp_wc_orders.status is stored without the `wc-` prefix; match both forms.
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- status_placeholders_hpos built from a trusted whitelist.
                 $order_ids = $wpdb->get_col(
                     $wpdb->prepare(
                         "SELECT id FROM {$hpos_table}
-                        WHERE type = 'shop_order' AND status IN ({$status_placeholders})
+                        WHERE type = 'shop_order' AND status IN ({$status_placeholders_hpos})
                         AND date_created_gmt >= %s
                         ORDER BY id ASC
                         LIMIT %d OFFSET %d",
-                        array_merge($statuses, array($date_cutoff, $batch_size, $offset))
+                        array_merge($statuses_hpos, array($date_cutoff, $batch_size, $offset))
                     )
                 );
             } else {
-                // Legacy: get order IDs from wp_posts.
+                // Legacy: get order IDs from wp_posts (post_status keeps the wc- prefix).
                 // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
                 $order_ids = $wpdb->get_col(
                     $wpdb->prepare(
@@ -166,6 +168,8 @@ class WooBooster_Copurchase
             'single_item_orders' => $single_item_orders,
             'days'               => $days,
             'statuses'           => $statuses,
+            'statuses_queried'   => $use_hpos ? $statuses_hpos : $statuses,
+            'storage'            => $use_hpos ? 'hpos' : 'posts',
             'reason'             => $reason,
             'time'               => $elapsed,
             'date'               => current_time('mysql'),
@@ -210,10 +214,38 @@ class WooBooster_Copurchase
     }
 
     /**
+     * Expand statuses for queries against the HPOS wp_wc_orders.status column.
+     *
+     * HPOS stores the status without the `wc-` prefix (e.g. `completed`), while
+     * the legacy wp_posts.post_status keeps it (`wc-completed`). Returning both
+     * forms lets the IN-clause match either storage format and is idempotent
+     * when callers pass already-unprefixed statuses.
+     *
+     * @param string[] $statuses wc-* prefixed statuses from get_order_statuses().
+     * @return string[]
+     */
+    public static function expand_statuses_for_hpos(array $statuses): array
+    {
+        $expanded = array();
+        foreach ($statuses as $status) {
+            $status = (string) $status;
+            if ('' === $status) {
+                continue;
+            }
+            $expanded[] = $status;
+            if (0 === strpos($status, 'wc-')) {
+                $expanded[] = substr($status, 3);
+            }
+        }
+
+        return array_values(array_unique($expanded));
+    }
+
+    /**
      * Return diagnostic counts so the admin UI can explain an empty index.
      *
      * @param int $days Lookback window in days.
-     * @return array{orders_in_window:int, multi_item_orders:int, single_item_orders:int, days:int, statuses:string[]}
+     * @return array{orders_in_window:int, multi_item_orders:int, single_item_orders:int, days:int, statuses:string[], statuses_queried:string[], storage:string}
      */
     public static function get_diagnostics(int $days = 0): array
     {
@@ -233,7 +265,9 @@ class WooBooster_Copurchase
         $hpos_table = $wpdb->prefix . 'wc_orders';
         $use_hpos = $wpdb->get_var("SHOW TABLES LIKE '{$hpos_table}'") === $hpos_table;
 
-        $status_placeholders = implode(', ', array_fill(0, count($statuses), '%s'));
+        // HPOS stores status without the `wc-` prefix; include both forms.
+        $statuses_queried = $use_hpos ? self::expand_statuses_for_hpos($statuses) : $statuses;
+        $status_placeholders = implode(', ', array_fill(0, count($statuses_queried), '%s'));
 
         if ($use_hpos) {
             // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -242,7 +276,7 @@ class WooBooster_Copurchase
                     "SELECT COUNT(*) FROM {$hpos_table}
                     WHERE type = 'shop_order' AND status IN ({$status_placeholders})
                     AND date_created_gmt >= %s",
-                    array_merge($statuses, array($date_cutoff))
+                    array_merge($statuses_queried, array($date_cutoff))
                 )
             );
 
@@ -260,7 +294,7 @@ class WooBooster_Copurchase
                         GROUP BY oi.order_id
                         HAVING COUNT(*) >= 2
                     ) multi",
-                    array_merge($statuses, array($date_cutoff))
+                    array_merge($statuses_queried, array($date_cutoff))
                 )
             );
         } else {
@@ -270,7 +304,7 @@ class WooBooster_Copurchase
                     "SELECT COUNT(*) FROM {$wpdb->posts}
                     WHERE post_type = 'shop_order' AND post_status IN ({$status_placeholders})
                     AND post_date_gmt >= %s",
-                    array_merge($statuses, array($date_cutoff))
+                    array_merge($statuses_queried, array($date_cutoff))
                 )
             );
 
@@ -288,7 +322,7 @@ class WooBooster_Copurchase
                         GROUP BY oi.order_id
                         HAVING COUNT(*) >= 2
                     ) multi",
-                    array_merge($statuses, array($date_cutoff))
+                    array_merge($statuses_queried, array($date_cutoff))
                 )
             );
         }
@@ -299,6 +333,8 @@ class WooBooster_Copurchase
             'single_item_orders' => max(0, $orders_in_window - $multi_item_orders),
             'days'               => $days,
             'statuses'           => $statuses,
+            'statuses_queried'   => $statuses_queried,
+            'storage'            => $use_hpos ? 'hpos' : 'posts',
         );
     }
 

@@ -42,7 +42,9 @@ class WooBooster_Trending
         $has_lookup = $wpdb->get_var("SHOW TABLES LIKE '{$lookup_table}'") === $lookup_table;
 
         $statuses = self::get_order_statuses();
+        $statuses_hpos = self::expand_statuses_for_hpos($statuses);
         $status_placeholders = implode(', ', array_fill(0, count($statuses), '%s'));
+        $status_placeholders_hpos = implode(', ', array_fill(0, count($statuses_hpos), '%s'));
 
         $product_sales = array();
 
@@ -71,7 +73,8 @@ class WooBooster_Trending
             $use_hpos = $wpdb->get_var("SHOW TABLES LIKE '{$hpos_table}'") === $hpos_table;
 
             if ($use_hpos) {
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+                // HPOS stores status without the `wc-` prefix; match both forms.
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- status_placeholders_hpos built from a trusted whitelist.
                 $results = $wpdb->get_results(
                     $wpdb->prepare(
                         "SELECT oim_pid.meta_value AS product_id, SUM(oim_qty.meta_value) AS total_qty
@@ -79,12 +82,12 @@ class WooBooster_Trending
                         JOIN {$hpos_table} o ON oi.order_id = o.id
                         JOIN {$order_itemmeta_table} oim_pid ON oi.order_item_id = oim_pid.order_item_id AND oim_pid.meta_key = '_product_id'
                         JOIN {$order_itemmeta_table} oim_qty ON oi.order_item_id = oim_qty.order_item_id AND oim_qty.meta_key = '_qty'
-                        WHERE o.status IN ({$status_placeholders})
+                        WHERE o.status IN ({$status_placeholders_hpos})
                         AND o.date_created_gmt >= %s
                         AND oi.order_item_type = 'line_item'
                         GROUP BY oim_pid.meta_value
                         ORDER BY total_qty DESC",
-                        array_merge($statuses, array($date_cutoff))
+                        array_merge($statuses_hpos, array($date_cutoff))
                     )
                 );
             } else {
@@ -219,5 +222,33 @@ class WooBooster_Trending
         }
 
         return array_values(array_unique($clean));
+    }
+
+    /**
+     * Expand statuses for queries against the HPOS wp_wc_orders.status column.
+     *
+     * HPOS stores the status without the `wc-` prefix (e.g. `completed`), while
+     * wp_posts.post_status keeps it (`wc-completed`). Returning both forms lets
+     * the IN-clause match either storage format and is idempotent for callers
+     * that already pass unprefixed statuses.
+     *
+     * @param string[] $statuses wc-* prefixed statuses from get_order_statuses().
+     * @return string[]
+     */
+    public static function expand_statuses_for_hpos(array $statuses): array
+    {
+        $expanded = array();
+        foreach ($statuses as $status) {
+            $status = (string) $status;
+            if ('' === $status) {
+                continue;
+            }
+            $expanded[] = $status;
+            if (0 === strpos($status, 'wc-')) {
+                $expanded[] = substr($status, 3);
+            }
+        }
+
+        return array_values(array_unique($expanded));
     }
 }
