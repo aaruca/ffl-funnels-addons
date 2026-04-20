@@ -2,6 +2,14 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.15.0] - 2026-04-20
+
+### WooBooster
+- **Bricks — `WooBooster Smart Recommendations` query type:** single Smart strategy (similar, co-purchase, trending, recently viewed) with product source, limit, out-of-stock filter, and fallbacks; no rule matching. Impressions roll up to one **Smart (all)** row in analytics.
+- **Smart index — admin diagnostics:** live counts (orders in window, multi-line vs single-line orders) plus filters `woobooster_copurchase_order_statuses` and `woobooster_trending_order_statuses`. Rebuild AJAX returns a reason when the co-purchase or trending build returns zero products.
+- **AI (WooBooster):** system prompt includes the current date; Tavily `search_web` supports `time_range`, `topic`, and `search_depth` for fresher “best of the year” style answers.
+- **Tracker / analytics:** negative pseudo rule id `-1` for Smart loops; `absint` replaced with `intval` for attribution; **Top Rules** shows `Smart (all)` for that bucket.
+
 ## [1.14.1] - 2026-04-14
 
 ### Tax Rates — Role gate semantics flipped (exemption list)
