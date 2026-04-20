@@ -2,6 +2,12 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.15.1] - 2026-04-20
+
+### WooBooster — HPOS order statuses
+- **Fix:** With High-Performance Order Storage (`wp_wc_orders`), WooCommerce persists order statuses **without** the `wc-` prefix (`completed`, `processing`, …). Co-purchase / trending SQL and Index Diagnostics previously filtered on `wc-*` forms only, so counts and rebuilds could show zero while the admin listed hundreds of orders. The HPOS branches now expand configured statuses to include both prefixed and unprefixed forms. Legacy `wp_posts` storage is unchanged.
+- **Admin:** Index Diagnostics surfaces **storage** (`hpos` vs `posts`) and **statuses queried** when available.
+
 ## [1.15.0] - 2026-04-20
 
 ### WooBooster
