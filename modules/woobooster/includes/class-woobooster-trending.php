@@ -41,6 +41,9 @@ class WooBooster_Trending
         $lookup_table = $wpdb->prefix . 'wc_order_product_lookup';
         $has_lookup = $wpdb->get_var("SHOW TABLES LIKE '{$lookup_table}'") === $lookup_table;
 
+        $statuses = self::get_order_statuses();
+        $status_placeholders = implode(', ', array_fill(0, count($statuses), '%s'));
+
         $product_sales = array();
 
         if ($has_lookup) {
@@ -68,6 +71,7 @@ class WooBooster_Trending
             $use_hpos = $wpdb->get_var("SHOW TABLES LIKE '{$hpos_table}'") === $hpos_table;
 
             if ($use_hpos) {
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
                 $results = $wpdb->get_results(
                     $wpdb->prepare(
                         "SELECT oim_pid.meta_value AS product_id, SUM(oim_qty.meta_value) AS total_qty
@@ -75,15 +79,16 @@ class WooBooster_Trending
                         JOIN {$hpos_table} o ON oi.order_id = o.id
                         JOIN {$order_itemmeta_table} oim_pid ON oi.order_item_id = oim_pid.order_item_id AND oim_pid.meta_key = '_product_id'
                         JOIN {$order_itemmeta_table} oim_qty ON oi.order_item_id = oim_qty.order_item_id AND oim_qty.meta_key = '_qty'
-                        WHERE o.status IN ('wc-completed', 'wc-processing')
+                        WHERE o.status IN ({$status_placeholders})
                         AND o.date_created_gmt >= %s
                         AND oi.order_item_type = 'line_item'
                         GROUP BY oim_pid.meta_value
                         ORDER BY total_qty DESC",
-                        $date_cutoff
+                        array_merge($statuses, array($date_cutoff))
                     )
                 );
             } else {
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
                 $results = $wpdb->get_results(
                     $wpdb->prepare(
                         "SELECT oim_pid.meta_value AS product_id, SUM(oim_qty.meta_value) AS total_qty
@@ -91,12 +96,12 @@ class WooBooster_Trending
                         JOIN {$wpdb->posts} p ON oi.order_id = p.ID
                         JOIN {$order_itemmeta_table} oim_pid ON oi.order_item_id = oim_pid.order_item_id AND oim_pid.meta_key = '_product_id'
                         JOIN {$order_itemmeta_table} oim_qty ON oi.order_item_id = oim_qty.order_item_id AND oim_qty.meta_key = '_qty'
-                        WHERE p.post_status IN ('wc-completed', 'wc-processing')
+                        WHERE p.post_status IN ({$status_placeholders})
                         AND p.post_date_gmt >= %s
                         AND oi.order_item_type = 'line_item'
                         GROUP BY oim_pid.meta_value
                         ORDER BY total_qty DESC",
-                        $date_cutoff
+                        array_merge($statuses, array($date_cutoff))
                     )
                 );
             }
@@ -151,13 +156,31 @@ class WooBooster_Trending
         set_transient('wb_trending_global', $global_top, 12 * HOUR_IN_SECONDS);
 
         $elapsed = round(microtime(true) - $start, 2);
+        $product_count = count($product_sales);
+
+        $reason = '';
+        if (0 === $product_count) {
+            $reason = sprintf(
+                /* translators: 1: days window, 2: comma-separated statuses */
+                __('No sales in the last %1$d days with status %2$s. Increase "Days to Analyze" or adjust the status filter.', 'ffl-funnels-addons'),
+                $days,
+                implode(', ', $statuses)
+            );
+        }
+
+        if (defined('WP_DEBUG') && WP_DEBUG && 0 === $product_count) {
+            error_log('WooBooster Trending: 0 products indexed. ' . $reason);
+        }
 
         $stats = array(
-            'type' => 'trending',
-            'products' => count($product_sales),
+            'type'       => 'trending',
+            'products'   => $product_count,
             'categories' => $categories_indexed,
-            'time' => $elapsed,
-            'date' => current_time('mysql'),
+            'days'       => $days,
+            'statuses'   => $statuses,
+            'reason'     => $reason,
+            'time'       => $elapsed,
+            'date'       => current_time('mysql'),
         );
 
         $last_build = get_option('woobooster_last_build', array());
@@ -165,5 +188,36 @@ class WooBooster_Trending
         update_option('woobooster_last_build', $last_build);
 
         return $stats;
+    }
+
+    /**
+     * Order statuses considered when building the trending index.
+     *
+     * Filterable via `woobooster_trending_order_statuses`.
+     *
+     * @return string[] List of statuses with the `wc-` prefix.
+     */
+    public static function get_order_statuses(): array
+    {
+        $default = array('wc-completed', 'wc-processing');
+        $statuses = apply_filters('woobooster_trending_order_statuses', $default);
+
+        $clean = array();
+        foreach ((array) $statuses as $status) {
+            $status = (string) $status;
+            if ('' === $status) {
+                continue;
+            }
+            if (0 !== strpos($status, 'wc-')) {
+                $status = 'wc-' . ltrim($status, '-');
+            }
+            $clean[] = $status;
+        }
+
+        if (empty($clean)) {
+            return $default;
+        }
+
+        return array_values(array_unique($clean));
     }
 }

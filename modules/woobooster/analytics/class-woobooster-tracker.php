@@ -28,6 +28,15 @@ class WooBooster_Tracker
     const COUNTER_OPTION = 'woobooster_atc_counter';
 
     /**
+     * Pseudo rule ID for Smart Recommendations served by the Bricks
+     * `woobooster_smart` query type (no backing rule).
+     *
+     * Rolled up as a single row in the analytics dashboard so the panel
+     * stays clean regardless of how many Smart loops a designer adds.
+     */
+    const SMART_PSEUDO_RULE_ID = -1;
+
+    /**
      * Initialize hooks.
      */
     public function init()
@@ -53,12 +62,14 @@ class WooBooster_Tracker
      */
     public static function register_recommendation($rule_id, $product_ids)
     {
-        if (!$rule_id || empty($product_ids)) {
+        $rule_id = (int) $rule_id;
+
+        if (0 === $rule_id || empty($product_ids)) {
             return;
         }
 
         self::$recommendations[] = array(
-            'rule_id' => absint($rule_id),
+            'rule_id'     => $rule_id,
             'product_ids' => array_map('absint', $product_ids),
         );
     }
@@ -97,8 +108,12 @@ class WooBooster_Tracker
     public function capture_cart_item_data($cart_item_data, $product_id)
     {
         // phpcs:ignore WordPress.Security.NonceVerification.Missing
-        if (!empty($_POST['wb_rule_id'])) {
-            $cart_item_data['_wb_source_rule'] = absint($_POST['wb_rule_id']);
+        if (isset($_POST['wb_rule_id']) && '' !== $_POST['wb_rule_id']) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Missing
+            $rule_id = (int) $_POST['wb_rule_id'];
+            if (0 !== $rule_id) {
+                $cart_item_data['_wb_source_rule'] = $rule_id;
+            }
         }
 
         return $cart_item_data;
@@ -116,21 +131,27 @@ class WooBooster_Tracker
      */
     public function track_add_to_cart($cart_item_key, $product_id, $quantity, $variation_id, $variation, $cart_item_data)
     {
-        if (!empty($cart_item_data['_wb_source_rule'])) {
-            $counter = get_option(self::COUNTER_OPTION, array());
-            $rule_id = absint($cart_item_data['_wb_source_rule']);
-            $month_key = gmdate('Y-m');
-
-            if (!isset($counter[$month_key])) {
-                $counter[$month_key] = array();
-            }
-            if (!isset($counter[$month_key][$rule_id])) {
-                $counter[$month_key][$rule_id] = 0;
-            }
-
-            $counter[$month_key][$rule_id]++;
-            update_option(self::COUNTER_OPTION, $counter, false);
+        if (!isset($cart_item_data['_wb_source_rule'])) {
+            return;
         }
+
+        $rule_id = (int) $cart_item_data['_wb_source_rule'];
+        if (0 === $rule_id) {
+            return;
+        }
+
+        $counter = get_option(self::COUNTER_OPTION, array());
+        $month_key = gmdate('Y-m');
+
+        if (!isset($counter[$month_key])) {
+            $counter[$month_key] = array();
+        }
+        if (!isset($counter[$month_key][$rule_id])) {
+            $counter[$month_key][$rule_id] = 0;
+        }
+
+        $counter[$month_key][$rule_id]++;
+        update_option(self::COUNTER_OPTION, $counter, false);
     }
 
     /**
@@ -143,8 +164,38 @@ class WooBooster_Tracker
      */
     public function persist_order_item_meta($item, $cart_item_key, $values, $order)
     {
-        if (!empty($values['_wb_source_rule'])) {
-            $item->add_meta_data('_wb_source_rule', absint($values['_wb_source_rule']), true);
+        if (!isset($values['_wb_source_rule'])) {
+            return;
         }
+
+        $rule_id = (int) $values['_wb_source_rule'];
+        if (0 === $rule_id) {
+            return;
+        }
+
+        $item->add_meta_data('_wb_source_rule', $rule_id, true);
+    }
+
+    /**
+     * Human label for a rule ID. Handles the Smart pseudo-ID transparently.
+     *
+     * @param int $rule_id
+     * @return string
+     */
+    public static function get_rule_label(int $rule_id): string
+    {
+        if (self::SMART_PSEUDO_RULE_ID === $rule_id) {
+            return __('Smart (all)', 'ffl-funnels-addons');
+        }
+
+        if (class_exists('WooBooster_Rule')) {
+            $rule = WooBooster_Rule::get($rule_id);
+            if ($rule && !empty($rule->name)) {
+                return $rule->name;
+            }
+        }
+
+        /* translators: %d: rule ID */
+        return sprintf(__('Rule #%d (deleted)', 'ffl-funnels-addons'), $rule_id);
     }
 }

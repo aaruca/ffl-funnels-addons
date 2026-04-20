@@ -20,6 +20,7 @@ class WooBooster_Bricks
      */
     const QUERY_TYPE = 'woobooster_recommendations';
     const BUNDLE_QUERY_TYPE = 'woobooster_bundles';
+    const SMART_QUERY_TYPE = 'woobooster_smart';
 
     /**
      * Initialize all Bricks hooks.
@@ -53,6 +54,7 @@ class WooBooster_Bricks
     {
         $control_options['queryTypes'][self::QUERY_TYPE] = esc_html__('WooBooster Recommendations', 'ffl-funnels-addons');
         $control_options['queryTypes'][self::BUNDLE_QUERY_TYPE] = esc_html__('WooBooster Bundles', 'ffl-funnels-addons');
+        $control_options['queryTypes'][self::SMART_QUERY_TYPE] = esc_html__('WooBooster Smart Recommendations', 'ffl-funnels-addons');
         return $control_options;
     }
 
@@ -205,6 +207,85 @@ class WooBooster_Bricks
             ),
         );
 
+        // ── Smart Recommendations Query Controls ──
+
+        $controls['woobooster_smart_settings_group'] = array(
+            'tab'      => 'content',
+            'type'     => 'separator',
+            'label'    => esc_html__('WooBooster Smart Settings', 'ffl-funnels-addons'),
+            'required' => array('query.objectType', '=', self::SMART_QUERY_TYPE),
+        );
+
+        $controls['woobooster_smart_source'] = array(
+            'tab'         => 'content',
+            'label'       => esc_html__('Smart Strategy', 'ffl-funnels-addons'),
+            'type'        => 'select',
+            'options'     => array(
+                'similar'         => esc_html__('Similar Products', 'ffl-funnels-addons'),
+                'copurchase'      => esc_html__('Frequently Bought Together', 'ffl-funnels-addons'),
+                'trending'        => esc_html__('Trending', 'ffl-funnels-addons'),
+                'recently_viewed' => esc_html__('Recently Viewed', 'ffl-funnels-addons'),
+            ),
+            'default'     => 'similar',
+            'description' => esc_html__('Pick a single Smart Recommendations strategy. No rule matching happens.', 'ffl-funnels-addons'),
+            'required'    => array('query.objectType', '=', self::SMART_QUERY_TYPE),
+        );
+
+        $controls['woobooster_smart_product_source'] = array(
+            'tab'      => 'content',
+            'label'    => esc_html__('Product Source', 'ffl-funnels-addons'),
+            'type'     => 'select',
+            'options'  => array(
+                'current' => esc_html__('Current Product (auto-detect)', 'ffl-funnels-addons'),
+                'manual'  => esc_html__('Manual Product ID', 'ffl-funnels-addons'),
+                'cart'    => esc_html__('Last Added to Cart', 'ffl-funnels-addons'),
+            ),
+            'default'  => 'current',
+            'required' => array('query.objectType', '=', self::SMART_QUERY_TYPE),
+        );
+
+        $controls['woobooster_smart_product_id'] = array(
+            'tab'      => 'content',
+            'label'    => esc_html__('Product ID', 'ffl-funnels-addons'),
+            'type'     => 'number',
+            'required' => array(
+                array('query.objectType', '=', self::SMART_QUERY_TYPE),
+                array('woobooster_smart_product_source', '=', 'manual'),
+            ),
+        );
+
+        $controls['woobooster_smart_limit'] = array(
+            'tab'      => 'content',
+            'label'    => esc_html__('Max Products', 'ffl-funnels-addons'),
+            'type'     => 'number',
+            'default'  => 4,
+            'min'      => 1,
+            'max'      => 50,
+            'required' => array('query.objectType', '=', self::SMART_QUERY_TYPE),
+        );
+
+        $controls['woobooster_smart_exclude_outofstock'] = array(
+            'tab'      => 'content',
+            'label'    => esc_html__('Exclude Out of Stock', 'ffl-funnels-addons'),
+            'type'     => 'checkbox',
+            'default'  => true,
+            'required' => array('query.objectType', '=', self::SMART_QUERY_TYPE),
+        );
+
+        $controls['woobooster_smart_fallback'] = array(
+            'tab'         => 'content',
+            'label'       => esc_html__('Fallback if Empty', 'ffl-funnels-addons'),
+            'type'        => 'select',
+            'options'     => array(
+                'none'        => esc_html__('Show Nothing', 'ffl-funnels-addons'),
+                'woo_related' => esc_html__('WooCommerce Related', 'ffl-funnels-addons'),
+                'recent'      => esc_html__('Recent Products', 'ffl-funnels-addons'),
+                'bestselling' => esc_html__('Bestselling Products', 'ffl-funnels-addons'),
+            ),
+            'default'     => 'woo_related',
+            'required'    => array('query.objectType', '=', self::SMART_QUERY_TYPE),
+        );
+
         return $controls;
     }
 
@@ -222,6 +303,11 @@ class WooBooster_Bricks
         // Handle bundle query type.
         if ($query_obj->object_type === self::BUNDLE_QUERY_TYPE) {
             return $this->run_bundle_query($query_obj);
+        }
+
+        // Handle smart query type.
+        if ($query_obj->object_type === self::SMART_QUERY_TYPE) {
+            return $this->run_smart_query($query_obj);
         }
 
         if ($query_obj->object_type !== self::QUERY_TYPE) {
@@ -289,7 +375,7 @@ class WooBooster_Bricks
      */
     public function set_loop_object($loop_object, $loop_key, $query_obj)
     {
-        if ($query_obj->object_type !== self::QUERY_TYPE && $query_obj->object_type !== self::BUNDLE_QUERY_TYPE) {
+        if (!in_array($query_obj->object_type, array(self::QUERY_TYPE, self::BUNDLE_QUERY_TYPE, self::SMART_QUERY_TYPE), true)) {
             return $loop_object;
         }
 
@@ -327,7 +413,7 @@ class WooBooster_Bricks
      */
     public function set_loop_object_id($object_id, $loop_object, $query_obj)
     {
-        if (!is_object($query_obj) || ($query_obj->object_type !== self::QUERY_TYPE && $query_obj->object_type !== self::BUNDLE_QUERY_TYPE)) {
+        if (!is_object($query_obj) || !in_array($query_obj->object_type, array(self::QUERY_TYPE, self::BUNDLE_QUERY_TYPE, self::SMART_QUERY_TYPE), true)) {
             return $object_id;
         }
 
@@ -349,7 +435,7 @@ class WooBooster_Bricks
      */
     public function after_loop($query_obj)
     {
-        if (!is_object($query_obj) || ($query_obj->object_type !== self::QUERY_TYPE && $query_obj->object_type !== self::BUNDLE_QUERY_TYPE)) {
+        if (!is_object($query_obj) || !in_array($query_obj->object_type, array(self::QUERY_TYPE, self::BUNDLE_QUERY_TYPE, self::SMART_QUERY_TYPE), true)) {
             return;
         }
         wp_reset_postdata();
@@ -393,6 +479,80 @@ class WooBooster_Bricks
 
         if (empty($product_ids)) {
             return array();
+        }
+
+        return array_filter(array_map('get_post', $product_ids));
+    }
+
+    /**
+     * Execute a Smart Recommendations query — returns WP_Post[] for Bricks.
+     *
+     * Bypasses rule matching entirely. Atributes analytics to the Smart
+     * pseudo rule so every loop rolls up to a single row.
+     *
+     * @param object $query_obj Bricks query object.
+     * @return array Array of WP_Post objects.
+     */
+    private function run_smart_query($query_obj)
+    {
+        $settings = isset($query_obj->settings) ? (array) $query_obj->settings : array();
+
+        $source = isset($settings['woobooster_smart_source']) ? sanitize_key($settings['woobooster_smart_source']) : 'similar';
+        $allowed = array('similar', 'copurchase', 'trending', 'recently_viewed');
+        if (!in_array($source, $allowed, true)) {
+            $source = 'similar';
+        }
+
+        $limit = !empty($settings['woobooster_smart_limit']) ? absint($settings['woobooster_smart_limit']) : 4;
+        if ($limit < 1) {
+            $limit = 4;
+        }
+
+        $exclude_outofstock = isset($settings['woobooster_smart_exclude_outofstock'])
+            ? (bool) $settings['woobooster_smart_exclude_outofstock']
+            : true;
+
+        // Product resolution reuses the Recommendations helper via a key shim.
+        $resolver_settings = array(
+            'woobooster_source'     => isset($settings['woobooster_smart_product_source'])
+                ? $settings['woobooster_smart_product_source']
+                : 'current',
+            'woobooster_product_id' => isset($settings['woobooster_smart_product_id'])
+                ? $settings['woobooster_smart_product_id']
+                : 0,
+        );
+        $product_id = $this->resolve_product_id($resolver_settings);
+
+        $product_ids = array();
+        if ($product_id) {
+            $matcher = new WooBooster_Matcher();
+            $product_ids = $matcher->get_smart_recommendations(
+                $product_id,
+                $source,
+                array(
+                    'limit'              => $limit,
+                    'exclude_outofstock' => $exclude_outofstock,
+                )
+            );
+        }
+
+        if (empty($product_ids)) {
+            $fallback = isset($settings['woobooster_smart_fallback']) ? sanitize_key($settings['woobooster_smart_fallback']) : 'none';
+            if ('none' !== $fallback && $product_id) {
+                $product_ids = $this->get_fallback_products($product_id, $fallback, $limit);
+            }
+        }
+
+        if (empty($product_ids)) {
+            return array();
+        }
+
+        // Roll Smart impressions up under a single pseudo-rule row.
+        if (class_exists('WooBooster_Tracker')) {
+            WooBooster_Tracker::register_recommendation(
+                WooBooster_Tracker::SMART_PSEUDO_RULE_ID,
+                $product_ids
+            );
         }
 
         return array_filter(array_map('get_post', $product_ids));

@@ -161,13 +161,12 @@ class WooBooster_Analytics
             $order_has_wb = false;
 
             foreach ($order->get_items() as $item) {
-                $rule_id = $item->get_meta('_wb_source_rule');
-                if (!$rule_id) {
+                $rule_id = (int) $item->get_meta('_wb_source_rule');
+                if (0 === $rule_id) {
                     continue;
                 }
 
                 $order_has_wb = true;
-                $rule_id = absint($rule_id);
                 $subtotal = (float) $item->get_subtotal();
                 $subtotal_tax = (float) $item->get_subtotal_tax();
                 $qty = (int) $item->get_quantity();
@@ -219,8 +218,7 @@ class WooBooster_Analytics
         $rules_data = array_slice($rules_data, 0, 10, true);
         $top_rules = array();
         foreach ($rules_data as $rid => $rd) {
-            $rule = WooBooster_Rule::get($rid);
-            $name = $rule ? $rule->name : sprintf(__('Rule #%d (deleted)', 'ffl-funnels-addons'), $rid);
+            $name = WooBooster_Tracker::get_rule_label((int) $rid);
             $top_rules[] = array('rule_id' => $rid, 'name' => $name, 'revenue' => $rd['revenue'], 'items' => $rd['items']);
         }
 

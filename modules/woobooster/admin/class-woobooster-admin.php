@@ -314,6 +314,55 @@ class WooBooster_Admin
 
                 <hr style="border:none; border-top:1px solid #eee; margin:20px 0;">
 
+                <?php
+                $diagnostics = class_exists('WooBooster_Copurchase')
+                    ? WooBooster_Copurchase::get_diagnostics(isset($options['smart_days']) ? absint($options['smart_days']) : 0)
+                    : null;
+                if (is_array($diagnostics)) {
+                    ?>
+                    <div class="wb-field" style="background:var(--wb-color-neutral-background-2,#f8f9fa); padding:12px 14px; border-radius:6px; margin-bottom:16px;">
+                        <strong style="display:block; margin-bottom:6px;">
+                            <?php esc_html_e('Index Diagnostics', 'ffl-funnels-addons'); ?>
+                        </strong>
+                        <ul class="wb-list" style="margin:0; font-size:13px;">
+                            <li><?php
+                                /* translators: 1: orders count, 2: days window, 3: statuses */
+                                printf(
+                                    esc_html__('Orders in window: %1$d (last %2$d days, statuses: %3$s)', 'ffl-funnels-addons'),
+                                    (int) $diagnostics['orders_in_window'],
+                                    (int) $diagnostics['days'],
+                                    esc_html(implode(', ', $diagnostics['statuses']))
+                                );
+                            ?></li>
+                            <li><?php
+                                /* translators: %d: multi-item orders count */
+                                printf(
+                                    esc_html__('Orders with 2+ line items (eligible for Co-purchase): %d', 'ffl-funnels-addons'),
+                                    (int) $diagnostics['multi_item_orders']
+                                );
+                            ?></li>
+                            <li><?php
+                                /* translators: %d: single-item orders count */
+                                printf(
+                                    esc_html__('Single-item orders (skipped by Co-purchase): %d', 'ffl-funnels-addons'),
+                                    (int) $diagnostics['single_item_orders']
+                                );
+                            ?></li>
+                        </ul>
+                        <?php if (0 === (int) $diagnostics['orders_in_window']) : ?>
+                            <p class="wb-field__desc" style="margin:8px 0 0;">
+                                <?php esc_html_e('No eligible orders. Raise "Days to Analyze" or add your custom order status via the woobooster_copurchase_order_statuses / woobooster_trending_order_statuses filters.', 'ffl-funnels-addons'); ?>
+                            </p>
+                        <?php elseif (0 === (int) $diagnostics['multi_item_orders']) : ?>
+                            <p class="wb-field__desc" style="margin:8px 0 0;">
+                                <?php esc_html_e('All orders in the window have a single product. Co-purchase needs at least two products per order. Trending is unaffected.', 'ffl-funnels-addons'); ?>
+                            </p>
+                        <?php endif; ?>
+                    </div>
+                    <?php
+                }
+                ?>
+
                 <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
                     <button type="button" id="wb-rebuild-index" class="wb-btn wb-btn--subtle">
                         <?php esc_html_e('Rebuild Now', 'ffl-funnels-addons'); ?>
@@ -500,9 +549,12 @@ class WooBooster_Admin
                 <p><?php esc_html_e('WooBooster is fully compatible with Bricks Builder.', 'ffl-funnels-addons'); ?></p>
                 <ol class="wb-list">
                     <li><?php esc_html_e('Add a "Query Loop" element to your template.', 'ffl-funnels-addons'); ?></li>
-                    <li><?php esc_html_e('Set the Query Type to "WooBooster Recommendations".', 'ffl-funnels-addons'); ?></li>
+                    <li><?php esc_html_e('Set the Query Type to "WooBooster Recommendations" (rules-based) or "WooBooster Smart Recommendations" (single strategy: similar, co-purchase, trending, recently viewed).', 'ffl-funnels-addons'); ?></li>
                     <li><?php esc_html_e('Customize your layout using standard Bricks elements.', 'ffl-funnels-addons'); ?></li>
                 </ol>
+                <p class="wb-field__desc">
+                    <?php esc_html_e('Smart Recommendations loops skip rule matching and roll up to a single "Smart (all)" row in the analytics dashboard.', 'ffl-funnels-addons'); ?>
+                </p>
 
                 <hr class="wb-hr">
 
@@ -766,16 +818,31 @@ class WooBooster_Admin
         }
 
         $parts = array();
+        $reasons = array();
+
         if (!empty($results['copurchase'])) {
             $cp = $results['copurchase'];
             $parts[] = sprintf(__('Co-purchase: %1$d products in %2$ss', 'ffl-funnels-addons'), $cp['products'], $cp['time']);
+            if (0 === (int) $cp['products'] && !empty($cp['reason'])) {
+                $reasons[] = __('Co-purchase', 'ffl-funnels-addons') . ': ' . $cp['reason'];
+            }
         }
         if (!empty($results['trending'])) {
             $tr = $results['trending'];
             $parts[] = sprintf(__('Trending: %1$d categories in %2$ss', 'ffl-funnels-addons'), $tr['categories'], $tr['time']);
+            if (0 === (int) $tr['products'] && !empty($tr['reason'])) {
+                $reasons[] = __('Trending', 'ffl-funnels-addons') . ': ' . $tr['reason'];
+            }
         }
 
-        $message = !empty($parts) ? implode(' · ', $parts) : __('No strategies enabled. Enable at least one above.', 'ffl-funnels-addons');
+        if (!empty($parts)) {
+            $message = implode(' · ', $parts);
+            if (!empty($reasons)) {
+                $message .= ' — ' . implode(' | ', $reasons);
+            }
+        } else {
+            $message = __('No strategies enabled. Enable at least one above.', 'ffl-funnels-addons');
+        }
 
         wp_send_json_success(array(
             'message' => $message,
@@ -984,10 +1051,16 @@ class WooBooster_Admin
     {
         $has_web = !empty($tavily_key);
         $web_instruction = $has_web
-            ? "- Use `search_web` to find product compatibility data (e.g. \"best holsters for Glock 19\", \"compatible optics for AR-15 platform\", \"what magazines work with Sig P365\"). This is very powerful — use it whenever the user asks about compatibility or \"best sellers\" for a specific product."
+            ? "- Use `search_web` to find product compatibility data (e.g. \"best holsters for Glock 19\", \"compatible optics for AR-15 platform\", \"what magazines work with Sig P365\"). This is very powerful — use it whenever the user asks about compatibility or \"best sellers\" for a specific product.\n- For any ranking or \"best of the year\" query, pass `time_range = \"year\"` (or `\"month\"` for very recent releases) and include the current year in the query string."
             : "- Web search is not available (no Tavily API key configured). Rely on store search and your own knowledge.";
 
+        $today = wp_date('F j, Y');
+        $current_year = wp_date('Y');
+
         return "You are a product recommendation specialist for an FFL (Federal Firearms Licensed) WooCommerce store. You help store owners create WooBooster recommendation rules that drive cross-sells and upsells.
+
+## Current Date
+Today is {$today}. The current year is {$current_year}. NEVER assume the year from your training data. When the user asks about \"best of the year\", \"new releases\", \"top rated this year\" or any time-sensitive ranking, always use {$current_year} and call `search_web` with a recent `time_range`.
 
 ## How WooBooster Rules Work
 A rule has TWO parts:
@@ -1162,23 +1235,53 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
         );
 
         if (!empty($tavily_key)) {
-            $tools[] = array(
-                'type' => 'function',
-                'function' => array(
-                    'name' => 'search_web',
-                    'description' => 'Search the web for product compatibility, best-sellers, or general firearms knowledge. Use for questions like "what holsters fit X" or "compatible optics for Y".',
-                    'parameters' => array(
-                        'type' => 'object',
-                        'properties' => array(
-                            'query' => array('type' => 'string', 'description' => 'Search query'),
-                        ),
-                        'required' => array('query'),
-                    ),
-                ),
+            $tools[] = $this->build_search_web_tool_schema(
+                'Search the web via Tavily for product compatibility, best-sellers, new releases or general firearms knowledge. Always include the current year for ranking queries and pass a matching time_range so results are fresh.'
             );
         }
 
         return $tools;
+    }
+
+    /**
+     * Shared Tavily `search_web` tool schema.
+     *
+     * Centralized so rule and bundle modes stay in sync when parameters evolve.
+     */
+    private function build_search_web_tool_schema(string $description): array
+    {
+        return array(
+            'type' => 'function',
+            'function' => array(
+                'name' => 'search_web',
+                'description' => $description,
+                'parameters' => array(
+                    'type' => 'object',
+                    'properties' => array(
+                        'query' => array(
+                            'type' => 'string',
+                            'description' => 'Search query. Include the current year for ranking or "best of the year" questions.',
+                        ),
+                        'time_range' => array(
+                            'type' => 'string',
+                            'enum' => array('day', 'week', 'month', 'year'),
+                            'description' => 'Freshness filter. Use "year" for "best of the year" or current rankings, "month" for recent releases, "week"/"day" for breaking updates.',
+                        ),
+                        'topic' => array(
+                            'type' => 'string',
+                            'enum' => array('general', 'news'),
+                            'description' => 'Use "news" for recent releases, recalls, or events. Default "general".',
+                        ),
+                        'search_depth' => array(
+                            'type' => 'string',
+                            'enum' => array('basic', 'advanced'),
+                            'description' => 'Use "advanced" for compatibility research. Default "advanced".',
+                        ),
+                    ),
+                    'required' => array('query'),
+                ),
+            ),
+        );
     }
 
     /**
@@ -1272,20 +1375,50 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
      */
     private function ai_tool_search_web(array $args, string $tavily_key): string
     {
-        $query = isset($args['query']) ? $args['query'] : '';
+        $query = isset($args['query']) ? trim((string) $args['query']) : '';
 
         if (empty($tavily_key)) {
             return 'Web search is not configured (no Tavily API key).';
         }
 
+        if ('' === $query) {
+            return 'Web search failed: empty query.';
+        }
+
+        $allowed_time = array('day', 'week', 'month', 'year');
+        $time_range = isset($args['time_range']) && in_array($args['time_range'], $allowed_time, true)
+            ? $args['time_range']
+            : '';
+
+        $allowed_topic = array('general', 'news');
+        $topic = isset($args['topic']) && in_array($args['topic'], $allowed_topic, true)
+            ? $args['topic']
+            : 'general';
+
+        $allowed_depth = array('basic', 'advanced');
+        $search_depth = isset($args['search_depth']) && in_array($args['search_depth'], $allowed_depth, true)
+            ? $args['search_depth']
+            : 'advanced';
+
+        $payload = array(
+            'api_key'        => trim($tavily_key),
+            'query'          => $query,
+            'search_depth'   => $search_depth,
+            'include_answer' => true,
+            'max_results'    => 5,
+            'topic'          => $topic,
+        );
+
+        if ('' !== $time_range) {
+            $payload['time_range'] = $time_range;
+        }
+
+        if ('news' === $topic && isset($args['days']) && is_numeric($args['days'])) {
+            $payload['days'] = max(1, min(30, (int) $args['days']));
+        }
+
         $response = wp_remote_post('https://api.tavily.com/search', array(
-            'body' => wp_json_encode(array(
-                'api_key' => trim($tavily_key),
-                'query' => $query,
-                'search_depth' => 'basic',
-                'include_answer' => true,
-                'max_results' => 5,
-            )),
+            'body' => wp_json_encode($payload),
             'headers' => array('Content-Type' => 'application/json'),
             'timeout' => 30,
         ));
@@ -1526,10 +1659,16 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
     {
         $has_web = !empty($tavily_key);
         $web_instruction = $has_web
-            ? "- Use `search_web` to find product compatibility data (e.g. \"best accessories for Glock 19\", \"what goes with AR-15\"). This is very powerful — use it whenever the user asks about compatibility or \"best sellers\"."
+            ? "- Use `search_web` to find product compatibility data (e.g. \"best accessories for Glock 19\", \"what goes with AR-15\"). This is very powerful — use it whenever the user asks about compatibility or \"best sellers\".\n- For any ranking or \"best of the year\" query, pass `time_range = \"year\"` (or `\"month\"` for very recent releases) and include the current year in the query string."
             : "- Web search is not available (no Tavily API key configured). Rely on store search and your own knowledge.";
 
+        $today = wp_date('F j, Y');
+        $current_year = wp_date('Y');
+
         return "You are a product bundling specialist for an FFL (Federal Firearms Licensed) WooCommerce store. You help store owners create WooBooster product bundles — \"Frequently Bought Together\" style groupings that appear on product pages.
+
+## Current Date
+Today is {$today}. The current year is {$current_year}. NEVER assume the year from your training data. When the user asks about \"best of the year\", \"new releases\" or any time-sensitive ranking, always use {$current_year} and call `search_web` with a recent `time_range`.
 
 ## How WooBooster Bundles Work
 A bundle has THREE parts:
@@ -1637,19 +1776,8 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
         );
 
         if (!empty($tavily_key)) {
-            $tools[] = array(
-                'type' => 'function',
-                'function' => array(
-                    'name' => 'search_web',
-                    'description' => 'Search the web for product compatibility, best-sellers, or general firearms knowledge. Use for questions like "what accessories go with X" or "best bundle for Y".',
-                    'parameters' => array(
-                        'type' => 'object',
-                        'properties' => array(
-                            'query' => array('type' => 'string', 'description' => 'Search query'),
-                        ),
-                        'required' => array('query'),
-                    ),
-                ),
+            $tools[] = $this->build_search_web_tool_schema(
+                'Search the web via Tavily for product compatibility, best-sellers, new releases or bundle research. Always include the current year for ranking queries and pass a matching time_range so results are fresh.'
             );
         }
 

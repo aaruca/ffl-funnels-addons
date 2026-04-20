@@ -344,6 +344,89 @@ class WooBooster_Matcher
     }
 
     /**
+     * Run a single Smart Recommendations strategy without a rule.
+     *
+     * Used by the Bricks "WooBooster Smart Recommendations" query type so
+     * designers can drop a loop tied to a strategy (similar / copurchase /
+     * trending / recently_viewed) without creating a companion rule.
+     *
+     * @param int    $product_id Source product ID.
+     * @param string $source     One of copurchase|trending|recently_viewed|similar.
+     * @param array  $args       Optional: limit (int), exclude_outofstock (bool).
+     * @return int[] Array of product IDs.
+     */
+    public function get_smart_recommendations($product_id, $source, $args = array())
+    {
+        self::$last_matched_rule = null;
+
+        $product_id = absint($product_id);
+        $allowed    = array('copurchase', 'trending', 'recently_viewed', 'similar');
+
+        if (!$product_id || !in_array($source, $allowed, true)) {
+            return array();
+        }
+
+        if ('1' !== woobooster_get_option('enabled', '1')) {
+            return array();
+        }
+
+        $limit = isset($args['limit']) ? absint($args['limit']) : 0;
+        if ($limit < 1) {
+            $limit = 4;
+        }
+
+        $global_exclude = '1' === woobooster_get_option('exclude_outofstock', '1');
+        $exclude_outofstock = isset($args['exclude_outofstock'])
+            ? (bool) $args['exclude_outofstock']
+            : $global_exclude;
+
+        $args_hash = md5(wp_json_encode(array($limit, $exclude_outofstock)));
+        $cache_key = 'woobooster_smart_' . $source . '_' . $product_id . '_' . $args_hash;
+        $cached    = wp_cache_get($cache_key, 'ffl-funnels-addons');
+
+        if (false !== $cached) {
+            return $cached;
+        }
+
+        $terms = $this->get_product_terms($product_id);
+
+        $action = (object) array(
+            'action_source'      => $source,
+            'action_limit'       => $limit,
+            'action_orderby'     => 'rand',
+            'action_products'    => '',
+            'action_value'       => '',
+            'include_children'   => 0,
+            'exclude_categories' => '',
+            'exclude_products'   => '',
+            'exclude_price_min'  => null,
+            'exclude_price_max'  => null,
+        );
+
+        $product_ids = $this->execute_smart_query(
+            $product_id,
+            $action,
+            $limit,
+            $exclude_outofstock,
+            $terms
+        );
+
+        if (!is_array($product_ids)) {
+            $product_ids = array();
+        }
+
+        $product_ids = array_values(array_unique(array_map('absint', $product_ids)));
+
+        if ($limit > 0) {
+            $product_ids = array_slice($product_ids, 0, $limit);
+        }
+
+        wp_cache_set($cache_key, $product_ids, 'ffl-funnels-addons', HOUR_IN_SECONDS);
+
+        return $product_ids;
+    }
+
+    /**
      * Get all taxonomy terms for a product in a single query.
      *
      * @param int $product_id Product ID.
@@ -829,7 +912,7 @@ class WooBooster_Matcher
      * @param array  $terms             Product terms.
      * @return array Array of product IDs.
      */
-    private function execute_smart_query($product_id, $action, $limit, $exclude_outofstock, $terms)
+    protected function execute_smart_query($product_id, $action, $limit, $exclude_outofstock, $terms)
     {
         $candidate_ids = array();
 
@@ -921,7 +1004,7 @@ class WooBooster_Matcher
      * @param array $terms             Product terms.
      * @return array Array of product IDs.
      */
-    private function execute_similar_query($product_id, $limit, $exclude_outofstock, $terms)
+    protected function execute_similar_query($product_id, $limit, $exclude_outofstock, $terms)
     {
         // Check transient cache first.
         $cache_key = 'wb_similar_' . $product_id . '_' . $limit;
