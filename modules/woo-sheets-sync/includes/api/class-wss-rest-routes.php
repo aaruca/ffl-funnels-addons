@@ -40,6 +40,9 @@ class WSS_REST_Routes
     /** Maximum number of items accepted in a single batch request. */
     private const BATCH_MAX_ITEMS = 200;
 
+    /** Maximum uncompressed body size for a batch request (in bytes). */
+    private const BATCH_MAX_BYTES = 2 * 1024 * 1024;
+
     public function register_routes(): void
     {
         register_rest_route('wss/v1', '/products/upsert', [
@@ -220,6 +223,13 @@ class WSS_REST_Routes
 
     public function batch_upsert(WP_REST_Request $request): WP_REST_Response
     {
+        $body = $request->get_body();
+        if (is_string($body) && strlen($body) > self::BATCH_MAX_BYTES) {
+            return new WP_REST_Response([
+                'error' => sprintf(/* translators: %d: max bytes. */ __('Batch body exceeds %d bytes.', 'ffl-funnels-addons'), self::BATCH_MAX_BYTES),
+            ], 413);
+        }
+
         $payload = $request->get_json_params();
         $items   = is_array($payload['items'] ?? null) ? $payload['items'] : [];
         if (count($items) > self::BATCH_MAX_ITEMS) {

@@ -285,7 +285,13 @@ class FFLA_Updater
                     DAY_IN_SECONDS
                 );
             } elseif (403 === $status_code) {
-                set_transient('ffla_github_api_error', __('GitHub API rate limit exceeded. Updates will retry in 1 hour.', 'ffl-funnels-addons'), HOUR_IN_SECONDS);
+                $headers = wp_remote_retrieve_headers($response);
+                $rl_remaining = isset($headers['x-ratelimit-remaining']) ? (int) $headers['x-ratelimit-remaining'] : -1;
+                if (0 === $rl_remaining) {
+                    set_transient('ffla_github_api_error', __('GitHub API rate limit exceeded. Updates will retry in 1 hour.', 'ffl-funnels-addons'), HOUR_IN_SECONDS);
+                } else {
+                    set_transient('ffla_github_api_error', __('GitHub returned 403 (forbidden). Check repo permissions or FFLA_GITHUB_TOKEN scopes.', 'ffl-funnels-addons'), DAY_IN_SECONDS);
+                }
             } elseif (401 === $status_code) {
                 set_transient('ffla_github_api_error', __('GitHub token is invalid or expired. Please update FFLA_GITHUB_TOKEN in wp-config.php.', 'ffl-funnels-addons'), DAY_IN_SECONDS);
             }

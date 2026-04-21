@@ -613,11 +613,19 @@ class WooBooster_Bundle
 
         $wpdb->query($wpdb->prepare("TRUNCATE TABLE %i", self::$index_table));
 
-        $bundles = self::get_all(array('status' => 1, 'limit' => 10000));
-
-        foreach ($bundles as $bundle) {
-            self::rebuild_index_for_bundle($bundle->id);
-        }
+        $offset = 0;
+        $page_size = 500;
+        do {
+            $bundles = self::get_all(array(
+                'status' => 1,
+                'limit'  => $page_size,
+                'offset' => $offset,
+            ));
+            foreach ($bundles as $bundle) {
+                self::rebuild_index_for_bundle($bundle->id);
+            }
+            $offset += $page_size;
+        } while (count($bundles) === $page_size);
     }
 
     /* ── Internal helpers ─────────────────────────────────────────── */

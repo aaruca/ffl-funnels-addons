@@ -238,7 +238,7 @@ class WooBooster_Activator
 
             // 1. Ensure `include_children` column exists in rules table (legacy support).
             $row = $wpdb->get_results($wpdb->prepare(
-                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = %s AND column_name = 'include_children'",
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = DATABASE() AND table_name = %s AND column_name = 'include_children'",
                 $rules_table
             ));
             if (empty($row)) {
@@ -249,7 +249,7 @@ class WooBooster_Activator
             $count = $wpdb->get_var("SELECT COUNT(*) FROM $conditions_table");
             if (0 == $count) {
                 $attr_col = $wpdb->get_results($wpdb->prepare(
-                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = %s AND column_name = 'condition_attribute'",
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = DATABASE() AND table_name = %s AND column_name = 'condition_attribute'",
                     $rules_table
                 ));
 
@@ -275,7 +275,7 @@ class WooBooster_Activator
             $action_count = $wpdb->get_var("SELECT COUNT(*) FROM $actions_table");
             if (0 == $action_count) {
                 $action_cols = $wpdb->get_results($wpdb->prepare(
-                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = %s AND column_name = 'action_source'",
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = DATABASE() AND table_name = %s AND column_name = 'action_source'",
                     $rules_table
                 ));
                 if (!empty($action_cols)) {
@@ -297,7 +297,7 @@ class WooBooster_Activator
 
             // 4. Add `include_children` column to actions table if missing.
             $row_action_children = $wpdb->get_results($wpdb->prepare(
-                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = %s AND column_name = 'include_children'",
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = DATABASE() AND table_name = %s AND column_name = 'include_children'",
                 $actions_table
             ));
             if (empty($row_action_children)) {
@@ -315,7 +315,7 @@ class WooBooster_Activator
             );
             foreach ($new_action_cols as $col_name => $col_def) {
                 $col_exists = $wpdb->get_results($wpdb->prepare(
-                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = %s AND column_name = %s",
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = DATABASE() AND table_name = %s AND column_name = %s",
                     $actions_table,
                     $col_name
                 ));
@@ -326,7 +326,7 @@ class WooBooster_Activator
 
             // 6. Add action_coupon_message column to actions table (v1.6.0).
             $msg_col_exists = $wpdb->get_results($wpdb->prepare(
-                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = %s AND column_name = 'action_coupon_message'",
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = DATABASE() AND table_name = %s AND column_name = 'action_coupon_message'",
                 $actions_table
             ));
             if (empty($msg_col_exists)) {
@@ -343,7 +343,7 @@ class WooBooster_Activator
             );
             foreach ($new_cond_cols as $col_name => $col_def) {
                 $col_exists = $wpdb->get_results($wpdb->prepare(
-                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = %s AND column_name = %s",
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = DATABASE() AND table_name = %s AND column_name = %s",
                     $conditions_table,
                     $col_name
                 ));
@@ -359,7 +359,7 @@ class WooBooster_Activator
             );
             foreach ($schedule_cols as $col_name => $col_def) {
                 $col_exists = $wpdb->get_results($wpdb->prepare(
-                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = %s AND column_name = %s",
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = DATABASE() AND table_name = %s AND column_name = %s",
                     $rules_table,
                     $col_name
                 ));
@@ -370,7 +370,7 @@ class WooBooster_Activator
 
             // 9. Add action_logic column to rules table (Legacy fallback).
             $al_exists = $wpdb->get_results($wpdb->prepare(
-                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = %s AND column_name = 'action_logic'",
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = DATABASE() AND table_name = %s AND column_name = 'action_logic'",
                 $rules_table
             ));
             if (empty($al_exists)) {
@@ -379,7 +379,7 @@ class WooBooster_Activator
 
             // 10. Add group_id to actions table (v1.7.0).
             $ag_exists = $wpdb->get_results($wpdb->prepare(
-                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = %s AND column_name = 'group_id'",
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = DATABASE() AND table_name = %s AND column_name = 'group_id'",
                 $actions_table
             ));
             if (empty($ag_exists)) {

@@ -82,6 +82,29 @@ class WSS_Sync_Engine
      * @param array<string,mixed> $settings   wss_settings option.
      * @param array<string,mixed> $context    Optional: tab_name, allowed_parent_product_ids, group_id, persist_last_sync.
      */
+    private function batch_update_with_retry($sheet_id, array $updates)
+    {
+        $attempts = 0;
+        $max = 3;
+        $delay = 1;
+        while ($attempts < $max) {
+            $result = $this->sheets->batch_update($sheet_id, $updates);
+            if (!is_wp_error($result)) {
+                return $result;
+            }
+            $code = (string) $result->get_error_code();
+            if (!in_array($code, array('sheets_http_429', 'sheets_http_500', 'sheets_http_502', 'sheets_http_503', 'sheets_http_504'), true)) {
+                return $result;
+            }
+            $attempts++;
+            if ($attempts < $max) {
+                sleep($delay);
+                $delay *= 2;
+            }
+        }
+        return $result;
+    }
+
     public function __construct(WSS_Google_Sheets $sheets, WSS_Logger $logger, array $settings, array $context = [])
     {
         $this->sheets   = $sheets;
@@ -335,10 +358,9 @@ class WSS_Sync_Engine
             ];
         }
 
-        // Batch-update IDs for newly created products + timestamps.
         $sheet_updates = array_merge($id_updates, $timestamp_updates);
         if (!empty($sheet_updates)) {
-            $result = $this->sheets->batch_update($this->sheet_id, $sheet_updates);
+            $result = $this->batch_update_with_retry($this->sheet_id, $sheet_updates);
             if (is_wp_error($result)) {
                 $this->logger->log('sheet_to_woo', 0, 0, 'error', 'Sheet batch update failed: ' . $result->get_error_message());
                 $stats['errors']++;
@@ -486,9 +508,8 @@ class WSS_Sync_Engine
             }
         }
 
-        // Send batch update for existing rows.
         if (!empty($batch_updates)) {
-            $result = $this->sheets->batch_update($this->sheet_id, $batch_updates);
+            $result = $this->batch_update_with_retry($this->sheet_id, $batch_updates);
             if (is_wp_error($result)) {
                 $this->logger->log('woo_to_sheet', 0, 0, 'error', 'Batch update failed: ' . $result->get_error_message());
                 $stats['errors']++;

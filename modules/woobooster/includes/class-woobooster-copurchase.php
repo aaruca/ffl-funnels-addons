@@ -211,16 +211,24 @@ class WooBooster_Copurchase
         $default = array('wc-completed', 'wc-processing');
         $statuses = apply_filters('woobooster_copurchase_order_statuses', $default);
 
+        $allowed = function_exists('wc_get_order_statuses') ? array_keys(wc_get_order_statuses()) : $default;
+        $allowed_map = array();
+        foreach ($allowed as $slug) {
+            $allowed_map[$slug] = true;
+        }
+
         $clean = array();
         foreach ((array) $statuses as $status) {
-            $status = (string) $status;
+            $status = sanitize_key((string) $status);
             if ('' === $status) {
                 continue;
             }
             if (0 !== strpos($status, 'wc-')) {
                 $status = 'wc-' . ltrim($status, '-');
             }
-            $clean[] = $status;
+            if (isset($allowed_map[$status])) {
+                $clean[] = $status;
+            }
         }
 
         if (empty($clean)) {

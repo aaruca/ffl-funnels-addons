@@ -239,26 +239,33 @@ class Tax_Address_Normalizer
      */
     public static function validate(array $normalized): bool
     {
-        return !empty($normalized['state'])
-            && preg_match('/^[A-Z]{2}$/', $normalized['state'])
-            && (!empty($normalized['street']) || !empty($normalized['zip']));
+        $state = $normalized['state'] ?? '';
+        if (empty($state) || !preg_match('/^[A-Z]{2}$/', $state) || !isset(array_flip(self::get_state_names())[$state])) {
+            return false;
+        }
+
+        if (empty($normalized['street']) || empty($normalized['zip'])) {
+            return false;
+        }
+
+        return true;
     }
 
-    /**
-     * Get validation errors.
-     */
     public static function get_errors(array $normalized): array
     {
         $errors = [];
 
-        if (empty($normalized['state']) || !preg_match('/^[A-Z]{2}$/', $normalized['state'] ?? '')) {
+        $state = $normalized['state'] ?? '';
+        if (empty($state) || !preg_match('/^[A-Z]{2}$/', $state)) {
             $errors[] = 'Invalid or missing state code.';
+        } elseif (!isset(array_flip(self::get_state_names())[$state])) {
+            $errors[] = 'Unknown US state code.';
         }
         if (empty($normalized['street'])) {
             $errors[] = 'Street address is missing.';
         }
         if (empty($normalized['zip'])) {
-            $errors[] = 'ZIP code is missing (recommended for accuracy).';
+            $errors[] = 'ZIP code is missing.';
         }
         if (empty($normalized['city'])) {
             $errors[] = 'City is missing (recommended for accuracy).';

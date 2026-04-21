@@ -97,7 +97,8 @@ class WSS_Google_OAuth
     public function get_auth_url(): string
     {
         $state = wp_generate_password(32, false);
-        set_transient('wss_oauth_state', $state, 1800); // 30 minutes
+        $user_id = get_current_user_id();
+        set_transient('wss_oauth_state_' . $user_id, $state, 1800);
 
         return self::PROXY_URL . '?' . http_build_query([
             'action'     => 'authorize',
@@ -115,9 +116,15 @@ class WSS_Google_OAuth
      */
     public function handle_proxy_callback(string $encrypted_payload, string $state)
     {
-        // Validate CSRF state.
-        $stored_state = get_transient('wss_oauth_state');
-        delete_transient('wss_oauth_state');
+        $user_id = get_current_user_id();
+        $state_key = 'wss_oauth_state_' . $user_id;
+        $stored_state = get_transient($state_key);
+        delete_transient($state_key);
+
+        if (!$stored_state) {
+            $stored_state = get_transient('wss_oauth_state');
+            delete_transient('wss_oauth_state');
+        }
 
         self::debug_log('handle_proxy_callback: state stored=' . ($stored_state ? 'yes' : 'no') . ', received=' . ($state !== '' ? 'yes' : 'no'));
         self::debug_log('handle_proxy_callback: payload length=' . strlen($encrypted_payload));

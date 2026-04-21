@@ -226,7 +226,13 @@ class FFLA_Reviews_List extends \Bricks\Element
                 echo '</div>';
             }
 
-            echo '<div class="ffla-review-card__content">' . wp_kses_post(wpautop($review->comment_content)) . '</div>';
+            $allowed_html = array(
+                'p'      => array(),
+                'br'     => array(),
+                'strong' => array(),
+                'em'     => array(),
+            );
+            echo '<div class="ffla-review-card__content">' . wp_kses(wpautop(wp_strip_all_tags($review->comment_content)), $allowed_html) . '</div>';
 
             if (!empty($media_ids)) {
                 echo '<div class="ffla-review-card__media">';

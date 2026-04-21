@@ -2,6 +2,43 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.16.1] - 2026-04-21
+
+Follow-up pass fixing the remaining LOW / MEDIUM items from the 1.16.0 audit.
+
+### WooBooster
+- **Order status whitelist:** `woobooster_copurchase_order_statuses` / `woobooster_trending_order_statuses` filters are now validated against `wc_get_order_statuses()`. Arbitrary keys are dropped instead of silently flowing into SQL `IN(...)` clauses.
+- **Bundle list bulk actions:** `process_bulk_action()` checks `current_user_can('manage_woocommerce')` before deleting or duplicating a bundle.
+- **Bundles list view:** status badges ("Starts…", "Expired") now compare against `current_time('mysql', true)` so they match the matcher's UTC behaviour.
+- **Analytics date range:** inverted `wb_from` / `wb_to` query params are swapped instead of producing empty charts.
+- **Recently viewed cookie:** `HttpOnly` flag enabled to block JS read access.
+- **`rebuild_full_bundle_index()`:** paginates bundles in chunks of 500 instead of capping at 10 000.
+- **Activator schema queries:** every `INFORMATION_SCHEMA.COLUMNS` lookup is scoped to `table_schema = DATABASE()`.
+
+### Tax Rates
+- **Normalizer:** `validate()` now requires street + ZIP **and** a canonical US state code; `get_errors()` reports unknown state codes explicitly.
+- **Cache TTL:** reducing `cache_ttl` in settings triggers an address cache flush so old entries do not survive their new (shorter) TTL.
+- **Coverage reconcile:** `reconcile_from_settings()` guarded by a 30-second transient lock to avoid two concurrent admins interleaving `coverage_rules` writes.
+
+### Product Reviews
+- **Helpful votes:** per-comment daily cap (`ffla_helpful_daily_cap`, default 200) on top of the existing per-IP throttle, so distributed voters can't infinitely inflate counts.
+- **Reviews list element:** review body is rendered through a restricted `wp_kses` allowlist (`p`, `br`, `strong`, `em`) after `wp_strip_all_tags`; Bricks-level stored XSS through approved reviews is closed even if comment moderation is relaxed.
+
+### Woo Sheets Sync
+- **REST `/batch/upsert`:** raw body capped at 2 MB on top of the 200-item limit, returning 413 when exceeded.
+- **OAuth state:** transient is keyed by `user_id` (`wss_oauth_state_{id}`) so concurrent admins don't overwrite each other's CSRF state.
+- **Admin logger:** redacts `state`, `code`, `payload`, `token`, `wss_proxy_payload` values before writing to log.
+- **Sync engine:** `batch_update()` calls go through a retry wrapper with exponential backoff for Sheets 429 / 5xx responses.
+
+### Wishlist
+- **AJAX:** per-IP + per-user rate limit (60/min) and max 200 items per list (`alg_wishlist_rate_limit`, `alg_wishlist_max_items` filters).
+
+### Updater
+- **403 handling:** distinguish "rate limit" (`X-RateLimit-Remaining: 0`) from "forbidden" (bad token / no access) and surface a different admin notice for each.
+
+### Uninstall
+- Per-user OAuth state transients (`_transient_wss_oauth_state_*`) cleaned up.
+
 ## [1.16.0] - 2026-04-21
 
 ### Security

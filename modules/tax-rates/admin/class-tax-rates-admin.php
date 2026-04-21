@@ -206,6 +206,12 @@ class Tax_Rates_Admin
             $flush_reasons[] = 'enabled_states_changed';
         }
 
+        $prev_ttl = (int) ($previous_settings['cache_ttl'] ?? 86400);
+        $new_ttl  = (int) $settings['cache_ttl'];
+        if ($new_ttl < $prev_ttl) {
+            $flush_reasons[] = 'cache_ttl_reduced';
+        }
+
         if (!empty($flush_reasons) && class_exists('Tax_Resolver_DB')) {
             $cache_flushed = Tax_Resolver_DB::flush_address_cache();
         }

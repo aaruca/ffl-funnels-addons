@@ -85,6 +85,12 @@ class WooBooster_Analytics
             $to = gmdate('Y-m-d');
         }
 
+        if (strtotime($from) > strtotime($to)) {
+            $tmp = $from;
+            $from = $to;
+            $to = $tmp;
+        }
+
         return array('from' => $from, 'to' => $to);
     }
 

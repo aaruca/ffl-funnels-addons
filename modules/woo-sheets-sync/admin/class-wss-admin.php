@@ -362,6 +362,8 @@ class WSS_Admin
             return;
         }
 
+        $message = preg_replace('/(state|code|payload|token|wss_proxy_payload)=[^\s&]+/i', '$1=***', $message);
+
         $line = '[WSS OAuth ' . gmdate('Y-m-d H:i:s') . '] ' . $message;
         error_log($line);
 

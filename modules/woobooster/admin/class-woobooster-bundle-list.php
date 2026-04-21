@@ -207,6 +207,10 @@ class WooBooster_Bundle_List extends WP_List_Table
 
     private function process_bulk_action()
     {
+        if (!current_user_can('manage_woocommerce')) {
+            return;
+        }
+
         if ('delete' === $this->current_action()) {
             // phpcs:ignore WordPress.Security.NonceVerification.Recommended
             $bundle_id = isset($_GET['bundle_id']) ? absint($_GET['bundle_id']) : 0;

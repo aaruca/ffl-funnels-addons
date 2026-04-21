@@ -61,7 +61,6 @@ class WooBooster_Frontend
         array_unshift($viewed, $product_id);
         $viewed = array_slice($viewed, 0, $max_items);
 
-        // Set cookie for 30 days, site-wide.
         setcookie(
             'woobooster_recently_viewed',
             implode(',', $viewed),
@@ -69,7 +68,7 @@ class WooBooster_Frontend
             COOKIEPATH,
             COOKIE_DOMAIN,
             is_ssl(),
-            false // Not HttpOnly — needs to be readable by JS if needed.
+            true
         );
     }
 

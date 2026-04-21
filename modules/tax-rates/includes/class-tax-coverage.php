@@ -262,6 +262,13 @@ class Tax_Coverage
      */
     public static function reconcile_from_settings(?array $settings = null): array
     {
+        $lock_key = 'ffla_tax_reconcile_lock';
+        if (false === get_transient($lock_key)) {
+            set_transient($lock_key, 1, 30);
+        } else {
+            return ['updated' => 0, 'api_states' => 0, 'sheet_states' => 0, 'skipped' => 'locked'];
+        }
+
         $settings = is_array($settings) ? $settings : (array) get_option(self::SETTINGS_KEY, []);
 
         $api_key          = trim((string) ($settings['usgeocoder_auth_key'] ?? ''));
@@ -316,6 +323,8 @@ class Tax_Coverage
             self::update_state($state_code, $status, $resolver, $note);
             $summary['updated']++;
         }
+
+        delete_transient($lock_key);
 
         return $summary;
     }

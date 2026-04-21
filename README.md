@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.16.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.16.1-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -193,6 +193,10 @@ define('WSS_OAUTH_DEBUG_FILE', true);  // also write wp-content/uploads/wss-logs
 ```
 
 ## Changelog
+
+### v1.16.1
+
+Follow-up pass from the 1.16.0 audit: status filter whitelist + bulk-action cap check in WooBooster, paginated bundle index rebuild, stricter `INFORMATION_SCHEMA` scoping, analytics range swap, `HttpOnly` recently-viewed cookie, Tax Normalizer requires a canonical US state + ZIP + street, address cache flushes on TTL reduction, coverage reconcile now has a 30 s lock, Reviews list renders the body through a restricted kses allowlist and helpful votes get a per-comment daily cap, Woo Sheets Sync REST batch body capped at 2 MB, OAuth state keyed per user, admin logger redacts sensitive keys, sheet `batch_update` retries with exponential backoff, Wishlist AJAX has a per-IP rate limit + max 200 items, updater differentiates 403 rate-limit vs forbidden.
 
 ### v1.16.0
 

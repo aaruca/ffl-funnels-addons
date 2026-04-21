@@ -37,6 +37,8 @@ class Product_Reviews_Ajax
 
         $ip = isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : 'unknown';
         $rate_key = 'ffla_helpful_' . md5($comment_id . '|' . $ip);
+        $daily_key = 'ffla_helpful_daily_' . $comment_id;
+
         if (get_transient($rate_key)) {
             $current = (int) get_comment_meta($comment_id, 'ffla_helpful_yes', true);
             wp_send_json_success([
@@ -46,10 +48,22 @@ class Product_Reviews_Ajax
             ]);
         }
 
+        $daily = (int) get_transient($daily_key);
+        $daily_cap = (int) apply_filters('ffla_helpful_daily_cap', 200);
+        if ($daily >= $daily_cap) {
+            $current = (int) get_comment_meta($comment_id, 'ffla_helpful_yes', true);
+            wp_send_json_success([
+                'count'      => $current,
+                'throttled'  => true,
+                'message'    => __('Daily vote limit reached for this review.', 'ffl-funnels-addons'),
+            ]);
+        }
+
         $current = (int) get_comment_meta($comment_id, 'ffla_helpful_yes', true);
         $new     = $current + 1;
         update_comment_meta($comment_id, 'ffla_helpful_yes', $new);
         set_transient($rate_key, 1, HOUR_IN_SECONDS * 12);
+        set_transient($daily_key, $daily + 1, DAY_IN_SECONDS);
 
         wp_send_json_success([
             'count'     => $new,
