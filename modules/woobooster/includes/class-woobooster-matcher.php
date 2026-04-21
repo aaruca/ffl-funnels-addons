@@ -929,69 +929,66 @@ class WooBooster_Matcher
      */
     protected function execute_smart_query($product_id, $action, $limit, $exclude_outofstock, $terms)
     {
-        $candidate_ids = array();
-
         switch ($action->action_source) {
             case 'copurchase':
                 $stored = get_post_meta($product_id, '_woobooster_copurchased', true);
-                if (!empty($stored) && is_array($stored)) {
-                    $candidate_ids = array_map('absint', $stored);
+                $ranked = (!empty($stored) && is_array($stored)) ? array_map('absint', $stored) : array();
+                $valid  = $this->validate_candidates($ranked, $limit, $exclude_outofstock, array($product_id));
+                if (count($valid) < $limit) {
+                    $valid = $this->fallback_fill($product_id, $valid, $limit, $exclude_outofstock, $terms);
                 }
-                break;
+                return $valid;
 
             case 'trending':
-                // Get trending products from the same category.
-                $cat_ids = wp_get_post_terms($product_id, 'product_cat', array('fields' => 'ids'));
-                if (!is_wp_error($cat_ids) && !empty($cat_ids)) {
-                    foreach ($cat_ids as $cat_id) {
-                        $trending = get_transient('wb_trending_cat_' . $cat_id);
-                        if (!empty($trending) && is_array($trending)) {
-                            $candidate_ids = array_merge($candidate_ids, $trending);
-                        }
-                    }
+                $ranked = $this->build_trending_candidates($product_id);
+                $valid  = $this->validate_candidates($ranked, $limit, $exclude_outofstock, array($product_id));
+                if (count($valid) < $limit) {
+                    $valid = $this->fallback_fill($product_id, $valid, $limit, $exclude_outofstock, $terms);
                 }
-                // Fallback to global trending.
-                if (empty($candidate_ids)) {
-                    $global = get_transient('wb_trending_global');
-                    if (!empty($global) && is_array($global)) {
-                        $candidate_ids = $global;
-                    }
-                }
-                $candidate_ids = array_unique(array_map('absint', $candidate_ids));
-                break;
+                return $valid;
 
             case 'recently_viewed':
+                $ranked = array();
                 if (isset($_COOKIE['woobooster_recently_viewed'])) {
                     $raw = sanitize_text_field(wp_unslash($_COOKIE['woobooster_recently_viewed']));
-                    $ids = array_filter(array_map('absint', explode(',', $raw)));
-                    $candidate_ids = array_values($ids);
+                    $ranked = array_values(array_filter(array_map('absint', explode(',', $raw))));
                 }
-                break;
+                $valid = $this->validate_candidates($ranked, $limit, $exclude_outofstock, array($product_id));
+                if (count($valid) < $limit) {
+                    $valid = $this->fallback_fill($product_id, $valid, $limit, $exclude_outofstock, $terms);
+                }
+                return $valid;
 
             case 'similar':
                 return $this->execute_similar_query($product_id, $limit, $exclude_outofstock, $terms);
         }
 
-        if (empty($candidate_ids)) {
+        return array();
+    }
+
+    /**
+     * Validate a ranked list of product IDs: keep only published, optionally in-stock,
+     * preserve the incoming order, and cap to $limit.
+     */
+    protected function validate_candidates(array $ranked, int $limit, bool $exclude_outofstock, array $exclude_ids = array()): array
+    {
+        if (empty($ranked)) {
             return array();
         }
 
-        // Remove current product.
-        $candidate_ids = array_diff($candidate_ids, array($product_id));
-
-        if (empty($candidate_ids)) {
+        $ranked = array_values(array_diff(array_map('absint', $ranked), array_map('absint', $exclude_ids)));
+        if (empty($ranked)) {
             return array();
         }
 
-        // Validate candidates: published products, optionally in stock.
         $query_args = array(
-            'post_type' => 'product',
-            'post_status' => 'publish',
-            'posts_per_page' => $limit,
-            'post__in' => array_slice($candidate_ids, 0, $limit * 2),
-            'orderby' => 'post__in',
-            'fields' => 'ids',
-            'no_found_rows' => true,
+            'post_type'              => 'product',
+            'post_status'            => 'publish',
+            'posts_per_page'         => count($ranked),
+            'post__in'               => $ranked,
+            'orderby'                => 'post__in',
+            'fields'                 => 'ids',
+            'no_found_rows'          => true,
             'update_post_meta_cache' => false,
             'update_post_term_cache' => false,
         );
@@ -999,41 +996,30 @@ class WooBooster_Matcher
         if ($exclude_outofstock) {
             $query_args['meta_query'] = array(
                 array(
-                    'key' => '_stock_status',
-                    'value' => 'instock',
+                    'key'     => '_stock_status',
+                    'value'   => 'instock',
                     'compare' => '=',
                 ),
             );
         }
 
-        $query = new WP_Query($query_args);
-        return $query->posts;
+        $valid = (new WP_Query($query_args))->posts;
+
+        return array_slice($valid, 0, $limit);
     }
 
     /**
-     * Execute a "similar products" query based on price range + category + bestselling.
-     *
-     * @param int   $product_id        Current product ID.
-     * @param int   $limit             Max products.
-     * @param bool  $exclude_outofstock Exclude out of stock.
-     * @param array $terms             Product terms.
-     * @return array Array of product IDs.
+     * Progressive fallback: fill the recommendation slot with category bestsellers,
+     * then global trending, then the most recent products.
      */
-    protected function execute_similar_query($product_id, $limit, $exclude_outofstock, $terms)
+    protected function fallback_fill(int $product_id, array $existing, int $limit, bool $exclude_outofstock, array $terms): array
     {
-        // Check transient cache first.
-        $cache_key = 'wb_similar_' . $product_id . '_' . $limit;
-        $cached = get_transient($cache_key);
-        if (false !== $cached) {
-            return $cached;
+        $need = $limit - count($existing);
+        if ($need <= 0) {
+            return $existing;
         }
 
-        $price = (float) get_post_meta($product_id, '_price', true);
-        $margin = 0.25;
-        $min_price = $price * (1 - $margin);
-        $max_price = $price * (1 + $margin);
-
-        // Get product categories.
+        $exclude = array_merge(array($product_id), array_map('absint', $existing));
         $cat_slugs = array();
         foreach ($terms as $term) {
             if ('product_cat' === $term['taxonomy']) {
@@ -1041,53 +1027,350 @@ class WooBooster_Matcher
             }
         }
 
-        $query_args = array(
-            'post_type' => 'product',
-            'post_status' => 'publish',
-            'posts_per_page' => $limit,
-            'post__not_in' => array($product_id),
-            'fields' => 'ids',
-            'no_found_rows' => true,
-            'update_post_meta_cache' => false,
-            'update_post_term_cache' => false,
-            'meta_key' => 'total_sales',
-            'orderby' => 'meta_value_num',
-            'order' => 'DESC',
-            'meta_query' => array(
-                array(
-                    'key' => '_price',
-                    'value' => array($min_price, $max_price),
-                    'compare' => 'BETWEEN',
-                    'type' => 'NUMERIC',
-                ),
-            ),
-        );
-
         if (!empty($cat_slugs)) {
-            $query_args['tax_query'] = array(
-                array(
-                    'taxonomy' => 'product_cat',
-                    'field' => 'slug',
-                    'terms' => $cat_slugs,
+            $bestsellers = new WP_Query(array(
+                'post_type'              => 'product',
+                'post_status'            => 'publish',
+                'posts_per_page'         => $need * 2,
+                'post__not_in'           => $exclude,
+                'fields'                 => 'ids',
+                'no_found_rows'          => true,
+                'update_post_meta_cache' => false,
+                'update_post_term_cache' => false,
+                'meta_key'               => 'total_sales',
+                'orderby'                => 'meta_value_num',
+                'order'                  => 'DESC',
+                'tax_query'              => array(
+                    array(
+                        'taxonomy' => 'product_cat',
+                        'field'    => 'slug',
+                        'terms'    => $cat_slugs,
+                    ),
                 ),
-            );
+                'meta_query'             => $exclude_outofstock
+                    ? array(array('key' => '_stock_status', 'value' => 'instock', 'compare' => '='))
+                    : array(),
+            ));
+            $existing = array_merge($existing, array_values(array_diff($bestsellers->posts, $exclude)));
+            $existing = array_values(array_unique(array_map('absint', $existing)));
+            $need = $limit - count($existing);
         }
 
-        if ($exclude_outofstock) {
-            $query_args['meta_query'][] = array(
-                'key' => '_stock_status',
-                'value' => 'instock',
-                'compare' => '=',
-            );
+        if ($need > 0) {
+            $global = get_transient('wb_trending_global');
+            if (!empty($global) && is_array($global)) {
+                $exclude = array_merge(array($product_id), $existing);
+                $extra = array_values(array_diff(array_map('absint', $global), $exclude));
+                $existing = array_merge($existing, $this->validate_candidates($extra, $need, $exclude_outofstock, $exclude));
+                $need = $limit - count($existing);
+            }
         }
 
-        $query = new WP_Query($query_args);
-        $result = $query->posts;
+        if ($need > 0) {
+            $exclude = array_merge(array($product_id), $existing);
+            $recent = new WP_Query(array(
+                'post_type'              => 'product',
+                'post_status'            => 'publish',
+                'posts_per_page'         => $need,
+                'post__not_in'           => $exclude,
+                'fields'                 => 'ids',
+                'orderby'                => 'date',
+                'order'                  => 'DESC',
+                'no_found_rows'          => true,
+                'update_post_meta_cache' => false,
+                'update_post_term_cache' => false,
+                'meta_query'             => $exclude_outofstock
+                    ? array(array('key' => '_stock_status', 'value' => 'instock', 'compare' => '='))
+                    : array(),
+            ));
+            $existing = array_merge($existing, $recent->posts);
+        }
 
-        // Cache for 24 hours.
-        set_transient($cache_key, $result, DAY_IN_SECONDS);
+        return array_slice(array_values(array_unique(array_map('absint', $existing))), 0, $limit);
+    }
 
-        return $result;
+    /**
+     * Merge category-level trending transients with a rank-aware score so products
+     * that rank high in more than one category bubble up.
+     */
+    protected function build_trending_candidates(int $product_id): array
+    {
+        $cat_ids = wp_get_object_terms($product_id, 'product_cat', array('fields' => 'ids'));
+        if (is_wp_error($cat_ids)) {
+            $cat_ids = array();
+        }
+
+        $score = array();
+        foreach ($cat_ids as $cat_id) {
+            $list = get_transient('wb_trending_cat_' . (int) $cat_id);
+            if (empty($list) || !is_array($list)) {
+                continue;
+            }
+            $size = count($list);
+            foreach ($list as $i => $pid) {
+                $pid = absint($pid);
+                if (!$pid) {
+                    continue;
+                }
+                $rank_score = max(0, ($size - $i) / $size);
+                $score[$pid] = ($score[$pid] ?? 0) + $rank_score;
+            }
+        }
+
+        if (!empty($score)) {
+            arsort($score);
+            return array_map('intval', array_keys($score));
+        }
+
+        $global = get_transient('wb_trending_global');
+        return (!empty($global) && is_array($global)) ? array_map('absint', $global) : array();
+    }
+
+    /**
+     * "Similar products" via a weighted multi-signal score.
+     *
+     * Pool: products that share a brand, key attribute, category or tag with the
+     * source product (capped to 500 candidates). Each candidate gets a score from
+     * brand/attribute/category/tag overlap, price proximity, recent popularity
+     * (wc_order_product_lookup over the configured Smart window), publish date
+     * recency and shipping class. The top $limit are returned; if fewer, we fall
+     * back to category bestsellers, then global trending, then recent products.
+     *
+     * Weights can be overridden via the `woobooster_similar_weights` filter.
+     */
+    protected function execute_similar_query($product_id, $limit, $exclude_outofstock, $terms)
+    {
+        global $wpdb;
+
+        $cache_args_hash = md5(wp_json_encode(array((int) $limit, (bool) $exclude_outofstock)));
+        $cache_key = 'wb_similar_v' . self::cache_version() . '_' . (int) $product_id . '_' . $cache_args_hash;
+        $cached = wp_cache_get($cache_key, self::CACHE_GROUP);
+        if (false !== $cached) {
+            return $cached;
+        }
+
+        $weights = apply_filters('woobooster_similar_weights', array(
+            'brand'        => 5.0,
+            'key_attr'     => 3.0,
+            'category'     => 2.0,
+            'tag'          => 1.0,
+            'price_max'    => 2.0,
+            'popularity'   => 1.0,
+            'recency'      => 0.5,
+            'shipping'     => 1.0,
+            'oos_penalty'  => -1.0,
+        ));
+
+        $brand_taxonomies = apply_filters('woobooster_similar_brand_taxonomies', array('product_brand', 'pa_brand', 'pa_manufacturer'));
+        $key_attr_taxonomies = apply_filters('woobooster_similar_key_attributes', array('pa_caliber-gauge', 'pa_manufacturer', 'pa_platform'));
+
+        $source_terms = array(
+            'brand'    => array(),
+            'key_attr' => array(),
+            'category' => array(),
+            'tag'      => array(),
+        );
+        foreach ($terms as $t) {
+            $tax = $t['taxonomy'];
+            $slug = $t['slug'];
+            if (in_array($tax, $brand_taxonomies, true)) {
+                $source_terms['brand'][$tax . ':' . $slug] = true;
+            }
+            if (in_array($tax, $key_attr_taxonomies, true)) {
+                $source_terms['key_attr'][$tax . ':' . $slug] = true;
+            }
+            if ('product_cat' === $tax) {
+                $source_terms['category'][$slug] = true;
+            }
+            if ('product_tag' === $tax) {
+                $source_terms['tag'][$slug] = true;
+            }
+        }
+
+        $tt_ids = array();
+        foreach ($terms as $t) {
+            if (isset($t['term_id'])) {
+                $term = get_term((int) $t['term_id'], $t['taxonomy']);
+                if ($term && !is_wp_error($term) && isset($term->term_taxonomy_id)) {
+                    $tt_ids[] = (int) $term->term_taxonomy_id;
+                }
+            }
+        }
+        $tt_ids = array_values(array_unique(array_filter($tt_ids)));
+
+        if (empty($tt_ids)) {
+            $fallback = $this->fallback_fill($product_id, array(), $limit, $exclude_outofstock, $terms);
+            wp_cache_set($cache_key, $fallback, self::CACHE_GROUP, DAY_IN_SECONDS);
+            return $fallback;
+        }
+
+        $tt_placeholders = implode(', ', array_fill(0, count($tt_ids), '%d'));
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $candidate_ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT p.ID
+             FROM {$wpdb->posts} p
+             INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+             WHERE p.post_type = 'product' AND p.post_status = 'publish' AND p.ID != %d
+             AND tr.term_taxonomy_id IN ({$tt_placeholders})
+             GROUP BY p.ID
+             ORDER BY COUNT(*) DESC
+             LIMIT 500",
+            array_merge(array($product_id), $tt_ids)
+        ));
+
+        $candidate_ids = array_values(array_unique(array_map('absint', (array) $candidate_ids)));
+        if (empty($candidate_ids)) {
+            $fallback = $this->fallback_fill($product_id, array(), $limit, $exclude_outofstock, $terms);
+            wp_cache_set($cache_key, $fallback, self::CACHE_GROUP, DAY_IN_SECONDS);
+            return $fallback;
+        }
+
+        $source_price = (float) get_post_meta($product_id, '_price', true);
+        $sigma = $source_price > 0 ? $source_price * 0.25 : 1.0;
+        $source_shipping = (string) get_post_meta($product_id, '_shipping_class', true);
+
+        $pop_map = array();
+        $smart_days = absint(woobooster_get_option('smart_days', 90));
+        if ($smart_days < 1) {
+            $smart_days = 90;
+        }
+        $lookup_table = $wpdb->prefix . 'wc_order_product_lookup';
+        $has_lookup   = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $lookup_table)) === $lookup_table;
+        if ($has_lookup) {
+            $cutoff = gmdate('Y-m-d H:i:s', strtotime('-' . $smart_days . ' days'));
+            $cand_placeholders = implode(', ', array_fill(0, count($candidate_ids), '%d'));
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $rows = $wpdb->get_results($wpdb->prepare(
+                "SELECT product_id, SUM(product_qty) AS qty
+                 FROM {$lookup_table}
+                 WHERE date_created >= %s AND product_id IN ({$cand_placeholders})
+                 GROUP BY product_id",
+                array_merge(array($cutoff), $candidate_ids)
+            ));
+            foreach ($rows as $row) {
+                $pop_map[(int) $row->product_id] = (int) $row->qty;
+            }
+        }
+        $max_pop = $pop_map ? max($pop_map) : 0;
+
+        $meta_rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT post_id, meta_key, meta_value
+             FROM {$wpdb->postmeta}
+             WHERE post_id IN (" . implode(', ', array_fill(0, count($candidate_ids), '%d')) . ")
+             AND meta_key IN ('_price', '_stock_status', '_shipping_class')",
+            $candidate_ids
+        ));
+        $meta_map = array();
+        foreach ($meta_rows as $row) {
+            $meta_map[(int) $row->post_id][$row->meta_key] = $row->meta_value;
+        }
+
+        $posts_rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT ID, post_date_gmt
+             FROM {$wpdb->posts}
+             WHERE ID IN (" . implode(', ', array_fill(0, count($candidate_ids), '%d')) . ")",
+            $candidate_ids
+        ));
+        $date_map = array();
+        foreach ($posts_rows as $row) {
+            $date_map[(int) $row->ID] = strtotime($row->post_date_gmt . ' UTC');
+        }
+
+        $cand_terms = array();
+        $ttp = implode(', ', array_fill(0, count($candidate_ids), '%d'));
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $term_rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT tr.object_id, tt.taxonomy, t.slug
+             FROM {$wpdb->term_relationships} tr
+             JOIN {$wpdb->term_taxonomy} tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
+             JOIN {$wpdb->terms} t ON tt.term_id = t.term_id
+             WHERE tr.object_id IN ({$ttp})",
+            $candidate_ids
+        ));
+        foreach ($term_rows as $row) {
+            $cand_terms[(int) $row->object_id][$row->taxonomy][] = $row->slug;
+        }
+
+        $now = time();
+        $scored = array();
+        foreach ($candidate_ids as $cid) {
+            $score = 0.0;
+            $cterms = $cand_terms[$cid] ?? array();
+
+            foreach ($brand_taxonomies as $tax) {
+                foreach ($cterms[$tax] ?? array() as $slug) {
+                    if (isset($source_terms['brand'][$tax . ':' . $slug])) {
+                        $score += $weights['brand'];
+                        break 2;
+                    }
+                }
+            }
+
+            $key_hits = 0;
+            foreach ($key_attr_taxonomies as $tax) {
+                foreach ($cterms[$tax] ?? array() as $slug) {
+                    if (isset($source_terms['key_attr'][$tax . ':' . $slug])) {
+                        $key_hits++;
+                        break;
+                    }
+                }
+            }
+            $score += min(2, $key_hits) * $weights['key_attr'];
+
+            $cat_hits = 0;
+            foreach ($cterms['product_cat'] ?? array() as $slug) {
+                if (isset($source_terms['category'][$slug])) {
+                    $cat_hits++;
+                }
+            }
+            $score += min(3, $cat_hits) * $weights['category'];
+
+            $tag_hits = 0;
+            foreach ($cterms['product_tag'] ?? array() as $slug) {
+                if (isset($source_terms['tag'][$slug])) {
+                    $tag_hits++;
+                }
+            }
+            $score += min(3, $tag_hits) * $weights['tag'];
+
+            $cprice = (float) ($meta_map[$cid]['_price'] ?? 0);
+            if ($source_price > 0 && $cprice > 0) {
+                $diff = $cprice - $source_price;
+                $score += $weights['price_max'] * exp(-($diff * $diff) / (2 * $sigma * $sigma));
+            }
+
+            if ($max_pop > 0 && !empty($pop_map[$cid])) {
+                $score += $weights['popularity'] * (log1p($pop_map[$cid]) / log1p($max_pop));
+            }
+
+            if (!empty($date_map[$cid])) {
+                $days = max(0, ($now - $date_map[$cid]) / DAY_IN_SECONDS);
+                $score += $weights['recency'] * exp(-$days / 365);
+            }
+
+            $cship = (string) ($meta_map[$cid]['_shipping_class'] ?? '');
+            if ($source_shipping !== '' && $source_shipping === $cship) {
+                $score += $weights['shipping'];
+            }
+
+            if (!$exclude_outofstock && ($meta_map[$cid]['_stock_status'] ?? 'instock') !== 'instock') {
+                $score += $weights['oos_penalty'];
+            }
+
+            $scored[$cid] = $score;
+        }
+
+        arsort($scored);
+        $ranked = array_map('intval', array_keys($scored));
+
+        $valid = $this->validate_candidates($ranked, $limit, $exclude_outofstock, array($product_id));
+
+        if (count($valid) < $limit) {
+            $valid = $this->fallback_fill($product_id, $valid, $limit, $exclude_outofstock, $terms);
+        }
+
+        wp_cache_set($cache_key, $valid, self::CACHE_GROUP, DAY_IN_SECONDS);
+        return $valid;
     }
 
     /**

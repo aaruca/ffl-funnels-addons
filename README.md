@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.16.1-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.17.0-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -193,6 +193,15 @@ define('WSS_OAUTH_DEBUG_FILE', true);  // also write wp-content/uploads/wss-logs
 ```
 
 ## Changelog
+
+### v1.17.0
+
+Full rewrite of Smart Recommendations so results are relevant and no slot ever renders empty.
+
+*   **`similar` products** — new weighted multi-signal scoring: brand, key attributes (`pa_caliber-gauge` / `pa_manufacturer` / `pa_platform` by default), shared categories, shared tags, price proximity (Gaussian), recent popularity from `wc_order_product_lookup`, publish-date recency, shipping class match, and an OOS penalty. Candidate pool capped at 500, all signals loaded in ~4 batched queries (no N+1). Tunable via `woobooster_similar_weights`, `woobooster_similar_brand_taxonomies`, `woobooster_similar_key_attributes`.
+*   **`trending`** — category-level trending transients are merged with a rank-aware score so products that rank high in more than one category bubble up.
+*   **`copurchase`** / **`recently_viewed`** — every strategy now runs through a shared `fallback_fill()` cascade (same-category bestsellers → global trending → recent products) so empty slots only happen when the store is literally empty.
+*   **Candidate validation** — shared `validate_candidates()` helper preserves rank, filters out unpublished / OOS, and caps to the limit.
 
 ### v1.16.1
 

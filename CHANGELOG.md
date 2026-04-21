@@ -2,6 +2,32 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.17.0] - 2026-04-21
+
+### WooBooster — Smart Recommendations rewrite
+
+Full rework of the four Smart strategies (`similar`, `copurchase`, `trending`, `recently_viewed`) so they produce better-ranked results and never return an empty slot when the store has eligible products.
+
+**Shared helpers in `WooBooster_Matcher`:**
+- `validate_candidates($ranked, $limit, $exclude_outofstock, $exclude_ids)` — filters a ranked id list to published (and optionally in-stock) products while preserving order.
+- `fallback_fill($product_id, $existing, $limit, $exclude_outofstock, $terms)` — progressive fallback cascade: same-category bestsellers → global trending → most recent products. Every Smart strategy now runs through it if the primary source returns fewer than `limit` products.
+
+**`similar`** — weighted multi-signal scoring instead of the old `BETWEEN price ±25% AND category AND orderby total_sales`:
+- Candidate pool built from a single `SELECT ... GROUP BY object_id` over `wp_term_relationships`, capped at 500.
+- Each candidate scored with: **brand** (`product_brand` / `pa_brand` / `pa_manufacturer`, +5), **key attributes** (`pa_caliber-gauge` / `pa_manufacturer` / `pa_platform`, +3 × up to 2), **shared categories** (+2 × up to 3), **shared tags** (+1 × up to 3), **price proximity** (Gaussian, σ = 25% of source price, 0–2), **recent popularity** via `wc_order_product_lookup` over the configured Smart window (0–1), **publish-date recency** (exp-decay, half-life 365 d, 0–0.5), **same shipping class** (+1), **OOS penalty** (−1 when OOS is not excluded).
+- Everything filterable: `woobooster_similar_weights`, `woobooster_similar_brand_taxonomies`, `woobooster_similar_key_attributes`.
+- All candidate data (terms, price, stock, shipping class, publish date, popularity) is loaded in ~4 batched queries — no N+1 even on 500-candidate pools.
+- Cache key now includes `$exclude_outofstock` and bumps with `woobooster_cache_version`.
+
+**`copurchase`** — reads the same `_woobooster_copurchased` meta, but after `validate_candidates()` drops unpublished / OOS entries it calls `fallback_fill()` if fewer than `limit` remain (previously could silently return `<limit` or empty).
+
+**`trending`** — rank-weighted merge across categories:
+- Uses `wp_get_object_terms()` (request-cached) instead of `wp_get_post_terms()`.
+- Aggregates `wb_trending_cat_<id>` transients with a per-category `(size − index) / size` score so products ranking high in more than one category bubble up.
+- Falls back to `wb_trending_global`, then to `fallback_fill()` when the merged result is smaller than `limit`.
+
+**`recently_viewed`** — cookie-derived list now also goes through `validate_candidates()` + `fallback_fill()`; bots and first-time visitors get a sensible recommendation instead of an empty slot.
+
 ## [1.16.1] - 2026-04-21
 
 Follow-up pass fixing the remaining LOW / MEDIUM items from the 1.16.0 audit.
