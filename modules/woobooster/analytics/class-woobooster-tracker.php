@@ -15,12 +15,9 @@ if (!defined('ABSPATH')) {
 class WooBooster_Tracker
 {
 
-    /**
-     * Accumulated recommendations per page load: [ [rule_id => int, product_ids => int[]], ... ]
-     *
-     * @var array
-     */
     private static $recommendations = array();
+
+    const SESSION_KEY = 'woobooster_recommendations';
 
     /**
      * Option key for the add-to-cart counter.
@@ -68,10 +65,26 @@ class WooBooster_Tracker
             return;
         }
 
+        $pids = array_map('absint', $product_ids);
+
         self::$recommendations[] = array(
             'rule_id'     => $rule_id,
-            'product_ids' => array_map('absint', $product_ids),
+            'product_ids' => $pids,
         );
+
+        if (function_exists('WC') && WC()->session) {
+            $stored = WC()->session->get(self::SESSION_KEY, array());
+            if (!is_array($stored)) {
+                $stored = array();
+            }
+            foreach ($pids as $pid) {
+                $stored[(int) $pid] = $rule_id;
+            }
+            if (count($stored) > 500) {
+                $stored = array_slice($stored, -500, null, true);
+            }
+            WC()->session->set(self::SESSION_KEY, $stored);
+        }
     }
 
     /**
@@ -107,13 +120,18 @@ class WooBooster_Tracker
      */
     public function capture_cart_item_data($cart_item_data, $product_id)
     {
-        // phpcs:ignore WordPress.Security.NonceVerification.Missing
-        if (isset($_POST['wb_rule_id']) && '' !== $_POST['wb_rule_id']) {
-            // phpcs:ignore WordPress.Security.NonceVerification.Missing
-            $rule_id = (int) $_POST['wb_rule_id'];
-            if (0 !== $rule_id) {
-                $cart_item_data['_wb_source_rule'] = $rule_id;
-            }
+        if (!function_exists('WC') || !WC()->session) {
+            return $cart_item_data;
+        }
+
+        $stored = WC()->session->get(self::SESSION_KEY, array());
+        if (!is_array($stored) || !isset($stored[(int) $product_id])) {
+            return $cart_item_data;
+        }
+
+        $rule_id = (int) $stored[(int) $product_id];
+        if (0 !== $rule_id) {
+            $cart_item_data['_wb_source_rule'] = $rule_id;
         }
 
         return $cart_item_data;

@@ -511,18 +511,24 @@ class WooBooster_Bundle_Element extends \Bricks\Element
             return;
         }
 
-        // Gather product data.
-        $items = [];
+        $products = [];
+        $subtotal = 0.0;
         foreach ($bundle->resolved_items as $item_product_id) {
             $product = wc_get_product($item_product_id);
             if (!$product) {
                 continue;
             }
-            $items[] = $this->prepare_item_data($product, $bundle);
+            $products[] = $product;
+            $subtotal  += (float) $product->get_price();
         }
 
-        if (empty($items)) {
+        if (empty($products)) {
             return;
+        }
+
+        $items = [];
+        foreach ($products as $product) {
+            $items[] = $this->prepare_item_data($product, $bundle, $subtotal);
         }
 
         $heading     = $s['wb_bundle_heading'] ?? __('Frequently Bought Together', 'ffl-funnels-addons');
@@ -638,7 +644,7 @@ class WooBooster_Bundle_Element extends \Bricks\Element
 
     // ── Helpers ────────────────────────────────────────────────────────
 
-    private function prepare_item_data($product, $bundle): array
+    private function prepare_item_data($product, $bundle, float $bundle_subtotal = 0.0): array
     {
         $price = (float) $product->get_price();
         $discounted_price = $price;
@@ -649,11 +655,13 @@ class WooBooster_Bundle_Element extends \Bricks\Element
             $discounted_price = $price * (1 - $bundle->discount_value / 100);
             $has_discount = true;
             $badge_text = '-' . $bundle->discount_value . '%';
-        } elseif ($bundle->discount_type === 'fixed' && $bundle->discount_value > 0) {
-            $discounted_price = max(0, $price - $bundle->discount_value);
-            $has_discount = $discounted_price < $price;
+        } elseif ($bundle->discount_type === 'fixed' && $bundle->discount_value > 0 && $bundle_subtotal > 0) {
+            $total_discount  = min((float) $bundle->discount_value, $bundle_subtotal);
+            $share           = ($price / $bundle_subtotal) * $total_discount;
+            $discounted_price = max(0, $price - $share);
+            $has_discount    = $discounted_price < $price;
             if ($has_discount) {
-                $badge_text = '-' . strip_tags(wc_price($bundle->discount_value));
+                $badge_text = '-' . strip_tags(wc_price($bundle->discount_value)) . ' ' . esc_html__('total', 'ffl-funnels-addons');
             }
         }
 

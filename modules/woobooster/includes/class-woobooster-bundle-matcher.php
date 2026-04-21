@@ -37,8 +37,8 @@ class WooBooster_Bundle_Matcher
             return array();
         }
 
-        $cache_key = 'woobooster_bundles_' . $product_id;
-        $cached    = wp_cache_get($cache_key, 'ffl-funnels-addons');
+        $cache_key = 'woobooster_bundles_v' . (int) get_option(WooBooster_Matcher::CACHE_VERSION, 0) . '_' . $product_id;
+        $cached    = wp_cache_get($cache_key, WooBooster_Matcher::CACHE_GROUP);
         if (false !== $cached) {
             return $cached;
         }
@@ -62,7 +62,7 @@ class WooBooster_Bundle_Matcher
         }
         unset($bundle);
 
-        wp_cache_set($cache_key, $bundles, 'ffl-funnels-addons', HOUR_IN_SECONDS);
+        wp_cache_set($cache_key, $bundles, WooBooster_Matcher::CACHE_GROUP, HOUR_IN_SECONDS);
 
         return $bundles;
     }
@@ -83,8 +83,8 @@ class WooBooster_Bundle_Matcher
             return null;
         }
 
-        $cache_key = 'woobooster_bundle_' . $bundle_id . '_' . $product_id;
-        $cached    = wp_cache_get($cache_key, 'ffl-funnels-addons');
+        $cache_key = 'woobooster_bundle_v' . (int) get_option(WooBooster_Matcher::CACHE_VERSION, 0) . '_' . $bundle_id . '_' . $product_id;
+        $cached    = wp_cache_get($cache_key, WooBooster_Matcher::CACHE_GROUP);
         if (false !== $cached) {
             return $cached;
         }
@@ -106,7 +106,7 @@ class WooBooster_Bundle_Matcher
         $terms = $product_id ? $this->get_product_terms($product_id) : array();
         $bundle->resolved_items = $this->resolve_bundle_items($bundle, $product_id, $terms);
 
-        wp_cache_set($cache_key, $bundle, 'ffl-funnels-addons', HOUR_IN_SECONDS);
+        wp_cache_set($cache_key, $bundle, WooBooster_Matcher::CACHE_GROUP, HOUR_IN_SECONDS);
 
         return $bundle;
     }
@@ -177,14 +177,7 @@ class WooBooster_Bundle_Matcher
             $first_in_group    = true;
 
             foreach ($actions as $action) {
-                // Use reflection to call the private execute_query method.
-                try {
-                    $method = new ReflectionMethod('WooBooster_Matcher', 'execute_query');
-                    $method->setAccessible(true);
-                    $ids = $method->invoke($matcher, $product_id, $action, array(), $terms);
-                } catch (ReflectionException $e) {
-                    $ids = array();
-                }
+                $ids = $matcher->execute_query($product_id, $action, array(), $terms);
 
                 if ($first_in_group) {
                     $group_product_ids = $ids;
@@ -238,20 +231,30 @@ class WooBooster_Bundle_Matcher
             return array();
         }
 
+        $candidate_ids = array_map('absint', $candidate_ids);
+        $id_placeholders = implode(', ', array_fill(0, count($candidate_ids), '%d'));
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT * FROM {$bundles_table} WHERE id IN ({$id_placeholders}) AND status = 1 ORDER BY priority ASC",
+                ...$candidate_ids
+            )
+        );
+
+        $bundles_by_id = array();
+        foreach ($rows as $row) {
+            $bundles_by_id[(int) $row->id] = $row;
+        }
+
         $product_keys_set = array_flip($condition_keys);
         $matched_bundles  = array();
 
         foreach ($candidate_ids as $bundle_id) {
-            $bundle = $wpdb->get_row(
-                $wpdb->prepare(
-                    "SELECT * FROM {$bundles_table} WHERE id = %d AND status = 1",
-                    absint($bundle_id)
-                )
-            );
-
-            if (!$bundle) {
+            if (!isset($bundles_by_id[$bundle_id])) {
                 continue;
             }
+            $bundle = $bundles_by_id[$bundle_id];
 
             // Check scheduling.
             $now = current_time('mysql', true);

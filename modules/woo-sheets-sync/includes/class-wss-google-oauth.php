@@ -37,8 +37,10 @@ class WSS_Google_OAuth
         if (defined('WSS_PROXY_SECRET') && WSS_PROXY_SECRET !== '') {
             return WSS_PROXY_SECRET;
         }
-        // Fallback — rotate this value immediately and move to wp-config.php.
-        return '50420637e8a7472b5215101a107d3185fcd09cca2a8a6a827fbcb9f56288629e';
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('WSS: WSS_PROXY_SECRET is not defined; OAuth proxy is disabled.');
+        }
+        return '';
     }
 
     /**
@@ -348,7 +350,11 @@ class WSS_Google_OAuth
      */
     private static function proxy_decrypt(string $encoded): string
     {
-        $key  = hash('sha256', self::get_proxy_secret(), true);
+        $secret = self::get_proxy_secret();
+        if ('' === $secret) {
+            return '';
+        }
+        $key = hash('sha256', $secret, true);
         // Restore URL-safe base64: replace -_ back to +/ and add padding.
         $encoded = strtr($encoded, '-_', '+/');
         $pad     = strlen($encoded) % 4;

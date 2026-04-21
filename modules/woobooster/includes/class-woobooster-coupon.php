@@ -419,8 +419,21 @@ class WooBooster_Coupon
         }
 
         if ($is_auto) {
-            // Remove WooCommerce's default "Coupon code applied successfully" notice.
-            wc_clear_notices();
+            $notices = function_exists('wc_get_notices') ? wc_get_notices('success') : array();
+            if (!empty($notices)) {
+                $filtered = array();
+                foreach ($notices as $notice) {
+                    $text = is_array($notice) && isset($notice['notice']) ? $notice['notice'] : (string) $notice;
+                    if (false === stripos($text, 'coupon')) {
+                        $filtered[] = $notice;
+                    }
+                }
+                if (function_exists('wc_set_notices')) {
+                    $all = wc_get_notices();
+                    $all['success'] = $filtered;
+                    wc_set_notices($all);
+                }
+            }
 
             if (!empty($custom_message)) {
                 wc_add_notice(esc_html($custom_message), 'success');

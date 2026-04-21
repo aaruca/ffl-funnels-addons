@@ -68,7 +68,12 @@ if (in_array('ffl-checkout', $ffla_active_modules, true)) {
 }
 
 // ── Tax Rates cleanup ───────────────────────────────────────────────
-if (in_array('tax-rates', $ffla_active_modules, true)) {
+$tax_has_tables = (bool) $wpdb->get_var($wpdb->prepare(
+    'SHOW TABLES LIKE %s',
+    $wpdb->prefix . 'ffla_tax_%'
+));
+
+if (in_array('tax-rates', $ffla_active_modules, true) || $tax_has_tables || get_option('ffla_tax_resolver_settings')) {
     $tax_db_file = dirname(__FILE__) . '/modules/tax-rates/includes/class-tax-resolver-db.php';
     if (file_exists($tax_db_file)) {
         require_once $tax_db_file;
@@ -79,9 +84,11 @@ if (in_array('tax-rates', $ffla_active_modules, true)) {
 
     delete_option('ffla_tax_resolver_settings');
     delete_option('ffla_tax_resolver_db_version');
-    // Legacy keys from older uninstall script / misnamed options.
+    delete_option('ffla_tax_usgeocoder_usage');
     delete_option('ffla_tax_rates_settings');
     delete_option('ffla_tax_rates_last_import');
+
+    delete_transient('ffla_tax_key_validation');
 
     wp_clear_scheduled_hook('ffla_tax_dataset_sync');
     wp_clear_scheduled_hook('ffla_tax_cache_cleanup');

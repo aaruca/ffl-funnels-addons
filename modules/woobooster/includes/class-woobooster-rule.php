@@ -197,6 +197,7 @@ class WooBooster_Rule
         if ($inserted) {
             $rule_id = $wpdb->insert_id;
             self::rebuild_index_for_rule($rule_id);
+            WooBooster_Matcher::invalidate_recommendation_cache();
             return $rule_id;
         }
 
@@ -227,6 +228,7 @@ class WooBooster_Rule
 
         if (false !== $updated) {
             self::rebuild_index_for_rule($id);
+            WooBooster_Matcher::invalidate_recommendation_cache();
             return true;
         }
 
@@ -244,12 +246,11 @@ class WooBooster_Rule
         global $wpdb;
         self::init_tables();
 
-        // Delete from conditions and actions tables.
         $wpdb->delete(self::$conditions_table, array('rule_id' => absint($id)), array('%d'));
         $wpdb->delete(self::$actions_table, array('rule_id' => absint($id)), array('%d'));
-
-        // Delete from index.
         $wpdb->delete(self::$index_table, array('rule_id' => absint($id)), array('%d'));
+
+        WooBooster_Matcher::invalidate_recommendation_cache();
 
         return (bool) $wpdb->delete(
             self::$table,
@@ -474,6 +475,7 @@ class WooBooster_Rule
 
         // Rebuild index.
         self::rebuild_index_for_rule($rule_id);
+        WooBooster_Matcher::invalidate_recommendation_cache();
     }
 
     /**
@@ -546,6 +548,8 @@ class WooBooster_Rule
                 }
             }
         }
+
+        WooBooster_Matcher::invalidate_recommendation_cache();
     }
 
     /**

@@ -19,9 +19,8 @@ class Doofinder_Core
      */
     public static function init(): void
     {
-        // Prevent escaping of forward slashes in JSON responses.
-        add_filter('wp_json_encode_options', function () {
-            return JSON_UNESCAPED_SLASHES;
+        add_filter('wp_json_encode_options', static function ($options) {
+            return (int) $options | JSON_UNESCAPED_SLASHES;
         });
 
         // Inject dynamic meta into WooCommerce REST API product response.

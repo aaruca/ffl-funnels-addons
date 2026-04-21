@@ -747,14 +747,19 @@ class WooBooster_Admin
                             continue;
                         }
                         $group_arr = array();
+                        $allowed_ops = array('equals', 'not_equals');
                         foreach ($group as $cond) {
                             if (count($group_arr) >= $max_conditions_per_group) {
                                 break;
                             }
                             $cond = (array) $cond;
+                            $op = sanitize_key($cond['condition_operator'] ?? 'equals');
+                            if (!in_array($op, $allowed_ops, true)) {
+                                $op = 'equals';
+                            }
                             $group_arr[] = array(
                                 'condition_attribute' => sanitize_key($cond['condition_attribute'] ?? ''),
-                                'condition_operator' => 'equals',
+                                'condition_operator' => $op,
                                 'condition_value' => sanitize_text_field($cond['condition_value'] ?? ''),
                                 'include_children' => absint($cond['include_children'] ?? 0),
                             );
@@ -775,13 +780,19 @@ class WooBooster_Admin
                             break;
                         }
                         $action = (array) $action;
-                        $clean_actions[] = array(
+                        $row = array(
                             'action_source' => sanitize_key($action['action_source'] ?? 'category'),
                             'action_value' => sanitize_text_field($action['action_value'] ?? ''),
                             'action_limit' => absint($action['action_limit'] ?? 4),
                             'action_orderby' => sanitize_key($action['action_orderby'] ?? 'rand'),
                             'include_children' => absint($action['include_children'] ?? 0),
                         );
+                        foreach (array('action_products', 'exclude_categories', 'exclude_products', 'exclude_price_min', 'exclude_price_max') as $opt_key) {
+                            if (isset($action[$opt_key]) && '' !== $action[$opt_key]) {
+                                $row[$opt_key] = sanitize_text_field($action[$opt_key]);
+                            }
+                        }
+                        $clean_actions[] = $row;
                     }
                     if (!empty($clean_actions)) {
                         WooBooster_Rule::save_actions($rule_id, $clean_actions);

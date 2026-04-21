@@ -43,6 +43,24 @@ class WooBooster_Matcher
      */
     private static $conditions_cache = [];
 
+    const CACHE_GROUP   = 'ffl-funnels-addons';
+    const CACHE_VERSION = 'woobooster_cache_version';
+
+    public static function invalidate_recommendation_cache(): void
+    {
+        $version = (int) get_option(self::CACHE_VERSION, 0);
+        update_option(self::CACHE_VERSION, $version + 1, false);
+    }
+
+    private static function cache_version(): int
+    {
+        static $v = null;
+        if (null === $v) {
+            $v = (int) get_option(self::CACHE_VERSION, 0);
+        }
+        return $v;
+    }
+
     /**
      * Cached get_term_by() to avoid N+1 queries in condition loops.
      */
@@ -142,10 +160,9 @@ class WooBooster_Matcher
             return array();
         }
 
-        // Try object cache first.
         $args_hash = md5(wp_json_encode($args));
-        $cache_key = 'woobooster_rec_' . $product_id . '_' . $args_hash;
-        $cached = wp_cache_get($cache_key, 'ffl-funnels-addons');
+        $cache_key = 'woobooster_rec_v' . self::cache_version() . '_' . $product_id . '_' . $args_hash;
+        $cached = wp_cache_get($cache_key, self::CACHE_GROUP);
 
         if (false !== $cached) {
             $this->debug_log("Cache hit for product {$product_id}");
@@ -224,8 +241,7 @@ class WooBooster_Matcher
             $all_product_ids = array_slice($all_product_ids, 0, absint($args['limit']));
         }
 
-        // Step 5: Cache the result.
-        wp_cache_set($cache_key, $all_product_ids, 'ffl-funnels-addons', HOUR_IN_SECONDS);
+        wp_cache_set($cache_key, $all_product_ids, self::CACHE_GROUP, HOUR_IN_SECONDS);
 
         $total_actions = 0;
         if (!empty($action_groups)) {
@@ -265,10 +281,9 @@ class WooBooster_Matcher
             return array();
         }
 
-        // Cache check (distinct key from auto-match).
         $args_hash = md5(wp_json_encode($args));
-        $cache_key = 'woobooster_rule_' . $rule_id . '_' . $product_id . '_' . $args_hash;
-        $cached    = wp_cache_get($cache_key, 'ffl-funnels-addons');
+        $cache_key = 'woobooster_rule_v' . self::cache_version() . '_' . $rule_id . '_' . $product_id . '_' . $args_hash;
+        $cached    = wp_cache_get($cache_key, self::CACHE_GROUP);
 
         if (false !== $cached) {
             $this->debug_log("Cache hit for rule #{$rule_id}, product {$product_id}");
@@ -335,7 +350,7 @@ class WooBooster_Matcher
             $all_product_ids = array_slice($all_product_ids, 0, absint($args['limit']));
         }
 
-        wp_cache_set($cache_key, $all_product_ids, 'ffl-funnels-addons', HOUR_IN_SECONDS);
+        wp_cache_set($cache_key, $all_product_ids, self::CACHE_GROUP, HOUR_IN_SECONDS);
 
         $elapsed = round((microtime(true) - $start_time) * 1000, 2);
         $this->debug_log("Specific rule #{$rule_id} for product {$product_id}: {$elapsed}ms, returned " . count($all_product_ids) . ' products');
@@ -381,8 +396,8 @@ class WooBooster_Matcher
             : $global_exclude;
 
         $args_hash = md5(wp_json_encode(array($limit, $exclude_outofstock)));
-        $cache_key = 'woobooster_smart_' . $source . '_' . $product_id . '_' . $args_hash;
-        $cached    = wp_cache_get($cache_key, 'ffl-funnels-addons');
+        $cache_key = 'woobooster_smart_v' . self::cache_version() . '_' . $source . '_' . $product_id . '_' . $args_hash;
+        $cached    = wp_cache_get($cache_key, self::CACHE_GROUP);
 
         if (false !== $cached) {
             return $cached;
@@ -421,7 +436,7 @@ class WooBooster_Matcher
             $product_ids = array_slice($product_ids, 0, $limit);
         }
 
-        wp_cache_set($cache_key, $product_ids, 'ffl-funnels-addons', HOUR_IN_SECONDS);
+        wp_cache_set($cache_key, $product_ids, self::CACHE_GROUP, HOUR_IN_SECONDS);
 
         return $product_ids;
     }
@@ -673,7 +688,7 @@ class WooBooster_Matcher
      * @param array  $terms      Product terms for "same attribute" resolution.
      * @return array Array of product IDs.
      */
-    private function execute_query($product_id, $action, $args, $terms)
+    public function execute_query($product_id, $action, $args, $terms)
     {
         // Determine limit.
         $limit = isset($args['limit']) && $args['limit'] ? absint($args['limit']) : absint($action->action_limit);

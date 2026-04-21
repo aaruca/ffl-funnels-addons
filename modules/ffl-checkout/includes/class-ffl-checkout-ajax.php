@@ -141,6 +141,7 @@ class FFL_Checkout_Ajax
                 ($option['warehouse_id'] ?? '') === $warehouse_id
                 && abs(floatval($option['price'] ?? 0) - $price) < 0.01
                 && ($option['sku'] ?? '') === $sku
+                && ($option['shipping_class'] ?? '') === $shipping_class
             ) {
                 $valid = true;
                 break;

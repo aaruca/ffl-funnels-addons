@@ -139,8 +139,6 @@ class Tax_Resolver_DB
         dbDelta($sql_audit);
         dbDelta($sql_cache);
 
-        $wpdb->query("DROP TABLE IF EXISTS " . self::table('manual_overrides'));
-
         $wpdb->query(
             "UPDATE {$t_datasets}
              SET state_code = UPPER(LEFT(version_label, 2))

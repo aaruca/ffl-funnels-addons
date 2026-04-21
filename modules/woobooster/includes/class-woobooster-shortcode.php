@@ -37,7 +37,7 @@ class WooBooster_Shortcode
                 'fallback' => 'none',
             ),
             $atts,
-            'ffl-funnels-addons'
+            'woobooster'
         );
 
         // Resolve product ID.

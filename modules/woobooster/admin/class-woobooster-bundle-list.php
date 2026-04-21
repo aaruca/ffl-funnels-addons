@@ -145,7 +145,7 @@ class WooBooster_Bundle_List extends WP_List_Table
             ? '<span class="wb-status wb-status--active">' . esc_html__('Active', 'ffl-funnels-addons') . '</span>'
             : '<span class="wb-status wb-status--inactive">' . esc_html__('Inactive', 'ffl-funnels-addons') . '</span>';
 
-        $now      = current_time('mysql');
+        $now      = current_time('mysql', true);
         $schedule = '';
         if (!empty($item->start_date) || !empty($item->end_date)) {
             $schedule .= '<div style="font-size: 11px; margin-top: 4px; color: var(--wb-color-neutral-text);">';

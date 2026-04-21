@@ -76,11 +76,20 @@ class Tax_REST_API
 
     public static function handle_batch_quote(\WP_REST_Request $request): \WP_REST_Response
     {
+        $ip = self::get_client_ip();
+        if (!self::check_rate_limit($ip, 30, 60)) {
+            return new \WP_REST_Response(['error' => 'Rate limit exceeded. Max 30 batch requests per minute.'], 429);
+        }
+
         $body = $request->get_json_params();
         $addresses = $body['addresses'] ?? [];
 
         if (empty($addresses) || !is_array($addresses)) {
             return new \WP_REST_Response(['error' => 'Provide an "addresses" array.'], 400);
+        }
+
+        if (count($addresses) > 25) {
+            return new \WP_REST_Response(['error' => 'Batch exceeds 25 addresses per request.'], 400);
         }
 
         $results = Tax_Quote_Engine::quote_batch($addresses);
@@ -247,14 +256,21 @@ class Tax_REST_API
 
     private static function get_client_ip(): string
     {
-        $headers = ['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'REMOTE_ADDR'];
-        foreach ($headers as $header) {
-            if (!empty($_SERVER[$header])) {
-                $ip = explode(',', sanitize_text_field(wp_unslash($_SERVER[$header])))[0];
-                return trim($ip);
+        $trust_proxy = (bool) apply_filters('ffla_tax_trust_proxy_headers', false);
+
+        if ($trust_proxy) {
+            foreach (['HTTP_CF_CONNECTING_IP', 'HTTP_X_REAL_IP', 'HTTP_X_FORWARDED_FOR'] as $header) {
+                if (!empty($_SERVER[$header])) {
+                    $candidate = explode(',', sanitize_text_field(wp_unslash($_SERVER[$header])))[0];
+                    $candidate = trim($candidate);
+                    if (filter_var($candidate, FILTER_VALIDATE_IP)) {
+                        return $candidate;
+                    }
+                }
             }
         }
 
-        return '0.0.0.0';
+        $remote = isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '';
+        return filter_var($remote, FILTER_VALIDATE_IP) ? $remote : '0.0.0.0';
     }
 }

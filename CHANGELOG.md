@@ -2,6 +2,30 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.16.0] - 2026-04-21
+
+### Security
+- **WooBooster Bundles — Add to Cart (CRITICAL):** `ajax_add_bundle_to_cart` now validates that each submitted `product_id` belongs to the bundle's resolved items; arbitrary products can no longer ride the bundle discount via a valid nonce.
+- **WooBooster Tracker — attribution (HIGH):** rule attribution for `add_to_cart` is no longer read from `$_POST['wb_rule_id']`. The matcher stores the `(product_id → rule_id)` mapping in the WC session at render time and the cart filter reads from there, so users can't falsify analytics or order line-item meta.
+- **Tax Rates REST (HIGH):** `get_client_ip()` trusts `REMOTE_ADDR` by default and only honors `CF-Connecting-IP` / `X-Real-IP` / `X-Forwarded-For` when `ffla_tax_trust_proxy_headers` is filtered to `true`; every value is validated with `FILTER_VALIDATE_IP`. Closes a rate-limit bypass via spoofed headers.
+- **Tax Rates REST — batch:** `/quote/batch` now rate-limited (30/min/IP) and capped at 25 addresses per call.
+- **Tax Rates — errors:** resolver exceptions return a generic translated message to clients; the raw `$e->getMessage()` is only logged when `WP_DEBUG` is on.
+- **FFL Checkout — vendor selection (HIGH):** `ajax_update_vendor` now also matches `shipping_class` against the API option before applying, preventing forced `resolve_shipping_class_id()` on attacker-controlled class names.
+- **Doofinder Sync:** `wp_json_encode_options` filter now merges `JSON_UNESCAPED_SLASHES` into the existing flags instead of overwriting them.
+- **Woo Sheets Sync — OAuth proxy:** removed the hardcoded fallback secret. When `WSS_PROXY_SECRET` is not defined the proxy flow is disabled and a debug warning is logged.
+
+### Bug fixes
+- **WooBooster Bundles — fixed discount:** `discount_type = fixed` is now applied once per bundle (`min(discount_value, bundle_subtotal)`) instead of per-line, per-quantity. The Bricks Bundle element prorates the same total across items.
+- **WooBooster Bundle Matcher:** replaced reflection-based access to `WooBooster_Matcher::execute_query` with a stable public call; single batched `IN(...)` query instead of N+1 `SELECT * FROM bundles WHERE id = ?`.
+- **WooBooster — schedule timezone:** bundle `start_date` / `end_date` now stored via `get_gmt_from_date()` so they compare consistently with the matcher's `current_time('mysql', true)` and with the bundles list view.
+- **WooBooster — rule import:** `condition_operator` preserved from export (`equals` or `not_equals`); advanced action fields (`action_products`, exclusion lists, price bands) round-trip through import instead of being dropped.
+- **WooBooster — Trending index:** fast path now joins `wc_order_product_lookup` with `wp_wc_orders` / `wp_posts` and filters by the same order statuses as the rest of the module; previously, trending counts could include cancelled/refunded lines that WC leaves in the lookup table.
+- **WooBooster — auto-coupon notices:** `show_coupon_notice` no longer nukes every WC success notice; it only removes the default "coupon applied" one.
+- **WooBooster — shortcode `[woobooster]`:** third argument of `shortcode_atts` corrected to `'woobooster'`, so `shortcode_atts_woobooster` filters apply.
+- **WooBooster — object cache invalidation:** rule and bundle mutations bump a `woobooster_cache_version` option that is folded into every recommendation / bundle cache key, so stale reads can't outlive a save by up to an hour with a persistent object cache.
+- **Tax Rates DB install:** removed a leftover `DROP TABLE IF EXISTS manual_overrides` that ran on every install without a matching `CREATE`, which left the schema inconsistent if anything referenced the table.
+- **Uninstall:** tax-rates cleanup now also fires when the module was already deactivated but data/tables remain, and removes `ffla_tax_usgeocoder_usage` and the `ffla_tax_key_validation` transient.
+
 ## [1.15.2] - 2026-04-20
 
 ### WooBooster — HPOS detection

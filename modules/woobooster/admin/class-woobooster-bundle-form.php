@@ -566,10 +566,10 @@ class WooBooster_Bundle_Form
             'discount_type'  => isset($_POST['bundle_discount_type']) ? sanitize_key($_POST['bundle_discount_type']) : 'none',
             'discount_value' => isset($_POST['bundle_discount_value']) ? floatval($_POST['bundle_discount_value']) : 0,
             'start_date'     => !empty($_POST['bundle_start_date'])
-                ? date('Y-m-d H:i:s', strtotime(sanitize_text_field(wp_unslash($_POST['bundle_start_date']))))
+                ? get_gmt_from_date(sanitize_text_field(wp_unslash($_POST['bundle_start_date'])))
                 : null,
             'end_date'       => !empty($_POST['bundle_end_date'])
-                ? date('Y-m-d H:i:s', strtotime(sanitize_text_field(wp_unslash($_POST['bundle_end_date']))))
+                ? get_gmt_from_date(sanitize_text_field(wp_unslash($_POST['bundle_end_date'])))
                 : null,
         );
 

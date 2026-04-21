@@ -37,9 +37,8 @@ class WooBooster_Trending
 
         $date_cutoff = gmdate('Y-m-d H:i:s', strtotime("-{$days} days"));
 
-        // Use the WooCommerce order product lookup table if available.
         $lookup_table = $wpdb->prefix . 'wc_order_product_lookup';
-        $has_lookup = $wpdb->get_var("SHOW TABLES LIKE '{$lookup_table}'") === $lookup_table;
+        $has_lookup = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $lookup_table)) === $lookup_table;
 
         $statuses = self::get_order_statuses();
         $statuses_hpos = self::expand_statuses_for_hpos($statuses);
@@ -49,17 +48,40 @@ class WooBooster_Trending
         $product_sales = array();
 
         if ($has_lookup) {
-            // Fast path: aggregate from lookup table.
-            $results = $wpdb->get_results(
-                $wpdb->prepare(
-                    "SELECT product_id, SUM(product_qty) as total_qty
-                    FROM {$lookup_table}
-                    WHERE date_created >= %s
-                    GROUP BY product_id
-                    ORDER BY total_qty DESC",
-                    $date_cutoff
-                )
-            );
+            $use_hpos_lookup = WooBooster_Copurchase::is_custom_orders_table_in_use();
+
+            if ($use_hpos_lookup) {
+                $hpos_table = $wpdb->prefix . 'wc_orders';
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+                $results = $wpdb->get_results(
+                    $wpdb->prepare(
+                        "SELECT l.product_id, SUM(l.product_qty) AS total_qty
+                        FROM {$lookup_table} l
+                        JOIN {$hpos_table} o ON o.id = l.order_id
+                        WHERE l.date_created >= %s
+                        AND o.type = 'shop_order'
+                        AND o.status IN ({$status_placeholders_hpos})
+                        GROUP BY l.product_id
+                        ORDER BY total_qty DESC",
+                        array_merge(array($date_cutoff), $statuses_hpos)
+                    )
+                );
+            } else {
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+                $results = $wpdb->get_results(
+                    $wpdb->prepare(
+                        "SELECT l.product_id, SUM(l.product_qty) AS total_qty
+                        FROM {$lookup_table} l
+                        JOIN {$wpdb->posts} p ON p.ID = l.order_id
+                        WHERE l.date_created >= %s
+                        AND p.post_type = 'shop_order'
+                        AND p.post_status IN ({$status_placeholders})
+                        GROUP BY l.product_id
+                        ORDER BY total_qty DESC",
+                        array_merge(array($date_cutoff), $statuses)
+                    )
+                );
+            }
 
             foreach ($results as $row) {
                 $product_sales[absint($row->product_id)] = absint($row->total_qty);

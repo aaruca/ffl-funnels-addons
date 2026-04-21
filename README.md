@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.15.2-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.16.0-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -193,6 +193,18 @@ define('WSS_OAUTH_DEBUG_FILE', true);  // also write wp-content/uploads/wss-logs
 ```
 
 ## Changelog
+
+### v1.16.0
+
+Hardening pass across every module. Highlights:
+
+*   **WooBooster Bundles (CRITICAL):** `ajax_add_bundle_to_cart` validates that the submitted product IDs actually belong to the bundle; `discount_type = fixed` is now applied once per bundle and the Bricks element prorates it across items.
+*   **WooBooster analytics (HIGH):** rule attribution for add-to-cart no longer trusts `$_POST['wb_rule_id']`; the server stores the mapping in the WC session at render time.
+*   **Tax Rates REST (HIGH):** the client IP used for rate limiting ignores proxy headers by default (filter `ffla_tax_trust_proxy_headers` to re-enable); `/quote/batch` gets its own 30/min limit and a 25-address cap.
+*   **FFL Checkout (HIGH):** `ajax_update_vendor` matches `shipping_class` against the API option, not just `warehouse_id` / `price` / `sku`.
+*   **Woo Sheets Sync:** removed the hardcoded fallback OAuth proxy secret. `WSS_PROXY_SECRET` is now required for the proxy flow.
+*   **Doofinder Sync:** `wp_json_encode_options` filter merges flags instead of overwriting.
+*   **WooBooster internals:** bundle matcher no longer uses reflection, bundle scheduling stored in GMT, rule import preserves `not_equals` and advanced action fields, trending fast path filters by order status, object cache invalidated on every rule/bundle write, trending / index diagnostics unchanged.
 
 ### v1.15.2
 

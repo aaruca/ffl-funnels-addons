@@ -41,18 +41,19 @@ class WooBooster_Bundle_Cart
             wp_send_json_error(array('message' => __('Invalid bundle or no products selected.', 'ffl-funnels-addons')));
         }
 
-        // Verify bundle exists and is active.
         $bundle = WooBooster_Bundle::get($bundle_id);
         if (!$bundle || !$bundle->status) {
             wp_send_json_error(array('message' => __('Bundle not found or inactive.', 'ffl-funnels-addons')));
         }
 
-        // Verify the products belong to this bundle's resolved items.
-        $matcher = new WooBooster_Bundle_Matcher();
-        // Get any product to resolve items (use first product as context).
+        $matcher        = new WooBooster_Bundle_Matcher();
         $resolved_items = $matcher->resolve_bundle_items($bundle, $product_ids[0]);
 
-        // Generate a unique hash for this add-to-cart action.
+        $product_ids = array_values(array_intersect($product_ids, array_map('absint', $resolved_items)));
+        if (empty($product_ids)) {
+            wp_send_json_error(array('message' => __('Selected products do not belong to this bundle.', 'ffl-funnels-addons')));
+        }
+
         $bundle_hash = md5($bundle_id . '_' . implode('_', $product_ids) . '_' . time());
 
         $added = 0;
@@ -147,19 +148,17 @@ class WooBooster_Bundle_Cart
                 continue;
             }
 
-            $discount = 0;
-
+            $bundle_subtotal = 0;
             foreach ($items as $cart_item) {
                 $product = $cart_item['data'];
-                $price   = (float) $product->get_price();
-                $qty     = (int) $cart_item['quantity'];
+                $bundle_subtotal += (float) $product->get_price() * (int) $cart_item['quantity'];
+            }
 
-                if ($bundle->discount_type === 'percentage') {
-                    $discount += ($price * $bundle->discount_value / 100) * $qty;
-                } elseif ($bundle->discount_type === 'fixed') {
-                    $per_item = min($bundle->discount_value, $price);
-                    $discount += $per_item * $qty;
-                }
+            $discount = 0;
+            if ($bundle->discount_type === 'percentage') {
+                $discount = $bundle_subtotal * ((float) $bundle->discount_value) / 100;
+            } elseif ($bundle->discount_type === 'fixed') {
+                $discount = min((float) $bundle->discount_value, $bundle_subtotal);
             }
 
             if ($discount > 0) {

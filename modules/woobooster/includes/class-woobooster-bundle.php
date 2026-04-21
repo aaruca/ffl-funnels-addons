@@ -147,6 +147,7 @@ class WooBooster_Bundle
         if ($inserted) {
             $bundle_id = $wpdb->insert_id;
             self::rebuild_index_for_bundle($bundle_id);
+            WooBooster_Matcher::invalidate_recommendation_cache();
             return $bundle_id;
         }
 
@@ -173,6 +174,7 @@ class WooBooster_Bundle
 
         if (false !== $updated) {
             self::rebuild_index_for_bundle($id);
+            WooBooster_Matcher::invalidate_recommendation_cache();
             return true;
         }
 
@@ -193,6 +195,8 @@ class WooBooster_Bundle
         $wpdb->delete(self::$actions_table, array('bundle_id' => $id), array('%d'));
         $wpdb->delete(self::$conditions_table, array('bundle_id' => $id), array('%d'));
         $wpdb->delete(self::$index_table, array('bundle_id' => $id), array('%d'));
+
+        WooBooster_Matcher::invalidate_recommendation_cache();
 
         return (bool) $wpdb->delete(self::$table, array('id' => $id), array('%d'));
     }
@@ -516,6 +520,7 @@ class WooBooster_Bundle
         }
 
         self::rebuild_index_for_bundle($bundle_id);
+        WooBooster_Matcher::invalidate_recommendation_cache();
     }
 
     /* ── Index ────────────────────────────────────────────────────── */

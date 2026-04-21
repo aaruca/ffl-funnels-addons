@@ -190,6 +190,9 @@ class Tax_Quote_Engine
         try {
             return $resolver->resolve($normalized, $geocode);
         } catch (\Throwable $e) {
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('FFLA Tax resolver error: ' . $e->getMessage());
+            }
             $result                    = new Tax_Quote_Result();
             $result->inputAddress      = $input;
             $result->normalizedAddress = $normalized;
@@ -197,7 +200,7 @@ class Tax_Quote_Engine
             $result->trace['resolver'] = $resolver->get_id();
             $result->set_error(
                 Tax_Quote_Result::OUTCOME_INTERNAL_ERROR,
-                'Resolver error: ' . $e->getMessage()
+                __('Tax resolver unavailable. Please try again.', 'ffl-funnels-addons')
             );
             return $result;
         }
