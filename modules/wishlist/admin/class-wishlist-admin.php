@@ -160,6 +160,20 @@ class Wishlist_Admin
         echo '<pre id="wbw-df-snippet-code" style="margin:0;white-space:pre;overflow-x:auto;color:#d4d4d4;font-size:13px;font-family:monospace;line-height:1.5;">' . esc_html($df_snippet) . '</pre>';
         echo '</div>';
 
+        echo '<hr class="wb-hr">';
+
+        echo '<h4>' . esc_html__('SnapFind (Typesense) integration', 'ffl-funnels-addons') . '</h4>';
+        if (defined('SNAPFIND_DIR')) {
+            echo '<p class="description">' . esc_html__('The SnapFind plugin is active. FFL Funnels will automatically add wishlist support on SnapFind product search: heart buttons on each result and ranking boost for products the visitor has saved in their wishlist. No custom template code is required.', 'ffl-funnels-addons') . '</p>';
+            echo '<ul class="wb-list" style="margin-top:0.5em;">';
+            echo '<li><strong>' . esc_html__('Requirements (frontend):', 'ffl-funnels-addons') . '</strong> ' . esc_html__('Wishlist assets must load on the same page as the SnapFind search. They load automatically when the wishlist module is enabled. If a page only outputs SnapFind without a wishlist shortcode, ensure your theme or Bricks still loads the wishlist script (e.g. header counter or a hidden shortcode) so buttons and AJAX work.', 'ffl-funnels-addons') . '</li>';
+            echo '<li><strong>' . esc_html__('Ranking boost (option C):', 'ffl-funnels-addons') . '</strong> ' . esc_html__('Products in the visitor’s default wishlist are boosted in Typesense sort order. Guests and logged-in users are both supported. If the list is empty, no boost is applied.', 'ffl-funnels-addons') . '</li>';
+            echo '<li><strong>' . esc_html__('Optional field — wishlist_count (popularity):', 'ffl-funnels-addons') . '</strong> ' . esc_html__('This plugin can send a numeric wishlist_count to Typesense for each product (how many wishlists include that product). In SnapFind → Schema Builder, for “product”, add a new field: slug wishlist_count, type int32, index Yes, sort Yes, facet optional. Then run a full reindex in SnapFind so the field is populated. You can use this field in facets or as an extra sort option.', 'ffl-funnels-addons') . '</li>';
+            echo '</ul>';
+        } else {
+            echo '<p class="description">' . esc_html__('To enable automatic wishlist buttons and search ranking on SnapFind / Typesense results, install and activate the SnapFind plugin. After activation, the integration loads automatically; no code is required on your search templates.', 'ffl-funnels-addons') . '</p>';
+        }
+
         echo '</div></div>'; // end docs card
     }
 

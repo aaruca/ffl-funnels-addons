@@ -55,7 +55,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (messages.length > 0) {
                 if (emptyState) emptyState.style.display = 'none';
                 messages.forEach(function (msg) {
-                    appendMessage(msg.role, msg.content, false);
+                    appendMessage(msg.role, msg.content, false, { reasoning: msg.reasoning || '' });
                 });
                 scrollToBottom();
             }
@@ -154,7 +154,10 @@ document.addEventListener('DOMContentLoaded', function () {
             var formData = new FormData();
             formData.append('action', 'woobooster_ai_generate');
             formData.append('nonce', wooboosterAdmin.nonce);
-            formData.append('chat_history', JSON.stringify(messages.slice(-10)));
+            var historyToSend = messages.slice(-10).map(function (m) {
+                return { role: m.role, content: m.content };
+            });
+            formData.append('chat_history', JSON.stringify(historyToSend));
             formData.append('mode', MODE);
 
             var response = await fetch(wooboosterAdmin.ajaxUrl, {
@@ -172,9 +175,11 @@ document.addEventListener('DOMContentLoaded', function () {
                     renderSteps(result.data.steps);
                 }
 
+                var msgOpts = { reasoning: result.data.reasoning || '' };
+
                 if (result.data.is_final) {
-                    appendMessage('assistant', result.data.message, true);
-                    messages.push({ role: 'assistant', content: result.data.message });
+                    appendMessage('assistant', result.data.message, true, msgOpts);
+                    messages.push({ role: 'assistant', content: result.data.message, reasoning: msgOpts.reasoning });
                     saveHistory();
 
                     appendSystemMessage('success', fmt(t('aiCreatedOpening', '%s created! Opening editor…'), ENTITY_LABEL));
@@ -189,8 +194,8 @@ document.addEventListener('DOMContentLoaded', function () {
                         }, 1500);
                     }
                 } else {
-                    appendMessage('assistant', result.data.message, true);
-                    messages.push({ role: 'assistant', content: result.data.message });
+                    appendMessage('assistant', result.data.message, true, msgOpts);
+                    messages.push({ role: 'assistant', content: result.data.message, reasoning: msgOpts.reasoning });
                     saveHistory();
                 }
             } else {
@@ -211,15 +216,21 @@ document.addEventListener('DOMContentLoaded', function () {
      *
      * Special handling: If message contains [RULE]...[/RULE] or [BUNDLE]...[/BUNDLE],
      * extract data and show "Create" button.
+     *
+     * @param {string}  role    - 'user' or 'assistant'
+     * @param {string}  content - Message body
+     * @param {boolean} scroll  - Auto-scroll to bottom
+     * @param {object}  [opts]  - Optional: { reasoning: string }
      */
-    function appendMessage(role, content, scroll) {
+    function appendMessage(role, content, scroll, opts) {
+        opts = opts || {};
         if (emptyState) emptyState.style.display = 'none';
 
         var msgDiv = document.createElement('div');
         msgDiv.className = 'wb-ai-message wb-ai-message--' + role;
 
         var bubble = document.createElement('div');
-        bubble.className = 'wb-ai-message__content';
+        bubble.className = 'wb-ai-message__bubble';
 
         // Check if assistant message contains a data block.
         var blockRegex = new RegExp('\\[' + BLOCK_TAG + '\\](.*?)\\[\\/' + BLOCK_TAG + '\\]', 's');
@@ -237,13 +248,32 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         if (role === 'user') {
-            // User messages: safe text only — prevents XSS.
             bubble.textContent = content;
         } else {
-            // Assistant messages: pre-escaped by server (wp_kses_post).
-            bubble.innerHTML = formatMarkdown(displayContent);
+            // Chain-of-thought reasoning (collapsible).
+            if (opts.reasoning) {
+                var thinkingEl = document.createElement('details');
+                thinkingEl.className = 'wb-ai-thinking';
 
-            // If we extracted data, append a "Create" button.
+                var summaryEl = document.createElement('summary');
+                summaryEl.innerHTML = '<span class="wb-ai-thinking__icon">\uD83D\uDCA1</span> ' +
+                    escapeHtml(t('aiThinkingLabel', 'Chain of Thought'));
+                thinkingEl.appendChild(summaryEl);
+
+                var thinkingBody = document.createElement('div');
+                thinkingBody.className = 'wb-ai-thinking__body';
+                thinkingBody.innerHTML = formatMarkdown(opts.reasoning);
+                thinkingEl.appendChild(thinkingBody);
+
+                bubble.appendChild(thinkingEl);
+            }
+
+            // Main response.
+            var mainDiv = document.createElement('div');
+            mainDiv.innerHTML = formatMarkdown(displayContent);
+            bubble.appendChild(mainDiv);
+
+            // "Create" button for [RULE]/[BUNDLE] blocks.
             if (blockData) {
                 var buttonDiv = document.createElement('div');
                 buttonDiv.className = 'wb-ai-rule-action';

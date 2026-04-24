@@ -1168,6 +1168,79 @@
   background: var(--wb-color-brand-background-pressed);
 }
 
+/* Provider badge in modal header */
+.wb-ai-provider-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  letter-spacing: 0.02em;
+  border-radius: 99px;
+  background: var(--wb-color-neutral-background-2);
+  color: var(--wb-color-neutral-foreground-2);
+  border: 1px solid var(--wb-color-neutral-stroke-2);
+  margin-left: 8px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* Thinking / Chain-of-thought block inside assistant bubbles */
+.wb-ai-thinking {
+  margin-bottom: 10px;
+  border: 1px solid var(--wb-color-neutral-stroke-2);
+  border-radius: var(--wb-radius-md);
+  overflow: hidden;
+}
+
+.wb-ai-thinking summary {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--wb-color-neutral-foreground-2);
+  background: var(--wb-color-neutral-background-3, #f5f5f5);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wb-ai-thinking summary::-webkit-details-marker {
+  display: none;
+}
+
+.wb-ai-thinking summary::after {
+  content: '\25B8';
+  margin-left: auto;
+  transition: transform 0.2s ease;
+  font-size: 11px;
+}
+
+.wb-ai-thinking[open] summary::after {
+  transform: rotate(90deg);
+}
+
+.wb-ai-thinking__icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.wb-ai-thinking__body {
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--wb-color-neutral-foreground-2);
+  background: var(--wb-color-neutral-background-1);
+  border-top: 1px solid var(--wb-color-neutral-stroke-2);
+  max-height: 220px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* Loading message with animated dots */
 .wb-ai-loading-message {
   margin: var(--wb-spacing-md) 0;

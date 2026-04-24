@@ -15,6 +15,32 @@ if (!defined('ABSPATH')) {
 class WooBooster_Admin
 {
     /**
+     * Supported AI providers with their API endpoints and defaults.
+     *
+     * @var array<string, array{label: string, api_url: string, model: string, thinking: bool}>
+     */
+    private static $ai_providers = array(
+        'openai' => array(
+            'label'    => 'OpenAI',
+            'api_url'  => 'https://api.openai.com/v1/chat/completions',
+            'model'    => 'gpt-4o-mini',
+            'thinking' => false,
+        ),
+        'deepseek' => array(
+            'label'    => 'DeepSeek',
+            'api_url'  => 'https://api.deepseek.com/v1/chat/completions',
+            'model'    => 'deepseek-chat',
+            'thinking' => true,
+        ),
+        'nvidia' => array(
+            'label'    => 'NVIDIA NIM',
+            'api_url'  => 'https://integrate.api.nvidia.com/v1/chat/completions',
+            'model'    => 'deepseek-ai/deepseek-v3.2',
+            'thinking' => true,
+        ),
+    );
+
+    /**
      * Initialize admin hooks.
      */
     public function init()
@@ -96,6 +122,7 @@ class WooBooster_Admin
                 'aiUnknownError'       => __('Unknown error occurred.', 'ffl-funnels-addons'),
                 'aiConnectionError'    => __('Connection error. Please check your internet and try again.', 'ffl-funnels-addons'),
                 'aiConnectionRetry'    => __('Connection error. Please try again.', 'ffl-funnels-addons'),
+                'aiThinkingLabel'      => __('Chain of Thought', 'ffl-funnels-addons'),
                 'entityRule'           => __('Rule', 'ffl-funnels-addons'),
                 'entityRuleLower'      => __('rule', 'ffl-funnels-addons'),
                 'entityBundle'         => __('Bundle', 'ffl-funnels-addons'),
@@ -160,19 +187,7 @@ class WooBooster_Admin
             __('Choose how recommendations are rendered on the frontend.', 'ffl-funnels-addons')
         );
 
-        FFLA_Admin::render_password_field(
-            __('OpenAI API Key', 'ffl-funnels-addons'),
-            'woobooster_openai_key',
-            isset($options['openai_key']) ? $options['openai_key'] : '',
-            __('Enter your OpenAI API key to enable AI rule generation. Needs access to GPT-4o models.', 'ffl-funnels-addons')
-        );
-
-        FFLA_Admin::render_password_field(
-            __('Tavily API Key', 'ffl-funnels-addons'),
-            'woobooster_tavily_key',
-            isset($options['tavily_key']) ? $options['tavily_key'] : '',
-            __('Optional. Enter a Tavily API key to allow the AI to search the web for specific product knowledge (e.g. \"best ammo for glock 19\").', 'ffl-funnels-addons')
-        );
+        // AI fields moved to dedicated render_ai_settings_section() card below.
 
         FFLA_Admin::render_toggle_field(
             __('Exclude Out of Stock', 'ffl-funnels-addons'),
@@ -197,6 +212,8 @@ class WooBooster_Admin
 
         echo '</div></div>';
 
+        $this->render_ai_settings_section();
+
         $this->render_smart_recommendations_section();
 
         echo '<div class="wb-actions-bar">';
@@ -204,6 +221,102 @@ class WooBooster_Admin
         echo '</div>';
 
         echo '</form>';
+    }
+
+    /**
+     * Render the AI Assistant settings card.
+     */
+    private function render_ai_settings_section()
+    {
+        $options     = get_option('woobooster_settings', array());
+        $provider    = isset($options['ai_provider']) ? $options['ai_provider'] : 'openai';
+        $api_key     = isset($options['ai_api_key']) ? $options['ai_api_key'] : '';
+        $model       = isset($options['ai_model']) ? $options['ai_model'] : '';
+        $thinking    = isset($options['ai_thinking']) ? $options['ai_thinking'] : '0';
+        $tavily_key  = isset($options['tavily_key']) ? $options['tavily_key'] : '';
+
+        // Backward compat: show legacy key if new field is empty.
+        if (empty($api_key) && !empty($options['openai_key'])) {
+            $api_key = $options['openai_key'];
+        }
+
+        $provider_options = array();
+        foreach (self::$ai_providers as $key => $def) {
+            $provider_options[$key] = $def['label'];
+        }
+
+        $default_model = isset(self::$ai_providers[$provider]['model'])
+            ? self::$ai_providers[$provider]['model']
+            : 'gpt-4o-mini';
+        ?>
+        <div class="wb-card" style="margin-top:24px;">
+            <div class="wb-card__header">
+                <h2><?php esc_html_e('AI Assistant', 'ffl-funnels-addons'); ?></h2>
+            </div>
+            <div class="wb-card__body">
+                <?php
+                FFLA_Admin::render_select_field(
+                    __('AI Provider', 'ffl-funnels-addons'),
+                    'woobooster_ai_provider',
+                    $provider,
+                    $provider_options,
+                    __('Choose which AI service powers the WooBooster assistant.', 'ffl-funnels-addons')
+                );
+
+                FFLA_Admin::render_password_field(
+                    __('API Key', 'ffl-funnels-addons'),
+                    'woobooster_ai_api_key',
+                    $api_key,
+                    __('Enter the API key for your selected provider (OpenAI, DeepSeek, or NVIDIA).', 'ffl-funnels-addons')
+                );
+                ?>
+
+                <div class="wb-field">
+                    <label class="wb-field__label" for="woobooster_ai_model">
+                        <?php esc_html_e('Model Override', 'ffl-funnels-addons'); ?>
+                    </label>
+                    <div class="wb-field__control">
+                        <input type="text" id="woobooster_ai_model" name="woobooster_ai_model"
+                            value="<?php echo esc_attr($model); ?>" class="wb-input"
+                            placeholder="<?php echo esc_attr($default_model); ?>">
+                        <p class="wb-field__desc">
+                            <?php esc_html_e('Leave blank to use the provider default shown above. Override only if you know a specific model ID.', 'ffl-funnels-addons'); ?>
+                        </p>
+                    </div>
+                </div>
+
+                <?php
+                FFLA_Admin::render_toggle_field(
+                    __('Thinking Mode', 'ffl-funnels-addons'),
+                    'woobooster_ai_thinking',
+                    $thinking,
+                    __('Enable chain-of-thought reasoning. The AI shows its thought process before answering. Supported by DeepSeek and NVIDIA NIM only.', 'ffl-funnels-addons')
+                );
+
+                FFLA_Admin::render_password_field(
+                    __('Tavily API Key', 'ffl-funnels-addons'),
+                    'woobooster_tavily_key',
+                    $tavily_key,
+                    __('Optional. Allows the AI to search the web for product compatibility data and rankings.', 'ffl-funnels-addons')
+                );
+                ?>
+            </div>
+        </div>
+
+        <script>
+        (function() {
+            var providerEl = document.getElementById('woobooster_ai_provider');
+            var modelEl    = document.getElementById('woobooster_ai_model');
+            if (!providerEl || !modelEl) return;
+
+            var defaults = <?php echo wp_json_encode(array_map(function ($p) { return $p['model']; }, self::$ai_providers)); ?>;
+
+            providerEl.addEventListener('change', function() {
+                modelEl.placeholder = defaults[this.value] || 'gpt-4o-mini';
+            });
+        })();
+        </script>
+        <?php
     }
 
     /**
@@ -617,7 +730,10 @@ class WooBooster_Admin
             'enabled' => isset($_POST['woobooster_enabled']) ? '1' : '0',
             'section_title' => isset($_POST['woobooster_section_title']) ? sanitize_text_field(wp_unslash($_POST['woobooster_section_title'])) : '',
             'render_method' => isset($_POST['woobooster_render_method']) ? sanitize_key($_POST['woobooster_render_method']) : 'bricks',
-            'openai_key' => isset($_POST['woobooster_openai_key']) ? sanitize_text_field(wp_unslash($_POST['woobooster_openai_key'])) : '',
+            'ai_provider' => isset($_POST['woobooster_ai_provider']) ? sanitize_key($_POST['woobooster_ai_provider']) : 'openai',
+            'ai_api_key' => isset($_POST['woobooster_ai_api_key']) ? sanitize_text_field(wp_unslash($_POST['woobooster_ai_api_key'])) : '',
+            'ai_model' => isset($_POST['woobooster_ai_model']) ? sanitize_text_field(wp_unslash($_POST['woobooster_ai_model'])) : '',
+            'ai_thinking' => isset($_POST['woobooster_ai_thinking']) ? '1' : '0',
             'tavily_key' => isset($_POST['woobooster_tavily_key']) ? sanitize_text_field(wp_unslash($_POST['woobooster_tavily_key'])) : '',
             'exclude_outofstock' => isset($_POST['woobooster_exclude_outofstock']) ? '1' : '0',
             'debug_mode' => isset($_POST['woobooster_debug_mode']) ? '1' : '0',
@@ -634,7 +750,7 @@ class WooBooster_Admin
             $options['smart_max_relations'] = isset($_POST['woobooster_smart_max_relations']) ? absint($_POST['woobooster_smart_max_relations']) : 20;
         }
 
-        // Explicitly persist with autoload=false so sensitive keys (OpenAI/Tavily)
+        // Explicitly persist with autoload=false so sensitive keys (AI provider/Tavily)
         // are not loaded on every request via wp_options autoload cache.
         update_option('woobooster_settings', $options, false);
 
@@ -918,8 +1034,9 @@ class WooBooster_Admin
     /**
      * AJAX: Handle AI Rule Generation Request.
      *
-     * Uses a proper while-loop to handle multi-turn tool calls from OpenAI.
+     * Uses a proper while-loop to handle multi-turn tool calls.
      * Supports parallel tool calls, web search, store search, and rule CRUD.
+     * Provider-agnostic: works with OpenAI, DeepSeek, and NVIDIA NIM.
      */
     public function ajax_ai_generate()
     {
@@ -936,12 +1053,18 @@ class WooBooster_Admin
             wp_send_json_error(array('message' => __('No message provided.', 'ffl-funnels-addons')));
         }
 
+        $config = $this->get_ai_provider_config();
         $options = get_option('woobooster_settings', array());
-        $api_key = isset($options['openai_key']) ? $options['openai_key'] : '';
         $tavily_key = isset($options['tavily_key']) ? $options['tavily_key'] : '';
 
-        if (empty($api_key)) {
-            wp_send_json_error(array('message' => __('OpenAI API Key is required. Please add it in WooBooster General Settings.', 'ffl-funnels-addons')));
+        if (empty($config['api_key'])) {
+            wp_send_json_error(array(
+                'message' => sprintf(
+                    /* translators: %s: AI provider name */
+                    __('%s API Key is required. Please add it in WooBooster Settings → AI Assistant.', 'ffl-funnels-addons'),
+                    $config['label']
+                ),
+            ));
         }
 
         // Detect mode: 'rule' (default) or 'bundle'.
@@ -957,12 +1080,6 @@ class WooBooster_Admin
         }
         array_unshift($chat_history, array('role' => 'system', 'content' => $system_prompt));
 
-        $api_url = 'https://api.openai.com/v1/chat/completions';
-        $headers = array(
-            'Content-Type' => 'application/json',
-            'Authorization' => 'Bearer ' . trim($api_key),
-        );
-
         // Track tool steps for frontend feedback.
         $steps = array();
         $max_turns = 8;
@@ -971,14 +1088,19 @@ class WooBooster_Admin
         while ($turn < $max_turns) {
             $turn++;
 
-            $response = wp_remote_post($api_url, array(
-                'body' => wp_json_encode(array(
-                    'model' => 'gpt-4o-mini',
+            $request_body = array_merge(
+                array(
+                    'model'    => $config['model'],
                     'messages' => $chat_history,
-                    'tools' => $tools,
-                )),
-                'headers' => $headers,
-                'timeout' => 45,
+                    'tools'    => $tools,
+                ),
+                $config['body_extra']
+            );
+
+            $response = wp_remote_post($config['api_url'], array(
+                'body'        => wp_json_encode($request_body),
+                'headers'     => $config['headers'],
+                'timeout'     => 60,
                 'data_format' => 'body',
             ));
 
@@ -1037,6 +1159,16 @@ class WooBooster_Admin
                         $tool_result = $this->ai_tool_get_bundles();
                         break;
 
+                    case 'create_rule':
+                        $steps[] = array('tool' => 'create_rule', 'label' => sprintf(__('Creating rule "%s"…', 'ffl-funnels-addons'), $fn_args['name'] ?? ''));
+                        $tool_result = wp_json_encode($this->ai_tool_create_rule($fn_args));
+                        break;
+
+                    case 'update_rule':
+                        $steps[] = array('tool' => 'update_rule', 'label' => sprintf(__('Updating rule #%d…', 'ffl-funnels-addons'), $fn_args['rule_id'] ?? 0));
+                        $tool_result = wp_json_encode($this->ai_tool_update_rule($fn_args));
+                        break;
+
                     default:
                         $tool_result = 'Unknown tool: ' . $fn_name;
                         break;
@@ -1051,14 +1183,15 @@ class WooBooster_Admin
                     );
                 }
             }
-            // Loop continues — OpenAI will get all tool results and decide next step.
+            // Loop continues — the AI will get all tool results and decide next step.
         }
 
-        // Return the final text response from the AI (just a message, no auto-creation).
         wp_send_json_success(array(
-            'is_final' => false,
-            'message' => wp_kses_post($assistant_message['content'] ?? ''),
-            'steps' => $steps,
+            'is_final'  => false,
+            'message'   => wp_kses_post($assistant_message['content'] ?? ''),
+            'reasoning' => wp_kses_post($assistant_message['reasoning_content'] ?? ''),
+            'provider'  => $config['label'],
+            'steps'     => $steps,
         ));
     }
 
@@ -1169,6 +1302,57 @@ Prefer \`product_cat\` or \`pa_*\` conditions over \`specific_product\` for broa
 
 ## FFL Store Context
 Common product types: firearms (handguns, rifles, shotguns), ammunition, holsters, optics/scopes, red dots, magazines, cleaning kits, gun cases, safes, ear protection, eye protection, grips, stocks, lights, lasers, bipods, slings, targets, range gear, reloading equipment, and tactical accessories.";
+    }
+
+    /**
+     * Resolve the active AI provider configuration.
+     *
+     * Falls back to legacy `openai_key` for backward compatibility.
+     *
+     * @return array{provider: string, label: string, api_url: string, model: string, api_key: string, thinking: bool, headers: array, body_extra: array}
+     */
+    private function get_ai_provider_config(): array
+    {
+        $options  = get_option('woobooster_settings', array());
+        $provider = isset($options['ai_provider']) ? $options['ai_provider'] : 'openai';
+
+        $api_key = isset($options['ai_api_key']) ? $options['ai_api_key'] : '';
+        if (empty($api_key) && !empty($options['openai_key'])) {
+            $api_key = $options['openai_key'];
+        }
+
+        $custom_model = isset($options['ai_model']) ? trim($options['ai_model']) : '';
+        $thinking     = !empty($options['ai_thinking']);
+
+        $defs = isset(self::$ai_providers[$provider])
+            ? self::$ai_providers[$provider]
+            : self::$ai_providers['openai'];
+
+        $model             = !empty($custom_model) ? $custom_model : $defs['model'];
+        $supports_thinking = !empty($defs['thinking']) && $thinking;
+
+        $body_extra = array();
+        if ($supports_thinking) {
+            if ('nvidia' === $provider) {
+                $body_extra['chat_template_kwargs'] = array('thinking' => true);
+            } elseif ('deepseek' === $provider) {
+                $body_extra['thinking'] = array('type' => 'enabled');
+            }
+        }
+
+        return array(
+            'provider'   => $provider,
+            'label'      => $defs['label'],
+            'api_url'    => $defs['api_url'],
+            'model'      => $model,
+            'api_key'    => $api_key,
+            'thinking'   => $supports_thinking,
+            'headers'    => array(
+                'Content-Type'  => 'application/json',
+                'Authorization' => 'Bearer ' . trim($api_key),
+            ),
+            'body_extra' => $body_extra,
+        );
     }
 
     /**
@@ -1305,16 +1489,23 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
     /**
      * Get a final text message from the AI after a terminal tool call.
      */
-    private function ai_get_final_message(string $api_url, array $headers, array $chat_history, array $tools): string
+    private function ai_get_final_message(array $chat_history, array $tools): string
     {
-        $response = wp_remote_post($api_url, array(
-            'body' => wp_json_encode(array(
-                'model' => 'gpt-4o-mini',
+        $config = $this->get_ai_provider_config();
+
+        $request_body = array_merge(
+            array(
+                'model'    => $config['model'],
                 'messages' => $chat_history,
-                'tools' => $tools,
-            )),
-            'headers' => $headers,
-            'timeout' => 30,
+                'tools'    => $tools,
+            ),
+            $config['body_extra']
+        );
+
+        $response = wp_remote_post($config['api_url'], array(
+            'body'        => wp_json_encode($request_body),
+            'headers'     => $config['headers'],
+            'timeout'     => 30,
             'data_format' => 'body',
         ));
 
@@ -1949,6 +2140,8 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
                                     <path d="M19 3v4"/><path d="M21 5h-4"/>
                                 </svg>
                                 <?php esc_html_e('WooBooster AI Assistant', 'ffl-funnels-addons'); ?>
+                                <?php $ai_cfg = $this->get_ai_provider_config(); ?>
+                                <span class="wb-ai-provider-badge"><?php echo esc_html($ai_cfg['label']); ?></span>
                             </h3>
                             <div class="wb-ai-modal__header-actions">
                                 <button type="button" id="wb-clear-ai-chat" class="wb-ai-modal__clear">
