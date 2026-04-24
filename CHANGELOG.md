@@ -2,6 +2,19 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.18.0] - 2026-04-24
+
+### WooBooster — AI assistant
+
+- **Multi-provider LLM:** Settings card **AI Assistant** — choose **OpenAI**, **DeepSeek**, or **NVIDIA NIM**; one API key field; optional **model override**; **Thinking mode** (chain-of-thought) for DeepSeek and NVIDIA; legacy `openai_key` still works as fallback.
+- **Chat UX:** Provider badge in the AI modal; collapsible **Chain of Thought** when the model returns `reasoning_content`; assistant bubbles use the correct `wb-ai-message__bubble` class; message history no longer sends `reasoning` to the server.
+- **Tool calls:** `create_rule` and `update_rule` are now executed in the AI loop (previously only defined in the schema).
+
+### Wishlist — SnapFind (Typesense)
+
+- **Integration** (when the SnapFind plugin is active): heart buttons on SnapFind product hits; **ranking boost** for products in the visitor’s default wishlist via Typesense `_eval` sort; optional indexed field **`wishlist_count`** (add in SnapFind Schema Builder as `int32`, then reindex).
+- **Documentation:** FFL Funnels → Wishlist → **Documentation** explains setup, the optional `wishlist_count` field, and when wishlist assets must load on the page.
+
 ## [1.17.0] - 2026-04-21
 
 ### WooBooster — Smart Recommendations rewrite

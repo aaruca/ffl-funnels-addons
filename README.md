@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.17.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.18.0-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -13,7 +13,7 @@ This plugin is a modular suite of tools designed to enhance FFL Funnels stores. 
 
 ### 1. WooBooster Module
 An intelligent product recommendation engine that goes beyond simple "related products".
-*   **AI Rule Generator:** Create robust recommendation rules using natural language (powered by OpenAI and Tavily) for smart compatibility resolution. Web search uses the current site date and supports Tavily freshness options (`time_range`, `topic`) for up-to-date answers.
+*   **AI Rule Generator:** Create robust recommendation rules using natural language. Choose the **LLM provider** in WooBooster settings (OpenAI, DeepSeek, or NVIDIA NIM), optional model override, and **thinking mode** where supported. **Tavily** remains optional for web search; SnapFind is unrelated to this feature.
 *   **Targeted Rules:** Create specific recommendation rules based on Categories, Tags, and Attributes (e.g., recommend specific holsters for Glock 19).
 *   **Smart Recommendations:** Automatically display "Bought Together", "Trending", "Recently Viewed", and "Similar Products" without manual curation. WB Settings includes **index diagnostics** (orders in window, multi-line vs single-line orders) and filterable order statuses for co-purchase / trending builds.
 *   **High Performance:** Uses custom index tables and aggressive caching to ensure zero impact on page load speed.
@@ -25,6 +25,7 @@ A lightweight wishlist implementation optimized for performance.
 *   Bricks Builder integration (with native elements: Button and Counter).
 *   Guest wishlist support.
 *   Doofinder shadow DOM integration.
+*   **SnapFind (Typesense):** when the SnapFind search plugin is active, wishlist heart buttons and wishlist **ranking boost** apply automatically on product search results; see **FFL Funnels → Wishlist → Documentation** for the optional `wishlist_count` index field.
 
 ### 3. FFL Checkout Module
 A smart, compliance-focused checkout flow for firearms.
@@ -193,6 +194,11 @@ define('WSS_OAUTH_DEBUG_FILE', true);  // also write wp-content/uploads/wss-logs
 ```
 
 ## Changelog
+
+### v1.18.0
+
+*   **WooBooster AI:** Multi-provider support (OpenAI, DeepSeek, NVIDIA NIM), model override, thinking mode, tool execution for `create_rule` / `update_rule`, chain-of-thought UI and provider badge in the chat modal.
+*   **Wishlist + SnapFind:** Automatic heart buttons and wishlist-based ranking boost on Typesense search results; optional `wishlist_count` field for index popularity; admin documentation under Wishlist settings.
 
 ### v1.17.0
 
