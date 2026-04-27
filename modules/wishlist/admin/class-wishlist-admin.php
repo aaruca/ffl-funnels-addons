@@ -103,6 +103,22 @@ class Wishlist_Admin
 
         echo '</div>'; // end body
 
+        // ── SnapFind Integration Card ───────────────────────────────
+        if (defined('SNAPFIND_DIR')) {
+            echo '<div class="wb-card">';
+            echo '<div class="wb-card__header"><h3>' . esc_html__('SnapFind (Typesense) Integration', 'ffl-funnels-addons') . '</h3></div>';
+            echo '<div class="wb-card__body">';
+
+            FFLA_Admin::render_toggle_field(
+                __('Boost wishlisted products in search', 'ffl-funnels-addons'),
+                'alg_wishlist_snapfind_boost',
+                isset($options['alg_wishlist_snapfind_boost']) ? $options['alg_wishlist_snapfind_boost'] : '0',
+                __('When enabled, products the visitor has saved to their wishlist are pushed to the top of SnapFind search results. Heart buttons on results are always available regardless of this option.', 'ffl-funnels-addons')
+            );
+
+            echo '</div></div>'; // end card
+        }
+
         // Save button.
         echo '<div class="wb-actions-bar">';
         echo '<button type="submit" class="wb-btn wb-btn--primary">';
@@ -167,7 +183,7 @@ class Wishlist_Admin
             echo '<p class="description">' . esc_html__('The SnapFind plugin is active. FFL Funnels will automatically add wishlist support on SnapFind product search: heart buttons on each result and ranking boost for products the visitor has saved in their wishlist. No custom template code is required.', 'ffl-funnels-addons') . '</p>';
             echo '<ul class="wb-list" style="margin-top:0.5em;">';
             echo '<li><strong>' . esc_html__('Requirements (frontend):', 'ffl-funnels-addons') . '</strong> ' . esc_html__('Wishlist assets must load on the same page as the SnapFind search. They load automatically when the wishlist module is enabled. If a page only outputs SnapFind without a wishlist shortcode, ensure your theme or Bricks still loads the wishlist script (e.g. header counter or a hidden shortcode) so buttons and AJAX work.', 'ffl-funnels-addons') . '</li>';
-            echo '<li><strong>' . esc_html__('Ranking boost (option C):', 'ffl-funnels-addons') . '</strong> ' . esc_html__('Products in the visitor’s default wishlist are boosted in Typesense sort order. Guests and logged-in users are both supported. If the list is empty, no boost is applied.', 'ffl-funnels-addons') . '</li>';
+            echo '<li><strong>' . esc_html__('Ranking boost (opt-in):', 'ffl-funnels-addons') . '</strong> ' . esc_html__('Disabled by default. Enable “Boost wishlisted products in search” above to push products in the visitor’s default wishlist to the top of Typesense sort order. If the list is empty, no boost is applied.', 'ffl-funnels-addons') . '</li>';
             echo '<li><strong>' . esc_html__('Optional field — wishlist_count (popularity):', 'ffl-funnels-addons') . '</strong> ' . esc_html__('This plugin can send a numeric wishlist_count to Typesense for each product (how many wishlists include that product). In SnapFind → Schema Builder, for “product”, add a new field: slug wishlist_count, type int32, index Yes, sort Yes, facet optional. Then run a full reindex in SnapFind so the field is populated. You can use this field in facets or as an extra sort option.', 'ffl-funnels-addons') . '</li>';
             echo '</ul>';
         } else {
@@ -224,6 +240,11 @@ class Wishlist_Admin
         // Page ID is an integer.
         if (isset($_POST['alg_wishlist_page_id'])) {
             $options['alg_wishlist_page_id'] = absint($_POST['alg_wishlist_page_id']);
+        }
+
+        // SnapFind boost toggle (only stored when the SnapFind card is shown).
+        if (defined('SNAPFIND_DIR')) {
+            $options['alg_wishlist_snapfind_boost'] = isset($_POST['alg_wishlist_snapfind_boost']) ? '1' : '0';
         }
 
         update_option('alg_wishlist_settings', $options);

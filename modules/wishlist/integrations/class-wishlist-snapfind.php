@@ -54,9 +54,27 @@ class Alg_Wishlist_SnapFind
      * Inject a "before" inline script on snapfind-public that pushes the
      * user's wishlisted product IDs into the boost config BEFORE the
      * SnapFind bundle reads it on DOMContentLoaded.
+     *
+     * Disabled by default. The store admin opts in from
+     * Wishlist Settings → SnapFind Integration → "Boost wishlisted products in search".
+     * Filter `alg_wishlist_snapfind_boost_enabled` allows code-level override.
      */
     private function inject_boost_script(): void
     {
+        $options = get_option('alg_wishlist_settings', array());
+        $enabled = !empty($options['alg_wishlist_snapfind_boost']);
+
+        /**
+         * Allow code to force-enable or force-disable the SnapFind wishlist boost.
+         *
+         * @param bool $enabled Current toggle state from the admin setting.
+         */
+        $enabled = (bool) apply_filters('alg_wishlist_snapfind_boost_enabled', $enabled);
+
+        if (!$enabled) {
+            return;
+        }
+
         $ids = Alg_Wishlist_Core::get_wishlist_items();
         if (empty($ids)) {
             return;
