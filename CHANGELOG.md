@@ -10,6 +10,7 @@ All notable changes to FFL Funnels Addons are documented in this file.
 - **File uploads:** Custom “Choose files” control with a removable file list before submit (merges multiple picker rounds; max 3 × 5 MB); `<details>` summary styling for optional media; localized strings for remove / limits.
 - **PHP:** Safer `normalize_uploads_array()` for single-file `$_FILES` shapes; docblock on `render_media_upload_widget()` documenting `multipart/form-data`, `multiple`, and `ffla_review_media[]`.
 - **Bootstrap:** Load `Product_Reviews_Frontend_Render` before the order hub so the shared upload widget is available everywhere.
+- **Typography:** Base `1.6rem` + nested `em` so copy stays readable when `html` uses **1rem = 10px** (common Bricks/FFL setup); larger interactive stars; remove-file control centered with flex (fixes misaligned × on hover).
 
 ## [1.19.0] - 2026-05-01
 

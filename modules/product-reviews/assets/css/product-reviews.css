@@ -2,16 +2,18 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
+    font-size: 1.5rem;
     --ffla-star-filled: #d4a017;
     --ffla-star-empty: #d8dce5;
 }
 
 .ffla-reviews-badge__avg {
     font-weight: 700;
+    font-size: 1.5rem;
 }
 
 .ffla-reviews-badge__count {
-    font-size: 0.9rem;
+    font-size: 1.4rem;
     opacity: 0.8;
 }
 
@@ -19,7 +21,7 @@
     position: relative;
     display: inline-block;
     line-height: 1;
-    font-size: 18px;
+    font-size: 22px;
     letter-spacing: 0.08em;
 }
 
@@ -37,6 +39,7 @@
     max-width: 100%;
 }
 
+/* Many Bricks/FFL themes use 1rem = 10px (62.5% root). Base 1.6rem ≈ 16px; use em inside for scale. */
 .ffla-reviews-list {
     display: grid;
     gap: 16px;
@@ -45,7 +48,7 @@
     --ffla-ui-text: #1e293b;
     --ffla-ui-muted: #64748b;
     color: var(--ffla-ui-text);
-    font-size: 15px;
+    font-size: 1.6rem;
     line-height: 1.55;
 }
 
@@ -69,7 +72,7 @@
 }
 
 .ffla-review-card__date {
-    font-size: 0.8125rem;
+    font-size: 0.875em;
     font-weight: 500;
     color: var(--ffla-ui-muted, #64748b);
     opacity: 1;
@@ -78,11 +81,11 @@
 .ffla-review-card__verified {
     display: inline-block;
     margin: 6px 0;
-    padding: 3px 8px;
+    padding: 4px 10px;
     border-radius: 999px;
     background: #eef7f2;
     color: #247a46;
-    font-size: 0.75rem;
+    font-size: 0.85em;
     font-weight: 600;
 }
 
@@ -91,14 +94,14 @@
     flex-wrap: wrap;
     gap: 10px;
     margin: 8px 0;
-    font-size: 0.875rem;
+    font-size: 0.9em;
     color: var(--ffla-ui-muted, #64748b);
 }
 
 .ffla-review-card__content {
     margin-top: 2px;
     line-height: 1.65;
-    font-size: 0.9375rem;
+    font-size: 1em;
 }
 
 .ffla-review-card__media {
@@ -127,9 +130,9 @@
     background: transparent;
     border: 1px solid #d0d7e2;
     border-radius: 6px;
-    padding: 6px 10px;
+    padding: 8px 12px;
     cursor: pointer;
-    font-size: 0.85rem;
+    font-size: 0.9em;
 }
 
 .ffla-review-helpful.is-done {
@@ -148,7 +151,7 @@
     --ffla-ui-muted: #64748b;
     --ffla-ui-border: #e2e8f0;
     color: var(--ffla-ui-text);
-    font-size: 15px;
+    font-size: 1.6rem;
     line-height: 1.55;
     box-sizing: border-box;
     max-width: 100%;
@@ -173,7 +176,7 @@
     margin: 0 0 16px;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--ffla-ui-border);
-    font-size: 1.0625rem;
+    font-size: 1.375em;
     font-weight: 700;
     font-style: normal;
     letter-spacing: 0.03em;
@@ -208,7 +211,7 @@
 
 .ffla-review-form__intro {
     margin: 0 0 8px;
-    font-size: 0.95rem;
+    font-size: 1em;
     line-height: 1.5;
     opacity: 0.88;
 }
@@ -231,7 +234,7 @@
     display: block;
     margin-bottom: 8px;
     font-weight: 600;
-    font-size: 0.9375rem;
+    font-size: 1em;
     color: var(--ffla-ui-text);
     padding: 0;
 }
@@ -278,7 +281,7 @@
 }
 
 .ffla-star-rating-input__glyph {
-    font-size: 1.85rem;
+    font-size: 24px;
     line-height: 1;
     color: var(--ffla-star-empty);
     transition: color 0.12s ease, transform 0.12s ease;
@@ -300,7 +303,7 @@
 .ffla-review-form__hint {
     display: block;
     margin: 0 0 8px;
-    font-size: 0.875rem;
+    font-size: 0.9em;
     font-weight: 400;
     line-height: 1.45;
     color: var(--ffla-ui-muted);
@@ -318,7 +321,7 @@
 .ffla-review-form__media-summary {
     cursor: pointer;
     font-weight: 600;
-    font-size: 0.9375rem;
+    font-size: 1em;
     padding: 14px 16px;
     list-style: none;
     display: flex;
@@ -367,7 +370,7 @@
 
 .ffla-review-form__media-heading {
     margin: 0 0 10px;
-    font-size: 0.9375rem;
+    font-size: 1em;
     font-weight: 600;
     color: var(--ffla-ui-text);
 }
@@ -400,8 +403,8 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 18px;
-    font-size: 0.9375rem;
+    padding: 12px 20px;
+    font-size: 1em;
     font-weight: 600;
     color: #fff !important;
     background: #334155 !important;
@@ -443,11 +446,11 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 10px 12px;
+    padding: 12px 14px;
     border: 1px solid var(--ffla-ui-border);
     border-radius: 8px;
     background: #f8fafc;
-    font-size: 0.875rem;
+    font-size: 1em;
 }
 
 .ffla-review-form__file-name {
@@ -461,27 +464,39 @@
 
 .ffla-review-form__file-remove {
     flex-shrink: 0;
-    width: 32px;
-    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 4rem;
+    height: 4rem;
     padding: 0;
+    margin: 0;
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     background: transparent;
     color: var(--ffla-ui-muted);
-    font-size: 1.35rem;
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    font-size: 2.8rem;
+    font-weight: 300;
     line-height: 1;
     cursor: pointer;
     transition: color 0.15s ease, background 0.15s ease;
 }
 
-.ffla-review-form__file-remove:hover {
+.ffla-review-form__file-remove:hover,
+.ffla-review-form__file-remove:focus-visible {
     color: #b91c1c;
     background: #fef2f2;
 }
 
+.ffla-review-form__file-remove:focus-visible {
+    outline: 2px solid #3b6fd8;
+    outline-offset: 2px;
+}
+
 .ffla-review-form__file-help {
     margin: 12px 0 0;
-    font-size: 0.8125rem;
+    font-size: 0.85em;
     line-height: 1.45;
     color: var(--ffla-ui-muted);
 }
@@ -495,7 +510,7 @@
     display: block;
     margin-bottom: 6px;
     font-weight: 600;
-    font-size: 0.9375rem;
+    font-size: 1em;
     color: var(--ffla-ui-text);
 }
 
@@ -512,20 +527,20 @@
 
 .ffla-review-form__field input[type="text"],
 .ffla-review-form__field input[type="email"] {
-    min-height: 44px;
-    padding: 10px 12px;
+    min-height: 4.8rem;
+    padding: 12px 14px;
     border: 1px solid #cfd6e4;
     border-radius: 8px;
-    font-size: 1rem;
+    font-size: 1em;
     background: #fff;
 }
 
 .ffla-review-form__field textarea {
-    min-height: 140px;
-    padding: 12px;
+    min-height: 15rem;
+    padding: 14px;
     border: 1px solid #cfd6e4;
     border-radius: 8px;
-    font-size: 1rem;
+    font-size: 1em;
     line-height: 1.5;
     resize: vertical;
     background: #fff;
@@ -548,7 +563,7 @@
     padding: 10px 12px;
     border-radius: 8px;
     margin-bottom: 12px;
-    font-size: 0.9rem;
+    font-size: 0.95em;
 }
 
 .ffla-review-form__notice--success {
@@ -585,9 +600,9 @@
     width: auto;
     max-width: 100%;
     margin-top: 4px;
-    padding: 12px 28px;
+    padding: 14px 32px;
     cursor: pointer;
-    font-size: 1rem;
+    font-size: 1.05em;
     font-weight: 600;
     line-height: 1.2;
     color: #fff !important;
@@ -621,6 +636,6 @@
     --ffla-ui-muted: #64748b;
     --ffla-ui-border: #e2e8f0;
     color: var(--ffla-ui-text);
-    font-size: 15px;
+    font-size: 1.6rem;
     line-height: 1.55;
 }

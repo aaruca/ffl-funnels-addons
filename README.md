@@ -198,7 +198,7 @@ define('WSS_OAUTH_DEBUG_FILE', true);  // also write wp-content/uploads/wss-logs
 
 ### v1.20.0
 
-*   **Product Reviews:** Refined spacing and typography on the reviews tab; redesigned optional media section with **Choose files**, list of selected files, and **remove** before submit; more robust multi-file upload handling in PHP.
+*   **Product Reviews:** Refined spacing and typography on the reviews tab (including **1rem = 10px** root-friendly sizing); redesigned optional media section with **Choose files**, list of selected files, and **remove** before submit; more robust multi-file upload handling in PHP.
 
 ### v1.19.0
 
