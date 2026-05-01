@@ -86,8 +86,114 @@
         });
     }
 
+    function initMediaUploadZones() {
+        var zones = document.querySelectorAll('[data-ffla-media-upload]');
+        var fu = (typeof window.fflaProductReviews.fileUpload === 'object' && window.fflaProductReviews.fileUpload) || {};
+        var maxFiles = 3;
+        var maxBytes = 5 * 1024 * 1024;
+
+        zones.forEach(function (zone) {
+            if (zone.getAttribute('data-ffla-media-init') === '1') {
+                return;
+            }
+            zone.setAttribute('data-ffla-media-init', '1');
+
+            var input = zone.querySelector('.ffla-review-form__file-input');
+            var btn = zone.querySelector('.ffla-review-form__file-add');
+            var list = zone.querySelector('.ffla-review-form__file-list');
+            if (!input || !list) {
+                return;
+            }
+
+            /** After the browser opens the file dialog, `input.files` is only the new pick — merge with prior. */
+            var existingFiles = [];
+
+            function applyFiles(files) {
+                var dt = new DataTransfer();
+                files.forEach(function (f) {
+                    dt.items.add(f);
+                });
+                input.files = dt.files;
+                existingFiles = files.slice();
+                renderList();
+            }
+
+            function renderList() {
+                var files = existingFiles;
+                list.innerHTML = '';
+                if (!files.length) {
+                    list.hidden = true;
+                    return;
+                }
+                list.hidden = false;
+                files.forEach(function (file, index) {
+                    var li = document.createElement('li');
+                    li.className = 'ffla-review-form__file-item';
+
+                    var nameSpan = document.createElement('span');
+                    nameSpan.className = 'ffla-review-form__file-name';
+                    nameSpan.textContent = file.name;
+
+                    var rm = document.createElement('button');
+                    rm.type = 'button';
+                    rm.className = 'ffla-review-form__file-remove';
+                    rm.setAttribute('aria-label', fu.removeLabel || 'Remove');
+                    rm.setAttribute('title', fu.removeLabel || 'Remove');
+                    rm.textContent = '\u00d7';
+
+                    rm.addEventListener('click', function () {
+                        var next = existingFiles.slice();
+                        next.splice(index, 1);
+                        applyFiles(next);
+                    });
+
+                    li.appendChild(nameSpan);
+                    li.appendChild(rm);
+                    list.appendChild(li);
+                });
+            }
+
+            input.addEventListener('change', function () {
+                var picked = Array.prototype.slice.call(input.files || []);
+                input.value = '';
+                var merged = existingFiles.concat(picked);
+                var hadTooMany = merged.length > maxFiles;
+                if (hadTooMany) {
+                    merged = merged.slice(0, maxFiles);
+                    if (fu.maxFiles) {
+                        window.alert(fu.maxFiles);
+                    }
+                }
+                var skippedLarge = false;
+                merged = merged.filter(function (f) {
+                    if (f.size > maxBytes) {
+                        skippedLarge = true;
+                        return false;
+                    }
+                    return true;
+                });
+                if (skippedLarge && fu.fileTooLarge) {
+                    window.alert(fu.fileTooLarge);
+                }
+                if (merged.length > maxFiles) {
+                    merged = merged.slice(0, maxFiles);
+                }
+                applyFiles(merged);
+            });
+
+            if (btn) {
+                btn.addEventListener('click', function () {
+                    input.click();
+                });
+            }
+
+            renderList();
+        });
+    }
+
     function init() {
         initStarRatingInputs();
+        initMediaUploadZones();
         var buttons = document.querySelectorAll('.ffla-review-helpful');
         for (var i = 0; i < buttons.length; i++) {
             buttons[i].addEventListener('click', onVoteClick);

@@ -223,10 +223,10 @@ class Product_Reviews_Order_Hub
         echo '<label for="' . esc_attr($comment_id) . '">' . esc_html__('Your review', 'ffl-funnels-addons') . '</label>';
         echo '<textarea id="' . esc_attr($comment_id) . '" name="comment" rows="5" required></textarea></p>';
 
-        echo '<p class="ffla-review-form__field ffla-review-form__field--media">';
-        echo '<label for="' . esc_attr($uid) . '-m">' . esc_html__('Photos / video (optional)', 'ffl-funnels-addons') . '</label>';
-        echo '<input id="' . esc_attr($uid) . '-m" name="ffla_review_media[]" type="file" accept="image/*,video/mp4,video/webm" multiple>';
-        echo '<small>' . esc_html__('Up to 3 files, 5 MB each.', 'ffl-funnels-addons') . '</small></p>';
+        echo '<div class="ffla-review-form__field ffla-review-form__field--media ffla-review-form__media-block">';
+        echo '<p class="ffla-review-form__media-heading">' . esc_html__('Photos / video (optional)', 'ffl-funnels-addons') . '</p>';
+        \Product_Reviews_Frontend_Render::render_media_upload_widget($uid . '-m');
+        echo '</div>';
 
         if (\Product_Reviews_Core::is_turnstile_enabled()) {
             echo '<p class="ffla-order-reviews__turnstile-note"><small>'

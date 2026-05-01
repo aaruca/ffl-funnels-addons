@@ -38,10 +38,11 @@ class Product_Reviews_Module extends FFLA_Module
     {
         $base = $this->get_path();
 
+        require_once $base . 'includes/class-product-reviews-frontend-render.php';
+
         require_once $base . 'includes/class-product-reviews-order-hub.php';
         Product_Reviews_Order_Hub::init();
 
-        require_once $base . 'includes/class-product-reviews-frontend-render.php';
         require_once $base . 'includes/class-product-reviews-core.php';
         Product_Reviews_Core::init();
 

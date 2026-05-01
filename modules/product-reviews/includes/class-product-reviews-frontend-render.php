@@ -48,6 +48,27 @@ class Product_Reviews_Frontend_Render
     }
 
     /**
+     * Styled upload UI + list/remove via JS (product-reviews.js).
+     *
+     * Multiple uploads require: form `enctype="multipart/form-data"`, input `multiple`,
+     * and `name="ffla_review_media[]"` so PHP receives an array (see normalize_uploads_array).
+     *
+     * @param string $input_id Unique DOM id for the file input.
+     */
+    public static function render_media_upload_widget(string $input_id): void
+    {
+        $hint_id = $input_id . '-hint';
+        echo '<div class="ffla-review-form__media-upload" data-ffla-media-upload>';
+        echo '<input id="' . esc_attr($input_id) . '" class="ffla-review-form__file-input" name="ffla_review_media[]" type="file" accept="image/*,video/mp4,video/webm" multiple aria-describedby="' . esc_attr($hint_id) . '">';
+        echo '<div class="ffla-review-form__file-ui">';
+        echo '<button type="button" class="ffla-review-form__file-add">' . esc_html__('Choose files', 'ffl-funnels-addons') . '</button>';
+        echo '<ul class="ffla-review-form__file-list" hidden aria-live="polite"></ul>';
+        echo '</div>';
+        echo '<p class="ffla-review-form__file-help" id="' . esc_attr($hint_id) . '">' . esc_html__('Up to 3 files, 5 MB each. JPG, PNG, GIF, WebP, MP4, or WebM.', 'ffl-funnels-addons') . '</p>';
+        echo '</div>';
+    }
+
+    /**
      * @param array<string, mixed> $settings Optional: title, showLoginHint, showOptionalCriteria, collapseMedia, introText.
      * @param bool                 $wrap     When false, omit outer `.ffla-review-form-wrap` (e.g. Bricks supplies its own root).
      */
@@ -125,16 +146,14 @@ class Product_Reviews_Frontend_Render
         if ($collapse_media) {
             echo '<details class="ffla-review-form__media-details">';
             echo '<summary class="ffla-review-form__media-summary">' . esc_html__('Add photos or a short video (optional)', 'ffl-funnels-addons') . '</summary>';
-            echo '<p class="ffla-review-form__field ffla-review-form__field--media">';
-            echo '<label for="' . esc_attr($uid) . '-media">' . esc_html__('Files', 'ffl-funnels-addons') . '</label>';
-            echo '<input id="' . esc_attr($uid) . '-media" name="ffla_review_media[]" type="file" accept="image/*,video/mp4,video/webm" multiple>';
-            echo '<small>' . esc_html__('Up to 3 files, 5 MB each.', 'ffl-funnels-addons') . '</small></p>';
-            echo '</details>';
+            echo '<div class="ffla-review-form__media-details-inner">';
+            self::render_media_upload_widget($uid . '-media');
+            echo '</div></details>';
         } else {
-            echo '<p class="ffla-review-form__field ffla-review-form__field--media">';
-            echo '<label for="' . esc_attr($uid) . '-media">' . esc_html__('Photos / video (optional)', 'ffl-funnels-addons') . '</label>';
-            echo '<input id="' . esc_attr($uid) . '-media" name="ffla_review_media[]" type="file" accept="image/*,video/mp4,video/webm" multiple>';
-            echo '<small>' . esc_html__('Up to 3 files, 5 MB each.', 'ffl-funnels-addons') . '</small></p>';
+            echo '<div class="ffla-review-form__media-block">';
+            echo '<p class="ffla-review-form__media-heading">' . esc_html__('Photos / video (optional)', 'ffl-funnels-addons') . '</p>';
+            self::render_media_upload_widget($uid . '-media');
+            echo '</div>';
         }
 
         if (Product_Reviews_Core::is_turnstile_enabled()) {

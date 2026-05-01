@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.19.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.20.0-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -195,6 +195,10 @@ define('WSS_OAUTH_DEBUG_FILE', true);  // also write wp-content/uploads/wss-logs
 ```
 
 ## Changelog
+
+### v1.20.0
+
+*   **Product Reviews:** Refined spacing and typography on the reviews tab; redesigned optional media section with **Choose files**, list of selected files, and **remove** before submit; more robust multi-file upload handling in PHP.
 
 ### v1.19.0
 

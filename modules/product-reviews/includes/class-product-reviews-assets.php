@@ -44,6 +44,11 @@ class Product_Reviews_Assets
                 'voteSaved' => __('Thanks for your feedback!', 'ffl-funnels-addons'),
                 'voteError' => __('Unable to register your vote.', 'ffl-funnels-addons'),
             ],
+            'fileUpload' => [
+                'removeLabel'  => __('Remove file', 'ffl-funnels-addons'),
+                'maxFiles'     => __('You can attach up to 3 files.', 'ffl-funnels-addons'),
+                'fileTooLarge' => __('Each file must be 5 MB or less.', 'ffl-funnels-addons'),
+            ],
         ]);
 
         if (Product_Reviews_Core::is_turnstile_enabled()) {

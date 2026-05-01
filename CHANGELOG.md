@@ -2,6 +2,15 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.20.0] - 2026-05-02
+
+### Product Reviews
+
+- **UI / layout:** Clearer spacing between the reviews list and the write-review block on the WooCommerce tab; shared UI tokens for text/muted/border; stronger label/hint/textarea hierarchy; review cards with improved line-height and date styling.
+- **File uploads:** Custom “Choose files” control with a removable file list before submit (merges multiple picker rounds; max 3 × 5 MB); `<details>` summary styling for optional media; localized strings for remove / limits.
+- **PHP:** Safer `normalize_uploads_array()` for single-file `$_FILES` shapes; docblock on `render_media_upload_widget()` documenting `multipart/form-data`, `multiple`, and `ffla_review_media[]`.
+- **Bootstrap:** Load `Product_Reviews_Frontend_Render` before the order hub so the shared upload widget is available everywhere.
+
 ## [1.19.0] - 2026-05-01
 
 ### Product Reviews

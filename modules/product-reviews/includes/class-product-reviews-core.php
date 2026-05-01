@@ -894,10 +894,26 @@ class Product_Reviews_Core
         return is_array($data) && !empty($data['success']);
     }
 
+    /**
+     * Flatten $_FILES['ffla_review_media'] for name="ffla_review_media[]" + multiple.
+     * Supports multi-file shape (name/type/tmp_name as arrays) and single-file legacy shape (scalar keys).
+     */
     private static function normalize_uploads_array(array $files): array
     {
-        if (!isset($files['name']) || !is_array($files['name'])) {
-            return [$files];
+        if (!isset($files['name'])) {
+            return [];
+        }
+
+        if (!is_array($files['name'])) {
+            return [
+                [
+                    'name'     => $files['name'],
+                    'type'     => $files['type'] ?? '',
+                    'tmp_name' => $files['tmp_name'] ?? '',
+                    'error'    => isset($files['error']) ? (int) $files['error'] : UPLOAD_ERR_NO_FILE,
+                    'size'     => isset($files['size']) ? (int) $files['size'] : 0,
+                ],
+            ];
         }
 
         $normalized = [];
@@ -906,10 +922,11 @@ class Product_Reviews_Core
                 'name'     => $name,
                 'type'     => $files['type'][$idx] ?? '',
                 'tmp_name' => $files['tmp_name'][$idx] ?? '',
-                'error'    => $files['error'][$idx] ?? UPLOAD_ERR_NO_FILE,
-                'size'     => $files['size'][$idx] ?? 0,
+                'error'    => isset($files['error'][$idx]) ? (int) $files['error'][$idx] : UPLOAD_ERR_NO_FILE,
+                'size'     => isset($files['size'][$idx]) ? (int) $files['size'][$idx] : 0,
             ];
         }
+
         return $normalized;
     }
 
