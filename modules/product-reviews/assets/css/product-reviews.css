@@ -630,12 +630,78 @@
     width: 100%;
 }
 
-/* Order review hub: same type scale when form is not inside a card */
+/* Order review hub: match Product Reviews form tokens + card layout per product */
 .ffla-order-reviews {
+    --ffla-star-filled: #d4a017;
+    --ffla-star-empty: #94a3b8;
     --ffla-ui-text: #1e293b;
     --ffla-ui-muted: #64748b;
     --ffla-ui-border: #e2e8f0;
+    box-sizing: border-box;
+    max-width: 100%;
     color: var(--ffla-ui-text);
     font-size: 1.6rem;
     line-height: 1.55;
+}
+
+.ffla-order-reviews__page-title {
+    margin: 0 0 12px;
+    font-size: 1.75em;
+    font-weight: 700;
+    color: var(--ffla-ui-text);
+}
+
+.ffla-order-reviews__intro {
+    margin: 0 0 20px;
+    font-size: 1em;
+    color: var(--ffla-ui-text);
+}
+
+.ffla-order-reviews__product {
+    margin: 0 0 24px;
+    padding: 18px 20px;
+    border: 1px solid var(--ffla-ui-border);
+    border-radius: 12px;
+    background: #fff;
+    box-sizing: border-box;
+}
+
+.ffla-order-reviews__product:last-child {
+    margin-bottom: 0;
+}
+
+.ffla-order-reviews__product-title {
+    margin: 0 0 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--ffla-ui-border);
+    font-size: 1.375em;
+    font-weight: 700;
+    color: var(--ffla-ui-text);
+}
+
+.ffla-order-reviews__done {
+    margin: 0;
+    font-size: 1em;
+    color: var(--ffla-ui-muted);
+}
+
+.ffla-order-reviews .ffla-review-form {
+    gap: 16px;
+}
+
+.ffla-order-reviews__turnstile-note {
+    margin: 8px 0 0;
+    font-size: 0.85em;
+    color: var(--ffla-ui-muted);
+}
+
+.ffla-order-reviews__turnstile-note small {
+    font-size: inherit;
+}
+
+.ffla-order-reviews--placeholder {
+    padding: 18px 20px;
+    border: 1px dashed var(--ffla-ui-border);
+    border-radius: 12px;
+    background: #fafbfc;
 }

@@ -1,6 +1,6 @@
 {
   "name": "ffl-funnels-addons",
-  "version": "1.20.0",
+  "version": "1.20.1",
   "private": true,
   "description": "Custom addons and integrations for FFL Funnels WooCommerce stores.",
   "scripts": {

@@ -2,6 +2,12 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.20.1] - 2026-05-02
+
+### Product Reviews
+
+- **Order review hub:** Styles aligned with the single-product review form — shared UI variables; each order line gets a **card** block (border, radius, padding, product title treatment like “Write a review”).
+
 ## [1.20.0] - 2026-05-02
 
 ### Product Reviews
