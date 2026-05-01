@@ -23,6 +23,7 @@ class Product_Reviews_Core
         add_action('delete_comment', [__CLASS__, 'cleanup_review_media'], 10, 1);
         add_action('admin_post_ffla_submit_product_review', [__CLASS__, 'handle_form_submission']);
         add_action('admin_post_nopriv_ffla_submit_product_review', [__CLASS__, 'handle_form_submission']);
+        add_filter('woocommerce_product_tabs', [__CLASS__, 'maybe_replace_default_reviews_tab'], 98);
         add_filter('woocommerce_product_tabs', [__CLASS__, 'maybe_hide_default_reviews_tab'], 99);
         add_filter('pre_comment_approved', [__CLASS__, 'filter_pre_comment_approved'], 10, 2);
         add_action('init', [__CLASS__, 'register_order_review_rewrites'], 20);
@@ -41,7 +42,8 @@ class Product_Reviews_Core
             'enable_requests'           => '1',
             'request_delay_days'        => '7',
             'enable_helpful_votes'      => '1',
-            'hide_default_reviews_tab'  => '0',
+            'hide_default_reviews_tab'   => '0',
+            'replace_default_reviews_tab' => '0',
             'enable_turnstile'          => '0',
             'turnstile_site_key'        => '',
             'turnstile_secret_key'      => '',
@@ -74,8 +76,59 @@ class Product_Reviews_Core
         return $settings[$key] ?? $default;
     }
 
+    /**
+     * Use FFL review list + form inside WooCommerce’s Reviews tab instead of the core comments template.
+     */
+    public static function maybe_replace_default_reviews_tab(array $tabs): array
+    {
+        if ('1' !== self::get_setting('replace_default_reviews_tab', '0')) {
+            return $tabs;
+        }
+
+        if (!isset($tabs['reviews'])) {
+            return $tabs;
+        }
+
+        $tabs['reviews']['callback'] = [__CLASS__, 'render_wc_reviews_tab'];
+
+        return $tabs;
+    }
+
+    /**
+     * Callback for the product Reviews tab when "replace default" is enabled.
+     */
+    public static function render_wc_reviews_tab(): void
+    {
+        $product_id = self::resolve_context_product_id(0);
+        if ($product_id <= 0) {
+            return;
+        }
+
+        $list_defaults = [
+            'perPage' => 5,
+            'orderBy' => 'recent',
+        ];
+
+        $list_settings = apply_filters('ffla_product_reviews_wc_tab_list_settings', $list_defaults, $product_id);
+        $form_settings = apply_filters('ffla_product_reviews_wc_tab_form_settings', [], $product_id);
+
+        echo '<div class="ffla-wc-reviews-tab">';
+
+        Product_Reviews_Frontend_Render::render_reviews_list($product_id, is_array($list_settings) ? $list_settings : $list_defaults);
+        Product_Reviews_Frontend_Render::render_review_form(
+            $product_id,
+            is_array($form_settings) ? $form_settings : []
+        );
+
+        echo '</div>';
+    }
+
     public static function maybe_hide_default_reviews_tab(array $tabs): array
     {
+        if ('1' === self::get_setting('replace_default_reviews_tab', '0')) {
+            return $tabs;
+        }
+
         if ('1' === self::get_setting('hide_default_reviews_tab', '0') && isset($tabs['reviews'])) {
             unset($tabs['reviews']);
         }

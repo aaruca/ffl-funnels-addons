@@ -66,10 +66,17 @@ class Product_Reviews_Admin
         );
 
         FFLA_Admin::render_toggle_field(
+            __('Replace WooCommerce reviews tab with FFL form', 'ffl-funnels-addons'),
+            'replace_default_reviews_tab',
+            $settings['replace_default_reviews_tab'] ?? '0',
+            __('Show the FFL reviews list and review form inside the standard “Reviews” product tab (no Bricks block needed). “Hide default tab” is ignored while this is on. Use filters ffla_product_reviews_wc_tab_list_settings and ffla_product_reviews_wc_tab_form_settings to customize.', 'ffl-funnels-addons')
+        );
+
+        FFLA_Admin::render_toggle_field(
             __('Hide default Woo reviews tab', 'ffl-funnels-addons'),
             'hide_default_reviews_tab',
             $settings['hide_default_reviews_tab'] ?? '0',
-            __('Turn on when you use only the Bricks Review Form / list / badge so shoppers do not see WooCommerce’s second, built-in reviews tab.', 'ffl-funnels-addons')
+            __('Turn on when you use only the Bricks Review Form / list / badge so shoppers do not see WooCommerce’s second, built-in reviews tab. Ignored if “Replace WooCommerce reviews tab” is enabled.', 'ffl-funnels-addons')
         );
 
         FFLA_Admin::render_toggle_field(
@@ -147,7 +154,7 @@ class Product_Reviews_Admin
             __('Enable Turnstile on review forms', 'ffl-funnels-addons'),
             'enable_turnstile',
             $settings['enable_turnstile'] ?? '0',
-            __('Requires valid Cloudflare site key and secret key. Applies to the Bricks Review Form submission endpoint; the default Woo reviews tab is not modified.', 'ffl-funnels-addons')
+            __('Requires valid Cloudflare site key and secret key. Applies to the FFL review form (Bricks and, when enabled, the replaced WooCommerce reviews tab).', 'ffl-funnels-addons')
         );
 
         FFLA_Admin::render_text_field(
@@ -220,6 +227,7 @@ class Product_Reviews_Admin
 
         $new['enable_requests'] = isset($_POST['enable_requests']) ? '1' : '0';
         $new['enable_helpful_votes'] = isset($_POST['enable_helpful_votes']) ? '1' : '0';
+        $new['replace_default_reviews_tab'] = isset($_POST['replace_default_reviews_tab']) ? '1' : '0';
         $new['hide_default_reviews_tab'] = isset($_POST['hide_default_reviews_tab']) ? '1' : '0';
         $new['moderate_all_reviews'] = isset($_POST['moderate_all_reviews']) ? '1' : '0';
         $new['enable_turnstile'] = isset($_POST['enable_turnstile']) ? '1' : '0';

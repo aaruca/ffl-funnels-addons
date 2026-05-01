@@ -2,6 +2,17 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.19.0] - 2026-05-01
+
+### Product Reviews
+
+- **Replace WooCommerce reviews tab:** New setting **Replace WooCommerce reviews tab with FFL form** (FFL Funnels → Product Reviews). When enabled, the standard product **Reviews** tab renders the FFL reviews list and advanced review form (stars, optional criteria, media, Turnstile when configured, helpful votes) instead of the core comments template. Filters: `ffla_product_reviews_wc_tab_list_settings`, `ffla_product_reviews_wc_tab_form_settings`. **Hide default Woo reviews tab** is ignored while replace is on.
+- **Shared front-end output:** `Product_Reviews_Frontend_Render` centralizes list and form HTML; Bricks **Review form** and **Reviews list** elements use the same markup.
+
+### Wishlist
+
+- **SnapFind boost opt-in:** Wishlist-based ranking boost on Typesense results is **off** by default; enable **Boost wishlisted products in search** under FFL Funnels → Wishlist (when SnapFind is present). Filter: `alg_wishlist_snapfind_boost_enabled`.
+
 ## [1.18.0] - 2026-04-24
 
 ### WooBooster — AI assistant

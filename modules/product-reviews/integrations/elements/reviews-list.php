@@ -131,18 +131,6 @@ class FFLA_Reviews_List extends \Bricks\Element
         ];
     }
 
-    private function render_stars(float $rating, int $max_stars = 5): string
-    {
-        $rating = max(0, min($max_stars, $rating));
-        $percentage = ($rating / $max_stars) * 100;
-        $stars = str_repeat('&#9733;', $max_stars);
-
-        return '<span class="ffla-stars" aria-label="' . esc_attr(sprintf(__('Rated %1$s out of %2$s', 'ffl-funnels-addons'), number_format_i18n($rating, 1), $max_stars)) . '">'
-            . '<span class="ffla-stars__base">' . $stars . '</span>'
-            . '<span class="ffla-stars__fill" style="width:' . esc_attr(number_format($percentage, 4, '.', '')) . '%;">' . $stars . '</span>'
-            . '</span>';
-    }
-
     public function render()
     {
         $settings = $this->settings;
@@ -156,120 +144,15 @@ class FFLA_Reviews_List extends \Bricks\Element
 
         $per_page = !empty($settings['perPage']) ? absint($settings['perPage']) : 5;
         $per_page = max(1, min(50, $per_page));
-        $order_by = $settings['orderBy'] ?? 'recent';
-
-        $args = [
-            'post_id' => $product_id,
-            'status'  => 'approve',
-            'type'    => 'review',
-            'number'  => ($order_by === 'recent') ? $per_page : 100,
-            'orderby' => 'comment_date_gmt',
-            'order'   => 'DESC',
+        $list_settings = [
+            'perPage' => $per_page,
+            'orderBy' => $settings['orderBy'] ?? 'recent',
         ];
-        $reviews = get_comments($args);
-
-        if ($order_by === 'helpful') {
-            usort($reviews, static function ($a, $b): int {
-                $a_helpful = (int) get_comment_meta($a->comment_ID, 'ffla_helpful_yes', true);
-                $b_helpful = (int) get_comment_meta($b->comment_ID, 'ffla_helpful_yes', true);
-                if ($a_helpful === $b_helpful) {
-                    return strcmp($b->comment_date_gmt, $a->comment_date_gmt);
-                }
-                return $b_helpful <=> $a_helpful;
-            });
-            $reviews = array_slice($reviews, 0, $per_page);
-        }
 
         $this->set_attribute('_root', 'class', 'ffla-reviews-list');
 
         echo '<div ' . $this->render_attributes('_root') . '>';
-
-        if (empty($reviews)) {
-            echo '<p class="ffla-reviews-list__empty">' . esc_html__('No reviews yet.', 'ffl-funnels-addons') . '</p>';
-            echo '</div>';
-            return;
-        }
-
-        foreach ($reviews as $review) {
-            $rating = (float) get_comment_meta($review->comment_ID, 'rating', true);
-            $quality = (int) get_comment_meta($review->comment_ID, 'ffla_review_quality', true);
-            $value = (int) get_comment_meta($review->comment_ID, 'ffla_review_value', true);
-            $helpful = (int) get_comment_meta($review->comment_ID, 'ffla_helpful_yes', true);
-            $verified = (int) get_comment_meta($review->comment_ID, 'ffla_verified_purchase', true) === 1;
-            $media_ids = get_comment_meta($review->comment_ID, 'ffla_review_media_ids', true);
-            if (!is_array($media_ids)) {
-                $media_ids = [];
-            }
-
-            echo '<article class="ffla-review-card">';
-            echo '<header class="ffla-review-card__header">';
-            echo '<strong class="ffla-review-card__author">' . esc_html($review->comment_author) . '</strong>';
-            echo '<span class="ffla-review-card__date">' . esc_html(wp_date(get_option('date_format'), strtotime($review->comment_date_gmt . ' UTC'))) . '</span>';
-            echo '</header>';
-
-            if ($rating > 0) {
-                echo '<div class="ffla-review-card__rating">' . wp_kses_post($this->render_stars($rating)) . '</div>';
-            }
-
-            if ($verified) {
-                echo '<span class="ffla-review-card__verified">' . esc_html__('Verified buyer', 'ffl-funnels-addons') . '</span>';
-            }
-
-            if ($quality > 0 || $value > 0) {
-                echo '<div class="ffla-review-card__criteria">';
-                if ($quality > 0) {
-                    echo '<span>' . esc_html__('Quality:', 'ffl-funnels-addons') . ' ' . esc_html((string) $quality) . '/5</span>';
-                }
-                if ($value > 0) {
-                    echo '<span>' . esc_html__('Value:', 'ffl-funnels-addons') . ' ' . esc_html((string) $value) . '/5</span>';
-                }
-                echo '</div>';
-            }
-
-            $allowed_html = array(
-                'p'      => array(),
-                'br'     => array(),
-                'strong' => array(),
-                'em'     => array(),
-            );
-            echo '<div class="ffla-review-card__content">' . wp_kses(wpautop(wp_strip_all_tags($review->comment_content)), $allowed_html) . '</div>';
-
-            if (!empty($media_ids)) {
-                echo '<div class="ffla-review-card__media">';
-                foreach ($media_ids as $media_id) {
-                    $media_id = absint($media_id);
-                    if ($media_id <= 0) {
-                        continue;
-                    }
-
-                    $mime = (string) get_post_mime_type($media_id);
-                    if (strpos($mime, 'video/') === 0) {
-                        $video = wp_video_shortcode([
-                            'src'      => wp_get_attachment_url($media_id),
-                            'preload'  => 'metadata',
-                            'controls' => true,
-                        ]);
-                        echo '<div class="ffla-review-card__media-item ffla-review-card__media-item--video">' . wp_kses_post($video) . '</div>';
-                    } else {
-                        $image = wp_get_attachment_image($media_id, 'medium');
-                        if (!empty($image)) {
-                            echo '<div class="ffla-review-card__media-item ffla-review-card__media-item--image">' . wp_kses_post($image) . '</div>';
-                        }
-                    }
-                }
-                echo '</div>';
-            }
-
-            if ('1' === \Product_Reviews_Core::get_setting('enable_helpful_votes', '1')) {
-                echo '<button class="ffla-review-helpful" type="button" data-comment-id="' . esc_attr((string) $review->comment_ID) . '">';
-                echo esc_html__('Helpful', 'ffl-funnels-addons') . ' ';
-                echo '<span class="ffla-review-helpful__count">' . esc_html((string) $helpful) . '</span>';
-                echo '</button>';
-            }
-
-            echo '</article>';
-        }
-
+        \Product_Reviews_Frontend_Render::render_reviews_list($product_id, $list_settings, false);
         echo '</div>';
     }
 }

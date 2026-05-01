@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.18.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.19.0-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -25,7 +25,7 @@ A lightweight wishlist implementation optimized for performance.
 *   Bricks Builder integration (with native elements: Button and Counter).
 *   Guest wishlist support.
 *   Doofinder shadow DOM integration.
-*   **SnapFind (Typesense):** when the SnapFind search plugin is active, wishlist heart buttons and wishlist **ranking boost** apply automatically on product search results; see **FFL Funnels → Wishlist → Documentation** for the optional `wishlist_count` index field.
+*   **SnapFind (Typesense):** when the SnapFind search plugin is active, wishlist heart buttons on search results; optional **ranking boost** for wishlisted products (off by default; enable in Wishlist settings). See **FFL Funnels → Wishlist → Documentation** for the optional `wishlist_count` index field.
 
 ### 3. FFL Checkout Module
 A smart, compliance-focused checkout flow for firearms.
@@ -61,6 +61,7 @@ US sales tax resolution for WooCommerce using live USGeocoder API lookups (JSON)
 
 ### 8. Product Reviews
 Advanced WooCommerce product reviews with native Bricks elements and post-purchase review workflows.
+*   **WooCommerce tab (optional):** In **FFL Funnels → Product Reviews**, enable **Replace WooCommerce reviews tab with FFL form** to use the advanced list and form inside the standard product **Reviews** tab (no duplicate Bricks blocks required).
 *   **Bricks Native Elements:** Rating Badge, Reviews List, Review Form, and **Order reviews hub** under the **`FFL Funnels`** element category (with partial star styling and style controls).
 *   **Post-Purchase Requests:** Schedules review reminders after order completion — per product or **one bundled email** with a signed link to a hub page (`[ffla_order_reviews]`).
 *   **Review Enrichment:** Multi-criteria fields (quality/value), verified-buyer tagging, and helpful votes.
@@ -194,6 +195,11 @@ define('WSS_OAUTH_DEBUG_FILE', true);  // also write wp-content/uploads/wss-logs
 ```
 
 ## Changelog
+
+### v1.19.0
+
+*   **Product Reviews:** Optional **Replace WooCommerce reviews tab with FFL form** — the default product Reviews tab can show the FFL list and form without extra Bricks blocks; shared renderer with Bricks elements; filters for tab list/form settings.
+*   **Wishlist + SnapFind:** Wishlist ranking boost on search is **opt-in** (default off); toggle under Wishlist when SnapFind is active.
 
 ### v1.18.0
 
