@@ -174,6 +174,11 @@ JS;
 
         $css = "
 .snaf-hit-inner { position: relative; }
+.alg-add-to-wishlist.snaf-wishlist-btn {
+    max-width: 34px;
+    max-height: 34px;
+    box-sizing: border-box;
+}
 .snaf-wishlist-btn {
     position: absolute;
     top: 8px;

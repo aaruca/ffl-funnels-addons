@@ -2,6 +2,12 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.20.2] - 2026-05-01
+
+### Wishlist
+
+- **SnapFind:** Inline CSS uses `.alg-add-to-wishlist.snaf-wishlist-btn` with `max-width` / `max-height` (and `box-sizing`) so the wishlist control stays within hit-card layout.
+
 ## [1.20.1] - 2026-05-02
 
 ### Product Reviews
