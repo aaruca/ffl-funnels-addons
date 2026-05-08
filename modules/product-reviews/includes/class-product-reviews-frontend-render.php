@@ -156,10 +156,8 @@ class Product_Reviews_Frontend_Render
             echo '</div>';
         }
 
-        if (Product_Reviews_Core::is_turnstile_enabled()) {
-            echo '<div class="ffla-review-turnstile-wrap">';
-            echo '<div class="cf-turnstile" data-sitekey="' . esc_attr(Product_Reviews_Core::get_turnstile_site_key()) . '" data-theme="auto"></div>';
-            echo '</div>';
+        if (class_exists('Product_Reviews_Turnstile')) {
+            Product_Reviews_Turnstile::render_field();
         }
 
         echo '<input type="hidden" name="comment_post_ID" value="' . esc_attr((string) $product_id) . '">';

@@ -51,15 +51,8 @@ class Product_Reviews_Assets
             ],
         ]);
 
-        if (Product_Reviews_Core::is_turnstile_enabled()) {
-            wp_enqueue_script(
-                'ffla-cloudflare-turnstile',
-                'https://challenges.cloudflare.com/turnstile/v0/api.js',
-                [],
-                null,
-                true
-            );
-        }
+        // Cloudflare Turnstile assets (api.js + widget styling) are loaded
+        // by the "Simple Cloudflare Turnstile" plugin when active.
     }
 
     /**

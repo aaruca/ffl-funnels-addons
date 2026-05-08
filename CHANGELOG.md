@@ -2,6 +2,15 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.21.0] - 2026-05-08
+
+### Product Reviews
+
+- **Cloudflare Turnstile — switched to plugin integration:** Removed the in-module Turnstile component (admin keys, widget rendering, server-side `siteverify` call, `api.js` enqueue). The FFL review form now integrates directly with the [Simple Cloudflare Turnstile](https://wordpress.org/plugins/simple-cloudflare-turnstile/) plugin via its public helpers (`cfturnstile_field_show()` for rendering and `cfturnstile_check()` for validation). When the plugin is active, the widget and server check are added automatically; when it is not active, the form submits without a challenge.
+- **Settings:** `enable_turnstile`, `turnstile_site_key`, and `turnstile_secret_key` are no longer read or written. The "Cloudflare Turnstile" admin card now shows a status notice and a link to install/configure the Simple Cloudflare Turnstile plugin (legacy values stay in the DB but are ignored).
+- **Bypass preserved:** Signed order-review links still bypass the Turnstile challenge, since the token already authenticates the customer.
+- **New file:** `modules/product-reviews/integrations/class-product-reviews-turnstile.php` (`Product_Reviews_Turnstile::is_available()`, `render_field()`, `passes()`).
+
 ## [1.20.2] - 2026-05-01
 
 ### Wishlist

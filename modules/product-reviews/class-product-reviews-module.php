@@ -58,6 +58,12 @@ class Product_Reviews_Module extends FFLA_Module
         require_once $base . 'integrations/class-product-reviews-bricks.php';
         Product_Reviews_Bricks::init();
 
+        // Optional Cloudflare Turnstile integration. Wires the FFL review form
+        // to the "Simple Cloudflare Turnstile" plugin when it is active; loads
+        // unconditionally so static helpers are always callable, but the class
+        // is a no-op until the plugin's cfturnstile_* helpers exist.
+        require_once $base . 'integrations/class-product-reviews-turnstile.php';
+
         if (is_admin()) {
             require_once $base . 'admin/class-product-reviews-admin.php';
             $this->admin = new Product_Reviews_Admin();

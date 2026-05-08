@@ -150,26 +150,21 @@ class Product_Reviews_Admin
         echo '<div class="wb-card__header"><h3>' . esc_html__('Cloudflare Turnstile', 'ffl-funnels-addons') . '</h3></div>';
         echo '<div class="wb-card__body">';
 
-        FFLA_Admin::render_toggle_field(
-            __('Enable Turnstile on review forms', 'ffl-funnels-addons'),
-            'enable_turnstile',
-            $settings['enable_turnstile'] ?? '0',
-            __('Requires valid Cloudflare site key and secret key. Applies to the FFL review form (Bricks and, when enabled, the replaced WooCommerce reviews tab).', 'ffl-funnels-addons')
-        );
+        $turnstile_active = class_exists('Product_Reviews_Turnstile')
+            && Product_Reviews_Turnstile::is_available();
 
-        FFLA_Admin::render_text_field(
-            __('Turnstile Site Key', 'ffl-funnels-addons'),
-            'turnstile_site_key',
-            $settings['turnstile_site_key'] ?? '',
-            __('Public key used by the frontend widget.', 'ffl-funnels-addons')
-        );
-
-        FFLA_Admin::render_password_field(
-            __('Turnstile Secret Key', 'ffl-funnels-addons'),
-            'turnstile_secret_key',
-            $settings['turnstile_secret_key'] ?? '',
-            __('Private key used for server-side verification.', 'ffl-funnels-addons')
-        );
+        if ($turnstile_active) {
+            echo '<p class="wb-field__desc">' . esc_html__(
+                'Detected: Simple Cloudflare Turnstile plugin is active. The widget is rendered automatically on the FFL review form and validated on submit. Manage site key, secret key, and theme inside that plugin\'s settings page.',
+                'ffl-funnels-addons'
+            ) . '</p>';
+        } else {
+            echo '<p class="wb-field__desc">' . wp_kses_post(sprintf(
+                /* translators: %s: link to the Simple Cloudflare Turnstile plugin page on wordpress.org */
+                __('Cloudflare Turnstile on the FFL review form is provided by the %s plugin. Install and configure it; protection is added automatically once it is active. No keys live in this module anymore.', 'ffl-funnels-addons'),
+                '<a href="https://wordpress.org/plugins/simple-cloudflare-turnstile/" target="_blank" rel="noopener noreferrer"><strong>Simple Cloudflare Turnstile</strong></a>'
+            )) . '</p>';
+        }
 
         echo '</div></div>';
 
@@ -230,8 +225,6 @@ class Product_Reviews_Admin
         $new['replace_default_reviews_tab'] = isset($_POST['replace_default_reviews_tab']) ? '1' : '0';
         $new['hide_default_reviews_tab'] = isset($_POST['hide_default_reviews_tab']) ? '1' : '0';
         $new['moderate_all_reviews'] = isset($_POST['moderate_all_reviews']) ? '1' : '0';
-        $new['enable_turnstile'] = isset($_POST['enable_turnstile']) ? '1' : '0';
-
         $new['request_delay_days'] = isset($_POST['request_delay_days'])
             ? (string) max(0, absint($_POST['request_delay_days']))
             : '7';
@@ -263,13 +256,6 @@ class Product_Reviews_Admin
         $new['email_template'] = isset($_POST['email_template'])
             ? sanitize_textarea_field(wp_unslash($_POST['email_template']))
             : '';
-        $new['turnstile_site_key'] = isset($_POST['turnstile_site_key'])
-            ? sanitize_text_field(wp_unslash($_POST['turnstile_site_key']))
-            : '';
-        $new['turnstile_secret_key'] = isset($_POST['turnstile_secret_key'])
-            ? sanitize_text_field(wp_unslash($_POST['turnstile_secret_key']))
-            : '';
-
         $rewrite_changed = ($current['order_review_pretty_urls'] ?? '') !== ($new['order_review_pretty_urls'] ?? '')
             || ($current['order_review_rewrite_slug'] ?? '') !== ($new['order_review_rewrite_slug'] ?? '');
 

@@ -44,9 +44,6 @@ class Product_Reviews_Core
             'enable_helpful_votes'      => '1',
             'hide_default_reviews_tab'   => '0',
             'replace_default_reviews_tab' => '0',
-            'enable_turnstile'          => '0',
-            'turnstile_site_key'        => '',
-            'turnstile_secret_key'      => '',
             'form_title'                => __('Write a review', 'ffl-funnels-addons'),
             'moderate_all_reviews'      => '0',
             'request_email_mode'        => 'per_product',
@@ -540,11 +537,13 @@ class Product_Reviews_Core
     }
 
     /**
-     * When Turnstile is enabled, require a valid token (native + Bricks forms).
+     * Validate the Turnstile response (when the Simple Cloudflare Turnstile
+     * plugin is active). Signed order-review links bypass the challenge
+     * because the token already proves the request comes from the customer.
      */
     private static function turnstile_token_valid_for_request(): bool
     {
-        if (!self::is_turnstile_enabled()) {
+        if (!class_exists('Product_Reviews_Turnstile') || !Product_Reviews_Turnstile::is_available()) {
             return true;
         }
 
@@ -552,11 +551,7 @@ class Product_Reviews_Core
             return true;
         }
 
-        $token = isset($_POST['cf-turnstile-response'])
-            ? sanitize_text_field(wp_unslash($_POST['cf-turnstile-response']))
-            : '';
-
-        return $token !== '' && self::verify_turnstile_token($token);
+        return Product_Reviews_Turnstile::passes();
     }
 
     private static function order_review_token_bypasses_turnstile(): bool
@@ -841,57 +836,6 @@ class Product_Reviews_Core
         }
 
         return !empty($files['name']);
-    }
-
-    public static function is_turnstile_enabled(): bool
-    {
-        return '1' === self::get_setting('enable_turnstile', '0')
-            && self::get_turnstile_site_key() !== ''
-            && self::get_turnstile_secret_key() !== '';
-    }
-
-    public static function get_turnstile_site_key(): string
-    {
-        return trim((string) self::get_setting('turnstile_site_key', ''));
-    }
-
-    public static function get_turnstile_secret_key(): string
-    {
-        return trim((string) self::get_setting('turnstile_secret_key', ''));
-    }
-
-    private static function verify_turnstile_token(string $token): bool
-    {
-        $secret = self::get_turnstile_secret_key();
-        if ($secret === '') {
-            return false;
-        }
-
-        $body = [
-            'secret'   => $secret,
-            'response' => $token,
-        ];
-
-        if (!empty($_SERVER['REMOTE_ADDR'])) {
-            $body['remoteip'] = sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR']));
-        }
-
-        $response = wp_remote_post('https://challenges.cloudflare.com/turnstile/v0/siteverify', [
-            'timeout' => 10,
-            'body'    => $body,
-        ]);
-
-        if (is_wp_error($response)) {
-            return false;
-        }
-
-        $code = (int) wp_remote_retrieve_response_code($response);
-        if ($code < 200 || $code >= 300) {
-            return false;
-        }
-
-        $data = json_decode((string) wp_remote_retrieve_body($response), true);
-        return is_array($data) && !empty($data['success']);
     }
 
     /**

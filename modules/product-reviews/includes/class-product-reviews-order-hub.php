@@ -228,7 +228,7 @@ class Product_Reviews_Order_Hub
         \Product_Reviews_Frontend_Render::render_media_upload_widget($uid . '-m');
         echo '</div>';
 
-        if (\Product_Reviews_Core::is_turnstile_enabled()) {
+        if (class_exists('\\Product_Reviews_Turnstile') && \Product_Reviews_Turnstile::is_available()) {
             echo '<p class="ffla-order-reviews__turnstile-note"><small>'
                 . esc_html__('Security check is not shown here; your signed email link is used instead.', 'ffl-funnels-addons')
                 . '</small></p>';

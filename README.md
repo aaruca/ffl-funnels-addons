@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.20.2-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.21.0-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -66,7 +66,7 @@ Advanced WooCommerce product reviews with native Bricks elements and post-purcha
 *   **Post-Purchase Requests:** Schedules review reminders after order completion — per product or **one bundled email** with a signed link to a hub page (`[ffla_order_reviews]`).
 *   **Review Enrichment:** Multi-criteria fields (quality/value), verified-buyer tagging, and helpful votes.
 *   **Media Reviews:** Optional image/video uploads on reviews with moderation safeguards.
-*   **Cloudflare Turnstile:** Optional bot protection with server-side token verification.
+*   **Cloudflare Turnstile (optional):** Bot protection on the FFL review form is delegated to the [Simple Cloudflare Turnstile](https://wordpress.org/plugins/simple-cloudflare-turnstile/) plugin. Install it, configure your keys there, and the widget + server-side check are added automatically. Signed order-review links bypass the challenge.
 *   **Admin Moderation UX:** Extra review media/helpful columns in WordPress comments list.
 *   **Reviews Rating Badge:** Optional control to hide the badge when a product has no reviews yet.
 
