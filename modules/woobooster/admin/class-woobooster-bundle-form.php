@@ -153,10 +153,15 @@ class WooBooster_Bundle_Form
             $pname   = $product ? $product->get_name() : '#' . $item->product_id;
             $pprice  = $product ? $product->get_price_html() : '';
 
+            $qty = isset($item->quantity) ? max(1, (int) $item->quantity) : 1;
             echo '<div class="wb-bundle-item" data-product-id="' . esc_attr($item->product_id) . '">';
             echo '<span class="wb-bundle-item__drag">&#9776;</span>';
             echo '<span class="wb-bundle-item__name">' . esc_html($pname) . '</span>';
             echo '<span class="wb-bundle-item__price">' . wp_kses_post($pprice) . '</span>';
+            echo '<label class="wb-bundle-item__qty">';
+            echo '<span class="wb-bundle-item__qty-label">' . esc_html__('Qty', 'ffl-funnels-addons') . '</span>';
+            echo '<input type="number" min="1" step="1" name="bundle_items[' . esc_attr($idx) . '][quantity]" value="' . esc_attr($qty) . '" class="wb-input wb-input--sm wb-input--w70">';
+            echo '</label>';
             echo '<label class="wb-checkbox wb-bundle-item__optional">';
             echo '<input type="checkbox" name="bundle_items[' . esc_attr($idx) . '][is_optional]" value="1"' . checked($item->is_optional, 1, false) . '>';
             echo esc_html__('Optional', 'ffl-funnels-addons');
@@ -279,6 +284,8 @@ class WooBooster_Bundle_Form
                 $c_type = 'category';
             } elseif ('product_tag' === $c_attr) {
                 $c_type = 'tag';
+            } elseif ('user_role' === $c_attr) {
+                $c_type = 'user_role';
             } elseif (!empty($c_attr)) {
                 $c_type          = 'attribute';
                 $c_attr_taxonomy = $c_attr;
@@ -301,6 +308,23 @@ class WooBooster_Bundle_Form
             echo '<option value="tag"' . selected($c_type, 'tag', false) . '>' . esc_html__('Tag', 'ffl-funnels-addons') . '</option>';
             echo '<option value="attribute"' . selected($c_type, 'attribute', false) . '>' . esc_html__('Attribute', 'ffl-funnels-addons') . '</option>';
             echo '<option value="specific_product"' . selected($c_type, 'specific_product', false) . '>' . esc_html__('Specific Product', 'ffl-funnels-addons') . '</option>';
+            echo '<option value="user_role"' . selected($c_type, 'user_role', false) . '>' . esc_html__('User Role', 'ffl-funnels-addons') . '</option>';
+            echo '</select>';
+
+            // User role dropdown.
+            if ('user_role' === $c_type) {
+                $role_display = 'inline-block';
+            } else {
+                $role_display = 'none';
+            }
+            echo '<select class="wb-select wb-select--inline wb-condition-user-role" data-role-target="' . esc_attr($field_prefix . '[value]') . '" style="display:' . esc_attr($role_display) . ';">';
+            echo '<option value="guest"' . selected($c_val, 'guest', false) . '>' . esc_html__('Guest (logged out)', 'ffl-funnels-addons') . '</option>';
+            if (function_exists('wp_roles')) {
+                $roles = wp_roles()->roles;
+                foreach ($roles as $slug => $role_def) {
+                    echo '<option value="' . esc_attr($slug) . '"' . selected($c_val, $slug, false) . '>' . esc_html(translate_user_role($role_def['name'])) . '</option>';
+                }
+            }
             echo '</select>';
 
             // Attribute Taxonomy.
@@ -588,6 +612,7 @@ class WooBooster_Bundle_Form
             }
             $clean_items[] = array(
                 'product_id'  => absint($item['product_id']),
+                'quantity'    => isset($item['quantity']) ? max(1, absint($item['quantity'])) : 1,
                 'sort_order'  => isset($item['sort_order']) ? absint($item['sort_order']) : $idx,
                 'is_optional' => isset($item['is_optional']) ? 1 : 0,
             );

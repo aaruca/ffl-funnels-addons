@@ -162,6 +162,7 @@ class WooBooster_Activator
 			id bigint(20) NOT NULL AUTO_INCREMENT,
 			bundle_id bigint(20) NOT NULL,
 			product_id bigint(20) NOT NULL,
+			quantity int(11) NOT NULL DEFAULT 1,
 			sort_order int(11) NOT NULL DEFAULT 0,
 			is_optional tinyint(1) NOT NULL DEFAULT 0,
 			PRIMARY KEY  (id),
@@ -201,12 +202,13 @@ class WooBooster_Activator
 
         $sql_bundle_index = "CREATE TABLE $bundle_index (
 			id bigint(20) NOT NULL AUTO_INCREMENT,
-			condition_key varchar(355) NOT NULL,
+			condition_key varchar(191) NOT NULL,
 			bundle_id bigint(20) NOT NULL,
 			priority int(11) NOT NULL DEFAULT 10,
 			PRIMARY KEY  (id),
 			KEY condition_key (condition_key),
-			KEY bundle_id (bundle_id)
+			KEY bundle_id (bundle_id),
+			KEY bundle_condition (bundle_id, condition_key)
 		) $charset_collate;";
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
@@ -384,6 +386,35 @@ class WooBooster_Activator
             ));
             if (empty($ag_exists)) {
                 $wpdb->query("ALTER TABLE {$actions_table} ADD group_id int(11) NOT NULL DEFAULT 0 AFTER rule_id"); // phpcs:ignore WordPress.DB.PreparedSQL
+            }
+
+            // 11. Add quantity column to bundle_items (v1.8.0).
+            $bundle_items_table = $wpdb->prefix . 'woobooster_bundle_items';
+            $qty_exists = $wpdb->get_results($wpdb->prepare(
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = DATABASE() AND table_name = %s AND column_name = 'quantity'",
+                $bundle_items_table
+            ));
+            if (empty($qty_exists)) {
+                $wpdb->query("ALTER TABLE {$bundle_items_table} ADD quantity int(11) NOT NULL DEFAULT 1 AFTER product_id"); // phpcs:ignore WordPress.DB.PreparedSQL
+            }
+
+            // 12. Shrink bundle_index.condition_key to varchar(191) and add composite index (v1.8.0).
+            $bundle_index_table = $wpdb->prefix . 'woobooster_bundle_index';
+            $col = $wpdb->get_row($wpdb->prepare(
+                "SELECT CHARACTER_MAXIMUM_LENGTH AS len FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = DATABASE() AND table_name = %s AND column_name = 'condition_key'",
+                $bundle_index_table
+            ));
+            if ($col && (int) $col->len > 191) {
+                // Long keys never matched anything anyway (sanitize_key/text_field outputs are short); truncate then narrow.
+                $wpdb->query("DELETE FROM {$bundle_index_table} WHERE CHAR_LENGTH(condition_key) > 191"); // phpcs:ignore WordPress.DB.PreparedSQL
+                $wpdb->query("ALTER TABLE {$bundle_index_table} MODIFY condition_key varchar(191) NOT NULL"); // phpcs:ignore WordPress.DB.PreparedSQL
+            }
+            $composite = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE table_schema = DATABASE() AND table_name = %s AND index_name = 'bundle_condition'",
+                $bundle_index_table
+            ));
+            if (!$composite) {
+                $wpdb->query("ALTER TABLE {$bundle_index_table} ADD INDEX bundle_condition (bundle_id, condition_key)"); // phpcs:ignore WordPress.DB.PreparedSQL
             }
 
             // Mark migration as complete.

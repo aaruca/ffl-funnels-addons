@@ -473,10 +473,12 @@ class WooBooster_Bundle_Element extends \Bricks\Element
             'nonce'     => wp_create_nonce('woobooster_bundle_cart'),
             'isBuilder' => $this->is_builder_context() ? '1' : '0',
             'i18n'      => [
-                'adding'  => esc_html__('Adding...', 'ffl-funnels-addons'),
-                'added'   => esc_html__('Added to Cart!', 'ffl-funnels-addons'),
-                'error'   => esc_html__('Error adding to cart. Please try again.', 'ffl-funnels-addons'),
-                'noItems' => esc_html__('Please select at least one product.', 'ffl-funnels-addons'),
+                'adding'      => esc_html__('Adding...', 'ffl-funnels-addons'),
+                'added'       => esc_html__('Added to Cart!', 'ffl-funnels-addons'),
+                'error'       => esc_html__('Error adding to cart. Please try again.', 'ffl-funnels-addons'),
+                'noItems'     => esc_html__('Please select at least one product.', 'ffl-funnels-addons'),
+                /* translators: %s: amount saved */
+                'saveFormat'  => esc_html__('(Save %s)', 'ffl-funnels-addons'),
             ],
         ]);
     }
@@ -512,23 +514,27 @@ class WooBooster_Bundle_Element extends \Bricks\Element
         }
 
         $products = [];
-        $subtotal = 0.0;
         foreach ($bundle->resolved_items as $item_product_id) {
             $product = wc_get_product($item_product_id);
             if (!$product) {
                 continue;
             }
             $products[] = $product;
-            $subtotal  += (float) $product->get_price();
         }
 
         if (empty($products)) {
             return;
         }
 
+        // Shared price math so widget + cart show/charge the same numbers.
+        $price_map = \WooBooster_Bundle::calculate_item_prices(
+            $bundle,
+            array_map(function ($p) { return $p->get_id(); }, $products)
+        );
+
         $items = [];
         foreach ($products as $product) {
-            $items[] = $this->prepare_item_data($product, $bundle, $subtotal);
+            $items[] = $this->prepare_item_data($product, $bundle, $price_map);
         }
 
         $heading     = $s['wb_bundle_heading'] ?? __('Frequently Bought Together', 'ffl-funnels-addons');
@@ -541,6 +547,7 @@ class WooBooster_Bundle_Element extends \Bricks\Element
 
         $this->set_attribute('_root', 'class', 'wb-bundle');
         $this->set_attribute('_root', 'data-bundle-id', $bundle->id);
+        $this->set_attribute('_root', 'data-source-product-id', $product_id);
 
         echo '<div ' . $this->render_attributes('_root') . '>';
 
@@ -556,8 +563,13 @@ class WooBooster_Bundle_Element extends \Bricks\Element
             echo '<div class="wb-bundle-item" data-product-id="' . esc_attr($item['id']) . '" data-price="' . esc_attr($item['discounted_price']) . '" data-original-price="' . esc_attr($item['original_price']) . '">';
 
             // Checkbox.
-            echo '<label class="wb-bundle-item__checkbox">';
-            echo '<input type="checkbox" name="wb_bundle_products[]" value="' . esc_attr($item['id']) . '" checked>';
+            $checkbox_id = 'wb-bundle-cb-' . $bundle->id . '-' . $item['id'];
+            echo '<label class="wb-bundle-item__checkbox" for="' . esc_attr($checkbox_id) . '">';
+            echo '<input type="checkbox" id="' . esc_attr($checkbox_id) . '" name="wb_bundle_products[]" value="' . esc_attr($item['id']) . '" aria-label="' . esc_attr(sprintf(
+                /* translators: %s: product name */
+                __('Include %s in bundle', 'ffl-funnels-addons'),
+                $item['name']
+            )) . '" checked>';
             echo '</label>';
 
             // Image.
@@ -622,6 +634,9 @@ class WooBooster_Bundle_Element extends \Bricks\Element
         echo '</div>';
         echo '</div>';
 
+        // Inline error slot (a11y-friendly status region).
+        echo '<div class="wb-bundle-error" role="alert" aria-live="polite" hidden></div>';
+
         // Add to Cart button.
         echo '<button type="button" class="wb-bundle-add-to-cart" data-bundle-id="' . esc_attr($bundle->id) . '">';
         echo esc_html($button_text);
@@ -644,34 +659,30 @@ class WooBooster_Bundle_Element extends \Bricks\Element
 
     // ── Helpers ────────────────────────────────────────────────────────
 
-    private function prepare_item_data($product, $bundle, float $bundle_subtotal = 0.0): array
+    private function prepare_item_data($product, $bundle, array $price_map = []): array
     {
-        $price = (float) $product->get_price();
-        $discounted_price = $price;
-        $has_discount = false;
-        $badge_text = '';
+        $pid              = $product->get_id();
+        $row              = $price_map[$pid] ?? null;
+        $original         = $row ? (float) $row['original']   : (float) $product->get_price();
+        $discounted_price = $row ? (float) $row['discounted'] : $original;
+        $has_discount     = $discounted_price < $original;
 
-        if ($bundle->discount_type === 'percentage' && $bundle->discount_value > 0) {
-            $discounted_price = $price * (1 - $bundle->discount_value / 100);
-            $has_discount = true;
-            $badge_text = '-' . $bundle->discount_value . '%';
-        } elseif ($bundle->discount_type === 'fixed' && $bundle->discount_value > 0 && $bundle_subtotal > 0) {
-            $total_discount  = min((float) $bundle->discount_value, $bundle_subtotal);
-            $share           = ($price / $bundle_subtotal) * $total_discount;
-            $discounted_price = max(0, $price - $share);
-            $has_discount    = $discounted_price < $price;
-            if ($has_discount) {
-                $badge_text = '-' . strip_tags(wc_price($bundle->discount_value)) . ' ' . esc_html__('total', 'ffl-funnels-addons');
-            }
+        $badge_text = '';
+        if ($has_discount && $bundle->discount_type === 'percentage' && $bundle->discount_value > 0) {
+            $badge_text = '-' . rtrim(rtrim(number_format((float) $bundle->discount_value, 2, '.', ''), '0'), '.') . '%';
+        } elseif ($has_discount && $bundle->discount_type === 'fixed') {
+            // Show the per-item saving, not the whole bundle total — one badge per card.
+            $saving     = $original - $discounted_price;
+            $badge_text = '-' . wp_strip_all_tags(wc_price($saving));
         }
 
         $image_size = $this->settings['wb_bundle_image_size'] ?? 'woocommerce_thumbnail';
 
         return [
-            'id'               => $product->get_id(),
+            'id'               => $pid,
             'name'             => $product->get_name(),
-            'original_price'   => $price,
-            'discounted_price' => round($discounted_price, wc_get_price_decimals()),
+            'original_price'   => $original,
+            'discounted_price' => $discounted_price,
             'has_discount'     => $has_discount,
             'badge_text'       => $badge_text,
             'image'            => $product->get_image($image_size),

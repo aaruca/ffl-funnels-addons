@@ -1849,6 +1849,12 @@
       row.className = 'wb-condition-row wb-condition-row--entire-store';
       row.setAttribute('data-condition', condIdx);
 
+      var roleOptions = (window.wooboosterAdminConfig && window.wooboosterAdminConfig.userRoles) || {};
+      var roleOptionsHtml = '<option value="guest">Guest (logged out)</option>';
+      Object.keys(roleOptions).forEach(function (slug) {
+        roleOptionsHtml += '<option value="' + slug + '">' + roleOptions[slug] + '</option>';
+      });
+
       row.innerHTML =
         '<select class="wb-select wb-select--inline wb-condition-type" required>' +
           '<option value="store_all" selected>Entire store (all products)</option>' +
@@ -1856,9 +1862,13 @@
           '<option value="tag">Tag</option>' +
           '<option value="attribute">Attribute</option>' +
           '<option value="specific_product">Specific Product</option>' +
+          '<option value="user_role">User Role</option>' +
         '</select>' +
         '<select class="wb-select wb-select--inline wb-condition-attr-taxonomy" style="display:none;">' +
           attrTaxOptions +
+        '</select>' +
+        '<select class="wb-select wb-select--inline wb-condition-user-role" data-role-target="' + prefix + '[value]" style="display:none;">' +
+          roleOptionsHtml +
         '</select>' +
         '<input type="hidden" name="' + prefix + '[attribute]" class="wb-condition-attr" value="__store_all">' +
         '<select name="' + prefix + '[operator]" class="wb-select wb-select--operator wb-condition-operator">' +
@@ -1892,9 +1902,11 @@
   function initBundleConditionTypeToggle(row) {
     var typeSelect = row.querySelector('.wb-condition-type');
     var attrTaxSelect = row.querySelector('.wb-condition-attr-taxonomy');
+    var roleSelect = row.querySelector('.wb-condition-user-role');
     var hiddenAttr = row.querySelector('.wb-condition-attr');
     var hiddenVal = row.querySelector('.wb-condition-value-hidden');
     var displayVal = row.querySelector('.wb-condition-value-display');
+    var valueWrap = row.querySelector('.wb-condition-value-wrap');
     var childrenLabel = row.querySelector('.wb-condition-children-label');
     var chipsContainer = row.querySelector('.wb-condition-product-chips');
     var opSel = row.querySelector('.wb-condition-operator');
@@ -1905,11 +1917,14 @@
     function update() {
       var val = typeSelect.value;
       var isEntire = val === 'store_all';
+      var isRole   = val === 'user_role';
 
       row.classList.toggle('wb-condition-row--entire-store', isEntire);
 
       if (attrTaxSelect) attrTaxSelect.style.display = val === 'attribute' ? '' : 'none';
-      if (childrenLabel) childrenLabel.style.display = !isEntire && (val === 'category' || val === 'tag') ? '' : 'none';
+      if (roleSelect)    roleSelect.style.display    = isRole ? '' : 'none';
+      if (valueWrap)     valueWrap.style.display     = isRole ? 'none' : '';
+      if (childrenLabel) childrenLabel.style.display = !isEntire && !isRole && (val === 'category' || val === 'tag') ? '' : 'none';
       if (chipsContainer) chipsContainer.style.display = val === 'specific_product' ? '' : 'none';
 
       if (hiddenAttr) {
@@ -1924,6 +1939,10 @@
           case 'category': hiddenAttr.value = 'product_cat'; break;
           case 'tag': hiddenAttr.value = 'product_tag'; break;
           case 'specific_product': hiddenAttr.value = 'specific_product'; break;
+          case 'user_role':
+            hiddenAttr.value = 'user_role';
+            if (hiddenVal && roleSelect) hiddenVal.value = roleSelect.value;
+            break;
           case 'attribute':
             hiddenAttr.value = attrTaxSelect ? attrTaxSelect.value : '';
             break;
@@ -1931,6 +1950,14 @@
             hiddenAttr.value = '';
         }
       }
+    }
+
+    if (roleSelect) {
+      roleSelect.addEventListener('change', function () {
+        if (typeSelect.value === 'user_role' && hiddenVal) {
+          hiddenVal.value = roleSelect.value;
+        }
+      });
     }
 
     typeSelect.addEventListener('change', function () {
