@@ -28,7 +28,11 @@ All notable changes to FFL Funnels Addons are documented in this file.
 - New **Product Source** option: "None (display bundle as-is)" to show bundles standalone
 - Select a specific bundle in settings to display it directly without auto-detection
 
-**Bug Fixes**
+**Bundle as a Single Cart Item**
+- A bundle is now added to the cart as **one synthetic line item** instead of separate per-product lines. The bundle is bought as a unit — removing the line removes the whole bundle, so it can never be broken apart into loose products.
+- The line is priced at the full bundle total (discount baked in), shows the bundle name, and lists its contents under an "Includes" row in the cart and checkout.
+- Bundle contents are persisted onto the order line item (`_woobooster_bundle_id` + a readable "Bundle contents" meta).
+- Trade-off: WooCommerce tracks stock, tax class, and shipping for the representative product only (the first item in the bundle); the other products are recorded as meta. The previous per-item negative-fee discount logic is removed.
 - Fixed bundle items being silently deleted when updating a bundle. On file-based plugin updates (git/FTP/WP updater) the activation hook never fires, so schema migrations were skipped — the `bundle_items` table was missing its `quantity` column and the multi-row `INSERT` failed silently while the preceding `DELETE` committed. Migrations now also run on `admin_init`, and `save_items()` rolls back the transaction if the `INSERT` fails instead of committing a partial wipe.
 - Newly added bundle items now show their price and quantity input immediately in the admin form. Previously the JS row template had an empty price span and no quantity field — both only appeared after saving and reloading. The product-search AJAX endpoint now returns the price HTML and the JS template renders the price plus a quantity input.
 
