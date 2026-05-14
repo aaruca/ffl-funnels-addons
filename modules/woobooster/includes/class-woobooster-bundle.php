@@ -346,7 +346,10 @@ class WooBooster_Bundle
         $bundle_id = absint($bundle_id);
 
         self::with_transaction(function () use ($wpdb, $bundle_id, $items) {
-            $wpdb->delete(self::$items_table, array('bundle_id' => $bundle_id), array('%d'));
+            $deleted = $wpdb->delete(self::$items_table, array('bundle_id' => $bundle_id), array('%d'));
+            if (false === $deleted) {
+                throw new \RuntimeException('Failed to clear existing bundle items: ' . $wpdb->last_error);
+            }
 
             if (empty($items)) {
                 return;
@@ -366,10 +369,15 @@ class WooBooster_Bundle
                 );
             }
             // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-            $wpdb->query($wpdb->prepare(
+            $inserted = $wpdb->query($wpdb->prepare(
                 "INSERT INTO {$wpdb->prefix}woobooster_bundle_items (bundle_id, product_id, quantity, sort_order, is_optional) VALUES " . implode(', ', $values),
                 ...$params
             ));
+            // $wpdb->query() returns false on SQL error without throwing — without this
+            // guard the transaction would COMMIT the DELETE and silently wipe all items.
+            if (false === $inserted) {
+                throw new \RuntimeException('Failed to save bundle items: ' . $wpdb->last_error);
+            }
         });
     }
 
