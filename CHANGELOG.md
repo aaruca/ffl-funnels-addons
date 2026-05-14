@@ -23,6 +23,11 @@ All notable changes to FFL Funnels Addons are documented in this file.
 - New control groups: **Heading Style** (typography, margin, alignment), **Separator Style** (color, typography), **Savings Style** (color, background, typography, padding, radius)
 - Item card border-radius and total section original/final price color controls
 
+**Homepage & Standalone Pages**
+- Bundle element now works on any page (homepage, custom pages) without requiring product context
+- New **Product Source** option: "None (display bundle as-is)" to show bundles standalone
+- Select a specific bundle in settings to display it directly without auto-detection
+
 ## [1.22.0] - 2026-05-13
 
 ### WooBooster — Bundles complete overhaul (5-phase pass)
