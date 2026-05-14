@@ -30,6 +30,7 @@ All notable changes to FFL Funnels Addons are documented in this file.
 
 **Bug Fixes**
 - Fixed bundle items being silently deleted when updating a bundle. On file-based plugin updates (git/FTP/WP updater) the activation hook never fires, so schema migrations were skipped — the `bundle_items` table was missing its `quantity` column and the multi-row `INSERT` failed silently while the preceding `DELETE` committed. Migrations now also run on `admin_init`, and `save_items()` rolls back the transaction if the `INSERT` fails instead of committing a partial wipe.
+- Newly added bundle items now show their price and quantity input immediately in the admin form. Previously the JS row template had an empty price span and no quantity field — both only appeared after saving and reloading. The product-search AJAX endpoint now returns the price HTML and the JS template renders the price plus a quantity input.
 
 ## [1.22.0] - 2026-05-13
 

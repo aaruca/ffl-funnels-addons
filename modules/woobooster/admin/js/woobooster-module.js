@@ -1707,7 +1707,7 @@
               item.className = 'wb-autocomplete__item';
               item.textContent = p.name + (p.sku ? ' (' + p.sku + ')' : '');
               item.addEventListener('click', function () {
-                addBundleItem(p.id, p.name);
+                addBundleItem(p.id, p.name, p.price);
                 dropdown.style.display = 'none';
                 searchInput.value = '';
               });
@@ -1726,7 +1726,7 @@
     });
   }
 
-  function addBundleItem(productId, productName) {
+  function addBundleItem(productId, productName, productPrice) {
     var list = document.getElementById('wb-bundle-items-list');
     if (!list) return;
 
@@ -1736,10 +1736,16 @@
     div.className = 'wb-bundle-item';
     div.setAttribute('data-product-id', productId);
 
+    // productPrice is WC get_price_html() output from our nonce-protected,
+    // admin-only AJAX endpoint — injected as HTML to match the PHP render.
     div.innerHTML =
       '<span class="wb-bundle-item__drag">&#9776;</span>' +
       '<span class="wb-bundle-item__name">' + escapeHtml(productName) + '</span>' +
-      '<span class="wb-bundle-item__price"></span>' +
+      '<span class="wb-bundle-item__price">' + (productPrice || '') + '</span>' +
+      '<label class="wb-bundle-item__qty">' +
+        '<span class="wb-bundle-item__qty-label">Qty</span>' +
+        '<input type="number" min="1" step="1" name="bundle_items[' + idx + '][quantity]" value="1" class="wb-input wb-input--sm wb-input--w70">' +
+      '</label>' +
       '<label class="wb-checkbox wb-bundle-item__optional">' +
         '<input type="checkbox" name="bundle_items[' + idx + '][is_optional]" value="1">' +
         'Optional' +

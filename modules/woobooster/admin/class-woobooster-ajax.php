@@ -141,6 +141,7 @@ class WooBooster_Ajax
                     'id' => $pid,
                     'name' => $product->get_name(),
                     'sku' => $product->get_sku(),
+                    'price' => $product->get_price_html(),
                 );
             }
         }
