@@ -2,15 +2,45 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
-## [Unreleased]
+## [1.22.0] - 2026-05-13
 
-### WooBooster — Bundles overhaul (5-phase pass)
+### WooBooster — Bundles complete overhaul (5-phase pass)
 
-- **P0 correctness (Phase 1):** Bundle cart discount is now bound to a per-add cryptographic hash (`_woobooster_bundle_hash`) and the size of the original set (`_woobooster_bundle_size`). The cart fee is applied only when **all original items are still present**, so partial removal cancels the discount. Adding the same bundle twice produces two independent discount groups. Per-item price snapshots are recorded server-side via the shared `WooBooster_Bundle::calculate_item_prices()`, so the customer is charged exactly what they saw. The AJAX endpoint accepts an explicit `source_product_id` instead of guessing from the first checkbox. Variable products are now added via their default variation; products without a usable default surface an actionable error. `WooBooster_Bundle::toggle_status()` rebuilds the index and invalidates the recommendation cache. `create()` no longer rebuilds the (empty) index before `save_conditions()` runs.
-- **Performance (Phase 2):** `Bundle_Matcher::find_matching_bundles()` batches all candidate conditions in a single query (eliminates N+1). `save_items()`, `save_conditions()`, and `rebuild_index_for_bundle()` are wrapped in InnoDB transactions and use multi-row `INSERT` statements. Include-children expansion uses a single `get_terms()` call instead of one `get_term()` per child. The matcher cache stores only the match decision; resolved items are computed per request so user-session-dependent sources (`recently_viewed`, etc.) don't leak across users.
-- **UX, a11y, i18n (Phase 3):** Replaced `alert()` with a polite `role="alert" aria-live="polite"` inline error region. Localized the "Save ..." string in JS through `cfg.i18n.saveFormat`. Switched plural strings to `_n()`. Per-checkbox `aria-label`s with product names and a visible focus ring for keyboard users. The bundle list table renders schedule dates via `wp_date()`.
-- **Refactor + tests (Phase 4):** Extracted the pure discount math into `WooBooster_Bundle::apply_discount_to_prices()` and added a PHPUnit suite under `tests/unit/` (`BundleDiscountMathTest`) with 8 cases covering percentage, fixed, pro-rata splits, rounding, and edge cases. Removed the unused `woobooster_delete_bundle` AJAX endpoint (the list page deletes via the GET + nonce flow).
-- **Schema + features (Phase 5):** `WOOBOOSTER_DB_VERSION` bumped to `1.8.0`. Added a `quantity` column to `wp_woobooster_bundle_items` (default 1, plumbed through the model, admin form, and cart add). Shrank `bundle_index.condition_key` from `varchar(355)` to `varchar(191)` and added a composite `bundle_condition (bundle_id, condition_key)` index. New **User Role** condition type — admins can target bundles to specific roles (or `guest`); the matcher generates `user_role:<slug>` keys for the current viewer and includes the role signature in the cache key so role-specific results are not cross-served.
+**Phase 1: Correctness (P0)**
+- Bundle cart discount now bound to per-add cryptographic hash (`_woobooster_bundle_hash`) and original set size (`_woobooster_bundle_size`)
+- Cart fee applied only when **all original items are still present** — partial removal cancels discount
+- Adding same bundle twice produces independent discount groups with unique hashes
+- Per-item price snapshots recorded server-side via `WooBooster_Bundle::calculate_item_prices()` — customer charged exactly what they preview
+- AJAX endpoint accepts explicit `source_product_id` instead of guessing from checkboxes
+- Variable products added via default variation; products without usable default surface actionable error
+- `WooBooster_Bundle::toggle_status()` rebuilds index and invalidates cache
+
+**Phase 2: Performance**
+- `Bundle_Matcher::find_matching_bundles()` batches all candidate conditions in single query (eliminates N+1)
+- `save_items()`, `save_conditions()`, `rebuild_index_for_bundle()` wrapped in InnoDB transactions with multi-row `INSERT`
+- Include-children expansion uses single `get_terms()` call instead of per-child `get_term()`
+- Matcher cache stores match decision only; items resolved per-request so user-session-dependent sources don't leak across users
+- Role-aware cache keys prevent cross-session data exposure
+
+**Phase 3: Accessibility & UX**
+- Replaced `alert()` with polite `role="alert" aria-live="polite"` inline error region
+- Localized "Save ..." string in JS through `cfg.i18n.saveFormat`
+- Plural strings use `_n()` for proper i18n
+- Per-checkbox `aria-label` with product names and visible focus rings for keyboard users
+- Bundle list table renders schedule dates via `wp_date()` instead of `date_i18n()`
+
+**Phase 4: Testability & Refactoring**
+- Extracted pure discount math into `WooBooster_Bundle::apply_discount_to_prices()`
+- Added PHPUnit suite under `tests/unit/` (`BundleDiscountMathTest`) with 8 cases covering percentage, fixed, pro-rata splits, rounding, edge cases
+- Removed unused `woobooster_delete_bundle` AJAX endpoint (list page uses GET + nonce flow)
+- Shared price calculator `calculate_item_prices()` used by both admin and frontend
+
+**Phase 5: Schema & Features**
+- `WOOBOOSTER_DB_VERSION` bumped to `1.8.0`
+- Added `quantity` column to `wp_woobooster_bundle_items` (default 1, plumbed through model/form/cart)
+- Shrank `bundle_index.condition_key` from `varchar(355)` to `varchar(191)` with composite `(bundle_id, condition_key)` index
+- New **User Role** condition type — target bundles to specific roles (or `guest`)
+- Role signature included in cache key so role-specific results not cross-served
 
 ## [1.21.0] - 2026-05-08
 
