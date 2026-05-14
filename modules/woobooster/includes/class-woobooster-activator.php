@@ -150,6 +150,8 @@ class WooBooster_Activator
 			status tinyint(1) NOT NULL DEFAULT 1,
 			discount_type varchar(20) NOT NULL DEFAULT 'none',
 			discount_value decimal(10,2) NOT NULL DEFAULT 0,
+			bundle_price_type varchar(20) NOT NULL DEFAULT 'discount',
+			bundle_price decimal(10,2) DEFAULT NULL,
 			start_date datetime DEFAULT NULL,
 			end_date datetime DEFAULT NULL,
 			created_at datetime DEFAULT CURRENT_TIMESTAMP,
@@ -415,6 +417,23 @@ class WooBooster_Activator
             ));
             if (!$composite) {
                 $wpdb->query("ALTER TABLE {$bundle_index_table} ADD INDEX bundle_condition (bundle_id, condition_key)"); // phpcs:ignore WordPress.DB.PreparedSQL
+            }
+
+            // 13. Add bundle pricing columns (v1.9.0).
+            $bundles_table = $wpdb->prefix . 'woobooster_bundles';
+            $pricing_cols = array(
+                'bundle_price_type' => 'varchar(20) NOT NULL DEFAULT "discount"',
+                'bundle_price' => 'decimal(10,2) DEFAULT NULL',
+            );
+            foreach ($pricing_cols as $col_name => $col_def) {
+                $col_exists = $wpdb->get_results($wpdb->prepare(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = DATABASE() AND table_name = %s AND column_name = %s",
+                    $bundles_table,
+                    $col_name
+                ));
+                if (empty($col_exists)) {
+                    $wpdb->query("ALTER TABLE {$bundles_table} ADD {$col_name} {$col_def}"); // phpcs:ignore WordPress.DB.PreparedSQL
+                }
             }
 
             // Mark migration as complete.
