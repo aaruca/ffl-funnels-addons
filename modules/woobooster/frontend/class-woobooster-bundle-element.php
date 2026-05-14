@@ -41,8 +41,18 @@ class WooBooster_Bundle_Element extends \Bricks\Element
             'tab'   => 'content',
         ];
 
+        $this->control_groups['wb_bundle_s_heading'] = [
+            'title' => esc_html__('Heading Style', 'ffl-funnels-addons'),
+            'tab'   => 'content',
+        ];
+
         $this->control_groups['wb_bundle_s_card'] = [
             'title' => esc_html__('Item Card Style', 'ffl-funnels-addons'),
+            'tab'   => 'content',
+        ];
+
+        $this->control_groups['wb_bundle_s_separator'] = [
+            'title' => esc_html__('Separator Style', 'ffl-funnels-addons'),
             'tab'   => 'content',
         ];
 
@@ -73,6 +83,11 @@ class WooBooster_Bundle_Element extends \Bricks\Element
 
         $this->control_groups['wb_bundle_s_total'] = [
             'title' => esc_html__('Total Section Style', 'ffl-funnels-addons'),
+            'tab'   => 'content',
+        ];
+
+        $this->control_groups['wb_bundle_s_savings'] = [
+            'title' => esc_html__('Savings Style', 'ffl-funnels-addons'),
             'tab'   => 'content',
         ];
 
@@ -197,6 +212,109 @@ class WooBooster_Bundle_Element extends \Bricks\Element
             'default' => 'woocommerce_thumbnail',
         ];
 
+        $this->controls['wb_bundle_grid_columns'] = [
+            'group'    => 'wb_bundle_display',
+            'tab'      => 'content',
+            'label'    => esc_html__('Grid Columns', 'ffl-funnels-addons'),
+            'type'     => 'number',
+            'min'      => 1,
+            'max'      => 6,
+            'default'  => 3,
+            'required' => ['wb_bundle_layout', '=', 'grid'],
+        ];
+
+        $this->controls['wb_bundle_separator_text'] = [
+            'group'   => 'wb_bundle_display',
+            'tab'     => 'content',
+            'label'   => esc_html__('Separator Text', 'ffl-funnels-addons'),
+            'type'    => 'text',
+            'default' => '+',
+            'inline'  => true,
+            'description' => esc_html__('Shown between items. Leave empty to hide.', 'ffl-funnels-addons'),
+        ];
+
+        $this->controls['wb_bundle_total_label'] = [
+            'group'   => 'wb_bundle_display',
+            'tab'     => 'content',
+            'label'   => esc_html__('Total Label', 'ffl-funnels-addons'),
+            'type'    => 'text',
+            'default' => esc_html__('Total:', 'ffl-funnels-addons'),
+            'inline'  => true,
+        ];
+
+        $this->controls['wb_bundle_show_original_price'] = [
+            'group'   => 'wb_bundle_display',
+            'tab'     => 'content',
+            'label'   => esc_html__('Show Original Price (strikethrough)', 'ffl-funnels-addons'),
+            'type'    => 'checkbox',
+            'default' => true,
+        ];
+
+        $this->controls['wb_bundle_show_badge'] = [
+            'group'   => 'wb_bundle_display',
+            'tab'     => 'content',
+            'label'   => esc_html__('Show Per-Item Discount Badge', 'ffl-funnels-addons'),
+            'type'    => 'checkbox',
+            'default' => true,
+        ];
+
+        $this->controls['wb_bundle_show_total'] = [
+            'group'   => 'wb_bundle_display',
+            'tab'     => 'content',
+            'label'   => esc_html__('Show Total Section', 'ffl-funnels-addons'),
+            'type'    => 'checkbox',
+            'default' => true,
+        ];
+
+        $this->controls['wb_bundle_show_savings'] = [
+            'group'    => 'wb_bundle_display',
+            'tab'      => 'content',
+            'label'    => esc_html__('Show Savings', 'ffl-funnels-addons'),
+            'type'     => 'checkbox',
+            'default'  => true,
+            'required' => ['wb_bundle_show_total', '!=', ''],
+        ];
+
+        $this->controls['wb_bundle_savings_format'] = [
+            'group'    => 'wb_bundle_display',
+            'tab'      => 'content',
+            'label'    => esc_html__('Savings Format', 'ffl-funnels-addons'),
+            'type'     => 'select',
+            'options'  => [
+                'amount'     => esc_html__('Amount (e.g. Save $20)', 'ffl-funnels-addons'),
+                'percentage' => esc_html__('Percentage (e.g. Save 15%)', 'ffl-funnels-addons'),
+                'both'       => esc_html__('Both (e.g. Save $20 / 15%)', 'ffl-funnels-addons'),
+            ],
+            'default'  => 'amount',
+            'required' => ['wb_bundle_show_savings', '!=', ''],
+        ];
+
+        // ── Heading Style ──
+
+        $this->controls['wb_heading_typography'] = [
+            'group' => 'wb_bundle_s_heading',
+            'tab'   => 'content',
+            'label' => esc_html__('Typography', 'ffl-funnels-addons'),
+            'type'  => 'typography',
+            'css'   => [['property' => 'typography', 'selector' => '.wb-bundle-heading']],
+        ];
+
+        $this->controls['wb_heading_margin'] = [
+            'group' => 'wb_bundle_s_heading',
+            'tab'   => 'content',
+            'label' => esc_html__('Margin', 'ffl-funnels-addons'),
+            'type'  => 'spacing',
+            'css'   => [['property' => 'margin', 'selector' => '.wb-bundle-heading']],
+        ];
+
+        $this->controls['wb_heading_align'] = [
+            'group'   => 'wb_bundle_s_heading',
+            'tab'     => 'content',
+            'label'   => esc_html__('Alignment', 'ffl-funnels-addons'),
+            'type'    => 'text-align',
+            'css'     => [['property' => 'text-align', 'selector' => '.wb-bundle-heading']],
+        ];
+
         // ── Item Card Style ──
 
         $this->controls['wb_card_bg'] = [
@@ -231,6 +349,33 @@ class WooBooster_Bundle_Element extends \Bricks\Element
             'units'   => true,
             'default' => '16px',
             'css'     => [['property' => 'gap', 'selector' => '.wb-bundle-items']],
+        ];
+
+        $this->controls['wb_card_radius'] = [
+            'group' => 'wb_bundle_s_card',
+            'tab'   => 'content',
+            'label' => esc_html__('Border Radius', 'ffl-funnels-addons'),
+            'type'  => 'number',
+            'units' => true,
+            'css'   => [['property' => 'border-radius', 'selector' => '.wb-bundle-item']],
+        ];
+
+        // ── Separator Style ──
+
+        $this->controls['wb_sep_color'] = [
+            'group' => 'wb_bundle_s_separator',
+            'tab'   => 'content',
+            'label' => esc_html__('Color', 'ffl-funnels-addons'),
+            'type'  => 'color',
+            'css'   => [['property' => 'color', 'selector' => '.wb-bundle-separator']],
+        ];
+
+        $this->controls['wb_sep_typography'] = [
+            'group' => 'wb_bundle_s_separator',
+            'tab'   => 'content',
+            'label' => esc_html__('Typography', 'ffl-funnels-addons'),
+            'type'  => 'typography',
+            'css'   => [['property' => 'typography', 'selector' => '.wb-bundle-separator']],
         ];
 
         // ── Image Style ──
@@ -388,6 +533,65 @@ class WooBooster_Bundle_Element extends \Bricks\Element
             'css'   => [['property' => 'border', 'selector' => '.wb-bundle-total']],
         ];
 
+        $this->controls['wb_total_original_color'] = [
+            'group' => 'wb_bundle_s_total',
+            'tab'   => 'content',
+            'label' => esc_html__('Original Total Color', 'ffl-funnels-addons'),
+            'type'  => 'color',
+            'css'   => [['property' => 'color', 'selector' => '.wb-bundle-total__original']],
+        ];
+
+        $this->controls['wb_total_final_color'] = [
+            'group' => 'wb_bundle_s_total',
+            'tab'   => 'content',
+            'label' => esc_html__('Final Total Color', 'ffl-funnels-addons'),
+            'type'  => 'color',
+            'css'   => [['property' => 'color', 'selector' => '.wb-bundle-total__discounted']],
+        ];
+
+        // ── Savings Style ──
+
+        $this->controls['wb_savings_color'] = [
+            'group' => 'wb_bundle_s_savings',
+            'tab'   => 'content',
+            'label' => esc_html__('Text Color', 'ffl-funnels-addons'),
+            'type'  => 'color',
+            'css'   => [['property' => 'color', 'selector' => '.wb-bundle-total__savings']],
+        ];
+
+        $this->controls['wb_savings_bg'] = [
+            'group' => 'wb_bundle_s_savings',
+            'tab'   => 'content',
+            'label' => esc_html__('Background', 'ffl-funnels-addons'),
+            'type'  => 'color',
+            'css'   => [['property' => 'background-color', 'selector' => '.wb-bundle-total__savings']],
+        ];
+
+        $this->controls['wb_savings_typography'] = [
+            'group' => 'wb_bundle_s_savings',
+            'tab'   => 'content',
+            'label' => esc_html__('Typography', 'ffl-funnels-addons'),
+            'type'  => 'typography',
+            'css'   => [['property' => 'typography', 'selector' => '.wb-bundle-total__savings']],
+        ];
+
+        $this->controls['wb_savings_padding'] = [
+            'group' => 'wb_bundle_s_savings',
+            'tab'   => 'content',
+            'label' => esc_html__('Padding', 'ffl-funnels-addons'),
+            'type'  => 'spacing',
+            'css'   => [['property' => 'padding', 'selector' => '.wb-bundle-total__savings']],
+        ];
+
+        $this->controls['wb_savings_radius'] = [
+            'group' => 'wb_bundle_s_savings',
+            'tab'   => 'content',
+            'label' => esc_html__('Border Radius', 'ffl-funnels-addons'),
+            'type'  => 'number',
+            'units' => true,
+            'css'   => [['property' => 'border-radius', 'selector' => '.wb-bundle-total__savings']],
+        ];
+
         // ── Add to Cart Button Style ──
 
         $this->controls['wb_btn_bg'] = [
@@ -537,13 +741,21 @@ class WooBooster_Bundle_Element extends \Bricks\Element
             $items[] = $this->prepare_item_data($product, $bundle, $price_map);
         }
 
-        $heading     = $s['wb_bundle_heading'] ?? __('Frequently Bought Together', 'ffl-funnels-addons');
-        $button_text = $s['wb_bundle_button_text'] ?? __('Add Selected to Cart', 'ffl-funnels-addons');
-        $layout      = $s['wb_bundle_layout'] ?? 'horizontal';
-        $show_image  = isset($s['wb_bundle_show_image']) ? $s['wb_bundle_show_image'] : true;
-        $show_title  = isset($s['wb_bundle_show_title']) ? $s['wb_bundle_show_title'] : true;
-        $show_price  = isset($s['wb_bundle_show_price']) ? $s['wb_bundle_show_price'] : true;
-        $image_size  = $s['wb_bundle_image_size'] ?? 'woocommerce_thumbnail';
+        $heading       = $s['wb_bundle_heading'] ?? __('Frequently Bought Together', 'ffl-funnels-addons');
+        $button_text   = $s['wb_bundle_button_text'] ?? __('Add Selected to Cart', 'ffl-funnels-addons');
+        $layout        = $s['wb_bundle_layout'] ?? 'horizontal';
+        $show_image    = isset($s['wb_bundle_show_image']) ? $s['wb_bundle_show_image'] : true;
+        $show_title    = isset($s['wb_bundle_show_title']) ? $s['wb_bundle_show_title'] : true;
+        $show_price    = isset($s['wb_bundle_show_price']) ? $s['wb_bundle_show_price'] : true;
+        $image_size    = $s['wb_bundle_image_size'] ?? 'woocommerce_thumbnail';
+        $grid_cols     = isset($s['wb_bundle_grid_columns']) ? max(1, absint($s['wb_bundle_grid_columns'])) : 3;
+        $separator     = array_key_exists('wb_bundle_separator_text', $s) ? $s['wb_bundle_separator_text'] : '+';
+        $total_label   = $s['wb_bundle_total_label'] ?? __('Total:', 'ffl-funnels-addons');
+        $show_original = isset($s['wb_bundle_show_original_price']) ? $s['wb_bundle_show_original_price'] : true;
+        $show_badge    = isset($s['wb_bundle_show_badge']) ? $s['wb_bundle_show_badge'] : true;
+        $show_total    = isset($s['wb_bundle_show_total']) ? $s['wb_bundle_show_total'] : true;
+        $show_savings  = isset($s['wb_bundle_show_savings']) ? $s['wb_bundle_show_savings'] : true;
+        $savings_fmt   = $s['wb_bundle_savings_format'] ?? 'amount';
 
         $this->set_attribute('_root', 'class', 'wb-bundle');
         $this->set_attribute('_root', 'data-bundle-id', $bundle->id);
@@ -557,7 +769,10 @@ class WooBooster_Bundle_Element extends \Bricks\Element
         }
 
         // Items grid.
-        echo '<div class="wb-bundle-items wb-bundle-items--' . esc_attr($layout) . '">';
+        $items_style = ('grid' === $layout)
+            ? ' style="grid-template-columns:repeat(' . esc_attr($grid_cols) . ',1fr);"'
+            : '';
+        echo '<div class="wb-bundle-items wb-bundle-items--' . esc_attr($layout) . '"' . $items_style . '>';
 
         foreach ($items as $idx => $item) {
             echo '<div class="wb-bundle-item" data-product-id="' . esc_attr($item['id']) . '" data-price="' . esc_attr($item['discounted_price']) . '" data-original-price="' . esc_attr($item['original_price']) . '">';
@@ -589,7 +804,9 @@ class WooBooster_Bundle_Element extends \Bricks\Element
             if ($show_price) {
                 echo '<div class="wb-bundle-item__price">';
                 if ($item['has_discount']) {
-                    echo '<del>' . wp_kses_post(wc_price($item['original_price'])) . '</del> ';
+                    if ($show_original) {
+                        echo '<del>' . wp_kses_post(wc_price($item['original_price'])) . '</del> ';
+                    }
                     echo '<ins>' . wp_kses_post(wc_price($item['discounted_price'])) . '</ins>';
                 } else {
                     echo wp_kses_post(wc_price($item['original_price']));
@@ -598,7 +815,7 @@ class WooBooster_Bundle_Element extends \Bricks\Element
             }
 
             // Discount badge.
-            if ($item['has_discount'] && $item['badge_text']) {
+            if ($show_badge && $item['has_discount'] && $item['badge_text']) {
                 echo '<span class="wb-bundle-badge">' . esc_html($item['badge_text']) . '</span>';
             }
 
@@ -606,9 +823,9 @@ class WooBooster_Bundle_Element extends \Bricks\Element
 
             echo '</div>'; // end item
 
-            // Plus sign separator (except after last item).
-            if ($idx < count($items) - 1) {
-                echo '<div class="wb-bundle-separator">+</div>';
+            // Separator (except after last item).
+            if ('' !== $separator && $idx < count($items) - 1) {
+                echo '<div class="wb-bundle-separator">' . esc_html($separator) . '</div>';
             }
         }
 
@@ -618,21 +835,28 @@ class WooBooster_Bundle_Element extends \Bricks\Element
         $total_original   = array_sum(array_column($items, 'original_price'));
         $total_discounted = array_sum(array_column($items, 'discounted_price'));
 
-        echo '<div class="wb-bundle-total">';
-        echo '<div class="wb-bundle-total__row">';
-        echo '<span class="wb-bundle-total__label">' . esc_html__('Total:', 'ffl-funnels-addons') . '</span>';
-        echo '<span class="wb-bundle-total__prices">';
-        if ($total_discounted < $total_original) {
-            echo '<del class="wb-bundle-total__original">' . wp_kses_post(wc_price($total_original)) . '</del> ';
-            echo '<ins class="wb-bundle-total__discounted">' . wp_kses_post(wc_price($total_discounted)) . '</ins>';
-            $savings = $total_original - $total_discounted;
-            echo ' <span class="wb-bundle-total__savings">' . sprintf(esc_html__('(Save %s)', 'ffl-funnels-addons'), wp_kses_post(wc_price($savings))) . '</span>';
-        } else {
-            echo '<span class="wb-bundle-total__discounted">' . wp_kses_post(wc_price($total_original)) . '</span>';
+        if ($show_total) {
+            echo '<div class="wb-bundle-total">';
+            echo '<div class="wb-bundle-total__row">';
+            echo '<span class="wb-bundle-total__label">' . esc_html($total_label) . '</span>';
+            echo '<span class="wb-bundle-total__prices">';
+            if ($total_discounted < $total_original) {
+                if ($show_original) {
+                    echo '<del class="wb-bundle-total__original">' . wp_kses_post(wc_price($total_original)) . '</del> ';
+                }
+                echo '<ins class="wb-bundle-total__discounted">' . wp_kses_post(wc_price($total_discounted)) . '</ins>';
+                if ($show_savings) {
+                    echo ' <span class="wb-bundle-total__savings">' . wp_kses_post(
+                        $this->format_savings($total_original, $total_discounted, $savings_fmt)
+                    ) . '</span>';
+                }
+            } else {
+                echo '<span class="wb-bundle-total__discounted">' . wp_kses_post(wc_price($total_original)) . '</span>';
+            }
+            echo '</span>';
+            echo '</div>';
+            echo '</div>';
         }
-        echo '</span>';
-        echo '</div>';
-        echo '</div>';
 
         // Inline error slot (a11y-friendly status region).
         echo '<div class="wb-bundle-error" role="alert" aria-live="polite" hidden></div>';
@@ -652,12 +876,50 @@ class WooBooster_Bundle_Element extends \Bricks\Element
             'decimals'        => wc_get_price_decimals(),
             'decimal_sep'     => wc_get_price_decimal_separator(),
             'thousand_sep'    => wc_get_price_thousand_separator(),
+            'show_original'   => (bool) $show_original,
+            'show_savings'    => (bool) $show_savings,
+            'savings_format'  => $savings_fmt,
         ])) . '">';
 
         echo '</div>'; // end wb-bundle
     }
 
     // ── Helpers ────────────────────────────────────────────────────────
+
+    /**
+     * Build the "(Save …)" string for the total row.
+     *
+     * @param float  $original   Sum of original prices.
+     * @param float  $discounted Sum of discounted prices.
+     * @param string $format     'amount' | 'percentage' | 'both'.
+     * @return string Escaped, currency-formatted savings markup.
+     */
+    private function format_savings($original, $discounted, $format): string
+    {
+        $savings = max(0.0, (float) $original - (float) $discounted);
+        if ($savings <= 0) {
+            return '';
+        }
+
+        $amount  = wc_price($savings);
+        $percent = $original > 0 ? round(($savings / $original) * 100) . '%' : '0%';
+
+        switch ($format) {
+            case 'percentage':
+                $value = esc_html($percent);
+                break;
+            case 'both':
+                $value = $amount . ' / ' . esc_html($percent);
+                break;
+            case 'amount':
+            default:
+                $value = $amount;
+                break;
+        }
+
+        /* translators: %s: amount or percentage saved */
+        return sprintf(esc_html__('(Save %s)', 'ffl-funnels-addons'), $value);
+    }
 
     private function prepare_item_data($product, $bundle, array $price_map = []): array
     {
@@ -667,13 +929,20 @@ class WooBooster_Bundle_Element extends \Bricks\Element
         $discounted_price = $row ? (float) $row['discounted'] : $original;
         $has_discount     = $discounted_price < $original;
 
+        $price_type = isset($bundle->bundle_price_type) ? $bundle->bundle_price_type : 'discount';
         $badge_text = '';
-        if ($has_discount && $bundle->discount_type === 'percentage' && $bundle->discount_value > 0) {
-            $badge_text = '-' . rtrim(rtrim(number_format((float) $bundle->discount_value, 2, '.', ''), '0'), '.') . '%';
-        } elseif ($has_discount && $bundle->discount_type === 'fixed') {
-            // Show the per-item saving, not the whole bundle total — one badge per card.
-            $saving     = $original - $discounted_price;
-            $badge_text = '-' . wp_strip_all_tags(wc_price($saving));
+        if ($has_discount) {
+            if ('fixed' === $price_type) {
+                // Fixed bundle price: items share a uniform discount factor — show the % off.
+                $pct        = $original > 0 ? round((($original - $discounted_price) / $original) * 100) : 0;
+                $badge_text = $pct > 0 ? '-' . $pct . '%' : '';
+            } elseif ('percentage' === $bundle->discount_type && $bundle->discount_value > 0) {
+                $badge_text = '-' . rtrim(rtrim(number_format((float) $bundle->discount_value, 2, '.', ''), '0'), '.') . '%';
+            } elseif ('fixed' === $bundle->discount_type) {
+                // Show the per-item saving, not the whole bundle total — one badge per card.
+                $saving     = $original - $discounted_price;
+                $badge_text = '-' . wp_strip_all_tags(wc_price($saving));
+            }
         }
 
         $image_size = $this->settings['wb_bundle_image_size'] ?? 'woocommerce_thumbnail';

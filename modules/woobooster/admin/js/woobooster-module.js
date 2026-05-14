@@ -1641,9 +1641,22 @@
     });
   }
 
-  /* ── Bundle Discount Type Toggle ───────────────────────────────────── */
+  /* ── Bundle Pricing Mode + Discount Type Toggle ────────────────────── */
 
   function initBundleDiscountToggle() {
+    // Pricing mode: discount on items vs fixed bundle price.
+    var priceType = document.getElementById('wb-price-type');
+    if (priceType) {
+      var discountFields = document.querySelector('.wb-price-discount-fields');
+      var fixedFields = document.querySelector('.wb-price-fixed-fields');
+      priceType.addEventListener('change', function () {
+        var isFixed = priceType.value === 'fixed';
+        if (discountFields) discountFields.style.display = isFixed ? 'none' : '';
+        if (fixedFields) fixedFields.style.display = isFixed ? '' : 'none';
+      });
+    }
+
+    // Discount type: show the value row only when a discount is active.
     var select = document.getElementById('wb-discount-type');
     if (!select) return;
 

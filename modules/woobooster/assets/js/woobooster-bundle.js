@@ -38,6 +38,24 @@
     return (neg ? '-' : '') + formatted;
   }
 
+  function formatSavings(original, discounted, bundleData, saveFormat) {
+    var savings = original - discounted;
+    if (savings <= 0) return '';
+
+    var fmt = bundleData.savings_format || 'amount';
+    var pct = original > 0 ? Math.round((savings / original) * 100) + '%' : '0%';
+    var value;
+    if (fmt === 'percentage') {
+      value = pct;
+    } else if (fmt === 'both') {
+      value = formatPrice(savings, bundleData) + ' / ' + pct;
+    } else {
+      value = formatPrice(savings, bundleData);
+    }
+
+    return saveFormat.replace('%s', value);
+  }
+
   function recalculate($bundle) {
     var bundleData = $bundle.data('bundleConfig');
     if (!bundleData) return;
@@ -61,10 +79,13 @@
     var saveFormat = i18n.saveFormat || '(Save %s)';
     var html = '';
     if (totalDiscounted < totalOriginal) {
-      html += '<del class="wb-bundle-total__original">' + formatPrice(totalOriginal, bundleData) + '</del> ';
+      if (bundleData.show_original !== false) {
+        html += '<del class="wb-bundle-total__original">' + formatPrice(totalOriginal, bundleData) + '</del> ';
+      }
       html += '<ins class="wb-bundle-total__discounted">' + formatPrice(totalDiscounted, bundleData) + '</ins>';
-      var savings = totalOriginal - totalDiscounted;
-      html += ' <span class="wb-bundle-total__savings">' + saveFormat.replace('%s', formatPrice(savings, bundleData)) + '</span>';
+      if (bundleData.show_savings !== false) {
+        html += ' <span class="wb-bundle-total__savings">' + formatSavings(totalOriginal, totalDiscounted, bundleData, saveFormat) + '</span>';
+      }
     } else {
       html += '<span class="wb-bundle-total__discounted">' + formatPrice(totalOriginal, bundleData) + '</span>';
     }

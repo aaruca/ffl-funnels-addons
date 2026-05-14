@@ -42,6 +42,12 @@ All notable changes to FFL Funnels Addons are documented in this file.
 - New **User Role** condition type — target bundles to specific roles (or `guest`)
 - Role signature included in cache key so role-specific results not cross-served
 
+### WooBooster — Bundle pricing modes & Bricks display options
+
+- **Fixed bundle price (Phase feature 1):** Each bundle now has a **Pricing Mode** — *Discount on items* (the existing percentage/fixed discount) or *Fixed bundle price* (one total for the whole set, split pro-rata across items by original price). `WOOBOOSTER_DB_VERSION` bumped to `1.9.0` — adds `bundle_price_type` and `bundle_price` columns to `wp_woobooster_bundles` with a safe migration. A fixed price at or above the items' combined price applies no discount; the cart's hash-bound discount logic and server-side price snapshots work unchanged because `calculate_item_prices()` resolves the per-item split centrally.
+- **Display options (Phase feature 2):** The Bricks bundle element gains toggles for original (strikethrough) price, per-item discount badge, the total section, and savings — plus a **Savings Format** (amount / percentage / both), a configurable item **Separator Text**, **Grid Columns**, and a custom **Total Label**. The frontend JS recalculation respects the original-price and savings toggles and the savings format.
+- **Bricks customization (Phase feature 3):** New style control groups — **Heading Style** (typography, margin, alignment), **Separator Style** (color, typography), **Savings Style** (color, background, typography, padding, radius) — plus item-card border radius and original/final total color controls.
+
 ## [1.21.0] - 2026-05-08
 
 ### Product Reviews

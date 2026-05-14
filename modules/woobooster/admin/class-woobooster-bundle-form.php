@@ -30,11 +30,13 @@ class WooBooster_Bundle_Form
             ? __('Edit Bundle', 'ffl-funnels-addons')
             : __('Add New Bundle', 'ffl-funnels-addons');
 
-        $name           = $bundle ? $bundle->name : '';
-        $priority       = $bundle ? $bundle->priority : 10;
-        $status         = $bundle ? $bundle->status : 1;
-        $discount_type  = $bundle ? $bundle->discount_type : 'none';
-        $discount_value = $bundle ? $bundle->discount_value : '';
+        $name              = $bundle ? $bundle->name : '';
+        $priority          = $bundle ? $bundle->priority : 10;
+        $status            = $bundle ? $bundle->status : 1;
+        $discount_type     = $bundle ? $bundle->discount_type : 'none';
+        $discount_value    = $bundle ? $bundle->discount_value : '';
+        $bundle_price_type = $bundle && isset($bundle->bundle_price_type) ? $bundle->bundle_price_type : 'discount';
+        $bundle_price      = $bundle && isset($bundle->bundle_price) && null !== $bundle->bundle_price ? $bundle->bundle_price : '';
 
         $back_url = admin_url('admin.php?page=ffla-woobooster-bundles');
 
@@ -110,9 +112,24 @@ class WooBooster_Bundle_Form
 
         echo '</div>'; // .wb-card__section
 
-        // ── Discount ────────────────────────────────────────────────────
+        // ── Pricing ─────────────────────────────────────────────────────
         echo '<div class="wb-card__section">';
-        echo '<h3>' . esc_html__('Discount', 'ffl-funnels-addons') . '</h3>';
+        echo '<h3>' . esc_html__('Pricing', 'ffl-funnels-addons') . '</h3>';
+
+        // Pricing Mode.
+        echo '<div class="wb-field">';
+        echo '<label class="wb-field__label">' . esc_html__('Pricing Mode', 'ffl-funnels-addons') . '</label>';
+        echo '<div class="wb-field__control">';
+        echo '<select name="bundle_price_type" class="wb-select" id="wb-price-type">';
+        echo '<option value="discount"' . selected($bundle_price_type, 'discount', false) . '>' . esc_html__('Discount on items', 'ffl-funnels-addons') . '</option>';
+        echo '<option value="fixed"' . selected($bundle_price_type, 'fixed', false) . '>' . esc_html__('Fixed bundle price', 'ffl-funnels-addons') . '</option>';
+        echo '</select>';
+        echo '<p class="wb-field__desc">' . esc_html__('“Discount on items” reduces each item’s price. “Fixed bundle price” sells the whole set for one total, split pro-rata across items.', 'ffl-funnels-addons') . '</p>';
+        echo '</div></div>';
+
+        // Discount fields (mode = discount).
+        $discount_mode_display = 'fixed' === $bundle_price_type ? 'display:none;' : '';
+        echo '<div class="wb-price-discount-fields" style="' . esc_attr($discount_mode_display) . '">';
 
         echo '<div class="wb-field">';
         echo '<label class="wb-field__label">' . esc_html__('Discount Type', 'ffl-funnels-addons') . '</label>';
@@ -130,6 +147,17 @@ class WooBooster_Bundle_Form
         echo '<div class="wb-field__control">';
         echo '<input type="number" name="bundle_discount_value" value="' . esc_attr($discount_value) . '" min="0" step="0.01" class="wb-input wb-input--sm">';
         echo '<p class="wb-field__desc">' . esc_html__('Applied as a cart discount when the bundle is added.', 'ffl-funnels-addons') . '</p>';
+        echo '</div></div>';
+
+        echo '</div>'; // .wb-price-discount-fields
+
+        // Fixed bundle price field (mode = fixed).
+        $fixed_mode_display = 'fixed' === $bundle_price_type ? '' : 'display:none;';
+        echo '<div class="wb-field wb-price-fixed-fields" style="' . esc_attr($fixed_mode_display) . '">';
+        echo '<label class="wb-field__label">' . esc_html__('Bundle Price', 'ffl-funnels-addons') . '</label>';
+        echo '<div class="wb-field__control">';
+        echo '<input type="number" name="bundle_price" value="' . esc_attr($bundle_price) . '" min="0" step="0.01" class="wb-input wb-input--sm">';
+        echo '<p class="wb-field__desc">' . esc_html__('Total price for the whole bundle. Split across items pro-rata by their original price. A value at or above the items’ combined price applies no discount.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
         echo '</div>'; // .wb-card__section
@@ -583,16 +611,21 @@ class WooBooster_Bundle_Form
         $bundle_id = isset($_POST['bundle_id']) ? absint($_POST['bundle_id']) : 0;
 
         // Bundle data.
+        $price_type = isset($_POST['bundle_price_type']) ? sanitize_key($_POST['bundle_price_type']) : 'discount';
         $data = array(
-            'name'           => isset($_POST['bundle_name']) ? sanitize_text_field(wp_unslash($_POST['bundle_name'])) : '',
-            'priority'       => isset($_POST['bundle_priority']) ? absint($_POST['bundle_priority']) : 10,
-            'status'         => isset($_POST['bundle_status']) ? 1 : 0,
-            'discount_type'  => isset($_POST['bundle_discount_type']) ? sanitize_key($_POST['bundle_discount_type']) : 'none',
-            'discount_value' => isset($_POST['bundle_discount_value']) ? floatval($_POST['bundle_discount_value']) : 0,
-            'start_date'     => !empty($_POST['bundle_start_date'])
+            'name'              => isset($_POST['bundle_name']) ? sanitize_text_field(wp_unslash($_POST['bundle_name'])) : '',
+            'priority'          => isset($_POST['bundle_priority']) ? absint($_POST['bundle_priority']) : 10,
+            'status'            => isset($_POST['bundle_status']) ? 1 : 0,
+            'discount_type'     => isset($_POST['bundle_discount_type']) ? sanitize_key($_POST['bundle_discount_type']) : 'none',
+            'discount_value'    => isset($_POST['bundle_discount_value']) ? floatval($_POST['bundle_discount_value']) : 0,
+            'bundle_price_type' => $price_type,
+            'bundle_price'      => ('fixed' === $price_type && isset($_POST['bundle_price']) && '' !== $_POST['bundle_price'])
+                ? floatval($_POST['bundle_price'])
+                : null,
+            'start_date'        => !empty($_POST['bundle_start_date'])
                 ? get_gmt_from_date(sanitize_text_field(wp_unslash($_POST['bundle_start_date'])))
                 : null,
-            'end_date'       => !empty($_POST['bundle_end_date'])
+            'end_date'          => !empty($_POST['bundle_end_date'])
                 ? get_gmt_from_date(sanitize_text_field(wp_unslash($_POST['bundle_end_date'])))
                 : null,
         );

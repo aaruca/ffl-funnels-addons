@@ -132,11 +132,13 @@ class WooBooster_Bundle
         self::init_tables();
 
         $defaults = array(
-            'name'           => '',
-            'priority'       => 10,
-            'status'         => 1,
-            'discount_type'  => 'none',
-            'discount_value' => 0,
+            'name'              => '',
+            'priority'          => 10,
+            'status'            => 1,
+            'discount_type'     => 'none',
+            'discount_value'    => 0,
+            'bundle_price_type' => 'discount',
+            'bundle_price'      => null,
         );
 
         $data = wp_parse_args($data, $defaults);
@@ -250,13 +252,15 @@ class WooBooster_Bundle
         }
 
         $new_id = self::create(array(
-            'name'           => $bundle->name . ' (Copy)',
-            'priority'       => $bundle->priority,
-            'status'         => 0,
-            'discount_type'  => $bundle->discount_type,
-            'discount_value' => $bundle->discount_value,
-            'start_date'     => $bundle->start_date,
-            'end_date'       => $bundle->end_date,
+            'name'              => $bundle->name . ' (Copy)',
+            'priority'          => $bundle->priority,
+            'status'            => 0,
+            'discount_type'     => $bundle->discount_type,
+            'discount_value'    => $bundle->discount_value,
+            'bundle_price_type' => isset($bundle->bundle_price_type) ? $bundle->bundle_price_type : 'discount',
+            'bundle_price'      => isset($bundle->bundle_price) ? $bundle->bundle_price : null,
+            'start_date'        => $bundle->start_date,
+            'end_date'          => $bundle->end_date,
         ));
 
         if (!$new_id) {
@@ -759,12 +763,59 @@ class WooBooster_Bundle
 
         $dec = function_exists('wc_get_price_decimals') ? wc_get_price_decimals() : 2;
 
+        // Fixed bundle price mode: distribute a single target total across items.
+        $price_type = isset($bundle->bundle_price_type) ? $bundle->bundle_price_type : 'discount';
+        if ('fixed' === $price_type && isset($bundle->bundle_price) && null !== $bundle->bundle_price) {
+            return self::apply_fixed_bundle_price($prices, (float) $bundle->bundle_price, $dec);
+        }
+
         return self::apply_discount_to_prices(
             $prices,
             $bundle->discount_type ?? 'none',
             (float) ($bundle->discount_value ?? 0),
             $dec
         );
+    }
+
+    /**
+     * Pure helper: distribute a fixed bundle price across items pro-rata.
+     *
+     * Each item's discounted per-unit price is its share of the target total,
+     * weighted by its original price. When the target exceeds the sum of
+     * originals (a markup), each item is capped at its original price so no
+     * item is ever priced above its standalone value.
+     *
+     * @param array<int, float> $prices       Map of product_id => original price.
+     * @param float             $bundle_price Target total for the full set.
+     * @param int               $dec          Rounding decimals.
+     * @return array Map of product_id => ['original' => float, 'discounted' => float].
+     */
+    public static function apply_fixed_bundle_price(array $prices, $bundle_price, $dec = 2)
+    {
+        $bundle_price = max(0.0, (float) $bundle_price);
+        $out          = array();
+        $sub          = 0.0;
+        foreach ($prices as $pid => $price) {
+            $price     = (float) $price;
+            $out[$pid] = array('original' => $price, 'discounted' => $price);
+            $sub      += $price;
+        }
+        if (empty($out) || $sub <= 0) {
+            return $out;
+        }
+
+        // A target at or above the subtotal is not a discount — leave originals.
+        if ($bundle_price >= $sub) {
+            return $out;
+        }
+
+        $factor = $bundle_price / $sub;
+        foreach ($out as $pid => &$row) {
+            $row['discounted'] = max(0.0, round($row['original'] * $factor, $dec));
+        }
+        unset($row);
+
+        return $out;
     }
 
     /**
@@ -837,6 +888,19 @@ class WooBooster_Bundle
             $sanitized['discount_value'] = max(0, floatval($data['discount_value']));
         }
 
+        if (isset($data['bundle_price_type'])) {
+            $allowed = array('discount', 'fixed');
+            $sanitized['bundle_price_type'] = in_array($data['bundle_price_type'], $allowed, true)
+                ? $data['bundle_price_type']
+                : 'discount';
+        }
+
+        if (array_key_exists('bundle_price', $data)) {
+            $sanitized['bundle_price'] = ('' === $data['bundle_price'] || null === $data['bundle_price'])
+                ? null
+                : max(0, floatval($data['bundle_price']));
+        }
+
         if (array_key_exists('start_date', $data)) {
             $sanitized['start_date'] = !empty($data['start_date'])
                 ? sanitize_text_field($data['start_date'])
@@ -855,13 +919,15 @@ class WooBooster_Bundle
     private static function get_format($data)
     {
         $format_map = array(
-            'name'           => '%s',
-            'priority'       => '%d',
-            'status'         => '%d',
-            'discount_type'  => '%s',
-            'discount_value' => '%s',
-            'start_date'     => '%s',
-            'end_date'       => '%s',
+            'name'              => '%s',
+            'priority'          => '%d',
+            'status'            => '%d',
+            'discount_type'     => '%s',
+            'discount_value'    => '%s',
+            'bundle_price_type' => '%s',
+            'bundle_price'      => '%s',
+            'start_date'        => '%s',
+            'end_date'          => '%s',
         );
 
         $format = array();
