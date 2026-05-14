@@ -122,15 +122,17 @@ class WooBooster_Bundle_Element extends \Bricks\Element
         ];
 
         $this->controls['wb_bundle_source'] = [
-            'group'   => 'wb_bundle_settings',
-            'tab'     => 'content',
-            'label'   => esc_html__('Product Source', 'ffl-funnels-addons'),
-            'type'    => 'select',
-            'options' => [
+            'group'    => 'wb_bundle_settings',
+            'tab'      => 'content',
+            'label'    => esc_html__('Product Source', 'ffl-funnels-addons'),
+            'type'     => 'select',
+            'options'  => [
                 'current' => esc_html__('Current Product (auto-detect)', 'ffl-funnels-addons'),
                 'manual'  => esc_html__('Manual Product ID', 'ffl-funnels-addons'),
+                'none'    => esc_html__('None (display bundle as-is)', 'ffl-funnels-addons'),
             ],
             'default' => 'current',
+            'description' => esc_html__('Choose "None" if using a specific bundle on homepage or custom pages.', 'ffl-funnels-addons'),
         ];
 
         $this->controls['wb_bundle_product_id'] = [
@@ -703,7 +705,12 @@ class WooBooster_Bundle_Element extends \Bricks\Element
         $specific_bundle_id = !empty($s['wb_bundle_id']) ? absint($s['wb_bundle_id']) : 0;
 
         if ($specific_bundle_id) {
-            $bundle = $matcher->get_bundle_by_id($specific_bundle_id, $product_id);
+            // When a specific bundle is selected, load it directly without product context matching.
+            $bundle = \WooBooster_Bundle::load($specific_bundle_id);
+            if ($bundle && $bundle->status) {
+                // Resolve items for this bundle.
+                $bundle->resolved_items = $bundle->get_items(['fields' => 'ids']);
+            }
         } elseif ($product_id) {
             $bundles = $matcher->get_bundles_for_product($product_id);
             $bundle = !empty($bundles) ? $bundles[0] : null;
@@ -961,6 +968,10 @@ class WooBooster_Bundle_Element extends \Bricks\Element
     private function resolve_product_id(array $settings): int
     {
         $source = $settings['wb_bundle_source'] ?? 'current';
+
+        if ($source === 'none') {
+            return 0;
+        }
 
         if ($source === 'manual') {
             return absint($settings['wb_bundle_product_id'] ?? 0);
