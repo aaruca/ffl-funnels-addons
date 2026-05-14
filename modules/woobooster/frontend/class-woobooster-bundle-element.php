@@ -705,12 +705,9 @@ class WooBooster_Bundle_Element extends \Bricks\Element
         $specific_bundle_id = !empty($s['wb_bundle_id']) ? absint($s['wb_bundle_id']) : 0;
 
         if ($specific_bundle_id) {
-            // When a specific bundle is selected, load it directly without product context matching.
-            $bundle = \WooBooster_Bundle::load($specific_bundle_id);
-            if ($bundle && $bundle->status) {
-                // Resolve items for this bundle.
-                $bundle->resolved_items = $bundle->get_items(['fields' => 'ids']);
-            }
+            // Specific bundle selected — works with or without product context
+            // ($product_id may be 0 on homepage / standalone pages).
+            $bundle = $matcher->get_bundle_by_id($specific_bundle_id, $product_id);
         } elseif ($product_id) {
             $bundles = $matcher->get_bundles_for_product($product_id);
             $bundle = !empty($bundles) ? $bundles[0] : null;
