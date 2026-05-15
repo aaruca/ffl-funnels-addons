@@ -44,6 +44,7 @@ class WooBooster_Bundle_Cart
         // Cart / checkout display.
         add_filter('woocommerce_cart_item_name', array(__CLASS__, 'cart_item_name'), 10, 2);
         add_filter('woocommerce_get_item_data', array(__CLASS__, 'cart_item_data_display'), 10, 2);
+        add_filter('woocommerce_cart_item_thumbnail', array(__CLASS__, 'cart_item_thumbnail'), 10, 3);
 
         // Persist bundle contents onto the order line item.
         add_action('woocommerce_checkout_create_order_line_item', array(__CLASS__, 'add_order_line_item_meta'), 10, 3);
@@ -285,6 +286,11 @@ class WooBooster_Bundle_Cart
 
     /**
      * List the bundled products beneath the cart line.
+     *
+     * Each item gets its own block with padding and a faint bottom border so
+     * the list reads cleanly in both the mini-cart and the checkout review
+     * column. Plain-text `value` is preserved for emails / order details that
+     * strip HTML.
      */
     public static function cart_item_data_display($item_data, $cart_item)
     {
@@ -292,25 +298,64 @@ class WooBooster_Bundle_Cart
             return $item_data;
         }
 
-        $lines = array();
+        $lines      = array();
+        $html_lines = array();
         foreach ($cart_item[self::META_BUNDLE_ITEMS] as $bi) {
             if (empty($bi['name'])) {
                 continue;
             }
-            $qty     = isset($bi['quantity']) ? max(1, (int) $bi['quantity']) : 1;
-            $lines[] = ($qty > 1 ? $qty . '&times; ' : '') . esc_html($bi['name']);
+            $qty   = isset($bi['quantity']) ? max(1, (int) $bi['quantity']) : 1;
+            $label = ($qty > 1 ? $qty . '× ' : '') . $bi['name'];
+
+            $lines[]      = $label;
+            $html_lines[] = '<li style="padding:4px 0;border-bottom:1px solid rgba(0,0,0,0.06);">' . esc_html($label) . '</li>';
         }
 
-        if (!empty($lines)) {
-            $value = implode('<br>', $lines);
+        if (!empty($html_lines)) {
+            // Drop the bottom border on the last item so the list ends cleanly.
+            $last_index = count($html_lines) - 1;
+            $html_lines[$last_index] = str_replace('border-bottom:1px solid rgba(0,0,0,0.06);', '', $html_lines[$last_index]);
+
+            $display = '<ul class="woobooster-bundle-includes" style="margin:4px 0 0;padding:0;list-style:none;font-size:0.9em;">' . implode('', $html_lines) . '</ul>';
             $item_data[] = array(
                 'key'     => __('Includes', 'ffl-funnels-addons'),
-                'value'   => $value,
-                'display' => $value,
+                'value'   => implode(', ', $lines),
+                'display' => $display,
             );
         }
 
         return $item_data;
+    }
+
+    /**
+     * Swap the cart line's thumbnail with the bundle's own image (when set).
+     * Falls back to WooCommerce's default thumbnail (representative product)
+     * when no image is configured.
+     *
+     * @param string $thumbnail Default thumbnail HTML.
+     * @param array  $cart_item Cart item data.
+     * @param string $cart_item_key Cart item key (unused but part of the filter signature).
+     * @return string
+     */
+    public static function cart_item_thumbnail($thumbnail, $cart_item, $cart_item_key)
+    {
+        if (empty($cart_item[self::META_BUNDLE_ID])) {
+            return $thumbnail;
+        }
+
+        $bundle = WooBooster_Bundle::get((int) $cart_item[self::META_BUNDLE_ID]);
+        if (!$bundle || empty($bundle->image_id)) {
+            return $thumbnail;
+        }
+
+        $custom = wp_get_attachment_image(
+            (int) $bundle->image_id,
+            'woocommerce_thumbnail',
+            false,
+            array('class' => 'attachment-woocommerce_thumbnail size-woocommerce_thumbnail')
+        );
+
+        return $custom ?: $thumbnail;
     }
 
     /**

@@ -3,7 +3,7 @@
  * Plugin Name:       FFL Funnels Addons
  * Plugin URI:        https://github.com/aaruca/ffl-funnels-addons
  * Description:       Modular WooCommerce toolkit with WooBooster, Wishlist, Checkout, Sheets Sync, Tax Resolver, and Product Reviews.
- * Version:           1.24.0
+ * Version:           1.25.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants.
-define('FFLA_VERSION', '1.24.0');
+define('FFLA_VERSION', '1.25.0');
 define('FFLA_FILE', __FILE__);
 define('FFLA_PATH', plugin_dir_path(__FILE__));
 define('FFLA_URL', plugin_dir_url(__FILE__));
@@ -114,7 +114,7 @@ if (!class_exists('FFL_Funnels_Addons')):
                     define('WOOBOOSTER_VERSION', FFLA_VERSION);
                 }
                 if (!defined('WOOBOOSTER_DB_VERSION')) {
-                    define('WOOBOOSTER_DB_VERSION', '1.9.0');
+                    define('WOOBOOSTER_DB_VERSION', '1.10.0');
                 }
                 if (!defined('WOOBOOSTER_FILE')) {
                     define('WOOBOOSTER_FILE', FFLA_FILE);

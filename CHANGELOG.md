@@ -2,6 +2,20 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.25.0] - 2026-05-15
+
+### WooBooster — Bundle image & better "Includes" layout in cart
+
+**Bundle Image**
+- Each bundle now supports an optional **image** (managed via the WordPress media library) that replaces the representative product's thumbnail in the cart and checkout. Helpful for showing a custom hero / lifestyle shot for the bundle instead of whatever happened to be the first product.
+- Admin: new "Bundle Image" field on the bundle form with the standard WP media picker (select + remove). Empty = use the first product's thumbnail (existing behavior).
+- Schema: `image_id bigint(20) NULL` added to `wp_woobooster_bundles`. Safe migration in `WOOBOOSTER_DB_VERSION` 1.10.0 with INFORMATION_SCHEMA check.
+- Cart: new `woocommerce_cart_item_thumbnail` filter swaps the line image when `image_id` is set; falls back gracefully when not.
+
+**"Includes" list now visually separated**
+- Replaced the `<br>`-joined inline list under bundle cart items with a styled `<ul>`: each contained product sits on its own row with 4px padding and a faint bottom border, so a bundle of 3-4 products is no longer a wall of text.
+- The plain-text `value` (used by emails / order details that strip HTML) remains comma-separated for readability there.
+
 ## [1.24.0] - 2026-05-15
 
 ### Full plugin audit & critical fixes

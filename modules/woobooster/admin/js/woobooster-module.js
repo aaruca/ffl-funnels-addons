@@ -2579,10 +2579,54 @@
 
   /* ── Bundle Boot ───────────────────────────────────────────────────── */
 
+  function initBundleImagePicker() {
+    var hiddenInput = document.getElementById('wb-bundle-image-id');
+    if (!hiddenInput || typeof wp === 'undefined' || !wp.media) return;
+
+    var thumb = document.getElementById('wb-bundle-image-thumb');
+    var selectBtn = document.querySelector('.wb-bundle-image-select');
+    var removeBtn = document.querySelector('.wb-bundle-image-remove');
+    var frame = null;
+
+    if (selectBtn) {
+      selectBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (frame) { frame.open(); return; }
+        frame = wp.media({
+          title: 'Select bundle image',
+          button: { text: 'Use this image' },
+          library: { type: 'image' },
+          multiple: false
+        });
+        frame.on('select', function () {
+          var att = frame.state().get('selection').first().toJSON();
+          hiddenInput.value = att.id;
+          if (thumb) {
+            var src = (att.sizes && att.sizes.thumbnail) ? att.sizes.thumbnail.url : att.url;
+            thumb.src = src;
+            thumb.style.display = '';
+          }
+          if (removeBtn) removeBtn.style.display = '';
+        });
+        frame.open();
+      });
+    }
+
+    if (removeBtn) {
+      removeBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        hiddenInput.value = '';
+        if (thumb) { thumb.src = ''; thumb.style.display = 'none'; }
+        removeBtn.style.display = 'none';
+      });
+    }
+  }
+
   function initBundleAdmin() {
     initBundleToggles();
     initBundleDeleteConfirm();
     initBundleDiscountToggle();
+    initBundleImagePicker();
     initBundleProductSearch();
     initBundleItemRemove();
     initBundleConditionRepeater();

@@ -146,6 +146,7 @@ class WooBooster_Activator
         $sql_bundles = "CREATE TABLE $bundles_table (
 			id bigint(20) NOT NULL AUTO_INCREMENT,
 			name varchar(255) NOT NULL,
+			image_id bigint(20) DEFAULT NULL,
 			priority int(11) NOT NULL DEFAULT 10,
 			status tinyint(1) NOT NULL DEFAULT 1,
 			discount_type varchar(20) NOT NULL DEFAULT 'none',
@@ -434,6 +435,15 @@ class WooBooster_Activator
                 if (empty($col_exists)) {
                     $wpdb->query("ALTER TABLE {$bundles_table} ADD {$col_name} {$col_def}"); // phpcs:ignore WordPress.DB.PreparedSQL
                 }
+            }
+
+            // 14. Add bundle image column (v1.10.0).
+            $image_col = $wpdb->get_results($wpdb->prepare(
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = DATABASE() AND table_name = %s AND column_name = 'image_id'",
+                $bundles_table
+            ));
+            if (empty($image_col)) {
+                $wpdb->query("ALTER TABLE {$bundles_table} ADD image_id bigint(20) DEFAULT NULL AFTER name"); // phpcs:ignore WordPress.DB.PreparedSQL
             }
 
             // Mark migration as complete.

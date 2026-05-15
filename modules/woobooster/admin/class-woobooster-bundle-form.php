@@ -31,6 +31,7 @@ class WooBooster_Bundle_Form
             : __('Add New Bundle', 'ffl-funnels-addons');
 
         $name              = $bundle ? $bundle->name : '';
+        $image_id          = $bundle && !empty($bundle->image_id) ? absint($bundle->image_id) : 0;
         $priority          = $bundle ? $bundle->priority : 10;
         $status            = $bundle ? $bundle->status : 1;
         $discount_type     = $bundle ? $bundle->discount_type : 'none';
@@ -73,6 +74,21 @@ class WooBooster_Bundle_Form
         echo '<label class="wb-field__label" for="wb-bundle-name">' . esc_html__('Bundle Name', 'ffl-funnels-addons') . '</label>';
         echo '<div class="wb-field__control">';
         echo '<input type="text" id="wb-bundle-name" name="bundle_name" value="' . esc_attr($name) . '" class="wb-input" required>';
+        echo '</div></div>';
+
+        // Bundle Image (replaces representative product thumbnail in cart).
+        $image_url = $image_id ? wp_get_attachment_image_url($image_id, 'thumbnail') : '';
+        echo '<div class="wb-field wb-bundle-image-field">';
+        echo '<label class="wb-field__label">' . esc_html__('Bundle Image', 'ffl-funnels-addons') . '</label>';
+        echo '<div class="wb-field__control">';
+        echo '<input type="hidden" id="wb-bundle-image-id" name="bundle_image_id" value="' . esc_attr($image_id) . '">';
+        echo '<div class="wb-bundle-image-preview" style="display:flex;align-items:center;gap:12px;">';
+        echo '<img id="wb-bundle-image-thumb" src="' . esc_url($image_url) . '" alt="" style="' . ($image_url ? '' : 'display:none;') . 'max-width:80px;max-height:80px;border:1px solid #ddd;border-radius:4px;background:#f6f6f6;">';
+        echo '<div>';
+        echo '<button type="button" class="button wb-bundle-image-select">' . esc_html__('Select image', 'ffl-funnels-addons') . '</button> ';
+        echo '<button type="button" class="button wb-bundle-image-remove"' . ($image_id ? '' : ' style="display:none;"') . '>' . esc_html__('Remove', 'ffl-funnels-addons') . '</button>';
+        echo '</div></div>';
+        echo '<p class="wb-field__desc">' . esc_html__('Shown in cart and checkout in place of the first product\'s thumbnail. Optional.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
         // Priority.
@@ -614,6 +630,7 @@ class WooBooster_Bundle_Form
         $price_type = isset($_POST['bundle_price_type']) ? sanitize_key($_POST['bundle_price_type']) : 'discount';
         $data = array(
             'name'              => isset($_POST['bundle_name']) ? sanitize_text_field(wp_unslash($_POST['bundle_name'])) : '',
+            'image_id'          => isset($_POST['bundle_image_id']) ? absint($_POST['bundle_image_id']) : 0,
             'priority'          => isset($_POST['bundle_priority']) ? absint($_POST['bundle_priority']) : 10,
             'status'            => isset($_POST['bundle_status']) ? 1 : 0,
             'discount_type'     => isset($_POST['bundle_discount_type']) ? sanitize_key($_POST['bundle_discount_type']) : 'none',

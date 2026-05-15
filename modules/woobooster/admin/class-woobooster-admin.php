@@ -71,6 +71,11 @@ class WooBooster_Admin
             return;
         }
 
+        // The bundle form needs the WordPress media library for the image picker.
+        if ('ffla-woobooster-bundles' === $page) {
+            wp_enqueue_media();
+        }
+
         // Localize the module script (enqueued by FFLA_Admin).
         wp_localize_script('woobooster-module', 'wooboosterAdmin', array(
             'ajaxUrl' => admin_url('admin-ajax.php'),

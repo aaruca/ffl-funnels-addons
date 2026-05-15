@@ -133,6 +133,7 @@ class WooBooster_Bundle
 
         $defaults = array(
             'name'              => '',
+            'image_id'          => null,
             'priority'          => 10,
             'status'            => 1,
             'discount_type'     => 'none',
@@ -877,6 +878,11 @@ class WooBooster_Bundle
             $sanitized['name'] = sanitize_text_field($data['name']);
         }
 
+        if (array_key_exists('image_id', $data)) {
+            $img = absint($data['image_id']);
+            $sanitized['image_id'] = $img > 0 ? $img : null;
+        }
+
         if (isset($data['priority'])) {
             $sanitized['priority'] = absint($data['priority']);
         }
@@ -928,6 +934,7 @@ class WooBooster_Bundle
     {
         $format_map = array(
             'name'              => '%s',
+            'image_id'          => '%d',
             'priority'          => '%d',
             'status'            => '%d',
             'discount_type'     => '%s',
