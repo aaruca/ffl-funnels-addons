@@ -4,6 +4,8 @@
     $(document).ready(function () {
         initProductTab();
         initWidget();
+        initGlobalHandlers();
+        refreshAllCartSummaries();
     });
 
     function initProductTab() {
@@ -12,7 +14,6 @@
             return;
         }
 
-        // Tier tab switcher.
         $tab.on('click', '.ffla-loadout-tab__tier-btn', function () {
             var $btn = $(this);
             var slug = $btn.data('tier-slug');
@@ -22,12 +23,10 @@
             $tab.find('.ffla-loadout-tab__panel[data-tier-slug="' + slug + '"]').addClass('is-active');
         });
 
-        // Single item add.
         $tab.on('click', '.ffla-loadout-tab__add-btn', function () {
             var $btn = $(this);
             var $panel = $btn.closest('.ffla-loadout-tab__panel');
             var $tabRoot = $btn.closest('.ffla-loadout-tab');
-
             var data = {
                 action: 'loadout_add_item',
                 nonce: loadoutFrontend.nonce,
@@ -41,15 +40,12 @@
                 product_loadout_id: $tabRoot.data('product-loadout-id') || 0,
                 source: 'product_tab',
             };
-
             addToCart($btn, data);
         });
 
-        // Add entire tier.
         $tab.on('click', '.ffla-loadout-tab__add-tier-btn', function () {
             var $btn = $(this);
             var $tabRoot = $btn.closest('.ffla-loadout-tab');
-
             var data = {
                 action: 'loadout_add_tier',
                 nonce: loadoutFrontend.nonce,
@@ -59,31 +55,41 @@
                 product_loadout_id: $tabRoot.data('product-loadout-id') || 0,
                 source: 'product_tab',
             };
-
             addToCart($btn, data);
         });
     }
 
     function initWidget() {
-        var $widget = $('.ffla-loadout');
-        if (!$widget.length) {
-            return;
-        }
+        // Monolithic widget: kept for backward compat with the existing Loadout element.
+        $('.ffla-loadout').not('.ffla-loadout--cart-only').not('.ffla-loadout--progress-only').each(function () {
+            var $widget = $(this);
+            // Only initialize widget-specific behaviors for full monolithic widgets that contain panels.
+            if (!$widget.find('.ffla-loadout__panel').length) {
+                return;
+            }
+        });
+    }
 
-        // Tier tab switcher.
-        $widget.on('click', '.ffla-loadout__tier-btn', function () {
+    function initGlobalHandlers() {
+        // Tier tab switching — global. Toggles all panels with matching data-tier-slug.
+        $(document).on('click', '.ffla-loadout__tier-btn', function () {
             var $btn = $(this);
             var slug = $btn.data('tier-slug');
-            $btn.siblings().removeClass('is-active').attr('aria-selected', 'false');
+            // Toggle active state within this nav group.
+            $btn.siblings('.ffla-loadout__tier-btn').removeClass('is-active').attr('aria-selected', 'false');
             $btn.addClass('is-active').attr('aria-selected', 'true');
-            $widget.find('.ffla-loadout__panel').removeClass('is-active');
-            $widget.find('.ffla-loadout__panel[data-tier-slug="' + slug + '"]').addClass('is-active');
-            refreshCartSummary($widget);
+            // Toggle all panels (global) with matching slug visible, others hidden.
+            $('.ffla-loadout__panel').removeClass('is-active');
+            $('.ffla-loadout__panel[data-tier-slug="' + slug + '"]').addClass('is-active');
+            refreshAllCartSummaries();
         });
 
-        // Single item add.
-        $widget.on('click', '.ffla-loadout__add-btn', function () {
+        // Add item — global.
+        $(document).on('click', '.ffla-loadout__add-btn', function () {
             var $btn = $(this);
+            if ($btn.is(':disabled')) return;
+
+            // Build data from button attributes first, fall back to ancestors.
             var $panel = $btn.closest('.ffla-loadout__panel');
             var $widgetRoot = $btn.closest('.ffla-loadout');
 
@@ -94,18 +100,20 @@
                 quantity: $btn.data('quantity') || 1,
                 discount_pct: $btn.data('discount-pct') || 0,
                 item_id: $btn.data('item-id') || 0,
-                tier_id: $panel.data('tier-id') || 0,
-                loadout_id: $widgetRoot.data('loadout-id') || 0,
-                source: 'widget',
+                tier_id: $btn.data('tier-id') || $panel.data('tier-id') || 0,
+                tier_slug: $btn.data('tier-slug') || $panel.data('tier-slug') || '',
+                loadout_id: $btn.data('loadout-id') || $widgetRoot.data('loadout-id') || 0,
+                product_loadout_id: $btn.data('product-loadout-id') || $widgetRoot.data('product-loadout-id') || 0,
+                source: $btn.data('source') || $widgetRoot.data('source') || 'widget',
             };
 
-            addToCart($btn, data, function () {
-                refreshCartSummary($widgetRoot);
-            });
+            if (!data.product_id) return;
+
+            addToCart($btn, data, refreshAllCartSummaries);
         });
 
-        // Master ADD CART (entire tier).
-        $widget.on('click', '.ffla-loadout__add-tier-btn', function () {
+        // Add entire tier — global.
+        $(document).on('click', '.ffla-loadout__add-tier-btn', function () {
             var $btn = $(this);
             var $widgetRoot = $btn.closest('.ffla-loadout');
 
@@ -113,17 +121,14 @@
                 action: 'loadout_add_tier',
                 nonce: loadoutFrontend.nonce,
                 tier_id: $btn.data('tier-id') || 0,
-                loadout_id: $widgetRoot.data('loadout-id') || 0,
-                source: 'widget',
+                tier_slug: $btn.data('tier-slug') || '',
+                loadout_id: $btn.data('loadout-id') || $widgetRoot.data('loadout-id') || 0,
+                product_loadout_id: $btn.data('product-loadout-id') || $widgetRoot.data('product-loadout-id') || 0,
+                source: $btn.data('source') || 'widget',
             };
 
-            addToCart($btn, data, function () {
-                refreshCartSummary($widgetRoot);
-            });
+            addToCart($btn, data, refreshAllCartSummaries);
         });
-
-        // Initial cart summary load.
-        refreshCartSummary($widget);
     }
 
     function addToCart($btn, data, onSuccess) {
@@ -137,16 +142,13 @@
             success: function (response) {
                 if (response.success) {
                     $btn.text(loadoutFrontend.strings.added);
-                    // Trigger WC fragment refresh.
                     $(document.body).trigger('added_to_cart', [
                         response.data.fragments || {},
                         response.data.cart_hash || '',
                         $btn,
                     ]);
                     if (onSuccess) onSuccess();
-                    setTimeout(function () {
-                        $btn.text(originalText).prop('disabled', false);
-                    }, 1500);
+                    setTimeout(function () { $btn.text(originalText).prop('disabled', false); }, 1500);
                 } else {
                     $btn.text(loadoutFrontend.strings.addError).prop('disabled', false);
                     setTimeout(function () { $btn.text(originalText); }, 2000);
@@ -159,12 +161,23 @@
         });
     }
 
-    function refreshCartSummary($widget) {
-        var $summary = $widget.find('.ffla-loadout__cart-summary');
-        if (!$summary.length) {
-            return;
-        }
-        var loadoutId = $widget.data('loadout-id');
+    function refreshAllCartSummaries() {
+        $('.ffla-loadout__cart-summary').each(function () {
+            var $summary = $(this);
+            var $widgetRoot = $summary.closest('.ffla-loadout');
+            refreshCartSummary($summary, $widgetRoot);
+        });
+
+        // Refresh progress bars too.
+        $('.ffla-loadout__progress-bar').each(function () {
+            var $bar = $(this);
+            var $widgetRoot = $bar.closest('.ffla-loadout');
+            refreshProgress($bar, $widgetRoot);
+        });
+    }
+
+    function refreshCartSummary($summary, $widgetRoot) {
+        var loadoutId = $widgetRoot.data('loadout-id') || 0;
 
         $.ajax({
             url: loadoutFrontend.ajaxUrl,
@@ -178,7 +191,7 @@
                 if (!response.success) return;
                 var d = response.data;
                 var html = '';
-                if (d.items.length === 0) {
+                if (!d.items || d.items.length === 0) {
                     html = '<p>' + 'Your cart is empty.' + '</p>';
                 } else {
                     html = '<ul class="ffla-loadout__cart-list">';
@@ -194,22 +207,37 @@
                     html += '<p class="ffla-loadout__cart-total">Total: ' + d.total + '</p>';
                 }
                 $summary.html(html);
+            }
+        });
+    }
 
-                // Update progress bar.
-                var $progress = $widget.find('.ffla-loadout__progress-bar');
-                if ($progress.length) {
-                    var $activePanel = $widget.find('.ffla-loadout__panel.is-active');
-                    var threshold = parseInt($activePanel.data('threshold'), 10) || 0;
-                    var tierId = $activePanel.data('tier-id');
-                    var count = d.tier_counts[tierId] || 0;
-                    var pct = threshold > 0 ? Math.min(100, (count / threshold) * 100) : 0;
-                    $progress.css('width', pct + '%');
-                    var $label = $widget.find('.ffla-loadout__progress-label');
-                    if (threshold > 0 && count < threshold) {
-                        $label.text((threshold - count) + ' more item(s) to unlock perks');
-                    } else if (threshold > 0) {
-                        $label.text('Perks unlocked!');
-                    }
+    function refreshProgress($bar, $widgetRoot) {
+        var loadoutId = $widgetRoot.data('loadout-id') || 0;
+        // Find the active panel anywhere to derive tier_id + threshold.
+        var $activePanel = $('.ffla-loadout__panel.is-active').first();
+        var $activeTab = $('.ffla-loadout__tier-btn.is-active').first();
+        var threshold = parseInt($activePanel.data('threshold'), 10) || 0;
+        var tierId = parseInt($activePanel.data('tier-id') || $activeTab.data('tier-id'), 10) || 0;
+
+        $.ajax({
+            url: loadoutFrontend.ajaxUrl,
+            method: 'POST',
+            data: {
+                action: 'loadout_get_cart_summary',
+                nonce: loadoutFrontend.nonce,
+                loadout_id: loadoutId,
+            },
+            success: function (response) {
+                if (!response.success) return;
+                var d = response.data;
+                var count = (d.tier_counts && d.tier_counts[tierId]) || 0;
+                var pct = threshold > 0 ? Math.min(100, (count / threshold) * 100) : 0;
+                $bar.css('width', pct + '%');
+                var $label = $bar.closest('.ffla-loadout__progress').find('.ffla-loadout__progress-label');
+                if (threshold > 0 && count < threshold) {
+                    $label.text((threshold - count) + ' more item(s) to unlock perks');
+                } else if (threshold > 0) {
+                    $label.text('Perks unlocked!');
                 }
             }
         });

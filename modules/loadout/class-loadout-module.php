@@ -87,11 +87,18 @@ class Loadout_Module extends FFLA_Module
 
         // Bricks Builder integration.
         if (defined('BRICKS_VERSION')) {
+            require_once $path . 'frontend/class-loadout-bricks.php';
+            $bricks = new Loadout_Bricks();
+            $bricks->init();
+
             add_action('init', function () use ($path) {
                 if (class_exists('\Bricks\Elements')) {
-                    \Bricks\Elements::register_element(
-                        $path . 'frontend/class-loadout-element.php'
-                    );
+                    \Bricks\Elements::register_element($path . 'frontend/class-loadout-element.php');
+                    \Bricks\Elements::register_element($path . 'frontend/class-loadout-add-button-element.php');
+                    \Bricks\Elements::register_element($path . 'frontend/class-loadout-add-tier-element.php');
+                    \Bricks\Elements::register_element($path . 'frontend/class-loadout-tier-tabs-element.php');
+                    \Bricks\Elements::register_element($path . 'frontend/class-loadout-progress-element.php');
+                    \Bricks\Elements::register_element($path . 'frontend/class-loadout-cart-mirror-element.php');
                 }
             }, 11);
         }

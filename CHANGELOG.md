@@ -2,6 +2,38 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.27.0] - 2026-05-15
+
+### Loadout — Bricks Query Loop + Composable Elements
+
+The Loadout module now exposes its data through Bricks Builder's native Query Loop system and Dynamic Data tags, so you can lay out the entire UI yourself using Containers, Nestable Tabs, Loops, etc. — no need to use the monolithic widget if you want fine-grained control.
+
+**New Bricks Query Types** (available in the Query Loop dropdown):
+- **Loadouts** — iterates over all active loadouts
+- **Loadout Tiers** — iterates over tiers of a chosen (or inherited) loadout
+- **Loadout Tier Items** — iterates over items of a chosen (or inherited) tier
+- **Loadout Cross-Sells** — iterates over cross-sell tiles
+
+Nested loops automatically inherit context: drop a `Loadout Tier Items` loop inside a `Loadout Tiers` loop and it will iterate the current tier's items.
+
+**New Dynamic Data Tags** (use inside text, headings, image, button URL, custom HTML, etc.):
+- Loadout: `{loadout_name}`, `{loadout_headline}`, `{loadout_subheadline}`, `{loadout_hero_image}`, `{loadout_brand_logo}`, `{loadout_anchor_name}`, `{loadout_anchor_price}`
+- Tier: `{loadout_tier_name}`, `{loadout_tier_slug}`, `{loadout_tier_accessory_discount}`, `{loadout_tier_set_discount}`, `{loadout_tier_threshold}`, `{loadout_tier_bonus_label}`, `{loadout_tier_bonus_value}`, `{loadout_tier_perks}`
+- Item: `{loadout_item_product_name}`, `{loadout_item_product_image}`, `{loadout_item_product_thumb}`, `{loadout_item_quantity}`, `{loadout_item_discount}`, `{loadout_item_regular_price}`, `{loadout_item_final_price}`, `{loadout_item_savings}`, `{loadout_item_in_stock}`
+- Cross-sell: `{loadout_cross_sell_label}`, `{loadout_cross_sell_image}`, `{loadout_cross_sell_link}`
+
+**New Composable Bricks Elements:**
+- **Loadout: Add Item Button** — auto-binds to the current item in a Tier Items loop; carries product/tier/loadout data attributes so the existing AJAX endpoints handle the rest
+- **Loadout: Add Tier Button** — auto-binds to the current tier in a Tiers loop; the "ADD CART" master button
+- **Loadout: Tier Tabs** — standalone tier navigation that controls all panels (matched by `data-tier-slug`) globally on the page
+- **Loadout: Progress Bar** — standalone progress bar that fills based on active tier's items in cart
+- **Loadout: Cart Mirror** — live cart summary, optionally filtered by loadout
+
+**JS rewrite:**
+The frontend JS is now decoupled from a single root container. Tier tab clicks switch panels globally by `data-tier-slug`, cart summaries refresh across all instances on the page, and add buttons read data attributes directly so they work in any context (inside Bricks Nestable Tabs, Query Loops, or anywhere else).
+
+The original monolithic **Loadout** element from v1.26.0 still works unchanged — this release is purely additive.
+
 ## [1.26.0] - 2026-05-15
 
 ### New Module — Loadout: Tier-Based Product Configurator
