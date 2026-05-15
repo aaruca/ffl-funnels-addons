@@ -2,7 +2,21 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
-## [1.23.0] - TBD
+## [1.24.0] - 2026-05-15
+
+### Full plugin audit & critical fixes
+
+A comprehensive multi-module audit was performed across all 7 addons. Most modules were found stable. Critical and high-severity issues were fixed in `product-reviews` and `ffl-checkout`. The unreleased v1.23.0 work (bundle pricing, Bricks customization, homepage support, single cart item model) is included here.
+
+**Product Reviews — Critical Fixes**
+- **Fixed TOCTOU race in helpful-votes counter** (`class-product-reviews-ajax.php`). The previous read-modify-write pattern (`get_comment_meta` → `++` in PHP → `update_comment_meta`) lost votes under concurrent traffic: two requests would both read the same value and both write `current+1`, dropping one increment. Replaced with an atomic SQL `UPDATE wp_commentmeta SET meta_value = CAST(meta_value AS UNSIGNED) + 1` after ensuring the meta row exists. Comment meta cache is busted post-update.
+- **Tightened nonce validation** (`class-product-reviews-core.php`). Nonce check now runs FIRST in the review submission pre-process hook, before honeypot and Cloudflare Turnstile checks. Additionally, a missing nonce field now rejects the submission outright — previously, `isset($_POST['ffla_review_form_nonce'])` returning false would silently skip the entire nonce check.
+
+**FFL Checkout — Stability**
+- **Per-session lock on vendor cart updates** (`class-ffl-checkout-ajax.php`). Double-click and multi-tab race conditions on `update_cart_vendor` could let two concurrent requests both pass validation and have the second's session write overwrite the first. Added a short-lived (5s) per-session+cart-item transient lock; concurrent updates now return "Another vendor update is in progress. Please retry." with the lock released on every error and success path.
+
+**WooBooster — Code Quality**
+- Removed redundant `WOOBOOSTER_VERSION` and `WOOBOOSTER_DB_VERSION` class constants in `WooBooster_Activator`. They duplicated and would have gone stale relative to the globally-defined compat constants in the main plugin file (which auto-sync with `FFLA_VERSION`). All references now use the globals.
 
 ### WooBooster — Fixed bundle pricing & Bricks display customization
 
