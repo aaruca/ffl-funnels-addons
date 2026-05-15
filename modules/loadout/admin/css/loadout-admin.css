@@ -1,4 +1,127 @@
 /* Loadout Admin Styles */
-.ffla-loadout-admin {
-    /* Stub for Phase 3 */
+
+.loadout-form-wrap h2.title {
+    margin-top: 32px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #ddd;
+}
+
+.loadout-repeater {
+    margin: 16px 0;
+}
+
+.loadout-tier-row {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+.loadout-tier-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #eee;
+}
+
+.loadout-tier-name {
+    margin: 0;
+    font-size: 16px;
+}
+
+.loadout-tier-items {
+    background: #f9f9f9;
+    padding: 12px;
+    border-radius: 4px;
+    margin: 8px 0;
+}
+
+.loadout-item-row {
+    background: #fff;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    border: 1px solid #e5e5e5;
+    border-radius: 4px;
+}
+
+.loadout-item-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.loadout-item-fields label {
+    font-size: 12px;
+    color: #555;
+}
+
+.loadout-cross-sell-row {
+    background: #fff;
+    padding: 12px;
+    margin-bottom: 8px;
+    border: 1px solid #e5e5e5;
+    border-radius: 4px;
+}
+
+.loadout-cs-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.loadout-product-display {
+    display: inline-block;
+    background: #f0f0f1;
+    padding: 4px 8px;
+    border-radius: 3px;
+    margin-left: 8px;
+}
+
+.loadout-product-display:empty {
+    display: none;
+}
+
+.loadout-search-results {
+    position: relative;
+    background: #fff;
+    border: 1px solid #ddd;
+    max-height: 240px;
+    overflow-y: auto;
+    margin-top: 4px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    display: none;
+}
+
+.loadout-search-results:not(:empty) {
+    display: block;
+}
+
+.loadout-search-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.loadout-search-list li {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #eee;
+}
+
+.loadout-search-list li:hover {
+    background: #f0f6fc;
+}
+
+.loadout-image-picker {
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.loadout-image-preview {
+    border-radius: 3px;
 }

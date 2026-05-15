@@ -119,20 +119,49 @@ class Loadout
         return self::get($row->id);
     }
 
-    public static function get_all($status = null): array
+    public static function get_all($args = []): array
     {
         global $wpdb;
 
-        $table = $wpdb->prefix . 'ffla_loadouts';
+        $defaults = [
+            'status' => null,
+            'search' => '',
+            'orderby' => 'name',
+            'order' => 'ASC',
+            'limit' => 0,
+            'offset' => 0,
+        ];
+        $args = wp_parse_args($args, $defaults);
 
-        if ($status === null) {
-            $query = "SELECT id FROM $table ORDER BY name ASC";
-            $ids = $wpdb->get_col($query);
-        } else {
-            $status = absint($status);
-            $query = $wpdb->prepare("SELECT id FROM $table WHERE status = %d ORDER BY name ASC", $status);
-            $ids = $wpdb->get_col($query);
+        $table = $wpdb->prefix . 'ffla_loadouts';
+        $where = [];
+        $params = [];
+
+        if ($args['status'] !== null) {
+            $where[] = 'status = %d';
+            $params[] = absint($args['status']);
         }
+
+        if (!empty($args['search'])) {
+            $where[] = 'name LIKE %s';
+            $params[] = '%' . $wpdb->esc_like($args['search']) . '%';
+        }
+
+        $where_clause = !empty($where) ? 'WHERE ' . implode(' AND ', $where) : '';
+
+        $orderby = in_array($args['orderby'], ['name', 'status', 'created_at'], true) ? $args['orderby'] : 'name';
+        $order = strtoupper($args['order']) === 'DESC' ? 'DESC' : 'ASC';
+
+        $limit_clause = '';
+        if ($args['limit'] > 0) {
+            $params[] = absint($args['limit']);
+            $params[] = absint($args['offset']);
+            $limit_clause = 'LIMIT %d OFFSET %d';
+        }
+
+        $query = "SELECT id FROM $table $where_clause ORDER BY $orderby $order $limit_clause";
+        $query = !empty($params) ? $wpdb->prepare($query, $params) : $query;
+        $ids = $wpdb->get_col($query);
 
         $loadouts = [];
         foreach ($ids as $id) {
@@ -143,6 +172,37 @@ class Loadout
         }
 
         return $loadouts;
+    }
+
+    public static function count($args = []): int
+    {
+        global $wpdb;
+
+        $defaults = [
+            'status' => null,
+            'search' => '',
+        ];
+        $args = wp_parse_args($args, $defaults);
+
+        $table = $wpdb->prefix . 'ffla_loadouts';
+        $where = [];
+        $params = [];
+
+        if ($args['status'] !== null) {
+            $where[] = 'status = %d';
+            $params[] = absint($args['status']);
+        }
+
+        if (!empty($args['search'])) {
+            $where[] = 'name LIKE %s';
+            $params[] = '%' . $wpdb->esc_like($args['search']) . '%';
+        }
+
+        $where_clause = !empty($where) ? 'WHERE ' . implode(' AND ', $where) : '';
+        $query = "SELECT COUNT(*) FROM $table $where_clause";
+        $query = !empty($params) ? $wpdb->prepare($query, $params) : $query;
+
+        return (int) $wpdb->get_var($query);
     }
 
     public function save(): bool
