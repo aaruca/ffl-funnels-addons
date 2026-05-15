@@ -7,6 +7,7 @@ class Loadout_Cart
 {
     const META_LOADOUT_ID      = '_ffla_loadout_id';
     const META_TIER_ID         = '_ffla_loadout_tier_id';
+    const META_TIER_SLUG       = '_ffla_loadout_tier_slug'; // For custom tiers (tier_id=0)
     const META_SOURCE          = '_ffla_loadout_source';     // 'widget' or 'product_tab'
     const META_PRODUCT_LOADOUT = '_ffla_product_loadout_id'; // product tab parent product id
     const META_SET_DISCOUNT    = '_ffla_set_discount_flag';  // 'pending' or 'applied'
@@ -52,8 +53,11 @@ class Loadout_Cart
             return $cart_item_data;
         }
 
+        $tier_slug = isset($context['tier_slug']) ? sanitize_title($context['tier_slug']) : '';
+
         $cart_item_data[self::META_LOADOUT_ID] = $loadout_id;
         $cart_item_data[self::META_TIER_ID] = $tier_id;
+        $cart_item_data[self::META_TIER_SLUG] = $tier_slug;
         $cart_item_data[self::META_SOURCE] = $source ?: 'widget';
         $cart_item_data[self::META_PRODUCT_LOADOUT] = $product_loadout;
         $cart_item_data[self::META_DISCOUNT_PCT] = $discount_pct;
@@ -75,7 +79,7 @@ class Loadout_Cart
     public static function restore_cart_item_meta($cart_item, $values)
     {
         foreach ([
-            self::META_LOADOUT_ID, self::META_TIER_ID, self::META_SOURCE,
+            self::META_LOADOUT_ID, self::META_TIER_ID, self::META_TIER_SLUG, self::META_SOURCE,
             self::META_PRODUCT_LOADOUT, self::META_SET_DISCOUNT, self::META_DISCOUNT_PCT,
             self::META_IS_BONUS, self::META_ITEM_ID
         ] as $key) {
@@ -96,31 +100,57 @@ class Loadout_Cart
         }
 
         // First pass: compute set discount eligibility per product tab loadout.
-        $tab_groups = []; // [product_loadout_id => [tier_id => [cart_keys, expected_item_ids]]]
+        $tab_groups = [];
         foreach ($cart->get_cart() as $cart_key => $item) {
             if (($item[self::META_SOURCE] ?? '') !== 'product_tab') {
                 continue;
             }
             $product_loadout_id = (int) ($item[self::META_PRODUCT_LOADOUT] ?? 0);
             $tier_id = (int) ($item[self::META_TIER_ID] ?? 0);
-            if (!$product_loadout_id || !$tier_id) {
+            $tier_slug = (string) ($item[self::META_TIER_SLUG] ?? '');
+            if (!$product_loadout_id || (!$tier_id && !$tier_slug)) {
                 continue;
             }
-            $key = $product_loadout_id . ':' . $tier_id;
+            $key = $product_loadout_id . ':' . ($tier_id ?: $tier_slug);
             if (!isset($tab_groups[$key])) {
-                $tab_groups[$key] = ['cart_keys' => [], 'tier_id' => $tier_id, 'product_loadout_id' => $product_loadout_id];
+                $tab_groups[$key] = [
+                    'cart_keys' => [],
+                    'tier_id' => $tier_id,
+                    'tier_slug' => $tier_slug,
+                    'product_loadout_id' => $product_loadout_id,
+                ];
             }
             $tab_groups[$key]['cart_keys'][] = $cart_key;
         }
 
         $set_discount_groups = [];
         foreach ($tab_groups as $key => $group) {
-            $tier = Loadout_Tier::get($group['tier_id']);
-            if (!$tier) {
-                continue;
+            $expected_product_ids = [];
+            $set_pct = 0;
+
+            if ($group['tier_id']) {
+                $tier = Loadout_Tier::get($group['tier_id']);
+                if (!$tier) {
+                    continue;
+                }
+                $expected_items = $tier->get_items();
+                $expected_product_ids = array_map(fn($i) => $i->get_product_id(), $expected_items);
+                $set_pct = $tier->get_set_discount_pct();
+            } else {
+                // Custom tier: look up in product meta.
+                $custom_json = get_post_meta($group['product_loadout_id'], Loadout_Product_Admin::META_CUSTOM_TIERS, true);
+                $custom_tiers = $custom_json ? json_decode($custom_json, true) : [];
+                foreach ($custom_tiers as $ct) {
+                    if (($ct['slug'] ?? sanitize_title($ct['name'] ?? '')) === $group['tier_slug']) {
+                        $set_pct = floatval($ct['set_discount_pct'] ?? 0);
+                        foreach ($ct['items'] ?? [] as $ci) {
+                            $expected_product_ids[] = (int) ($ci['product_id'] ?? 0);
+                        }
+                        break;
+                    }
+                }
             }
-            $expected_items = $tier->get_items();
-            $expected_product_ids = array_map(fn($i) => $i->get_product_id(), $expected_items);
+
             $cart_product_ids = [];
             foreach ($group['cart_keys'] as $ck) {
                 $ci = $cart->cart_contents[$ck] ?? null;
@@ -129,10 +159,10 @@ class Loadout_Cart
                 }
             }
             $all_present = !empty($expected_product_ids) && empty(array_diff($expected_product_ids, $cart_product_ids));
-            if ($all_present && $tier->get_set_discount_pct() > 0) {
+            if ($all_present && $set_pct > 0) {
                 $set_discount_groups[$key] = [
                     'cart_keys' => $group['cart_keys'],
-                    'pct' => $tier->get_set_discount_pct(),
+                    'pct' => $set_pct,
                 ];
             }
         }
@@ -178,7 +208,9 @@ class Loadout_Cart
 
             // Set discount overrides for product tab when all tier items present.
             if ($source === 'product_tab') {
-                $key = $product_loadout . ':' . ($item[self::META_TIER_ID] ?? 0);
+                $tier_id_val = (int) ($item[self::META_TIER_ID] ?? 0);
+                $tier_slug_val = (string) ($item[self::META_TIER_SLUG] ?? '');
+                $key = $product_loadout . ':' . ($tier_id_val ?: $tier_slug_val);
                 if (isset($set_discount_groups[$key]) && in_array($cart_key, $set_discount_groups[$key]['cart_keys'], true)) {
                     $set_pct = $set_discount_groups[$key]['pct'];
                     $discount_pct = min(100, $discount_pct + $set_pct);
@@ -306,9 +338,12 @@ class Loadout_Cart
             wp_send_json_error(['message' => __('Invalid product.', 'ffl-funnels-addons')]);
         }
 
+        $tier_slug = isset($_POST['tier_slug']) ? sanitize_title(wp_unslash($_POST['tier_slug'])) : '';
+
         $_POST['loadout_context'] = [
             'loadout_id' => $loadout_id,
             'tier_id' => $tier_id,
+            'tier_slug' => $tier_slug,
             'source' => $source,
             'product_loadout_id' => $product_loadout_id,
             'item_id' => $item_id,
@@ -338,22 +373,60 @@ class Loadout_Cart
         $source = isset($_POST['source']) ? sanitize_key($_POST['source']) : 'widget';
         $product_loadout_id = isset($_POST['product_loadout_id']) ? absint($_POST['product_loadout_id']) : 0;
 
-        $tier = Loadout_Tier::get($tier_id);
-        if (!$tier) {
-            wp_send_json_error(['message' => __('Tier not found.', 'ffl-funnels-addons')]);
+        $tier_slug = isset($_POST['tier_slug']) ? sanitize_title(wp_unslash($_POST['tier_slug'])) : '';
+        $items_to_add = [];
+
+        if ($tier_id) {
+            $tier = Loadout_Tier::get($tier_id);
+            if (!$tier) {
+                wp_send_json_error(['message' => __('Tier not found.', 'ffl-funnels-addons')]);
+            }
+            foreach ($tier->get_items() as $item) {
+                $items_to_add[] = [
+                    'product_id' => $item->get_product_id(),
+                    'quantity' => $item->get_quantity(),
+                    'discount_pct' => $item->get_discount_pct(),
+                    'item_id' => $item->get_id(),
+                ];
+            }
+        } elseif ($product_loadout_id && $tier_slug) {
+            // Custom tier from product meta.
+            $custom_json = get_post_meta($product_loadout_id, Loadout_Product_Admin::META_CUSTOM_TIERS, true);
+            $custom_tiers = $custom_json ? json_decode($custom_json, true) : [];
+            foreach ($custom_tiers as $ct) {
+                if (($ct['slug'] ?? sanitize_title($ct['name'] ?? '')) === $tier_slug) {
+                    foreach ($ct['items'] ?? [] as $ci) {
+                        $items_to_add[] = [
+                            'product_id' => (int) ($ci['product_id'] ?? 0),
+                            'quantity' => (int) ($ci['quantity'] ?? 1),
+                            'discount_pct' => floatval($ci['discount_pct'] ?? 0),
+                            'item_id' => 0,
+                        ];
+                    }
+                    break;
+                }
+            }
+        }
+
+        if (empty($items_to_add)) {
+            wp_send_json_error(['message' => __('No items to add.', 'ffl-funnels-addons')]);
         }
 
         $items_added = 0;
-        foreach ($tier->get_items() as $item) {
+        foreach ($items_to_add as $i) {
+            if (!$i['product_id']) {
+                continue;
+            }
             $_POST['loadout_context'] = [
                 'loadout_id' => $loadout_id,
                 'tier_id' => $tier_id,
+                'tier_slug' => $tier_slug,
                 'source' => $source,
                 'product_loadout_id' => $product_loadout_id,
-                'item_id' => $item->get_id(),
-                'discount_pct' => $item->get_discount_pct(),
+                'item_id' => $i['item_id'],
+                'discount_pct' => $i['discount_pct'],
             ];
-            $key = WC()->cart->add_to_cart($item->get_product_id(), $item->get_quantity());
+            $key = WC()->cart->add_to_cart($i['product_id'], $i['quantity']);
             unset($_POST['loadout_context']);
             if ($key) {
                 $items_added++;
