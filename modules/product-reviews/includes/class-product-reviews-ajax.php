@@ -59,9 +59,19 @@ class Product_Reviews_Ajax
             ]);
         }
 
-        $current = (int) get_comment_meta($comment_id, 'ffla_helpful_yes', true);
-        $new     = $current + 1;
-        update_comment_meta($comment_id, 'ffla_helpful_yes', $new);
+        // Atomically increment the helpful count. The previous read-modify-write
+        // pattern lost votes under concurrent traffic: two requests would both
+        // read the same value and both write current+1, dropping one increment.
+        global $wpdb;
+        add_comment_meta($comment_id, 'ffla_helpful_yes', 0, true);
+        $wpdb->query($wpdb->prepare(
+            "UPDATE {$wpdb->commentmeta} SET meta_value = CAST(meta_value AS UNSIGNED) + 1 WHERE comment_id = %d AND meta_key = %s",
+            $comment_id,
+            'ffla_helpful_yes'
+        ));
+        wp_cache_delete($comment_id, 'comment_meta');
+        $new = (int) get_comment_meta($comment_id, 'ffla_helpful_yes', true);
+
         set_transient($rate_key, 1, HOUR_IN_SECONDS * 12);
         set_transient($daily_key, $daily + 1, DAY_IN_SECONDS);
 
