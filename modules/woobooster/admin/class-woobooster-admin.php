@@ -135,7 +135,7 @@ class WooBooster_Admin
             'woobooster-ai-js',
             plugins_url('js/woobooster-ai.js', __FILE__),
             array('jquery', 'woobooster-module'),
-            WooBooster_Activator::WOOBOOSTER_VERSION,
+            WOOBOOSTER_VERSION,
             true
         );
     }

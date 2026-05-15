@@ -13,9 +13,6 @@ if (!defined('ABSPATH')) {
 
 class WooBooster_Activator
 {
-    const WOOBOOSTER_VERSION = '1.23.0';
-    const WOOBOOSTER_DB_VERSION = '1.9.0';
-
     /**
      * Run activation tasks.
      */
@@ -25,7 +22,7 @@ class WooBooster_Activator
         self::migrate_tables();
         self::set_default_options();
         self::migrate_settings_autoload();
-        update_option('woobooster_version', self::WOOBOOSTER_VERSION);
+        update_option('woobooster_version', WOOBOOSTER_VERSION);
     }
 
     /**
@@ -236,7 +233,7 @@ class WooBooster_Activator
         global $wpdb;
         $current_db_version = get_option('woobooster_db_version');
 
-        if (version_compare($current_db_version, self::WOOBOOSTER_DB_VERSION, '<')) {
+        if (version_compare($current_db_version, WOOBOOSTER_DB_VERSION, '<')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
             $rules_table = $wpdb->prefix . 'woobooster_rules';
