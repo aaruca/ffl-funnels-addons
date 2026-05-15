@@ -42,6 +42,9 @@ class Loadout_Module extends FFLA_Module
         // Core includes.
         require_once $path . 'includes/class-loadout-activator.php';
         require_once $path . 'includes/class-loadout.php';
+        require_once $path . 'includes/class-loadout-tier.php';
+        require_once $path . 'includes/class-loadout-tier-item.php';
+        require_once $path . 'includes/class-loadout-cross-sell.php';
         require_once $path . 'includes/class-loadout-cart.php';
         require_once $path . 'includes/class-loadout-product-tab.php';
         require_once $path . 'includes/class-loadout-shortcode.php';
