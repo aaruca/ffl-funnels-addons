@@ -111,9 +111,21 @@ class FFL_Checkout_Ajax
             wp_send_json_error('Missing required fields.');
         }
 
+        // Per-session lock to prevent concurrent updates from racing on the
+        // same cart item key (double-click, two browser tabs). Without this,
+        // two requests could both pass validation and the second's session
+        // write would overwrite the first.
+        $session_id = WC()->session ? WC()->session->get_customer_id() : '';
+        $lock_key   = 'ffl_vendor_lock_' . md5($session_id . '|' . $cart_item_key);
+        if (get_transient($lock_key)) {
+            wp_send_json_error('Another vendor update is in progress. Please retry.');
+        }
+        set_transient($lock_key, 1, 5);
+
         // Validate the cart item exists.
         $cart_contents = WC()->cart->get_cart();
         if (!isset($cart_contents[$cart_item_key])) {
+            delete_transient($lock_key);
             wp_send_json_error('Cart item not found.');
         }
 
@@ -121,17 +133,20 @@ class FFL_Checkout_Ajax
         $product_id = $cart_item['product_id'] ?? 0;
 
         if (!FFL_Checkout_Vendor_Api::is_eligible($product_id)) {
+            delete_transient($lock_key);
             wp_send_json_error('Product is not eligible.');
         }
 
         // ── Security: verify the submitted values match a real API option ──
         $upc = FFL_Checkout_Vendor_Api::get_upc_for_product($product_id);
         if (empty($upc)) {
+            delete_transient($lock_key);
             wp_send_json_error('Product UPC not found.');
         }
 
         $options = FFL_Checkout_Vendor_Api::get_warehouse_options($upc);
         if (is_wp_error($options) || empty($options)) {
+            delete_transient($lock_key);
             wp_send_json_error('Could not verify vendor options.');
         }
 
@@ -149,6 +164,7 @@ class FFL_Checkout_Ajax
         }
 
         if (!$valid) {
+            delete_transient($lock_key);
             wp_send_json_error('Invalid vendor selection.');
         }
 
@@ -169,6 +185,7 @@ class FFL_Checkout_Ajax
         // Persist to session.
         WC()->cart->set_session();
 
+        delete_transient($lock_key);
         wp_send_json_success(['message' => 'Vendor updated.']);
     }
 }
