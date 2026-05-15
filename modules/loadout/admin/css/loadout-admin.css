@@ -1,5 +1,180 @@
 /* Loadout Admin Styles */
 
+/* =====================================================
+ * Product editor metabox — neutralize WooCommerce's
+ * .woocommerce_options_panel aggressive label/input floats
+ * ===================================================== */
+#loadout_product_data .loadout-tier-row,
+#loadout_product_data .loadout-item-row {
+    box-sizing: border-box;
+}
+#loadout_product_data .loadout-tier-row label,
+#loadout_product_data .loadout-item-row label {
+    float: none;
+    width: auto;
+    padding: 0;
+    margin: 0 0 4px;
+    display: block;
+    line-height: 1.4;
+    font-size: 12px;
+    font-weight: 600;
+    color: #555;
+}
+#loadout_product_data .loadout-tier-row input[type="text"],
+#loadout_product_data .loadout-tier-row input[type="number"],
+#loadout_product_data .loadout-item-row input[type="text"],
+#loadout_product_data .loadout-item-row input[type="number"] {
+    float: none;
+    width: 100%;
+    margin: 0;
+    padding: 6px 8px;
+    box-sizing: border-box;
+    height: auto;
+    line-height: 1.4;
+}
+#loadout_product_data .loadout-tier-row p,
+#loadout_product_data .loadout-item-row p {
+    padding: 0;
+    margin: 0;
+    line-height: 1.4;
+}
+
+#loadout_product_data .loadout-tier-row {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    padding: 16px;
+    margin: 0 12px 16px;
+}
+
+#loadout_product_data .loadout-tier-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+}
+#loadout_product_data .loadout-tier-header h4.loadout-tier-name {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+}
+#loadout_product_data .loadout-tier-remove,
+#loadout_product_data .loadout-item-remove {
+    color: #b32d2e !important;
+    text-decoration: none;
+}
+
+#loadout_product_data .loadout-tier-fields {
+    display: grid;
+    grid-template-columns: 1fr 160px;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+#loadout_product_data .loadout-tier-items-section h5 {
+    margin: 8px 0;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #555;
+}
+
+#loadout_product_data .loadout-tier-items {
+    background: #f6f7f7;
+    padding: 12px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+}
+
+#loadout_product_data .loadout-item-row {
+    background: #fff;
+    padding: 10px;
+    margin-bottom: 8px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    position: relative;
+}
+
+#loadout_product_data .loadout-item-grid {
+    display: grid;
+    grid-template-columns: 1fr 80px 110px 80px;
+    gap: 12px;
+    align-items: end;
+}
+
+#loadout_product_data .loadout-field {
+    display: flex;
+    flex-direction: column;
+}
+
+#loadout_product_data .loadout-field--remove {
+    align-self: end;
+    padding-bottom: 6px;
+}
+
+#loadout_product_data .loadout-product-display {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #1d2327;
+    background: #f0f0f1;
+    padding: 4px 8px;
+    border-radius: 3px;
+    display: inline-block;
+}
+#loadout_product_data .loadout-product-display:empty {
+    display: none;
+}
+
+#loadout_product_data .loadout-search-results {
+    position: absolute;
+    z-index: 50;
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    max-height: 220px;
+    overflow-y: auto;
+    margin-top: 4px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+    width: 320px;
+    display: none;
+}
+#loadout_product_data .loadout-search-results:not(:empty) {
+    display: block;
+}
+#loadout_product_data .loadout-search-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+#loadout_product_data .loadout-search-list li {
+    padding: 6px 10px;
+    cursor: pointer;
+    border-bottom: 1px solid #eee;
+    font-size: 12px;
+}
+#loadout_product_data .loadout-search-list li:hover {
+    background: #f0f6fc;
+}
+
+#loadout_product_data .loadout-add-item-wrap {
+    margin: 0;
+    padding: 0;
+}
+
+@media (max-width: 782px) {
+    #loadout_product_data .loadout-item-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+    #loadout_product_data .loadout-field--product {
+        grid-column: 1 / -1;
+    }
+    #loadout_product_data .loadout-field--remove {
+        grid-column: 1 / -1;
+        align-self: start;
+    }
+}
+
 .loadout-form-wrap h2.title {
     margin-top: 32px;
     padding-bottom: 8px;

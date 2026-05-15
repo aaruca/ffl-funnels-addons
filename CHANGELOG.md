@@ -2,6 +2,20 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.27.1] - 2026-05-15
+
+### Loadout — Fix product editor metabox layout
+
+The per-product Loadout configuration metabox in the WooCommerce product editor was being broken by WooCommerce's `.woocommerce_options_panel` admin CSS — labels were being floated to a fixed 150px width, hiding the Tier Name input entirely and causing "Discount %" text to overlap the input field.
+
+- Restructured tier and item rows from inline `<p><label>` markup to explicit `<div class="loadout-field">` blocks with a deterministic CSS Grid layout.
+- Added scoped CSS overrides under `#loadout_product_data` that neutralize WC's float/width rules on labels, inputs, and `<p>` tags inside our metabox.
+- Tier row now shows a 2-column grid (Tier Name + Set Discount %).
+- Item row uses a 4-column grid (Product search + Qty + Discount % + Remove), collapsing to 2 columns on mobile.
+- Product search results dropdown is now absolutely positioned with proper z-index so it doesn't push other content around.
+
+Pure styling/markup fix — no behavior, schema, or data changes.
+
 ## [1.27.0] - 2026-05-15
 
 ### Loadout — Bricks Query Loop + Composable Elements

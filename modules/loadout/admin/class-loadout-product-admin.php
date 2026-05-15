@@ -162,23 +162,29 @@ class Loadout_Product_Admin
         <div class="loadout-tier-row" data-index="<?php echo esc_attr($index); ?>">
             <div class="loadout-tier-header">
                 <h4 class="loadout-tier-name"><?php echo esc_html($name ?: __('New Tier', 'ffl-funnels-addons')); ?></h4>
-                <button type="button" class="button-link loadout-tier-remove" style="color:#c00;"><?php esc_html_e('Remove', 'ffl-funnels-addons'); ?></button>
+                <button type="button" class="button-link loadout-tier-remove"><?php esc_html_e('Remove Tier', 'ffl-funnels-addons'); ?></button>
             </div>
-            <p>
-                <label><?php esc_html_e('Name:', 'ffl-funnels-addons'); ?>
-                    <input type="text" name="product_tiers[<?php echo esc_attr($index); ?>][name]" value="<?php echo esc_attr($name); ?>" class="regular-text loadout-tier-name-input" placeholder="<?php esc_attr_e('Essential', 'ffl-funnels-addons'); ?>">
-                </label>
-                <label style="margin-left:12px;"><?php esc_html_e('Set Discount %:', 'ffl-funnels-addons'); ?>
-                    <input type="number" name="product_tiers[<?php echo esc_attr($index); ?>][set_discount_pct]" value="<?php echo esc_attr($set_discount); ?>" min="0" max="100" step="0.01" class="small-text">
-                </label>
-            </p>
-            <h5><?php esc_html_e('Items', 'ffl-funnels-addons'); ?></h5>
-            <div class="loadout-tier-items">
-                <?php foreach ($items as $item_index => $item_data): ?>
-                    <?php $this->render_product_item_row($index, $item_index, $item_data); ?>
-                <?php endforeach; ?>
+
+            <div class="loadout-tier-fields">
+                <div class="loadout-field">
+                    <label><?php esc_html_e('Tier Name', 'ffl-funnels-addons'); ?></label>
+                    <input type="text" name="product_tiers[<?php echo esc_attr($index); ?>][name]" value="<?php echo esc_attr($name); ?>" class="loadout-tier-name-input" placeholder="<?php esc_attr_e('Essential', 'ffl-funnels-addons'); ?>">
+                </div>
+                <div class="loadout-field">
+                    <label><?php esc_html_e('Set Discount %', 'ffl-funnels-addons'); ?></label>
+                    <input type="number" name="product_tiers[<?php echo esc_attr($index); ?>][set_discount_pct]" value="<?php echo esc_attr($set_discount); ?>" min="0" max="100" step="0.01">
+                </div>
             </div>
-            <p><button type="button" class="button loadout-product-add-item" data-tier-index="<?php echo esc_attr($index); ?>"><?php esc_html_e('+ Add Item', 'ffl-funnels-addons'); ?></button></p>
+
+            <div class="loadout-tier-items-section">
+                <h5><?php esc_html_e('Items', 'ffl-funnels-addons'); ?></h5>
+                <div class="loadout-tier-items">
+                    <?php foreach ($items as $item_index => $item_data): ?>
+                        <?php $this->render_product_item_row($index, $item_index, $item_data); ?>
+                    <?php endforeach; ?>
+                </div>
+                <p class="loadout-add-item-wrap"><button type="button" class="button loadout-product-add-item" data-tier-index="<?php echo esc_attr($index); ?>"><?php esc_html_e('+ Add Item', 'ffl-funnels-addons'); ?></button></p>
+            </div>
         </div>
         <?php
     }
@@ -200,22 +206,28 @@ class Loadout_Product_Admin
         <div class="loadout-item-row">
             <input type="hidden" class="loadout-item-product-id" name="product_tiers[<?php echo esc_attr($tier_index); ?>][items][<?php echo esc_attr($item_index); ?>][product_id]" value="<?php echo esc_attr($product_id); ?>">
 
-            <div class="loadout-item-fields">
-                <input type="text" class="regular-text loadout-product-search" data-target=".loadout-item-product-id" data-display=".loadout-item-product-display" data-scope="row" placeholder="<?php esc_attr_e('Search products...', 'ffl-funnels-addons'); ?>">
-                <div class="loadout-item-product-display loadout-product-display">
-                    <?php if ($product_name): ?>
-                        <span><?php echo esc_html($product_name); ?> (#<?php echo esc_html($product_id); ?>)</span>
-                    <?php endif; ?>
+            <div class="loadout-item-grid">
+                <div class="loadout-field loadout-field--product">
+                    <label><?php esc_html_e('Product', 'ffl-funnels-addons'); ?></label>
+                    <input type="text" class="loadout-product-search" data-target=".loadout-item-product-id" data-display=".loadout-item-product-display" data-scope="row" placeholder="<?php esc_attr_e('Search products...', 'ffl-funnels-addons'); ?>">
+                    <div class="loadout-item-product-display loadout-product-display">
+                        <?php if ($product_name): ?>
+                            <span><?php echo esc_html($product_name); ?> (#<?php echo esc_html($product_id); ?>)</span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="loadout-search-results"></div>
                 </div>
-                <div class="loadout-search-results"></div>
-
-                <label><?php esc_html_e('Qty:', 'ffl-funnels-addons'); ?>
-                    <input type="number" name="product_tiers[<?php echo esc_attr($tier_index); ?>][items][<?php echo esc_attr($item_index); ?>][quantity]" value="<?php echo esc_attr($quantity); ?>" min="1" class="small-text">
-                </label>
-                <label><?php esc_html_e('Discount %:', 'ffl-funnels-addons'); ?>
-                    <input type="number" name="product_tiers[<?php echo esc_attr($tier_index); ?>][items][<?php echo esc_attr($item_index); ?>][discount_pct]" value="<?php echo esc_attr($discount_pct); ?>" min="0" max="100" step="0.01" class="small-text">
-                </label>
-                <button type="button" class="button-link loadout-item-remove" style="color:#c00;"><?php esc_html_e('Remove', 'ffl-funnels-addons'); ?></button>
+                <div class="loadout-field loadout-field--qty">
+                    <label><?php esc_html_e('Qty', 'ffl-funnels-addons'); ?></label>
+                    <input type="number" name="product_tiers[<?php echo esc_attr($tier_index); ?>][items][<?php echo esc_attr($item_index); ?>][quantity]" value="<?php echo esc_attr($quantity); ?>" min="1">
+                </div>
+                <div class="loadout-field loadout-field--discount">
+                    <label><?php esc_html_e('Discount %', 'ffl-funnels-addons'); ?></label>
+                    <input type="number" name="product_tiers[<?php echo esc_attr($tier_index); ?>][items][<?php echo esc_attr($item_index); ?>][discount_pct]" value="<?php echo esc_attr($discount_pct); ?>" min="0" max="100" step="0.01">
+                </div>
+                <div class="loadout-field loadout-field--remove">
+                    <button type="button" class="button-link loadout-item-remove"><?php esc_html_e('Remove', 'ffl-funnels-addons'); ?></button>
+                </div>
             </div>
         </div>
         <?php
