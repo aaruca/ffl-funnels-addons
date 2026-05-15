@@ -2,6 +2,29 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.27.2] - 2026-05-15
+
+### Loadout — Fix fatal error from Bricks integration filter signatures
+
+Critical patch fixing a `TypeError: trim(): Argument #1 ($string) must be of type string, array given` fatal in `class-loadout-bricks.php:232` that brought down the entire site whenever a Bricks page rendered.
+
+**Root cause:** Two filter callbacks had wrong signatures.
+
+1. **`bricks/dynamic_data/render_tag`** — Bricks calls this with `($value, $tag, $post_id, $context)`. Our callback only declared 3 args and treated the first arg as `$tag`, but it's actually `$value` (which can be a string, an array, or other types depending on what other plugins return). Calling `trim()` on an array threw the fatal.
+
+   - Fixed signature to `($value, $tag, $post_id, $context)` with 4-arg filter registration
+   - Added strict type check: only process when `$tag` is a string starting with `{loadout_`
+   - Returns the original `$value` (preserves any other plugin's value) when the tag isn't ours
+
+2. **`bricks/query/loop_object`, `bricks/query/loop_object_id`, `bricks/query/after_loop`** — `$query_obj` is sometimes passed as a string (e.g. from older Bricks versions or certain code paths). Accessing `->object_type` on a string produced a PHP warning.
+
+   - Added `is_object($query_obj) && isset($query_obj->object_type)` guards in `run_query()`, `set_loop_object()`, `set_loop_object_id()`, and `after_loop()`
+   - All four handlers now silently pass through when `$query_obj` isn't the expected object shape
+
+3. **`bricks/dynamic_data/render_content`** — added defensive type check and explicit `(string)` cast on resolved tag values to prevent similar issues with non-string content.
+
+No behavior, schema, or data changes — purely defensive patches against Bricks API variance.
+
 ## [1.27.1] - 2026-05-15
 
 ### Loadout — Fix product editor metabox layout

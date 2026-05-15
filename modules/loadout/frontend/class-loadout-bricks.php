@@ -35,7 +35,7 @@ class Loadout_Bricks
 
         // Dynamic data tags.
         add_filter('bricks/dynamic_tags_list', [$this, 'register_dynamic_tags']);
-        add_filter('bricks/dynamic_data/render_tag', [$this, 'render_dynamic_tag'], 20, 3);
+        add_filter('bricks/dynamic_data/render_tag', [$this, 'render_dynamic_tag'], 20, 4);
         add_filter('bricks/dynamic_data/render_content', [$this, 'render_dynamic_content'], 20, 3);
         add_filter('bricks/frontend/render_data', [$this, 'render_dynamic_content'], 20, 2);
     }
@@ -97,6 +97,9 @@ class Loadout_Bricks
 
     public function run_query($results, $query_obj)
     {
+        if (!is_object($query_obj) || !isset($query_obj->object_type)) {
+            return $results;
+        }
         if (!in_array($query_obj->object_type, [self::QUERY_LOADOUTS, self::QUERY_TIERS, self::QUERY_ITEMS, self::QUERY_CROSS_SELLS], true)) {
             return $results;
         }
@@ -134,6 +137,9 @@ class Loadout_Bricks
 
     public function set_loop_object($loop_object, $loop_key, $query_obj)
     {
+        if (!is_object($query_obj) || !isset($query_obj->object_type)) {
+            return $loop_object;
+        }
         if (!in_array($query_obj->object_type, [self::QUERY_LOADOUTS, self::QUERY_TIERS, self::QUERY_ITEMS, self::QUERY_CROSS_SELLS], true)) {
             return $loop_object;
         }
@@ -150,6 +156,9 @@ class Loadout_Bricks
 
     public function set_loop_object_id($loop_id, $loop_key, $query_obj)
     {
+        if (!is_object($query_obj) || !isset($query_obj->object_type)) {
+            return $loop_id;
+        }
         if (!in_array($query_obj->object_type, [self::QUERY_LOADOUTS, self::QUERY_TIERS, self::QUERY_ITEMS, self::QUERY_CROSS_SELLS], true)) {
             return $loop_id;
         }
@@ -168,6 +177,9 @@ class Loadout_Bricks
 
     public function after_loop($query_obj): void
     {
+        if (!is_object($query_obj) || !isset($query_obj->object_type)) {
+            return;
+        }
         if (!in_array($query_obj->object_type, [self::QUERY_LOADOUTS, self::QUERY_TIERS, self::QUERY_ITEMS, self::QUERY_CROSS_SELLS], true)) {
             return;
         }
@@ -227,20 +239,33 @@ class Loadout_Bricks
         return $tags;
     }
 
-    public function render_dynamic_tag($tag, $post, $context = 'text')
+    public function render_dynamic_tag($value, $tag = '', $post_id = 0, $context = 'text')
     {
+        // Bricks signature: ($value, $tag, $post_id, $context).
+        // Older versions passed only ($value, $tag, $post_id) or even ($tag, $post, $context),
+        // so be defensive: only act when $tag is a non-empty string starting with '{loadout_'.
+        if (!is_string($tag) || strpos($tag, '{loadout_') !== 0) {
+            return $value;
+        }
+
         $name = trim($tag, '{}');
         $defs = self::get_tag_definitions();
         if (!isset($defs[$name])) {
-            return $tag;
+            return $value;
         }
-        $value = self::resolve_tag($name);
-        return $value !== null ? $value : '';
+
+        $resolved = self::resolve_tag($name);
+        return $resolved !== null ? $resolved : $value;
     }
 
     public function render_dynamic_content($content, $post = null, $context = 'text')
     {
-        if (!is_string($content) || strpos($content, '{loadout_') === false) {
+        // Bricks calls this filter with various types of $content (string, array of strings, etc.).
+        // Only process plain strings that contain at least one of our tags.
+        if (!is_string($content)) {
+            return $content;
+        }
+        if (strpos($content, '{loadout_') === false) {
             return $content;
         }
 
@@ -249,7 +274,7 @@ class Loadout_Bricks
             $token = '{' . $name . '}';
             if (strpos($content, $token) !== false) {
                 $value = self::resolve_tag($name);
-                $content = str_replace($token, $value !== null ? $value : '', $content);
+                $content = str_replace($token, $value !== null ? (string) $value : '', $content);
             }
         }
         return $content;
