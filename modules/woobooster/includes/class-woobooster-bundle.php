@@ -132,11 +132,14 @@ class WooBooster_Bundle
         self::init_tables();
 
         $defaults = array(
-            'name'           => '',
-            'priority'       => 10,
-            'status'         => 1,
-            'discount_type'  => 'none',
-            'discount_value' => 0,
+            'name'              => '',
+            'image_id'          => null,
+            'priority'          => 10,
+            'status'            => 1,
+            'discount_type'     => 'none',
+            'discount_value'    => 0,
+            'bundle_price_type' => 'discount',
+            'bundle_price'      => null,
         );
 
         $data = wp_parse_args($data, $defaults);
@@ -146,7 +149,7 @@ class WooBooster_Bundle
 
         if ($inserted) {
             $bundle_id = $wpdb->insert_id;
-            self::rebuild_index_for_bundle($bundle_id);
+            // Index is rebuilt by save_conditions(); a fresh bundle has no conditions yet.
             WooBooster_Matcher::invalidate_recommendation_cache();
             return $bundle_id;
         }
@@ -216,13 +219,22 @@ class WooBooster_Bundle
 
         $new_status = $bundle->status ? 0 : 1;
 
-        return (bool) $wpdb->update(
+        $updated = $wpdb->update(
             self::$table,
             array('status' => $new_status),
             array('id' => absint($id)),
             array('%d'),
             array('%d')
         );
+
+        if (false !== $updated) {
+            // Index entries depend on bundle->status; rebuild so deactivated bundles drop out.
+            self::rebuild_index_for_bundle($id);
+            WooBooster_Matcher::invalidate_recommendation_cache();
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -241,13 +253,15 @@ class WooBooster_Bundle
         }
 
         $new_id = self::create(array(
-            'name'           => $bundle->name . ' (Copy)',
-            'priority'       => $bundle->priority,
-            'status'         => 0,
-            'discount_type'  => $bundle->discount_type,
-            'discount_value' => $bundle->discount_value,
-            'start_date'     => $bundle->start_date,
-            'end_date'       => $bundle->end_date,
+            'name'              => $bundle->name . ' (Copy)',
+            'priority'          => $bundle->priority,
+            'status'            => 0,
+            'discount_type'     => $bundle->discount_type,
+            'discount_value'    => $bundle->discount_value,
+            'bundle_price_type' => isset($bundle->bundle_price_type) ? $bundle->bundle_price_type : 'discount',
+            'bundle_price'      => isset($bundle->bundle_price) ? $bundle->bundle_price : null,
+            'start_date'        => $bundle->start_date,
+            'end_date'          => $bundle->end_date,
         ));
 
         if (!$new_id) {
@@ -261,6 +275,7 @@ class WooBooster_Bundle
             foreach ($items as $item) {
                 $item_data[] = array(
                     'product_id'  => $item->product_id,
+                    'quantity'    => isset($item->quantity) ? $item->quantity : 1,
                     'sort_order'  => $item->sort_order,
                     'is_optional' => $item->is_optional,
                 );
@@ -331,21 +346,56 @@ class WooBooster_Bundle
 
         $bundle_id = absint($bundle_id);
 
-        $wpdb->delete(self::$items_table, array('bundle_id' => $bundle_id), array('%d'));
+        self::with_transaction(function () use ($wpdb, $bundle_id, $items) {
+            $deleted = $wpdb->delete(self::$items_table, array('bundle_id' => $bundle_id), array('%d'));
+            if (false === $deleted) {
+                throw new \RuntimeException('Failed to clear existing bundle items: ' . $wpdb->last_error);
+            }
 
-        if (!empty($items)) {
+            if (empty($items)) {
+                return;
+            }
+
+            $values = array();
+            $params = array();
             foreach ($items as $index => $item) {
-                $wpdb->insert(
-                    self::$items_table,
-                    array(
-                        'bundle_id'   => $bundle_id,
-                        'product_id'  => absint($item['product_id']),
-                        'sort_order'  => isset($item['sort_order']) ? absint($item['sort_order']) : $index,
-                        'is_optional' => !empty($item['is_optional']) ? 1 : 0,
-                    ),
-                    array('%d', '%d', '%d', '%d')
+                $values[] = '(%d, %d, %d, %d, %d)';
+                array_push(
+                    $params,
+                    $bundle_id,
+                    absint($item['product_id']),
+                    isset($item['quantity']) ? max(1, absint($item['quantity'])) : 1,
+                    isset($item['sort_order']) ? absint($item['sort_order']) : $index,
+                    !empty($item['is_optional']) ? 1 : 0
                 );
             }
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $inserted = $wpdb->query($wpdb->prepare(
+                "INSERT INTO {$wpdb->prefix}woobooster_bundle_items (bundle_id, product_id, quantity, sort_order, is_optional) VALUES " . implode(', ', $values),
+                ...$params
+            ));
+            // $wpdb->query() returns false on SQL error without throwing — without this
+            // guard the transaction would COMMIT the DELETE and silently wipe all items.
+            if (false === $inserted) {
+                throw new \RuntimeException('Failed to save bundle items: ' . $wpdb->last_error);
+            }
+        });
+    }
+
+    /**
+     * Wrap a write callback in a DB transaction. InnoDB only; degrades to a
+     * straight call when the engine doesn't support transactions.
+     */
+    private static function with_transaction(callable $fn)
+    {
+        global $wpdb;
+        $wpdb->query('START TRANSACTION');
+        try {
+            $fn();
+            $wpdb->query('COMMIT');
+        } catch (\Throwable $e) {
+            $wpdb->query('ROLLBACK');
+            throw $e;
         }
     }
 
@@ -391,6 +441,13 @@ class WooBooster_Bundle
 
         $bundle_id = absint($bundle_id);
 
+        self::with_transaction(function () use ($wpdb, $bundle_id, $groups) {
+            self::save_actions_inner($wpdb, $bundle_id, $groups);
+        });
+    }
+
+    private static function save_actions_inner($wpdb, $bundle_id, $groups)
+    {
         $wpdb->delete(self::$actions_table, array('bundle_id' => $bundle_id), array('%d'));
 
         if (empty($groups)) {
@@ -481,6 +538,41 @@ class WooBooster_Bundle
     }
 
     /**
+     * Get condition groups for many bundles in a single query.
+     *
+     * @param int[] $bundle_ids
+     * @return array Map: [ bundle_id => [ group_id => [ condition, ... ], ... ], ... ]
+     */
+    public static function get_conditions_for_bundles(array $bundle_ids)
+    {
+        global $wpdb;
+        self::init_tables();
+
+        $bundle_ids = array_values(array_filter(array_map('absint', $bundle_ids)));
+        if (empty($bundle_ids)) {
+            return array();
+        }
+
+        $placeholders = implode(',', array_fill(0, count($bundle_ids), '%d'));
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}woobooster_bundle_conditions
+             WHERE bundle_id IN ({$placeholders})
+             ORDER BY bundle_id ASC, group_id ASC, id ASC",
+            ...$bundle_ids
+        ));
+
+        $out = array();
+        foreach ($bundle_ids as $bid) {
+            $out[$bid] = array();
+        }
+        foreach ($rows as $row) {
+            $out[(int) $row->bundle_id][(int) $row->group_id][] = $row;
+        }
+        return $out;
+    }
+
+    /**
      * Save condition groups for a bundle.
      */
     public static function save_conditions($bundle_id, $groups)
@@ -490,34 +582,43 @@ class WooBooster_Bundle
 
         $bundle_id = absint($bundle_id);
 
-        $wpdb->delete(self::$conditions_table, array('bundle_id' => $bundle_id), array('%d'));
+        self::with_transaction(function () use ($wpdb, $bundle_id, $groups) {
+            $wpdb->delete(self::$conditions_table, array('bundle_id' => $bundle_id), array('%d'));
 
-        if (empty($groups)) {
-            return;
-        }
-
-        foreach ($groups as $group_id => $conditions) {
-            if (empty($conditions)) {
-                continue;
+            if (empty($groups)) {
+                return;
             }
 
-            foreach ($conditions as $condition) {
-                $row = array(
-                    'bundle_id'            => $bundle_id,
-                    'group_id'             => absint($group_id),
-                    'condition_attribute'  => sanitize_key($condition['condition_attribute']),
-                    'condition_operator'   => sanitize_key($condition['condition_operator'] ?? 'equals'),
-                    'condition_value'      => sanitize_text_field($condition['condition_value']),
-                    'include_children'     => absint($condition['include_children'] ?? 0),
-                );
-
-                $wpdb->insert(
-                    self::$conditions_table,
-                    $row,
-                    array('%d', '%d', '%s', '%s', '%s', '%d')
-                );
+            $values = array();
+            $params = array();
+            foreach ($groups as $group_id => $conditions) {
+                if (empty($conditions)) {
+                    continue;
+                }
+                foreach ($conditions as $condition) {
+                    $values[] = '(%d, %d, %s, %s, %s, %d)';
+                    array_push(
+                        $params,
+                        $bundle_id,
+                        absint($group_id),
+                        sanitize_key($condition['condition_attribute']),
+                        sanitize_key($condition['condition_operator'] ?? 'equals'),
+                        sanitize_text_field($condition['condition_value']),
+                        absint($condition['include_children'] ?? 0)
+                    );
+                }
             }
-        }
+
+            if (!empty($values)) {
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+                $wpdb->query($wpdb->prepare(
+                    "INSERT INTO {$wpdb->prefix}woobooster_bundle_conditions
+                     (bundle_id, group_id, condition_attribute, condition_operator, condition_value, include_children)
+                     VALUES " . implode(', ', $values),
+                    ...$params
+                ));
+            }
+        });
 
         self::rebuild_index_for_bundle($bundle_id);
         WooBooster_Matcher::invalidate_recommendation_cache();
@@ -532,75 +633,90 @@ class WooBooster_Bundle
     {
         global $wpdb;
         self::init_tables();
+        $id = absint($id);
 
-        $wpdb->delete(self::$index_table, array('bundle_id' => absint($id)), array('%d'));
+        self::with_transaction(function () use ($wpdb, $id) {
+            $wpdb->delete(self::$index_table, array('bundle_id' => $id), array('%d'));
 
-        $bundle = self::get($id);
-        if (!$bundle || !$bundle->status) {
-            return;
-        }
+            $bundle = self::get($id);
+            if (!$bundle || !$bundle->status) {
+                return;
+            }
 
-        $groups = self::get_conditions($id);
-        if (empty($groups)) {
-            return;
-        }
+            $groups = self::get_conditions($id);
+            if (empty($groups)) {
+                return;
+            }
 
-        $condition_keys = array();
-        $has_not_equals = false;
+            $condition_keys = array();
+            $has_not_equals = false;
 
-        foreach ($groups as $conditions) {
-            foreach ($conditions as $cond) {
-                $attr     = sanitize_key($cond->condition_attribute);
-                $val      = sanitize_text_field($cond->condition_value);
-                $operator = isset($cond->condition_operator) ? $cond->condition_operator : 'equals';
+            foreach ($groups as $conditions) {
+                foreach ($conditions as $cond) {
+                    $attr     = sanitize_key($cond->condition_attribute);
+                    $val      = sanitize_text_field($cond->condition_value);
+                    $operator = isset($cond->condition_operator) ? $cond->condition_operator : 'equals';
 
-                if ('not_equals' === $operator) {
-                    $has_not_equals = true;
-                    continue;
-                }
-
-                if ('specific_product' === $attr && false !== strpos($val, ',')) {
-                    $ids = array_filter(array_map('absint', explode(',', $val)));
-                    foreach ($ids as $pid) {
-                        $condition_keys['specific_product:' . $pid] = true;
+                    if ('not_equals' === $operator) {
+                        $has_not_equals = true;
+                        continue;
                     }
-                } else {
-                    $condition_keys[$attr . ':' . $val] = true;
-                }
 
-                if (!empty($cond->include_children) && taxonomy_exists($attr) && is_taxonomy_hierarchical($attr)) {
-                    $parent_term = get_term_by('slug', $val, $attr);
-                    if ($parent_term && !is_wp_error($parent_term)) {
-                        $child_ids = get_term_children($parent_term->term_id, $attr);
-                        if (!is_wp_error($child_ids)) {
-                            $child_ids = array_slice($child_ids, 0, 500);
-                            foreach ($child_ids as $child_id) {
-                                $child_term = get_term($child_id, $attr);
-                                if ($child_term && !is_wp_error($child_term)) {
-                                    $condition_keys[$attr . ':' . sanitize_text_field($child_term->slug)] = true;
+                    if ('specific_product' === $attr && false !== strpos($val, ',')) {
+                        $ids = array_filter(array_map('absint', explode(',', $val)));
+                        foreach ($ids as $pid) {
+                            $condition_keys['specific_product:' . $pid] = true;
+                        }
+                    } else {
+                        $condition_keys[$attr . ':' . $val] = true;
+                    }
+
+                    if (!empty($cond->include_children) && taxonomy_exists($attr) && is_taxonomy_hierarchical($attr)) {
+                        $parent_term = get_term_by('slug', $val, $attr);
+                        if ($parent_term && !is_wp_error($parent_term)) {
+                            $child_ids = get_term_children($parent_term->term_id, $attr);
+                            if (!is_wp_error($child_ids) && !empty($child_ids)) {
+                                $child_ids = array_slice($child_ids, 0, 500);
+                                // Bulk load child slugs in a single query instead of N x get_term().
+                                $children = get_terms(array(
+                                    'taxonomy'   => $attr,
+                                    'include'    => $child_ids,
+                                    'hide_empty' => false,
+                                    'fields'     => 'id=>slug',
+                                ));
+                                if (!is_wp_error($children)) {
+                                    foreach ($children as $child_slug) {
+                                        $condition_keys[$attr . ':' . sanitize_text_field($child_slug)] = true;
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
-        }
 
-        if ($has_not_equals) {
-            $condition_keys['__not_equals__:1'] = true;
-        }
+            if ($has_not_equals) {
+                $condition_keys['__not_equals__:1'] = true;
+            }
 
-        foreach (array_keys($condition_keys) as $condition_key) {
-            $wpdb->insert(
-                self::$index_table,
-                array(
-                    'condition_key' => $condition_key,
-                    'bundle_id'     => absint($id),
-                    'priority'      => absint($bundle->priority),
-                ),
-                array('%s', '%d', '%d')
-            );
-        }
+            if (empty($condition_keys)) {
+                return;
+            }
+
+            $values   = array();
+            $params   = array();
+            $priority = absint($bundle->priority);
+            foreach (array_keys($condition_keys) as $ck) {
+                $values[] = '(%s, %d, %d)';
+                array_push($params, $ck, $id, $priority);
+            }
+
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $wpdb->query($wpdb->prepare(
+                "INSERT INTO {$wpdb->prefix}woobooster_bundle_index (condition_key, bundle_id, priority) VALUES " . implode(', ', $values),
+                ...$params
+            ));
+        });
     }
 
     /**
@@ -628,6 +744,130 @@ class WooBooster_Bundle
         } while (count($bundles) === $page_size);
     }
 
+    /**
+     * Calculate per-item original and discounted prices for a bundle.
+     *
+     * Used by both the widget renderer and the AJAX add-to-cart so that
+     * the customer is charged exactly what they saw on the page.
+     *
+     * @param object $bundle      Bundle row.
+     * @param array  $product_ids Product IDs to price.
+     * @return array Map of product_id => ['original' => float, 'discounted' => float].
+     */
+    public static function calculate_item_prices($bundle, array $product_ids)
+    {
+        $product_ids = array_values(array_filter(array_map('absint', $product_ids)));
+        if (empty($product_ids) || !$bundle) {
+            return array();
+        }
+
+        $prices = array();
+        foreach ($product_ids as $pid) {
+            $product = wc_get_product($pid);
+            if (!$product) {
+                continue;
+            }
+            $prices[$pid] = (float) $product->get_price();
+        }
+
+        $dec = function_exists('wc_get_price_decimals') ? wc_get_price_decimals() : 2;
+
+        // Fixed bundle price mode: distribute a single target total across items.
+        $price_type = isset($bundle->bundle_price_type) ? $bundle->bundle_price_type : 'discount';
+        if ('fixed' === $price_type && isset($bundle->bundle_price) && null !== $bundle->bundle_price) {
+            return self::apply_fixed_bundle_price($prices, (float) $bundle->bundle_price, $dec);
+        }
+
+        return self::apply_discount_to_prices(
+            $prices,
+            $bundle->discount_type ?? 'none',
+            (float) ($bundle->discount_value ?? 0),
+            $dec
+        );
+    }
+
+    /**
+     * Pure helper: distribute a fixed bundle price across items pro-rata.
+     *
+     * Each item's discounted per-unit price is its share of the target total,
+     * weighted by its original price. When the target exceeds the sum of
+     * originals (a markup), each item is capped at its original price so no
+     * item is ever priced above its standalone value.
+     *
+     * @param array<int, float> $prices       Map of product_id => original price.
+     * @param float             $bundle_price Target total for the full set.
+     * @param int               $dec          Rounding decimals.
+     * @return array Map of product_id => ['original' => float, 'discounted' => float].
+     */
+    public static function apply_fixed_bundle_price(array $prices, $bundle_price, $dec = 2)
+    {
+        $bundle_price = max(0.0, (float) $bundle_price);
+        $out          = array();
+        $sub          = 0.0;
+        foreach ($prices as $pid => $price) {
+            $price     = (float) $price;
+            $out[$pid] = array('original' => $price, 'discounted' => $price);
+            $sub      += $price;
+        }
+        if (empty($out) || $sub <= 0) {
+            return $out;
+        }
+
+        // A target at or above the subtotal is not a discount — leave originals.
+        if ($bundle_price >= $sub) {
+            return $out;
+        }
+
+        $factor = $bundle_price / $sub;
+        foreach ($out as $pid => &$row) {
+            $row['discounted'] = max(0.0, round($row['original'] * $factor, $dec));
+        }
+        unset($row);
+
+        return $out;
+    }
+
+    /**
+     * Pure helper: apply a bundle-level discount to a price map.
+     *
+     * @param array<int, float> $prices  Map of product_id => original price.
+     * @param string            $type    'none' | 'percentage' | 'fixed'.
+     * @param float             $value   Discount amount (% or currency units).
+     * @param int               $dec     Rounding decimals.
+     * @return array Map of product_id => ['original' => float, 'discounted' => float].
+     */
+    public static function apply_discount_to_prices(array $prices, $type, $value, $dec = 2)
+    {
+        $value = (float) $value;
+        $out   = array();
+        $sub   = 0.0;
+        foreach ($prices as $pid => $price) {
+            $price       = (float) $price;
+            $out[$pid]   = array('original' => $price, 'discounted' => $price);
+            $sub        += $price;
+        }
+        if (empty($out)) {
+            return array();
+        }
+
+        if ('percentage' === $type && $value > 0) {
+            $factor = max(0.0, 1 - ($value / 100));
+            foreach ($out as $pid => &$row) {
+                $row['discounted'] = round($row['original'] * $factor, $dec);
+            }
+            unset($row);
+        } elseif ('fixed' === $type && $value > 0 && $sub > 0) {
+            $total_discount = min($value, $sub);
+            foreach ($out as $pid => &$row) {
+                $share              = ($row['original'] / $sub) * $total_discount;
+                $row['discounted']  = max(0.0, round($row['original'] - $share, $dec));
+            }
+            unset($row);
+        }
+
+        return $out;
+    }
+
     /* ── Internal helpers ─────────────────────────────────────────── */
 
     private static function sanitize_bundle_data($data)
@@ -636,6 +876,11 @@ class WooBooster_Bundle
 
         if (isset($data['name'])) {
             $sanitized['name'] = sanitize_text_field($data['name']);
+        }
+
+        if (array_key_exists('image_id', $data)) {
+            $img = absint($data['image_id']);
+            $sanitized['image_id'] = $img > 0 ? $img : null;
         }
 
         if (isset($data['priority'])) {
@@ -657,6 +902,19 @@ class WooBooster_Bundle
             $sanitized['discount_value'] = max(0, floatval($data['discount_value']));
         }
 
+        if (isset($data['bundle_price_type'])) {
+            $allowed = array('discount', 'fixed');
+            $sanitized['bundle_price_type'] = in_array($data['bundle_price_type'], $allowed, true)
+                ? $data['bundle_price_type']
+                : 'discount';
+        }
+
+        if (array_key_exists('bundle_price', $data)) {
+            $sanitized['bundle_price'] = ('' === $data['bundle_price'] || null === $data['bundle_price'])
+                ? null
+                : max(0, floatval($data['bundle_price']));
+        }
+
         if (array_key_exists('start_date', $data)) {
             $sanitized['start_date'] = !empty($data['start_date'])
                 ? sanitize_text_field($data['start_date'])
@@ -675,13 +933,16 @@ class WooBooster_Bundle
     private static function get_format($data)
     {
         $format_map = array(
-            'name'           => '%s',
-            'priority'       => '%d',
-            'status'         => '%d',
-            'discount_type'  => '%s',
-            'discount_value' => '%s',
-            'start_date'     => '%s',
-            'end_date'       => '%s',
+            'name'              => '%s',
+            'image_id'          => '%d',
+            'priority'          => '%d',
+            'status'            => '%d',
+            'discount_type'     => '%s',
+            'discount_value'    => '%s',
+            'bundle_price_type' => '%s',
+            'bundle_price'      => '%s',
+            'start_date'        => '%s',
+            'end_date'          => '%s',
         );
 
         $format = array();

@@ -2,6 +2,209 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.27.0] - 2026-05-15
+
+### Loadout — Bricks Query Loop + Composable Elements
+
+The Loadout module now exposes its data through Bricks Builder's native Query Loop system and Dynamic Data tags, so you can lay out the entire UI yourself using Containers, Nestable Tabs, Loops, etc. — no need to use the monolithic widget if you want fine-grained control.
+
+**New Bricks Query Types** (available in the Query Loop dropdown):
+- **Loadouts** — iterates over all active loadouts
+- **Loadout Tiers** — iterates over tiers of a chosen (or inherited) loadout
+- **Loadout Tier Items** — iterates over items of a chosen (or inherited) tier
+- **Loadout Cross-Sells** — iterates over cross-sell tiles
+
+Nested loops automatically inherit context: drop a `Loadout Tier Items` loop inside a `Loadout Tiers` loop and it will iterate the current tier's items.
+
+**New Dynamic Data Tags** (use inside text, headings, image, button URL, custom HTML, etc.):
+- Loadout: `{loadout_name}`, `{loadout_headline}`, `{loadout_subheadline}`, `{loadout_hero_image}`, `{loadout_brand_logo}`, `{loadout_anchor_name}`, `{loadout_anchor_price}`
+- Tier: `{loadout_tier_name}`, `{loadout_tier_slug}`, `{loadout_tier_accessory_discount}`, `{loadout_tier_set_discount}`, `{loadout_tier_threshold}`, `{loadout_tier_bonus_label}`, `{loadout_tier_bonus_value}`, `{loadout_tier_perks}`
+- Item: `{loadout_item_product_name}`, `{loadout_item_product_image}`, `{loadout_item_product_thumb}`, `{loadout_item_quantity}`, `{loadout_item_discount}`, `{loadout_item_regular_price}`, `{loadout_item_final_price}`, `{loadout_item_savings}`, `{loadout_item_in_stock}`
+- Cross-sell: `{loadout_cross_sell_label}`, `{loadout_cross_sell_image}`, `{loadout_cross_sell_link}`
+
+**New Composable Bricks Elements:**
+- **Loadout: Add Item Button** — auto-binds to the current item in a Tier Items loop; carries product/tier/loadout data attributes so the existing AJAX endpoints handle the rest
+- **Loadout: Add Tier Button** — auto-binds to the current tier in a Tiers loop; the "ADD CART" master button
+- **Loadout: Tier Tabs** — standalone tier navigation that controls all panels (matched by `data-tier-slug`) globally on the page
+- **Loadout: Progress Bar** — standalone progress bar that fills based on active tier's items in cart
+- **Loadout: Cart Mirror** — live cart summary, optionally filtered by loadout
+
+**JS rewrite:**
+The frontend JS is now decoupled from a single root container. Tier tab clicks switch panels globally by `data-tier-slug`, cart summaries refresh across all instances on the page, and add buttons read data attributes directly so they work in any context (inside Bricks Nestable Tabs, Query Loops, or anywhere else).
+
+The original monolithic **Loadout** element from v1.26.0 still works unchanged — this release is purely additive.
+
+## [1.26.0] - 2026-05-15
+
+### New Module — Loadout: Tier-Based Product Configurator
+
+A new **Loadout** addon module that complements the existing Bundles feature with a fundamentally different cart model: per-item add-to-cart with gamified perks, tier-based discounts, and bonus items.
+
+**Two complementary surfaces:**
+
+1. **Standalone Widget** (Bricks Builder element + shortcode)
+   - "Build Your Loadout" configurator with hero product + tier tabs (e.g., Essential / Performance / Elite)
+   - Per-tier recommended items list with individual ADD buttons and master ADD CART button
+   - Live cart mirror panel showing items, savings, totals
+   - Bundle & Save progress bar that fills as items are added
+   - Perks unlock at tier threshold (e.g., "Add 3 items to unlock 10% off accessories")
+   - Bonus product auto-adds as $0 line when threshold met; auto-removes when dropped
+   - "Complete Your Loadout" cross-sell tiles section
+   - Gold-on-dark aesthetic matching the mockup
+   - Customizable accent color and panel visibility via Bricks controls
+
+2. **Product-level Loadout Tab** (WooCommerce product editor)
+   - New "Loadout" tab in the product data panel
+   - Two configuration modes:
+     - **Link to Global Loadout**: dropdown reuses an existing Loadout config
+     - **Per-Product Config**: inline tier/item repeater stored as post meta (no global Loadout needed)
+   - Frontend renders a tab on the product page with tier switcher and per-item ADD buttons
+   - **Set discount** applies when the customer adds the entire tier together; reverts if any item is removed
+
+**Schema** (4 new tables, migration version `FFLA_LOADOUT_DB_VERSION = 1.0.0`):
+- `wp_ffla_loadouts` — main loadout configs (name, headlines, branding, anchor product)
+- `wp_ffla_loadout_tiers` — tiers per loadout (discount %, set discount %, perks JSON, bonus, threshold)
+- `wp_ffla_loadout_tier_items` — products per tier (qty, per-item discount, required flag)
+- `wp_ffla_loadout_cross_sells` — cross-sell tiles (label, image, link type/value)
+
+**Cart Integration:**
+- Each loadout item is its own WC cart line (unlike Bundles' synthetic single line); customers can remove individual items
+- Cart-item meta preserves loadout/tier/source context across session and into order line items
+- Per-item discount + tier accessory discount combine additively (capped at 100%)
+- For product tab: set discount applies when ALL tier items are present in cart
+- Bonus product (free gift) auto-managed based on widget item count vs. threshold
+- AJAX endpoints: `loadout_add_item`, `loadout_add_tier`, `loadout_get_cart_summary`
+
+**Admin:**
+- New "Loadouts" menu page at `/wp-admin/admin.php?page=ffla-loadouts`
+- List table with bulk actions (delete, activate, deactivate)
+- Edit form with collapsible sections (basic info, branding, anchor, tiers repeater, cross-sells repeater)
+- Reuses image picker pattern from v1.25.0 bundle work
+- Reuses OOS-filtered product search pattern from v1.25.1
+- Each tier has nested repeater for items, perks chip input, bonus product picker
+
+**Architecture:**
+- New standalone module `modules/loadout/` extending `FFLA_Module` (independent activation)
+- Models with transaction-safe CRUD (`Loadout`, `Loadout_Tier`, `Loadout_Tier_Item`, `Loadout_Cross_Sell`)
+- Bricks element class `Loadout_Element` extending `\Bricks\Element`
+- Plain `[loadout id="X"]` shortcode for non-Bricks embedding
+
+## [1.25.1] - 2026-05-15
+
+### WooBooster — Out-of-stock products hidden from bundle picker
+
+- The product search on the bundle admin form now filters out products with stock status `outofstock`. You can't sell a bundle that contains something not in the warehouse.
+- Rule targeting (conditions / actions) is unaffected and still sees the full catalog — rules may legitimately match OOS items.
+- Implemented via a new `context` parameter on the shared `woobooster_search_products` AJAX endpoint (`context=bundle` ⇒ adds `_stock_status != outofstock` meta query).
+
+## [1.25.0] - 2026-05-15
+
+### WooBooster — Bundle image & better "Includes" layout in cart
+
+**Bundle Image**
+- Each bundle now supports an optional **image** (managed via the WordPress media library) that replaces the representative product's thumbnail in the cart and checkout. Helpful for showing a custom hero / lifestyle shot for the bundle instead of whatever happened to be the first product.
+- Admin: new "Bundle Image" field on the bundle form with the standard WP media picker (select + remove). Empty = use the first product's thumbnail (existing behavior).
+- Schema: `image_id bigint(20) NULL` added to `wp_woobooster_bundles`. Safe migration in `WOOBOOSTER_DB_VERSION` 1.10.0 with INFORMATION_SCHEMA check.
+- Cart: new `woocommerce_cart_item_thumbnail` filter swaps the line image when `image_id` is set; falls back gracefully when not.
+
+**"Includes" list now visually separated**
+- Replaced the `<br>`-joined inline list under bundle cart items with a styled `<ul>`: each contained product sits on its own row with 4px padding and a faint bottom border, so a bundle of 3-4 products is no longer a wall of text.
+- The plain-text `value` (used by emails / order details that strip HTML) remains comma-separated for readability there.
+
+## [1.24.0] - 2026-05-15
+
+### Full plugin audit & critical fixes
+
+A comprehensive multi-module audit was performed across all 7 addons. Most modules were found stable. Critical and high-severity issues were fixed in `product-reviews` and `ffl-checkout`. The unreleased v1.23.0 work (bundle pricing, Bricks customization, homepage support, single cart item model) is included here.
+
+**Product Reviews — Critical Fixes**
+- **Fixed TOCTOU race in helpful-votes counter** (`class-product-reviews-ajax.php`). The previous read-modify-write pattern (`get_comment_meta` → `++` in PHP → `update_comment_meta`) lost votes under concurrent traffic: two requests would both read the same value and both write `current+1`, dropping one increment. Replaced with an atomic SQL `UPDATE wp_commentmeta SET meta_value = CAST(meta_value AS UNSIGNED) + 1` after ensuring the meta row exists. Comment meta cache is busted post-update.
+- **Tightened nonce validation** (`class-product-reviews-core.php`). Nonce check now runs FIRST in the review submission pre-process hook, before honeypot and Cloudflare Turnstile checks. Additionally, a missing nonce field now rejects the submission outright — previously, `isset($_POST['ffla_review_form_nonce'])` returning false would silently skip the entire nonce check.
+
+**FFL Checkout — Stability**
+- **Per-session lock on vendor cart updates** (`class-ffl-checkout-ajax.php`). Double-click and multi-tab race conditions on `update_cart_vendor` could let two concurrent requests both pass validation and have the second's session write overwrite the first. Added a short-lived (5s) per-session+cart-item transient lock; concurrent updates now return "Another vendor update is in progress. Please retry." with the lock released on every error and success path.
+
+**WooBooster — Code Quality**
+- Removed redundant `WOOBOOSTER_VERSION` and `WOOBOOSTER_DB_VERSION` class constants in `WooBooster_Activator`. They duplicated and would have gone stale relative to the globally-defined compat constants in the main plugin file (which auto-sync with `FFLA_VERSION`). All references now use the globals.
+
+### WooBooster — Fixed bundle pricing & Bricks display customization
+
+**Fixed Bundle Price Mode**
+- Bundles now support two pricing modes: *Discount on items* (existing) or *Fixed bundle price* (new)
+- Fixed price is distributed pro-rata across items based on original price ratio
+- Cart discount logic and server-side snapshots remain unchanged — pricing is resolved centrally in `calculate_item_prices()`
+- Schema: added `bundle_price_type` (varchar) and `bundle_price` (decimal) columns to `wp_woobooster_bundles`
+- Safe migration in `WOOBOOSTER_DB_VERSION` 1.9.0 with INFORMATION_SCHEMA checks
+
+**Display Options**
+- New toggles in Bricks bundle element: original (strikethrough) price, per-item discount badge, total section, savings
+- **Savings Format** selector: amount only, percentage only, or both
+- Configurable item **Separator Text** (e.g., "+"), **Grid Columns** (1–6), and custom **Total Label**
+- Frontend JS `recalculate()` respects all display toggles and savings format
+
+**Bricks Style Controls**
+- New control groups: **Heading Style** (typography, margin, alignment), **Separator Style** (color, typography), **Savings Style** (color, background, typography, padding, radius)
+- Item card border-radius and total section original/final price color controls
+
+**Homepage & Standalone Pages**
+- Bundle element now works on any page (homepage, custom pages) without requiring product context
+- New **Product Source** option: "None (display bundle as-is)" to show bundles standalone
+- Select a specific bundle in settings to display it directly without auto-detection
+
+**Bundle as a Single Cart Item**
+- A bundle is now added to the cart as **one synthetic line item** instead of separate per-product lines. The bundle is bought as a unit — removing the line removes the whole bundle, so it can never be broken apart into loose products.
+- The line is priced at the full bundle total (discount baked in), shows the bundle name, and lists its contents under an "Includes" row in the cart and checkout.
+- Bundle contents are persisted onto the order line item (`_woobooster_bundle_id` + a readable "Bundle contents" meta).
+- Trade-off: WooCommerce tracks stock, tax class, and shipping for the representative product only (the first item in the bundle); the other products are recorded as meta. The previous per-item negative-fee discount logic is removed.
+- Fixed bundle items being silently deleted when updating a bundle. On file-based plugin updates (git/FTP/WP updater) the activation hook never fires, so schema migrations were skipped — the `bundle_items` table was missing its `quantity` column and the multi-row `INSERT` failed silently while the preceding `DELETE` committed. Migrations now also run on `admin_init`, and `save_items()` rolls back the transaction if the `INSERT` fails instead of committing a partial wipe.
+- Newly added bundle items now show their price and quantity input immediately in the admin form. Previously the JS row template had an empty price span and no quantity field — both only appeared after saving and reloading. The product-search AJAX endpoint now returns the price HTML and the JS template renders the price plus a quantity input.
+
+## [1.22.0] - 2026-05-13
+
+### WooBooster — Bundles complete overhaul (5-phase pass)
+
+**Phase 1: Correctness (P0)**
+- Bundle cart discount now bound to per-add cryptographic hash (`_woobooster_bundle_hash`) and original set size (`_woobooster_bundle_size`)
+- Cart fee applied only when **all original items are still present** — partial removal cancels discount
+- Adding same bundle twice produces independent discount groups with unique hashes
+- Per-item price snapshots recorded server-side via `WooBooster_Bundle::calculate_item_prices()` — customer charged exactly what they preview
+- AJAX endpoint accepts explicit `source_product_id` instead of guessing from checkboxes
+- Variable products added via default variation; products without usable default surface actionable error
+- `WooBooster_Bundle::toggle_status()` rebuilds index and invalidates cache
+
+**Phase 2: Performance**
+- `Bundle_Matcher::find_matching_bundles()` batches all candidate conditions in single query (eliminates N+1)
+- `save_items()`, `save_conditions()`, `rebuild_index_for_bundle()` wrapped in InnoDB transactions with multi-row `INSERT`
+- Include-children expansion uses single `get_terms()` call instead of per-child `get_term()`
+- Matcher cache stores match decision only; items resolved per-request so user-session-dependent sources don't leak across users
+- Role-aware cache keys prevent cross-session data exposure
+
+**Phase 3: Accessibility & UX**
+- Replaced `alert()` with polite `role="alert" aria-live="polite"` inline error region
+- Localized "Save ..." string in JS through `cfg.i18n.saveFormat`
+- Plural strings use `_n()` for proper i18n
+- Per-checkbox `aria-label` with product names and visible focus rings for keyboard users
+- Bundle list table renders schedule dates via `wp_date()` instead of `date_i18n()`
+
+**Phase 4: Testability & Refactoring**
+- Extracted pure discount math into `WooBooster_Bundle::apply_discount_to_prices()`
+- Added PHPUnit suite under `tests/unit/` (`BundleDiscountMathTest`) with 8 cases covering percentage, fixed, pro-rata splits, rounding, edge cases
+- Removed unused `woobooster_delete_bundle` AJAX endpoint (list page uses GET + nonce flow)
+- Shared price calculator `calculate_item_prices()` used by both admin and frontend
+
+**Phase 5: Schema & Features**
+- `WOOBOOSTER_DB_VERSION` bumped to `1.8.0`
+- Added `quantity` column to `wp_woobooster_bundle_items` (default 1, plumbed through model/form/cart)
+- Shrank `bundle_index.condition_key` from `varchar(355)` to `varchar(191)` with composite `(bundle_id, condition_key)` index
+- New **User Role** condition type — target bundles to specific roles (or `guest`)
+- Role signature included in cache key so role-specific results not cross-served
+
+### WooBooster — Bundle pricing modes & Bricks display options
+
+- **Fixed bundle price (Phase feature 1):** Each bundle now has a **Pricing Mode** — *Discount on items* (the existing percentage/fixed discount) or *Fixed bundle price* (one total for the whole set, split pro-rata across items by original price). `WOOBOOSTER_DB_VERSION` bumped to `1.9.0` — adds `bundle_price_type` and `bundle_price` columns to `wp_woobooster_bundles` with a safe migration. A fixed price at or above the items' combined price applies no discount; the cart's hash-bound discount logic and server-side price snapshots work unchanged because `calculate_item_prices()` resolves the per-item split centrally.
+- **Display options (Phase feature 2):** The Bricks bundle element gains toggles for original (strikethrough) price, per-item discount badge, the total section, and savings — plus a **Savings Format** (amount / percentage / both), a configurable item **Separator Text**, **Grid Columns**, and a custom **Total Label**. The frontend JS recalculation respects the original-price and savings toggles and the savings format.
+- **Bricks customization (Phase feature 3):** New style control groups — **Heading Style** (typography, margin, alignment), **Separator Style** (color, typography), **Savings Style** (color, background, typography, padding, radius) — plus item-card border radius and original/final total color controls.
+
 ## [1.21.0] - 2026-05-08
 
 ### Product Reviews

@@ -54,6 +54,11 @@ class WooBooster_Module extends FFLA_Module
 
         // Admin.
         if (is_admin()) {
+            // Run pending schema migrations on file-based updates (git/FTP/WP updater
+            // don't fire the activation hook). migrate_tables() self-guards via
+            // version_compare, so this is a no-op once the DB is current.
+            add_action('admin_init', array('WooBooster_Activator', 'migrate_tables'));
+
             require_once $path . 'admin/class-woobooster-admin.php';
             require_once $path . 'admin/class-woobooster-ajax.php';
             require_once $path . 'admin/class-woobooster-icons.php';

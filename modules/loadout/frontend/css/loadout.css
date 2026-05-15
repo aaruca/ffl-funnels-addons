@@ -1,0 +1,514 @@
+/* FFL Funnels — Loadout Widget Styles */
+
+.ffla-loadout {
+    --ffla-loadout-accent: #d4a017;
+    --ffla-loadout-bg: #1a1a1a;
+    --ffla-loadout-fg: #fff;
+    --ffla-loadout-muted: #888;
+    --ffla-loadout-card: #2a2a2a;
+    --ffla-loadout-border: #333;
+
+    background: var(--ffla-loadout-bg);
+    color: var(--ffla-loadout-fg);
+    padding: 24px;
+    border-radius: 8px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.ffla-loadout__header {
+    text-align: center;
+    margin-bottom: 24px;
+}
+
+.ffla-loadout__brand {
+    max-height: 48px;
+    margin-bottom: 12px;
+}
+
+.ffla-loadout__title {
+    font-size: 28px;
+    margin: 0;
+    color: var(--ffla-loadout-fg);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.ffla-loadout__subtitle {
+    color: var(--ffla-loadout-muted);
+    margin: 4px 0 0;
+}
+
+.ffla-loadout__progress {
+    margin: 24px 0;
+}
+
+.ffla-loadout__progress-track {
+    height: 8px;
+    background: var(--ffla-loadout-card);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.ffla-loadout__progress-bar {
+    height: 100%;
+    background: var(--ffla-loadout-accent);
+    transition: width 0.3s ease;
+}
+
+.ffla-loadout__progress-label {
+    display: block;
+    text-align: center;
+    margin-top: 8px;
+    color: var(--ffla-loadout-accent);
+    font-size: 14px;
+}
+
+.ffla-loadout__tiers {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--ffla-loadout-border);
+}
+
+.ffla-loadout__tier-btn {
+    background: transparent;
+    color: var(--ffla-loadout-muted);
+    border: none;
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border-bottom: 2px solid transparent;
+}
+
+.ffla-loadout__tier-btn:hover {
+    color: var(--ffla-loadout-fg);
+}
+
+.ffla-loadout__tier-btn.is-active {
+    color: var(--ffla-loadout-accent);
+    border-bottom-color: var(--ffla-loadout-accent);
+}
+
+.ffla-loadout__body {
+    display: grid;
+    grid-template-columns: 1fr 1.5fr 1fr;
+    gap: 24px;
+    margin-bottom: 24px;
+}
+
+@media (max-width: 1024px) {
+    .ffla-loadout__body {
+        grid-template-columns: 1fr;
+    }
+}
+
+.ffla-loadout__anchor {
+    background: var(--ffla-loadout-card);
+    padding: 20px;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.ffla-loadout__hero,
+.ffla-loadout__hero-fallback img {
+    max-width: 100%;
+    border-radius: 4px;
+    margin-bottom: 12px;
+}
+
+.ffla-loadout__anchor-name {
+    font-size: 18px;
+    margin: 8px 0;
+}
+
+.ffla-loadout__anchor-price {
+    font-size: 22px;
+    color: var(--ffla-loadout-accent);
+    font-weight: 700;
+    margin-bottom: 12px;
+}
+
+.ffla-loadout__recommended {
+    background: var(--ffla-loadout-card);
+    padding: 20px;
+    border-radius: 8px;
+}
+
+.ffla-loadout__panel {
+    display: none;
+}
+
+.ffla-loadout__panel.is-active {
+    display: block;
+}
+
+.ffla-loadout__panel-title {
+    font-size: 16px;
+    color: var(--ffla-loadout-accent);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin: 0 0 16px;
+}
+
+.ffla-loadout__items {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.ffla-loadout__item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--ffla-loadout-border);
+}
+
+.ffla-loadout__item:last-child {
+    border-bottom: none;
+}
+
+.ffla-loadout__item.is-oos {
+    opacity: 0.5;
+}
+
+.ffla-loadout__item-thumb img {
+    width: 60px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 4px;
+}
+
+.ffla-loadout__item-info {
+    flex: 1;
+}
+
+.ffla-loadout__item-name {
+    font-size: 14px;
+    margin: 0 0 4px;
+}
+
+.ffla-loadout__badge {
+    display: inline-block;
+    background: var(--ffla-loadout-accent);
+    color: #000;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    margin-right: 8px;
+}
+
+.ffla-loadout__item-price s {
+    color: var(--ffla-loadout-muted);
+    margin-right: 6px;
+}
+
+.ffla-loadout__item-price strong {
+    color: var(--ffla-loadout-fg);
+}
+
+.ffla-loadout__item-rating {
+    margin: 2px 0;
+}
+
+.ffla-loadout__add-btn {
+    background: var(--ffla-loadout-accent);
+    color: #000;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+}
+
+.ffla-loadout__add-btn:hover:not(:disabled) {
+    opacity: 0.85;
+}
+
+.ffla-loadout__add-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.ffla-loadout__add-tier-btn {
+    display: block;
+    width: 100%;
+    background: var(--ffla-loadout-accent);
+    color: #000;
+    border: none;
+    padding: 14px;
+    margin-top: 16px;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    cursor: pointer;
+}
+
+.ffla-loadout__perks {
+    margin-top: 16px;
+    padding: 12px;
+    background: rgba(212, 160, 23, 0.08);
+    border-left: 3px solid var(--ffla-loadout-accent);
+    border-radius: 4px;
+}
+
+.ffla-loadout__perks h5 {
+    color: var(--ffla-loadout-accent);
+    margin: 0 0 8px;
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+.ffla-loadout__perks ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.ffla-loadout__perks li {
+    padding: 4px 0;
+    font-size: 13px;
+    color: var(--ffla-loadout-fg);
+}
+
+.ffla-loadout__perks li::before {
+    content: '✓ ';
+    color: var(--ffla-loadout-accent);
+    font-weight: 700;
+}
+
+.ffla-loadout__bonus {
+    margin-top: 12px;
+    padding: 12px;
+    background: rgba(212, 160, 23, 0.1);
+    border-radius: 4px;
+    text-align: center;
+}
+
+.ffla-loadout__bonus-value {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--ffla-loadout-muted);
+}
+
+.ffla-loadout__cart {
+    background: var(--ffla-loadout-card);
+    padding: 20px;
+    border-radius: 8px;
+}
+
+.ffla-loadout__cart h3 {
+    color: var(--ffla-loadout-accent);
+    margin: 0 0 16px;
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.ffla-loadout__cart-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 16px;
+}
+
+.ffla-loadout__cart-list li {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--ffla-loadout-border);
+    font-size: 13px;
+}
+
+.ffla-loadout__cart-list li.is-bonus {
+    color: var(--ffla-loadout-accent);
+}
+
+.ffla-loadout__cart-list .item-name {
+    flex: 1;
+}
+
+.ffla-loadout__cart-list .item-qty {
+    color: var(--ffla-loadout-muted);
+    margin: 0 8px;
+}
+
+.ffla-loadout__cart-savings {
+    color: var(--ffla-loadout-accent);
+    font-weight: 700;
+}
+
+.ffla-loadout__cart-total {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--ffla-loadout-fg);
+}
+
+.ffla-loadout__cross-sells {
+    margin: 24px 0;
+}
+
+.ffla-loadout__cross-sells h3 {
+    text-align: center;
+    color: var(--ffla-loadout-accent);
+    margin: 0 0 16px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.ffla-loadout__cross-sells-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+}
+
+.ffla-loadout__cross-sell-tile {
+    background: var(--ffla-loadout-card);
+    padding: 16px;
+    border-radius: 8px;
+    text-align: center;
+    text-decoration: none;
+    color: var(--ffla-loadout-fg);
+    transition: transform 0.2s ease;
+}
+
+.ffla-loadout__cross-sell-tile:hover {
+    transform: translateY(-2px);
+}
+
+.ffla-loadout__cross-sell-tile img {
+    max-width: 100%;
+    border-radius: 4px;
+    margin-bottom: 8px;
+}
+
+.ffla-loadout__checkout {
+    text-align: center;
+    margin-top: 24px;
+}
+
+.ffla-loadout__checkout-btn {
+    display: inline-block;
+    background: var(--ffla-loadout-accent);
+    color: #000;
+    padding: 16px 48px;
+    border-radius: 4px;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    transition: opacity 0.2s ease;
+}
+
+.ffla-loadout__checkout-btn:hover {
+    opacity: 0.85;
+    color: #000;
+}
+
+/* Product tab styles */
+.ffla-loadout-tab {
+    margin-top: 16px;
+}
+
+.ffla-loadout-tab__tiers {
+    display: flex;
+    gap: 8px;
+    border-bottom: 1px solid #ddd;
+    margin-bottom: 16px;
+}
+
+.ffla-loadout-tab__tier-btn {
+    background: transparent;
+    border: none;
+    padding: 10px 20px;
+    cursor: pointer;
+    font-weight: 600;
+    color: #666;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.ffla-loadout-tab__tier-btn.is-active {
+    color: #000;
+    border-bottom-color: #000;
+}
+
+.ffla-loadout-tab__panel {
+    display: none;
+}
+
+.ffla-loadout-tab__panel.is-active {
+    display: block;
+}
+
+.ffla-loadout-tab__set-discount {
+    background: #fff8e1;
+    border-left: 3px solid #f9a825;
+    padding: 12px;
+    margin-bottom: 16px;
+    border-radius: 4px;
+}
+
+.ffla-loadout-tab__items {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 16px;
+}
+
+.ffla-loadout-tab__item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.ffla-loadout-tab__item-thumb img {
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 4px;
+}
+
+.ffla-loadout-tab__item-info {
+    flex: 1;
+}
+
+.ffla-loadout-tab__item-info h4 {
+    margin: 0 0 4px;
+}
+
+.ffla-loadout-tab__item-badge {
+    display: inline-block;
+    background: #e91e63;
+    color: #fff;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-right: 8px;
+}
+
+.ffla-loadout-tab__item-price s {
+    color: #999;
+    margin-right: 6px;
+}
+
+.ffla-loadout-tab__add-btn,
+.ffla-loadout-tab__add-tier-btn {
+    cursor: pointer;
+}

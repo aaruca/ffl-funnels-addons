@@ -38,6 +38,24 @@
     return (neg ? '-' : '') + formatted;
   }
 
+  function formatSavings(original, discounted, bundleData, saveFormat) {
+    var savings = original - discounted;
+    if (savings <= 0) return '';
+
+    var fmt = bundleData.savings_format || 'amount';
+    var pct = original > 0 ? Math.round((savings / original) * 100) + '%' : '0%';
+    var value;
+    if (fmt === 'percentage') {
+      value = pct;
+    } else if (fmt === 'both') {
+      value = formatPrice(savings, bundleData) + ' / ' + pct;
+    } else {
+      value = formatPrice(savings, bundleData);
+    }
+
+    return saveFormat.replace('%s', value);
+  }
+
   function recalculate($bundle) {
     var bundleData = $bundle.data('bundleConfig');
     if (!bundleData) return;
@@ -57,17 +75,37 @@
     var $total = $bundle.find('.wb-bundle-total__prices');
     if (!$total.length) return;
 
+    var i18n = cfg.i18n || {};
+    var saveFormat = i18n.saveFormat || '(Save %s)';
     var html = '';
     if (totalDiscounted < totalOriginal) {
-      html += '<del class="wb-bundle-total__original">' + formatPrice(totalOriginal, bundleData) + '</del> ';
+      if (bundleData.show_original !== false) {
+        html += '<del class="wb-bundle-total__original">' + formatPrice(totalOriginal, bundleData) + '</del> ';
+      }
       html += '<ins class="wb-bundle-total__discounted">' + formatPrice(totalDiscounted, bundleData) + '</ins>';
-      var savings = totalOriginal - totalDiscounted;
-      html += ' <span class="wb-bundle-total__savings">(Save ' + formatPrice(savings, bundleData) + ')</span>';
+      if (bundleData.show_savings !== false) {
+        html += ' <span class="wb-bundle-total__savings">' + formatSavings(totalOriginal, totalDiscounted, bundleData, saveFormat) + '</span>';
+      }
     } else {
       html += '<span class="wb-bundle-total__discounted">' + formatPrice(totalOriginal, bundleData) + '</span>';
     }
 
     $total.html(html);
+  }
+
+  function showError($bundle, message) {
+    var $err = $bundle.find('.wb-bundle-error');
+    if (!$err.length) {
+      $err = $('<div class="wb-bundle-error" role="alert" aria-live="polite"></div>').appendTo($bundle);
+    }
+    $err.text(message).prop('hidden', false);
+    setTimeout(function () {
+      $err.prop('hidden', true).text('');
+    }, 5000);
+  }
+
+  function clearError($bundle) {
+    $bundle.find('.wb-bundle-error').prop('hidden', true).text('');
   }
 
   function initBundle($bundle) {
@@ -102,9 +140,10 @@
       });
 
       if (!productIds.length) {
-        alert(cfg.i18n ? cfg.i18n.noItems : 'Please select at least one product.');
+        showError($bundle, (cfg.i18n && cfg.i18n.noItems) || 'Please select at least one product.');
         return;
       }
+      clearError($bundle);
 
       // Disable button.
       var originalText = $btn.text();
@@ -114,6 +153,7 @@
         action: 'woobooster_add_bundle_to_cart',
         nonce: cfg.nonce,
         bundle_id: bundleId,
+        source_product_id: $bundle.data('sourceProductId') || 0,
         product_ids: productIds
       })
         .done(function (response) {
@@ -136,12 +176,12 @@
           } else {
             var msg = (response.data && response.data.message) || (cfg.i18n ? cfg.i18n.error : 'Error adding to cart.');
             $btn.prop('disabled', false).text(originalText);
-            alert(msg);
+            showError($bundle, msg);
           }
         })
         .fail(function () {
           $btn.prop('disabled', false).text(originalText);
-          alert(cfg.i18n ? cfg.i18n.error : 'Error adding to cart.');
+          showError($bundle, (cfg.i18n && cfg.i18n.error) || 'Error adding to cart.');
         });
     });
   }

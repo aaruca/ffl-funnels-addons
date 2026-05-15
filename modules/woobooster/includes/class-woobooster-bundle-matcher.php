@@ -37,32 +37,41 @@ class WooBooster_Bundle_Matcher
             return array();
         }
 
-        $cache_key = 'woobooster_bundles_v' . (int) get_option(WooBooster_Matcher::CACHE_VERSION, 0) . '_' . $product_id;
-        $cached    = wp_cache_get($cache_key, WooBooster_Matcher::CACHE_GROUP);
-        if (false !== $cached) {
-            return $cached;
+        $role_signature = self::current_user_role_signature();
+        $cache_key      = 'woobooster_bundles_match_v' . (int) get_option(WooBooster_Matcher::CACHE_VERSION, 0)
+            . '_' . $product_id . '_r' . $role_signature;
+        $bundles        = wp_cache_get($cache_key, WooBooster_Matcher::CACHE_GROUP);
+        $terms          = null;
+
+        if (false === $bundles) {
+            $terms = $this->get_product_terms($product_id);
+
+            $condition_keys = array();
+            foreach ($terms as $term) {
+                $condition_keys[] = $term['taxonomy'] . ':' . $term['slug'];
+            }
+            $condition_keys[] = 'specific_product:' . $product_id;
+            $condition_keys[] = '__not_equals__:1';
+            $condition_keys[] = '__store_all:1';
+
+            // User-role keys (Phase 5 context conditions).
+            foreach (self::current_user_roles() as $role) {
+                $condition_keys[] = 'user_role:' . $role;
+            }
+
+            $bundles = $this->find_matching_bundles($condition_keys, $terms, $product_id);
+            // Cache the *match decision* only; resolved items can depend on session state.
+            wp_cache_set($cache_key, $bundles, WooBooster_Matcher::CACHE_GROUP, HOUR_IN_SECONDS);
         }
 
-        $terms = $this->get_product_terms($product_id);
-
-        // Build condition keys.
-        $condition_keys = array();
-        foreach ($terms as $term) {
-            $condition_keys[] = $term['taxonomy'] . ':' . $term['slug'];
+        if (null === $terms) {
+            $terms = $this->get_product_terms($product_id);
         }
-        $condition_keys[] = 'specific_product:' . $product_id;
-        $condition_keys[] = '__not_equals__:1';
-        $condition_keys[] = '__store_all:1';
 
-        $bundles = $this->find_matching_bundles($condition_keys, $terms, $product_id);
-
-        // Resolve items for each bundle.
         foreach ($bundles as &$bundle) {
             $bundle->resolved_items = $this->resolve_bundle_items($bundle, $product_id, $terms);
         }
         unset($bundle);
-
-        wp_cache_set($cache_key, $bundles, WooBooster_Matcher::CACHE_GROUP, HOUR_IN_SECONDS);
 
         return $bundles;
     }
@@ -247,8 +256,12 @@ class WooBooster_Bundle_Matcher
             $bundles_by_id[(int) $row->id] = $row;
         }
 
+        // Batch-load all conditions for candidates in a single query.
+        $all_conditions = WooBooster_Bundle::get_conditions_for_bundles($candidate_ids);
+
         $product_keys_set = array_flip($condition_keys);
         $matched_bundles  = array();
+        $now              = current_time('mysql', true);
 
         foreach ($candidate_ids as $bundle_id) {
             if (!isset($bundles_by_id[$bundle_id])) {
@@ -256,8 +269,6 @@ class WooBooster_Bundle_Matcher
             }
             $bundle = $bundles_by_id[$bundle_id];
 
-            // Check scheduling.
-            $now = current_time('mysql', true);
             if (!empty($bundle->start_date) && $now < $bundle->start_date) {
                 continue;
             }
@@ -265,8 +276,7 @@ class WooBooster_Bundle_Matcher
                 continue;
             }
 
-            // Verify condition groups.
-            $groups = WooBooster_Bundle::get_conditions($bundle_id);
+            $groups = $all_conditions[$bundle_id] ?? array();
             if (empty($groups)) {
                 continue;
             }
@@ -337,6 +347,33 @@ class WooBooster_Bundle_Matcher
         }
 
         return $matched_bundles;
+    }
+
+    /**
+     * Slugs representing the current viewer (logged-in roles or 'guest').
+     *
+     * @return string[]
+     */
+    public static function current_user_roles()
+    {
+        if (!function_exists('is_user_logged_in') || !is_user_logged_in()) {
+            return array('guest');
+        }
+        $user = wp_get_current_user();
+        if (!$user || empty($user->roles)) {
+            return array('guest');
+        }
+        return array_values(array_map('sanitize_key', (array) $user->roles));
+    }
+
+    /**
+     * Stable short signature for caching by viewer role set.
+     */
+    private static function current_user_role_signature()
+    {
+        $roles = self::current_user_roles();
+        sort($roles);
+        return substr(md5(implode('|', $roles)), 0, 8);
     }
 
     /**

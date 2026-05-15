@@ -196,6 +196,14 @@ define('WSS_OAUTH_DEBUG_FILE', true);  // also write wp-content/uploads/wss-logs
 
 ## Changelog
 
+### v1.22.0
+
+*   **WooBooster Bundles — Complete 5-phase overhaul:** (1) Correctness: hash-bound cart grouping, server-side price snapshots, single fee-per-bundle with full-set validation. (2) Performance: batch condition loading (eliminates N+1), InnoDB transactions, split cache (decisions hourly/global, items per-request/session-aware), role-aware keys. (3) UX/a11y: polite inline errors, localized strings, ARIA labels, keyboard navigation, timezone-aware dates. (4) Testing: 8 PHPUnit test cases, pure discount math extraction, shared price calculator. (5) Schema: `quantity` column, optimized indexes, User Role condition type, safe migration v1.7.0 → v1.8.0.
+
+### v1.21.0
+
+*   **Product Reviews — Cloudflare Turnstile:** Removed in-module component; now integrates with **Simple Cloudflare Turnstile** plugin for rendering and validation.
+
 ### v1.20.1
 
 *   **Product Reviews — Order review hub:** Layout and tokens matched to the standard review form (card per product, typography variables).

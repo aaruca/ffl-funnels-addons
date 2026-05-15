@@ -14,9 +14,8 @@ class WooBooster_Ajax
         add_action('wp_ajax_woobooster_search_coupons', array($this, 'search_coupons'));
         add_action('wp_ajax_woobooster_resolve_product_names', array($this, 'resolve_product_names'));
 
-        // Bundle AJAX handlers.
+        // Bundle AJAX handlers. Delete uses the GET-link + nonce flow on the list page.
         add_action('wp_ajax_woobooster_toggle_bundle', array($this, 'toggle_bundle'));
-        add_action('wp_ajax_woobooster_delete_bundle', array($this, 'delete_bundle'));
     }
 
     public function search_terms()
@@ -119,6 +118,7 @@ class WooBooster_Ajax
 
         $search = isset($_POST['search']) ? sanitize_text_field(wp_unslash($_POST['search'])) : '';
         $page = isset($_POST['page']) ? absint($_POST['page']) : 1;
+        $context = isset($_POST['context']) ? sanitize_key($_POST['context']) : '';
         $per_page = 20;
 
         $args = array(
@@ -132,6 +132,20 @@ class WooBooster_Ajax
             'order' => 'ASC',
         );
 
+        // Bundle picker excludes out-of-stock products — you can't sell a
+        // bundle that contains something the warehouse doesn't have. Rule
+        // targeting still sees the full catalog (rule conditions may
+        // legitimately match OOS items).
+        if ('bundle' === $context) {
+            $args['meta_query'] = array(
+                array(
+                    'key'     => '_stock_status',
+                    'value'   => 'outofstock',
+                    'compare' => '!=',
+                ),
+            );
+        }
+
         $query = new WP_Query($args);
         $results = array();
 
@@ -142,6 +156,7 @@ class WooBooster_Ajax
                     'id' => $pid,
                     'name' => $product->get_name(),
                     'sku' => $product->get_sku(),
+                    'price' => $product->get_price_html(),
                 );
             }
         }
@@ -219,26 +234,6 @@ class WooBooster_Ajax
             ));
         }
         wp_send_json_error(array('message' => 'Failed to toggle bundle.'));
-    }
-
-    /**
-     * AJAX: Delete a bundle.
-     */
-    public function delete_bundle()
-    {
-        check_ajax_referer('woobooster_admin', 'nonce');
-        if (!current_user_can('manage_woocommerce')) {
-            wp_send_json_error(array('message' => 'Permission denied.'));
-        }
-        $bundle_id = isset($_POST['bundle_id']) ? absint($_POST['bundle_id']) : 0;
-        if (!$bundle_id) {
-            wp_send_json_error(array('message' => 'Invalid bundle ID.'));
-        }
-        $result = WooBooster_Bundle::delete($bundle_id);
-        if ($result) {
-            wp_send_json_success(array('message' => 'Bundle deleted.'));
-        }
-        wp_send_json_error(array('message' => 'Failed to delete bundle.'));
     }
 
     /**

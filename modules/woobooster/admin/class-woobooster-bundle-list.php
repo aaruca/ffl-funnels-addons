@@ -145,16 +145,25 @@ class WooBooster_Bundle_List extends WP_List_Table
             ? '<span class="wb-status wb-status--active">' . esc_html__('Active', 'ffl-funnels-addons') . '</span>'
             : '<span class="wb-status wb-status--inactive">' . esc_html__('Inactive', 'ffl-funnels-addons') . '</span>';
 
-        $now      = current_time('mysql', true);
-        $schedule = '';
+        $now        = current_time('mysql', true);
+        $date_fmt   = get_option('date_format');
+        $schedule   = '';
         if (!empty($item->start_date) || !empty($item->end_date)) {
             $schedule .= '<div style="font-size: 11px; margin-top: 4px; color: var(--wb-color-neutral-text);">';
             if (!empty($item->start_date) && $now < $item->start_date) {
-                $schedule .= sprintf(esc_html__('Starts: %s', 'ffl-funnels-addons'), date_i18n(get_option('date_format'), strtotime($item->start_date)));
+                $schedule .= sprintf(
+                    /* translators: %s: formatted start date */
+                    esc_html__('Starts: %s', 'ffl-funnels-addons'),
+                    esc_html(wp_date($date_fmt, strtotime($item->start_date . ' UTC')))
+                );
             } elseif (!empty($item->end_date) && $now > $item->end_date) {
                 $schedule .= esc_html__('Expired', 'ffl-funnels-addons');
             } elseif (!empty($item->end_date)) {
-                $schedule .= sprintf(esc_html__('Ends: %s', 'ffl-funnels-addons'), date_i18n(get_option('date_format'), strtotime($item->end_date)));
+                $schedule .= sprintf(
+                    /* translators: %s: formatted end date */
+                    esc_html__('Ends: %s', 'ffl-funnels-addons'),
+                    esc_html(wp_date($date_fmt, strtotime($item->end_date . ' UTC')))
+                );
             }
             $schedule .= '</div>';
         }

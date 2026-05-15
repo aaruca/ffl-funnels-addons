@@ -2,8 +2,14 @@
 /**
  * WooBooster Bundle Cart.
  *
- * Handles adding bundle items to cart via AJAX and applying
- * bundle discounts as negative fees.
+ * Adds a bundle to the cart as a single synthetic line item: one representative
+ * product carries the whole bundle price, and the contained products are stored
+ * as cart-item meta. Removing the line removes the entire bundle — it cannot be
+ * split apart, so a bundle is always bought as a unit.
+ *
+ * Trade-off: WooCommerce only tracks stock/tax/shipping for the representative
+ * product. The other bundled products are recorded as meta, not as their own
+ * stock-managed line items.
  *
  * @package FFL_Funnels_Addons
  */
@@ -15,27 +21,58 @@ if (!defined('ABSPATH')) {
 class WooBooster_Bundle_Cart
 {
     /**
-     * Initialize hooks.
+     * Cart-item meta keys.
      */
+    const META_BUNDLE_ID      = '_woobooster_bundle_id';
+    const META_BUNDLE_HASH    = '_woobooster_bundle_hash';
+    const META_BUNDLE_ITEMS   = '_woobooster_bundle_items';
+    const META_BUNDLE_TOTAL   = '_woobooster_bundle_total';
+    const META_SOURCE_PRODUCT = '_woobooster_bundle_source_product_id';
+
     public static function init()
     {
-        // AJAX: Add bundle to cart (logged-in + guest).
         add_action('wp_ajax_woobooster_add_bundle_to_cart', array(__CLASS__, 'ajax_add_bundle_to_cart'));
         add_action('wp_ajax_nopriv_woobooster_add_bundle_to_cart', array(__CLASS__, 'ajax_add_bundle_to_cart'));
 
-        // Apply bundle discount as negative fee.
-        add_action('woocommerce_cart_calculate_fees', array(__CLASS__, 'apply_bundle_discounts'));
+        // Price the synthetic line at the stored bundle total.
+        add_action('woocommerce_before_calculate_totals', array(__CLASS__, 'set_bundle_price'), 20);
+
+        // Keep each bundle add as its own line so it never merges with a plain
+        // purchase of the representative product (or another bundle).
+        add_filter('woocommerce_add_cart_item_data', array(__CLASS__, 'preserve_bundle_meta'), 10, 2);
+
+        // Cart / checkout display.
+        add_filter('woocommerce_cart_item_name', array(__CLASS__, 'cart_item_name'), 10, 2);
+        add_filter('woocommerce_get_item_data', array(__CLASS__, 'cart_item_data_display'), 10, 2);
+        add_filter('woocommerce_cart_item_thumbnail', array(__CLASS__, 'cart_item_thumbnail'), 10, 3);
+
+        // Persist bundle contents onto the order line item.
+        add_action('woocommerce_checkout_create_order_line_item', array(__CLASS__, 'add_order_line_item_meta'), 10, 3);
     }
 
     /**
-     * AJAX: Add bundle products to cart.
+     * Give every bundle line a unique key so WooCommerce never merges it with
+     * another cart item.
+     */
+    public static function preserve_bundle_meta($cart_item_data, $product_id)
+    {
+        if (!empty($cart_item_data[self::META_BUNDLE_HASH])) {
+            $cart_item_data['unique_key'] = $cart_item_data[self::META_BUNDLE_HASH];
+        }
+        return $cart_item_data;
+    }
+
+    /**
+     * AJAX: Add a bundle to the cart as one synthetic line item.
      */
     public static function ajax_add_bundle_to_cart()
     {
         check_ajax_referer('woobooster_bundle_cart', 'nonce');
 
-        $bundle_id   = isset($_POST['bundle_id']) ? absint($_POST['bundle_id']) : 0;
-        $product_ids = isset($_POST['product_ids']) ? array_map('absint', (array) $_POST['product_ids']) : array();
+        $bundle_id          = isset($_POST['bundle_id']) ? absint($_POST['bundle_id']) : 0;
+        $source_product_id  = isset($_POST['source_product_id']) ? absint($_POST['source_product_id']) : 0;
+        $product_ids        = isset($_POST['product_ids']) ? array_map('absint', (array) $_POST['product_ids']) : array();
+        $product_ids        = array_values(array_unique(array_filter($product_ids)));
 
         if (!$bundle_id || empty($product_ids)) {
             wp_send_json_error(array('message' => __('Invalid bundle or no products selected.', 'ffl-funnels-addons')));
@@ -46,59 +83,124 @@ class WooBooster_Bundle_Cart
             wp_send_json_error(array('message' => __('Bundle not found or inactive.', 'ffl-funnels-addons')));
         }
 
-        $matcher        = new WooBooster_Bundle_Matcher();
-        $resolved_items = $matcher->resolve_bundle_items($bundle, $product_ids[0]);
+        // Source product fallback: first checkbox if not sent explicitly.
+        if (!$source_product_id) {
+            $source_product_id = $product_ids[0];
+        }
 
-        $product_ids = array_values(array_intersect($product_ids, array_map('absint', $resolved_items)));
+        $matcher        = new WooBooster_Bundle_Matcher();
+        $resolved_items = $matcher->resolve_bundle_items($bundle, $source_product_id);
+        $resolved_items = array_map('absint', $resolved_items);
+
+        $product_ids = array_values(array_intersect($product_ids, $resolved_items));
         if (empty($product_ids)) {
             wp_send_json_error(array('message' => __('Selected products do not belong to this bundle.', 'ffl-funnels-addons')));
         }
 
-        $bundle_hash = md5($bundle_id . '_' . implode('_', $product_ids) . '_' . time());
+        // Compute authoritative price snapshots server-side.
+        $price_map = WooBooster_Bundle::calculate_item_prices($bundle, $product_ids);
 
-        $added = 0;
+        // Static item quantities (dynamic items default to qty 1).
+        $qty_map      = array();
+        $static_items = WooBooster_Bundle::get_items($bundle_id);
+        foreach ($static_items as $static) {
+            $qty_map[absint($static->product_id)] = isset($static->quantity) ? max(1, (int) $static->quantity) : 1;
+        }
+
+        $items  = array();
+        $total  = 0.0;
         $errors = array();
 
         foreach ($product_ids as $pid) {
             $product = wc_get_product($pid);
             if (!$product || !$product->is_purchasable() || !$product->is_in_stock()) {
-                $errors[] = sprintf(__('Product #%d is not available.', 'ffl-funnels-addons'), $pid);
+                $errors[] = sprintf(
+                    /* translators: %d: product ID */
+                    __('Product #%d is not available.', 'ffl-funnels-addons'),
+                    $pid
+                );
                 continue;
             }
 
-            $cart_item_data = array(
-                '_woobooster_bundle_id'   => $bundle_id,
-                '_woobooster_bundle_hash' => $bundle_hash,
+            list($add_id, $variation_id, $variation_attrs) = self::resolve_purchasable($product);
+            if (!$add_id) {
+                $errors[] = sprintf(
+                    /* translators: %s: product name */
+                    __('"%s" requires choosing a variation before it can be bundled.', 'ffl-funnels-addons'),
+                    $product->get_name()
+                );
+                continue;
+            }
+
+            $snapshot = isset($price_map[$pid]) ? $price_map[$pid] : array(
+                'original'   => (float) $product->get_price(),
+                'discounted' => (float) $product->get_price(),
             );
 
-            $result = WC()->cart->add_to_cart($pid, 1, 0, array(), $cart_item_data);
+            $qty = isset($qty_map[$pid]) ? $qty_map[$pid] : 1;
 
-            if ($result) {
-                $added++;
-            } else {
-                $errors[] = sprintf(__('Could not add product #%d to cart.', 'ffl-funnels-addons'), $pid);
-            }
+            $items[] = array(
+                'product_id'   => $pid,
+                'variation_id' => $variation_id,
+                'variation'    => $variation_attrs,
+                'quantity'     => $qty,
+                'name'         => $product->get_name(),
+                'original'     => (float) $snapshot['original'],
+                'discounted'   => (float) $snapshot['discounted'],
+            );
+            $total += (float) $snapshot['discounted'] * $qty;
         }
 
-        if ($added === 0) {
+        if (empty($items)) {
             wp_send_json_error(array(
                 'message' => __('No products could be added to cart.', 'ffl-funnels-addons'),
                 'errors'  => $errors,
             ));
         }
 
-        // Return cart fragments for mini-cart update.
+        // The first item is the representative product WooCommerce attaches the
+        // line to (its thumbnail, stock and tax class drive the line).
+        $representative_id        = $items[0]['product_id'];
+        $representative_variation = $items[0]['variation_id'];
+        $representative_attrs     = $items[0]['variation'];
+
+        // Cryptographically unique key for this bundle line.
+        $bundle_hash = wp_generate_password(16, false, false);
+
+        $cart_item_data = array(
+            self::META_BUNDLE_ID      => $bundle_id,
+            self::META_BUNDLE_HASH    => $bundle_hash,
+            self::META_BUNDLE_ITEMS   => $items,
+            self::META_BUNDLE_TOTAL   => $total,
+            self::META_SOURCE_PRODUCT => $source_product_id,
+        );
+
+        $result = WC()->cart->add_to_cart(
+            $representative_id,
+            1,
+            $representative_variation,
+            $representative_attrs,
+            $cart_item_data
+        );
+
+        if (!$result) {
+            wp_send_json_error(array(
+                'message' => __('Could not add the bundle to cart.', 'ffl-funnels-addons'),
+                'errors'  => $errors,
+            ));
+        }
+
         ob_start();
         woocommerce_mini_cart();
         $mini_cart = ob_get_clean();
 
         $data = array(
-            'message'    => sprintf(__('%d product(s) added to cart.', 'ffl-funnels-addons'), $added),
-            'added'      => $added,
-            'fragments'  => apply_filters('woocommerce_add_to_cart_fragments', array(
+            'message'   => __('Bundle added to cart.', 'ffl-funnels-addons'),
+            'added'     => count($items),
+            'fragments' => apply_filters('woocommerce_add_to_cart_fragments', array(
                 'div.widget_shopping_cart_content' => '<div class="widget_shopping_cart_content">' . $mini_cart . '</div>',
             )),
-            'cart_hash'  => WC()->cart->get_cart_hash(),
+            'cart_hash' => WC()->cart->get_cart_hash(),
         );
 
         if (!empty($errors)) {
@@ -109,61 +211,180 @@ class WooBooster_Bundle_Cart
     }
 
     /**
-     * Apply bundle discounts as negative fees in the cart.
+     * Pick the actual purchasable ID for a product.
+     *
+     * For variable products, falls back to the default variation when one
+     * is configured. Returns [add_id, variation_id, variation_attrs].
+     */
+    private static function resolve_purchasable($product)
+    {
+        if (!$product->is_type('variable')) {
+            return array($product->get_id(), 0, array());
+        }
+
+        $defaults = $product->get_default_attributes();
+        if (empty($defaults)) {
+            return array(0, 0, array());
+        }
+
+        $data_store    = WC_Data_Store::load('product');
+        $variation_id  = $data_store->find_matching_product_variation($product, array_combine(
+            array_map(function ($k) { return 'attribute_' . $k; }, array_keys($defaults)),
+            array_values($defaults)
+        ));
+
+        if (!$variation_id) {
+            return array(0, 0, array());
+        }
+
+        $variation_attrs = array();
+        foreach ($defaults as $key => $value) {
+            $variation_attrs['attribute_' . $key] = $value;
+        }
+
+        return array($product->get_id(), $variation_id, $variation_attrs);
+    }
+
+    /**
+     * Price the synthetic bundle line at the stored bundle total.
+     *
+     * set_price() is the per-unit price; WooCommerce multiplies by the line
+     * quantity, so increasing the quantity buys multiple whole bundles.
      *
      * @param WC_Cart $cart The WooCommerce cart.
      */
-    public static function apply_bundle_discounts($cart)
+    public static function set_bundle_price($cart)
     {
         if (is_admin() && !defined('DOING_AJAX')) {
             return;
         }
 
-        // Group cart items by bundle.
-        $bundle_items = array();
-
-        foreach ($cart->get_cart() as $cart_item_key => $cart_item) {
-            if (empty($cart_item['_woobooster_bundle_id'])) {
+        foreach ($cart->get_cart() as $cart_item) {
+            if (!isset($cart_item[self::META_BUNDLE_TOTAL]) || empty($cart_item['data']) || !is_object($cart_item['data'])) {
                 continue;
             }
+            $cart_item['data']->set_price((float) $cart_item[self::META_BUNDLE_TOTAL]);
+        }
+    }
 
-            $bundle_id = absint($cart_item['_woobooster_bundle_id']);
-            if (!isset($bundle_items[$bundle_id])) {
-                $bundle_items[$bundle_id] = array();
-            }
-            $bundle_items[$bundle_id][] = $cart_item;
+    /**
+     * Show the bundle name instead of the representative product's name.
+     */
+    public static function cart_item_name($name, $cart_item)
+    {
+        if (empty($cart_item[self::META_BUNDLE_ID])) {
+            return $name;
         }
 
-        if (empty($bundle_items)) {
+        $bundle = WooBooster_Bundle::get((int) $cart_item[self::META_BUNDLE_ID]);
+        if ($bundle && !empty($bundle->name)) {
+            return esc_html($bundle->name);
+        }
+
+        return $name;
+    }
+
+    /**
+     * List the bundled products beneath the cart line.
+     *
+     * Each item gets its own block with padding and a faint bottom border so
+     * the list reads cleanly in both the mini-cart and the checkout review
+     * column. Plain-text `value` is preserved for emails / order details that
+     * strip HTML.
+     */
+    public static function cart_item_data_display($item_data, $cart_item)
+    {
+        if (empty($cart_item[self::META_BUNDLE_ITEMS]) || !is_array($cart_item[self::META_BUNDLE_ITEMS])) {
+            return $item_data;
+        }
+
+        $lines      = array();
+        $html_lines = array();
+        foreach ($cart_item[self::META_BUNDLE_ITEMS] as $bi) {
+            if (empty($bi['name'])) {
+                continue;
+            }
+            $qty   = isset($bi['quantity']) ? max(1, (int) $bi['quantity']) : 1;
+            $label = ($qty > 1 ? $qty . '× ' : '') . $bi['name'];
+
+            $lines[]      = $label;
+            $html_lines[] = '<li style="padding:4px 0;border-bottom:1px solid rgba(0,0,0,0.06);">' . esc_html($label) . '</li>';
+        }
+
+        if (!empty($html_lines)) {
+            // Drop the bottom border on the last item so the list ends cleanly.
+            $last_index = count($html_lines) - 1;
+            $html_lines[$last_index] = str_replace('border-bottom:1px solid rgba(0,0,0,0.06);', '', $html_lines[$last_index]);
+
+            $display = '<ul class="woobooster-bundle-includes" style="margin:4px 0 0;padding:0;list-style:none;font-size:0.9em;">' . implode('', $html_lines) . '</ul>';
+            $item_data[] = array(
+                'key'     => __('Includes', 'ffl-funnels-addons'),
+                'value'   => implode(', ', $lines),
+                'display' => $display,
+            );
+        }
+
+        return $item_data;
+    }
+
+    /**
+     * Swap the cart line's thumbnail with the bundle's own image (when set).
+     * Falls back to WooCommerce's default thumbnail (representative product)
+     * when no image is configured.
+     *
+     * @param string $thumbnail Default thumbnail HTML.
+     * @param array  $cart_item Cart item data.
+     * @param string $cart_item_key Cart item key (unused but part of the filter signature).
+     * @return string
+     */
+    public static function cart_item_thumbnail($thumbnail, $cart_item, $cart_item_key)
+    {
+        if (empty($cart_item[self::META_BUNDLE_ID])) {
+            return $thumbnail;
+        }
+
+        $bundle = WooBooster_Bundle::get((int) $cart_item[self::META_BUNDLE_ID]);
+        if (!$bundle || empty($bundle->image_id)) {
+            return $thumbnail;
+        }
+
+        $custom = wp_get_attachment_image(
+            (int) $bundle->image_id,
+            'woocommerce_thumbnail',
+            false,
+            array('class' => 'attachment-woocommerce_thumbnail size-woocommerce_thumbnail')
+        );
+
+        return $custom ?: $thumbnail;
+    }
+
+    /**
+     * Persist bundle contents onto the order line item so the order record
+     * shows what was inside the bundle.
+     *
+     * @param WC_Order_Item_Product $item          Order line item.
+     * @param string                $cart_item_key Cart item key.
+     * @param array                 $values        Cart item values.
+     */
+    public static function add_order_line_item_meta($item, $cart_item_key, $values)
+    {
+        if (empty($values[self::META_BUNDLE_ID])) {
             return;
         }
 
-        foreach ($bundle_items as $bundle_id => $items) {
-            $bundle = WooBooster_Bundle::get($bundle_id);
-            if (!$bundle || !$bundle->status) {
-                continue;
-            }
+        $item->add_meta_data('_woobooster_bundle_id', (int) $values[self::META_BUNDLE_ID], true);
 
-            if ($bundle->discount_type === 'none' || empty($bundle->discount_value) || $bundle->discount_value <= 0) {
-                continue;
+        if (!empty($values[self::META_BUNDLE_ITEMS]) && is_array($values[self::META_BUNDLE_ITEMS])) {
+            $lines = array();
+            foreach ($values[self::META_BUNDLE_ITEMS] as $bi) {
+                if (empty($bi['name'])) {
+                    continue;
+                }
+                $qty     = isset($bi['quantity']) ? max(1, (int) $bi['quantity']) : 1;
+                $lines[] = ($qty > 1 ? $qty . '× ' : '') . $bi['name'];
             }
-
-            $bundle_subtotal = 0;
-            foreach ($items as $cart_item) {
-                $product = $cart_item['data'];
-                $bundle_subtotal += (float) $product->get_price() * (int) $cart_item['quantity'];
-            }
-
-            $discount = 0;
-            if ($bundle->discount_type === 'percentage') {
-                $discount = $bundle_subtotal * ((float) $bundle->discount_value) / 100;
-            } elseif ($bundle->discount_type === 'fixed') {
-                $discount = min((float) $bundle->discount_value, $bundle_subtotal);
-            }
-
-            if ($discount > 0) {
-                $fee_name = sprintf(__('Bundle Discount: %s', 'ffl-funnels-addons'), $bundle->name);
-                $cart->add_fee($fee_name, -$discount, false);
+            if (!empty($lines)) {
+                $item->add_meta_data(__('Bundle contents', 'ffl-funnels-addons'), implode(', ', $lines), true);
             }
         }
     }

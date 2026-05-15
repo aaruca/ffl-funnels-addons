@@ -1641,9 +1641,22 @@
     });
   }
 
-  /* ── Bundle Discount Type Toggle ───────────────────────────────────── */
+  /* ── Bundle Pricing Mode + Discount Type Toggle ────────────────────── */
 
   function initBundleDiscountToggle() {
+    // Pricing mode: discount on items vs fixed bundle price.
+    var priceType = document.getElementById('wb-price-type');
+    if (priceType) {
+      var discountFields = document.querySelector('.wb-price-discount-fields');
+      var fixedFields = document.querySelector('.wb-price-fixed-fields');
+      priceType.addEventListener('change', function () {
+        var isFixed = priceType.value === 'fixed';
+        if (discountFields) discountFields.style.display = isFixed ? 'none' : '';
+        if (fixedFields) fixedFields.style.display = isFixed ? '' : 'none';
+      });
+    }
+
+    // Discount type: show the value row only when a discount is active.
     var select = document.getElementById('wb-discount-type');
     if (!select) return;
 
@@ -1677,6 +1690,7 @@
         fd.append('action', 'woobooster_search_products');
         fd.append('nonce', cfg.nonce);
         fd.append('search', term);
+        fd.append('context', 'bundle');
 
         fetch(cfg.ajaxUrl, { method: 'POST', body: fd })
           .then(function (r) { return r.json(); })
@@ -1694,7 +1708,7 @@
               item.className = 'wb-autocomplete__item';
               item.textContent = p.name + (p.sku ? ' (' + p.sku + ')' : '');
               item.addEventListener('click', function () {
-                addBundleItem(p.id, p.name);
+                addBundleItem(p.id, p.name, p.price);
                 dropdown.style.display = 'none';
                 searchInput.value = '';
               });
@@ -1713,7 +1727,7 @@
     });
   }
 
-  function addBundleItem(productId, productName) {
+  function addBundleItem(productId, productName, productPrice) {
     var list = document.getElementById('wb-bundle-items-list');
     if (!list) return;
 
@@ -1723,10 +1737,16 @@
     div.className = 'wb-bundle-item';
     div.setAttribute('data-product-id', productId);
 
+    // productPrice is WC get_price_html() output from our nonce-protected,
+    // admin-only AJAX endpoint — injected as HTML to match the PHP render.
     div.innerHTML =
       '<span class="wb-bundle-item__drag">&#9776;</span>' +
       '<span class="wb-bundle-item__name">' + escapeHtml(productName) + '</span>' +
-      '<span class="wb-bundle-item__price"></span>' +
+      '<span class="wb-bundle-item__price">' + (productPrice || '') + '</span>' +
+      '<label class="wb-bundle-item__qty">' +
+        '<span class="wb-bundle-item__qty-label">Qty</span>' +
+        '<input type="number" min="1" step="1" name="bundle_items[' + idx + '][quantity]" value="1" class="wb-input wb-input--sm wb-input--w70">' +
+      '</label>' +
       '<label class="wb-checkbox wb-bundle-item__optional">' +
         '<input type="checkbox" name="bundle_items[' + idx + '][is_optional]" value="1">' +
         'Optional' +
@@ -1849,6 +1869,12 @@
       row.className = 'wb-condition-row wb-condition-row--entire-store';
       row.setAttribute('data-condition', condIdx);
 
+      var roleOptions = (window.wooboosterAdminConfig && window.wooboosterAdminConfig.userRoles) || {};
+      var roleOptionsHtml = '<option value="guest">Guest (logged out)</option>';
+      Object.keys(roleOptions).forEach(function (slug) {
+        roleOptionsHtml += '<option value="' + slug + '">' + roleOptions[slug] + '</option>';
+      });
+
       row.innerHTML =
         '<select class="wb-select wb-select--inline wb-condition-type" required>' +
           '<option value="store_all" selected>Entire store (all products)</option>' +
@@ -1856,9 +1882,13 @@
           '<option value="tag">Tag</option>' +
           '<option value="attribute">Attribute</option>' +
           '<option value="specific_product">Specific Product</option>' +
+          '<option value="user_role">User Role</option>' +
         '</select>' +
         '<select class="wb-select wb-select--inline wb-condition-attr-taxonomy" style="display:none;">' +
           attrTaxOptions +
+        '</select>' +
+        '<select class="wb-select wb-select--inline wb-condition-user-role" data-role-target="' + prefix + '[value]" style="display:none;">' +
+          roleOptionsHtml +
         '</select>' +
         '<input type="hidden" name="' + prefix + '[attribute]" class="wb-condition-attr" value="__store_all">' +
         '<select name="' + prefix + '[operator]" class="wb-select wb-select--operator wb-condition-operator">' +
@@ -1892,9 +1922,11 @@
   function initBundleConditionTypeToggle(row) {
     var typeSelect = row.querySelector('.wb-condition-type');
     var attrTaxSelect = row.querySelector('.wb-condition-attr-taxonomy');
+    var roleSelect = row.querySelector('.wb-condition-user-role');
     var hiddenAttr = row.querySelector('.wb-condition-attr');
     var hiddenVal = row.querySelector('.wb-condition-value-hidden');
     var displayVal = row.querySelector('.wb-condition-value-display');
+    var valueWrap = row.querySelector('.wb-condition-value-wrap');
     var childrenLabel = row.querySelector('.wb-condition-children-label');
     var chipsContainer = row.querySelector('.wb-condition-product-chips');
     var opSel = row.querySelector('.wb-condition-operator');
@@ -1905,11 +1937,14 @@
     function update() {
       var val = typeSelect.value;
       var isEntire = val === 'store_all';
+      var isRole   = val === 'user_role';
 
       row.classList.toggle('wb-condition-row--entire-store', isEntire);
 
       if (attrTaxSelect) attrTaxSelect.style.display = val === 'attribute' ? '' : 'none';
-      if (childrenLabel) childrenLabel.style.display = !isEntire && (val === 'category' || val === 'tag') ? '' : 'none';
+      if (roleSelect)    roleSelect.style.display    = isRole ? '' : 'none';
+      if (valueWrap)     valueWrap.style.display     = isRole ? 'none' : '';
+      if (childrenLabel) childrenLabel.style.display = !isEntire && !isRole && (val === 'category' || val === 'tag') ? '' : 'none';
       if (chipsContainer) chipsContainer.style.display = val === 'specific_product' ? '' : 'none';
 
       if (hiddenAttr) {
@@ -1924,6 +1959,10 @@
           case 'category': hiddenAttr.value = 'product_cat'; break;
           case 'tag': hiddenAttr.value = 'product_tag'; break;
           case 'specific_product': hiddenAttr.value = 'specific_product'; break;
+          case 'user_role':
+            hiddenAttr.value = 'user_role';
+            if (hiddenVal && roleSelect) hiddenVal.value = roleSelect.value;
+            break;
           case 'attribute':
             hiddenAttr.value = attrTaxSelect ? attrTaxSelect.value : '';
             break;
@@ -1931,6 +1970,14 @@
             hiddenAttr.value = '';
         }
       }
+    }
+
+    if (roleSelect) {
+      roleSelect.addEventListener('change', function () {
+        if (typeSelect.value === 'user_role' && hiddenVal) {
+          hiddenVal.value = roleSelect.value;
+        }
+      });
     }
 
     typeSelect.addEventListener('change', function () {
@@ -2533,10 +2580,54 @@
 
   /* ── Bundle Boot ───────────────────────────────────────────────────── */
 
+  function initBundleImagePicker() {
+    var hiddenInput = document.getElementById('wb-bundle-image-id');
+    if (!hiddenInput || typeof wp === 'undefined' || !wp.media) return;
+
+    var thumb = document.getElementById('wb-bundle-image-thumb');
+    var selectBtn = document.querySelector('.wb-bundle-image-select');
+    var removeBtn = document.querySelector('.wb-bundle-image-remove');
+    var frame = null;
+
+    if (selectBtn) {
+      selectBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (frame) { frame.open(); return; }
+        frame = wp.media({
+          title: 'Select bundle image',
+          button: { text: 'Use this image' },
+          library: { type: 'image' },
+          multiple: false
+        });
+        frame.on('select', function () {
+          var att = frame.state().get('selection').first().toJSON();
+          hiddenInput.value = att.id;
+          if (thumb) {
+            var src = (att.sizes && att.sizes.thumbnail) ? att.sizes.thumbnail.url : att.url;
+            thumb.src = src;
+            thumb.style.display = '';
+          }
+          if (removeBtn) removeBtn.style.display = '';
+        });
+        frame.open();
+      });
+    }
+
+    if (removeBtn) {
+      removeBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        hiddenInput.value = '';
+        if (thumb) { thumb.src = ''; thumb.style.display = 'none'; }
+        removeBtn.style.display = 'none';
+      });
+    }
+  }
+
   function initBundleAdmin() {
     initBundleToggles();
     initBundleDeleteConfirm();
     initBundleDiscountToggle();
+    initBundleImagePicker();
     initBundleProductSearch();
     initBundleItemRemove();
     initBundleConditionRepeater();
