@@ -2,14 +2,17 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
-## [1.25.0] - 2026-05-15
+## [1.25.1] - 2026-05-15
 
-### WooBooster — Bundle image, better "Includes" layout, no OOS in picker
+### WooBooster — Out-of-stock products hidden from bundle picker
 
-**Out-of-stock products hidden from bundle picker**
 - The product search on the bundle admin form now filters out products with stock status `outofstock`. You can't sell a bundle that contains something not in the warehouse.
 - Rule targeting (conditions / actions) is unaffected and still sees the full catalog — rules may legitimately match OOS items.
 - Implemented via a new `context` parameter on the shared `woobooster_search_products` AJAX endpoint (`context=bundle` ⇒ adds `_stock_status != outofstock` meta query).
+
+## [1.25.0] - 2026-05-15
+
+### WooBooster — Bundle image & better "Includes" layout in cart
 
 **Bundle Image**
 - Each bundle now supports an optional **image** (managed via the WordPress media library) that replaces the representative product's thumbnail in the cart and checkout. Helpful for showing a custom hero / lifestyle shot for the bundle instead of whatever happened to be the first product.
