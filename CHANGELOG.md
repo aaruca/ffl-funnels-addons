@@ -2,6 +2,61 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.26.0] - 2026-05-15
+
+### New Module — Loadout: Tier-Based Product Configurator
+
+A new **Loadout** addon module that complements the existing Bundles feature with a fundamentally different cart model: per-item add-to-cart with gamified perks, tier-based discounts, and bonus items.
+
+**Two complementary surfaces:**
+
+1. **Standalone Widget** (Bricks Builder element + shortcode)
+   - "Build Your Loadout" configurator with hero product + tier tabs (e.g., Essential / Performance / Elite)
+   - Per-tier recommended items list with individual ADD buttons and master ADD CART button
+   - Live cart mirror panel showing items, savings, totals
+   - Bundle & Save progress bar that fills as items are added
+   - Perks unlock at tier threshold (e.g., "Add 3 items to unlock 10% off accessories")
+   - Bonus product auto-adds as $0 line when threshold met; auto-removes when dropped
+   - "Complete Your Loadout" cross-sell tiles section
+   - Gold-on-dark aesthetic matching the mockup
+   - Customizable accent color and panel visibility via Bricks controls
+
+2. **Product-level Loadout Tab** (WooCommerce product editor)
+   - New "Loadout" tab in the product data panel
+   - Two configuration modes:
+     - **Link to Global Loadout**: dropdown reuses an existing Loadout config
+     - **Per-Product Config**: inline tier/item repeater stored as post meta (no global Loadout needed)
+   - Frontend renders a tab on the product page with tier switcher and per-item ADD buttons
+   - **Set discount** applies when the customer adds the entire tier together; reverts if any item is removed
+
+**Schema** (4 new tables, migration version `FFLA_LOADOUT_DB_VERSION = 1.0.0`):
+- `wp_ffla_loadouts` — main loadout configs (name, headlines, branding, anchor product)
+- `wp_ffla_loadout_tiers` — tiers per loadout (discount %, set discount %, perks JSON, bonus, threshold)
+- `wp_ffla_loadout_tier_items` — products per tier (qty, per-item discount, required flag)
+- `wp_ffla_loadout_cross_sells` — cross-sell tiles (label, image, link type/value)
+
+**Cart Integration:**
+- Each loadout item is its own WC cart line (unlike Bundles' synthetic single line); customers can remove individual items
+- Cart-item meta preserves loadout/tier/source context across session and into order line items
+- Per-item discount + tier accessory discount combine additively (capped at 100%)
+- For product tab: set discount applies when ALL tier items are present in cart
+- Bonus product (free gift) auto-managed based on widget item count vs. threshold
+- AJAX endpoints: `loadout_add_item`, `loadout_add_tier`, `loadout_get_cart_summary`
+
+**Admin:**
+- New "Loadouts" menu page at `/wp-admin/admin.php?page=ffla-loadouts`
+- List table with bulk actions (delete, activate, deactivate)
+- Edit form with collapsible sections (basic info, branding, anchor, tiers repeater, cross-sells repeater)
+- Reuses image picker pattern from v1.25.0 bundle work
+- Reuses OOS-filtered product search pattern from v1.25.1
+- Each tier has nested repeater for items, perks chip input, bonus product picker
+
+**Architecture:**
+- New standalone module `modules/loadout/` extending `FFLA_Module` (independent activation)
+- Models with transaction-safe CRUD (`Loadout`, `Loadout_Tier`, `Loadout_Tier_Item`, `Loadout_Cross_Sell`)
+- Bricks element class `Loadout_Element` extending `\Bricks\Element`
+- Plain `[loadout id="X"]` shortcode for non-Bricks embedding
+
 ## [1.25.1] - 2026-05-15
 
 ### WooBooster — Out-of-stock products hidden from bundle picker
