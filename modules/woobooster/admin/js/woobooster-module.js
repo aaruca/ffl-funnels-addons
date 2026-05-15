@@ -1690,6 +1690,7 @@
         fd.append('action', 'woobooster_search_products');
         fd.append('nonce', cfg.nonce);
         fd.append('search', term);
+        fd.append('context', 'bundle');
 
         fetch(cfg.ajaxUrl, { method: 'POST', body: fd })
           .then(function (r) { return r.json(); })

@@ -118,6 +118,7 @@ class WooBooster_Ajax
 
         $search = isset($_POST['search']) ? sanitize_text_field(wp_unslash($_POST['search'])) : '';
         $page = isset($_POST['page']) ? absint($_POST['page']) : 1;
+        $context = isset($_POST['context']) ? sanitize_key($_POST['context']) : '';
         $per_page = 20;
 
         $args = array(
@@ -130,6 +131,20 @@ class WooBooster_Ajax
             'orderby' => 'title',
             'order' => 'ASC',
         );
+
+        // Bundle picker excludes out-of-stock products — you can't sell a
+        // bundle that contains something the warehouse doesn't have. Rule
+        // targeting still sees the full catalog (rule conditions may
+        // legitimately match OOS items).
+        if ('bundle' === $context) {
+            $args['meta_query'] = array(
+                array(
+                    'key'     => '_stock_status',
+                    'value'   => 'outofstock',
+                    'compare' => '!=',
+                ),
+            );
+        }
 
         $query = new WP_Query($args);
         $results = array();
