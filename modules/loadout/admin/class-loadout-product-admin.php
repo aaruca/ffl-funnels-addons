@@ -161,9 +161,26 @@ class Loadout_Product_Admin
 
     private function render_product_tier_row(int $index, array $tier_data): void
     {
-        $name = $tier_data['name'] ?? '';
-        $set_discount = $tier_data['set_discount_pct'] ?? 0;
-        $items = $tier_data['items'] ?? [];
+        $name                = $tier_data['name'] ?? '';
+        $set_discount        = $tier_data['set_discount_pct'] ?? 0;
+        $accessory_discount  = $tier_data['accessory_discount'] ?? 0;
+        $threshold_items     = $tier_data['threshold_items'] ?? 0;
+        $perks               = $tier_data['perks'] ?? [];
+        $perks_text          = is_array($perks) ? implode("\n", $perks) : '';
+        $bonus_product_id    = $tier_data['bonus_product_id'] ?? 0;
+        $bonus_label         = $tier_data['bonus_label'] ?? '';
+        $bonus_display_value = $tier_data['bonus_display_value'] ?? '';
+        $items               = $tier_data['items'] ?? [];
+
+        $bonus_name = '';
+        $bonus_price_html = '';
+        if ($bonus_product_id) {
+            $bp = wc_get_product($bonus_product_id);
+            if ($bp) {
+                $bonus_name = $bp->get_name();
+                $bonus_price_html = $bp->get_price_html();
+            }
+        }
         ?>
         <div class="loadout-tier-row" data-index="<?php echo esc_attr($index); ?>">
             <div class="loadout-tier-header">
@@ -177,8 +194,46 @@ class Loadout_Product_Admin
                     <input type="text" name="product_tiers[<?php echo esc_attr($index); ?>][name]" value="<?php echo esc_attr($name); ?>" class="loadout-tier-name-input" placeholder="<?php esc_attr_e('Essential', 'ffl-funnels-addons'); ?>">
                 </div>
                 <div class="loadout-field">
+                    <label><?php esc_html_e('Accessory Discount %', 'ffl-funnels-addons'); ?></label>
+                    <input type="number" name="product_tiers[<?php echo esc_attr($index); ?>][accessory_discount]" value="<?php echo esc_attr($accessory_discount); ?>" min="0" max="100" step="0.01">
+                </div>
+                <div class="loadout-field">
                     <label><?php esc_html_e('Set Discount %', 'ffl-funnels-addons'); ?></label>
                     <input type="number" name="product_tiers[<?php echo esc_attr($index); ?>][set_discount_pct]" value="<?php echo esc_attr($set_discount); ?>" min="0" max="100" step="0.01">
+                </div>
+                <div class="loadout-field">
+                    <label><?php esc_html_e('Perk Threshold', 'ffl-funnels-addons'); ?></label>
+                    <input type="number" name="product_tiers[<?php echo esc_attr($index); ?>][threshold_items]" value="<?php echo esc_attr($threshold_items); ?>" min="0">
+                </div>
+            </div>
+
+            <div class="loadout-field loadout-field--full">
+                <label><?php esc_html_e('Perks (one per line)', 'ffl-funnels-addons'); ?></label>
+                <textarea name="product_tiers[<?php echo esc_attr($index); ?>][perks]" rows="3" placeholder="<?php esc_attr_e("10% OFF accessories&#10;Priority Order Processing&#10;Free Upgraded Shipping", 'ffl-funnels-addons'); ?>"><?php echo esc_textarea($perks_text); ?></textarea>
+            </div>
+
+            <div class="loadout-tier-bonus">
+                <h5><?php esc_html_e('Bonus Item (Free Gift)', 'ffl-funnels-addons'); ?></h5>
+                <input type="hidden" class="loadout-bonus-id" name="product_tiers[<?php echo esc_attr($index); ?>][bonus_product_id]" value="<?php echo esc_attr($bonus_product_id); ?>">
+                <div class="loadout-bonus-row">
+                    <div class="loadout-field loadout-field--product">
+                        <label><?php esc_html_e('Bonus Product', 'ffl-funnels-addons'); ?></label>
+                        <input type="text" class="loadout-product-search" data-target=".loadout-bonus-id" data-display=".loadout-bonus-display" data-scope="row" placeholder="<?php esc_attr_e('Search products...', 'ffl-funnels-addons'); ?>">
+                        <div class="loadout-bonus-display loadout-product-display">
+                            <?php if ($bonus_name): ?>
+                                <span><?php echo esc_html($bonus_name); ?> (#<?php echo esc_html($bonus_product_id); ?>) <?php echo wp_kses_post($bonus_price_html); ?></span>
+                            <?php endif; ?>
+                        </div>
+                        <div class="loadout-search-results"></div>
+                    </div>
+                    <div class="loadout-field">
+                        <label><?php esc_html_e('Bonus Label', 'ffl-funnels-addons'); ?></label>
+                        <input type="text" name="product_tiers[<?php echo esc_attr($index); ?>][bonus_label]" value="<?php echo esc_attr($bonus_label); ?>" placeholder="<?php esc_attr_e('FREE Kinetic Armory', 'ffl-funnels-addons'); ?>">
+                    </div>
+                    <div class="loadout-field">
+                        <label><?php esc_html_e('Display Value', 'ffl-funnels-addons'); ?></label>
+                        <input type="number" name="product_tiers[<?php echo esc_attr($index); ?>][bonus_display_value]" value="<?php echo esc_attr($bonus_display_value); ?>" min="0" step="0.01" placeholder="30.00">
+                    </div>
                 </div>
             </div>
 
@@ -197,15 +252,18 @@ class Loadout_Product_Admin
 
     private function render_product_item_row(int $tier_index, int $item_index, array $item_data): void
     {
-        $product_id = $item_data['product_id'] ?? 0;
-        $quantity = $item_data['quantity'] ?? 1;
+        $product_id   = $item_data['product_id'] ?? 0;
+        $quantity     = $item_data['quantity'] ?? 1;
         $discount_pct = $item_data['discount_pct'] ?? 0;
+        $is_required  = $item_data['is_required'] ?? 0;
 
         $product_name = '';
+        $price_html   = '';
         if ($product_id) {
             $p = wc_get_product($product_id);
             if ($p) {
                 $product_name = $p->get_name();
+                $price_html   = $p->get_price_html();
             }
         }
         ?>
@@ -218,7 +276,8 @@ class Loadout_Product_Admin
                     <input type="text" class="loadout-product-search" data-target=".loadout-item-product-id" data-display=".loadout-item-product-display" data-scope="row" placeholder="<?php esc_attr_e('Search products...', 'ffl-funnels-addons'); ?>">
                     <div class="loadout-item-product-display loadout-product-display">
                         <?php if ($product_name): ?>
-                            <span><?php echo esc_html($product_name); ?> (#<?php echo esc_html($product_id); ?>)</span>
+                            <span class="loadout-product-name"><?php echo esc_html($product_name); ?> (#<?php echo esc_html($product_id); ?>)</span>
+                            <span class="loadout-product-price"><?php echo wp_kses_post($price_html); ?></span>
                         <?php endif; ?>
                     </div>
                     <div class="loadout-search-results"></div>
@@ -230,6 +289,10 @@ class Loadout_Product_Admin
                 <div class="loadout-field loadout-field--discount">
                     <label><?php esc_html_e('Discount %', 'ffl-funnels-addons'); ?></label>
                     <input type="number" name="product_tiers[<?php echo esc_attr($tier_index); ?>][items][<?php echo esc_attr($item_index); ?>][discount_pct]" value="<?php echo esc_attr($discount_pct); ?>" min="0" max="100" step="0.01">
+                </div>
+                <div class="loadout-field loadout-field--required">
+                    <label><?php esc_html_e('Pre-checked', 'ffl-funnels-addons'); ?></label>
+                    <input type="checkbox" name="product_tiers[<?php echo esc_attr($tier_index); ?>][items][<?php echo esc_attr($item_index); ?>][is_required]" value="1" <?php checked($is_required, 1); ?>>
                 </div>
                 <div class="loadout-field loadout-field--remove">
                     <button type="button" class="button-link loadout-item-remove"><?php esc_html_e('Remove', 'ffl-funnels-addons'); ?></button>
@@ -285,6 +348,7 @@ class Loadout_Product_Admin
                     'product_id'   => $pid,
                     'quantity'     => isset($item['quantity']) ? max(1, absint($item['quantity'])) : 1,
                     'discount_pct' => isset($item['discount_pct']) ? floatval($item['discount_pct']) : 0,
+                    'is_required'  => !empty($item['is_required']) ? 1 : 0,
                 ];
             }
             // Skip only if BOTH name and items are empty (truly blank row).
@@ -292,11 +356,25 @@ class Loadout_Product_Admin
                 continue;
             }
             $effective_name = $name !== '' ? $name : sprintf(__('Tier %d', 'ffl-funnels-addons'), count($custom_tiers) + 1);
+
+            // Perks: textarea, one perk per line.
+            $perks = [];
+            if (isset($tier_data['perks'])) {
+                $perks_raw = sanitize_textarea_field(wp_unslash($tier_data['perks']));
+                $perks = array_values(array_filter(array_map('trim', preg_split('/\R/', $perks_raw))));
+            }
+
             $custom_tiers[] = [
-                'name'             => $effective_name,
-                'slug'             => sanitize_title($effective_name) ?: ('tier-' . (count($custom_tiers) + 1)),
-                'set_discount_pct' => isset($tier_data['set_discount_pct']) ? floatval($tier_data['set_discount_pct']) : 0,
-                'items'            => $items,
+                'name'                => $effective_name,
+                'slug'                => sanitize_title($effective_name) ?: ('tier-' . (count($custom_tiers) + 1)),
+                'accessory_discount'  => isset($tier_data['accessory_discount']) ? floatval($tier_data['accessory_discount']) : 0,
+                'set_discount_pct'    => isset($tier_data['set_discount_pct']) ? floatval($tier_data['set_discount_pct']) : 0,
+                'threshold_items'     => isset($tier_data['threshold_items']) ? absint($tier_data['threshold_items']) : 0,
+                'perks'               => $perks,
+                'bonus_product_id'    => isset($tier_data['bonus_product_id']) ? absint($tier_data['bonus_product_id']) : 0,
+                'bonus_label'         => isset($tier_data['bonus_label']) ? sanitize_text_field(wp_unslash($tier_data['bonus_label'])) : '',
+                'bonus_display_value' => isset($tier_data['bonus_display_value']) && $tier_data['bonus_display_value'] !== '' ? floatval($tier_data['bonus_display_value']) : null,
+                'items'               => $items,
             ];
         }
 

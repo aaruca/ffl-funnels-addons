@@ -68,9 +68,47 @@
 
 #loadout_product_data .loadout-tier-fields {
     display: grid;
-    grid-template-columns: 1fr 160px;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
     gap: 12px;
     margin-bottom: 16px;
+}
+@media (max-width: 900px) {
+    #loadout_product_data .loadout-tier-fields {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+#loadout_product_data .loadout-field--full {
+    margin-bottom: 16px;
+}
+#loadout_product_data .loadout-field--full textarea {
+    width: 100%;
+    min-height: 80px;
+    padding: 6px 8px;
+    box-sizing: border-box;
+    line-height: 1.5;
+}
+
+#loadout_product_data .loadout-tier-bonus {
+    background: #fffbe6;
+    border: 1px solid #f9d77e;
+    border-radius: 4px;
+    padding: 12px;
+    margin-bottom: 16px;
+}
+#loadout_product_data .loadout-tier-bonus h5 {
+    margin: 0 0 8px;
+    color: #8a6d3b;
+}
+#loadout_product_data .loadout-bonus-row {
+    display: grid;
+    grid-template-columns: 2fr 1fr 120px;
+    gap: 12px;
+}
+@media (max-width: 900px) {
+    #loadout_product_data .loadout-bonus-row {
+        grid-template-columns: 1fr;
+    }
 }
 
 #loadout_product_data .loadout-tier-items-section h5 {
@@ -99,9 +137,16 @@
 
 #loadout_product_data .loadout-item-grid {
     display: grid;
-    grid-template-columns: 1fr 80px 110px 80px;
-    gap: 12px;
+    grid-template-columns: 1fr 70px 100px 90px 80px;
+    gap: 10px;
     align-items: end;
+}
+#loadout_product_data .loadout-field--required {
+    text-align: center;
+}
+#loadout_product_data .loadout-field--required input[type="checkbox"] {
+    width: auto;
+    margin-top: 4px;
 }
 
 #loadout_product_data .loadout-field {
@@ -125,6 +170,24 @@
 }
 #loadout_product_data .loadout-product-display:empty {
     display: none;
+}
+
+/* Price chip used in both global form and per-product metabox */
+.loadout-product-display .loadout-product-name {
+    font-weight: 600;
+}
+.loadout-product-display .loadout-product-price {
+    margin-left: 6px;
+    padding: 1px 6px;
+    background: #2271b1;
+    color: #fff;
+    border-radius: 3px;
+    font-size: 11px;
+}
+.loadout-product-display .loadout-product-price del,
+.loadout-product-display .loadout-product-price s {
+    opacity: 0.7;
+    margin-right: 4px;
 }
 
 #loadout_product_data .loadout-search-results {

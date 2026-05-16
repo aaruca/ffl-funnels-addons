@@ -2,6 +2,38 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.28.0] - 2026-05-15
+
+### Loadout — Per-product config feature parity with global + price/qty visibility
+
+**Per-product Loadout config now exposes every field the global Loadout admin form has.** Previously it only had Tier Name, Set Discount, Product, Qty, and Discount %. The product editor metabox now also includes:
+
+- **Accessory Discount %** — applied per-item on top of the per-item discount
+- **Perk Threshold** — number of items needed to unlock perks/bonus
+- **Perks** — multi-line textarea, one perk per line
+- **Bonus Product** — picker (uses the same OOS-filtered product search)
+- **Bonus Label** — display text, e.g. "FREE Kinetic Armory"
+- **Bonus Display Value** — cosmetic "valued at $X" amount
+- **Pre-checked** — toggle on each item to flag it as required/selected by default
+
+All persist to `_ffla_product_loadout_tiers` post meta (existing key, expanded JSON schema with new fields). Existing per-product configs continue to load — missing fields default cleanly.
+
+**Product/qty/price visibility in admin item rows.**
+
+- When you select a product from the search dropdown, its **price** is now shown in the dropdown result and again as a chip next to the chosen product (so you can immediately verify which product is configured).
+- The price chip appears in both the **global Loadout edit form** and the **per-product Loadout metabox**.
+- Pre-existing items now re-render with the price chip on form load.
+- Product-display markup uses two spans (`.loadout-product-name` and `.loadout-product-price`) so each can be styled independently.
+
+**Product tab frontend updated** to render the new fields:
+
+- Combined per-item + accessory discount is now displayed (e.g., a 5% item discount in a tier with 10% accessory discount shows "15% OFF" and the matching final price).
+- Item quantity shows next to product name (`Item Name ×2`).
+- Perks list and bonus item block now render below the tier items in the product tab (same UI affordance as the standalone widget).
+- Threshold attribute is now exposed on the panel for future progress-bar integration.
+
+**Known follow-up** (not in this release): cart-side application of the per-product custom-tier accessory discount and threshold-based bonus auto-add. Currently only the global tier path applies these in the cart; product-tab custom tiers display perks/bonus but the bonus product isn't auto-added at threshold yet. Will be addressed in a v1.28.x patch.
+
 ## [1.27.4] - 2026-05-15
 
 ### Loadout — Fix "Class Loadout_Product_Admin not found" frontend fatal

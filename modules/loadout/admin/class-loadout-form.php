@@ -473,10 +473,12 @@ class Loadout_Form
         $is_required = $item ? $item->get_is_required() : 0;
 
         $product_name = '';
+        $price_html = '';
         if ($product_id) {
             $p = wc_get_product($product_id);
             if ($p) {
                 $product_name = $p->get_name();
+                $price_html = $p->get_price_html();
             }
         }
         ?>
@@ -488,7 +490,8 @@ class Loadout_Form
                 <input type="text" class="regular-text loadout-product-search" data-target=".loadout-item-product-id" data-display=".loadout-item-product-display" data-scope="row" placeholder="<?php esc_attr_e('Search products...', 'ffl-funnels-addons'); ?>">
                 <div class="loadout-item-product-display loadout-product-display">
                     <?php if ($product_name): ?>
-                        <span><?php echo esc_html($product_name); ?> (#<?php echo esc_html($product_id); ?>)</span>
+                        <span class="loadout-product-name"><?php echo esc_html($product_name); ?> (#<?php echo esc_html($product_id); ?>)</span>
+                        <span class="loadout-product-price"><?php echo wp_kses_post($price_html); ?></span>
                     <?php endif; ?>
                 </div>
                 <div class="loadout-search-results"></div>

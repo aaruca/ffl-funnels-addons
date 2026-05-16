@@ -85,10 +85,14 @@
 
                         var html = '<ul class="loadout-search-list">';
                         response.data.products.forEach(function (product) {
-                            html += '<li data-id="' + product.id + '" data-name="' + escapeHtml(product.name) + '">';
+                            var priceAttr = product.price ? ' data-price="' + escapeHtml(product.price) + '"' : '';
+                            html += '<li data-id="' + product.id + '" data-name="' + escapeHtml(product.name) + '"' + priceAttr + '>';
                             html += '<strong>' + escapeHtml(product.name) + '</strong>';
                             if (product.sku) {
                                 html += ' <span style="color:#666;">(SKU: ' + escapeHtml(product.sku) + ')</span>';
+                            }
+                            if (product.price) {
+                                html += '<br><span style="color:#2271b1;font-size:11px;">' + product.price + '</span>';
                             }
                             html += '</li>';
                         });
@@ -104,6 +108,7 @@
             var $li = $(this);
             var productId = $li.data('id');
             var productName = $li.data('name');
+            var productPrice = $li.attr('data-price') || '';
             var $results = $li.closest('.loadout-search-results');
             var $input = $results.siblings('.loadout-product-search').last();
             if (!$input.length) {
@@ -125,7 +130,12 @@
             }
 
             $target.val(productId);
-            $display.html('<span>' + escapeHtml(productName) + ' (#' + productId + ')</span> <button type="button" class="button-link loadout-product-remove" data-target="' + targetSel + '" data-display="' + displaySel + '"' + (scope === 'row' ? ' data-scope="row"' : '') + '>Remove</button>');
+            var html = '<span class="loadout-product-name">' + escapeHtml(productName) + ' (#' + productId + ')</span>';
+            if (productPrice) {
+                html += ' <span class="loadout-product-price">' + productPrice + '</span>';
+            }
+            html += ' <button type="button" class="button-link loadout-product-remove" data-target="' + targetSel + '" data-display="' + displaySel + '"' + (scope === 'row' ? ' data-scope="row"' : '') + '>Remove</button>';
+            $display.html(html);
 
             $input.val('');
             $results.empty().hide();
