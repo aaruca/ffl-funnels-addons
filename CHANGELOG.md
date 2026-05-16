@@ -2,6 +2,32 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.28.2] - 2026-05-15
+
+### Loadout — Self-service admin: collapsible "How Loadouts work" intro + per-field descriptions
+
+Both the global Loadout edit form and the per-product Loadout metabox now include enough inline help that a non-technical client can configure tiers without external documentation.
+
+**New collapsible "How Loadouts work" overview** at the top of both forms covers, in plain language:
+
+- What a tier is and what each one shows
+- What **Accessory Discount %** does vs. **Set Discount %**
+- How **Perk Threshold + Perks + Bonus** gamification works (and what happens if you set the threshold to 0)
+- What the **Anchor Product** is
+- What **Cross-Sells** are for
+- The "leave fields blank to skip the feature" rule
+
+**Per-field descriptions on every input** (global form `<p class="description">`, per-product metabox `<span class="loadout-help">` for compact grids):
+
+- Name, Status, Headline, Subheadline
+- Hero Image, Brand Logo, Anchor Product
+- Tier Name, Accessory Discount %, Set Discount %, Perk Threshold (clarifies "0 = always unlocked, gamification disabled")
+- Perks (clarifies they're display-only)
+- Bonus Product, Bonus Label, Bonus Display Value (clarifies the customer is still charged $0; display value is cosmetic)
+- "Enable Loadout Tab" and "Link to Global Loadout" toggles in the product editor
+
+Pure content/UX additions — no schema, behavior, or data changes.
+
 ## [1.28.1] - 2026-05-15
 
 ### Loadout — Show stock status in admin item rows

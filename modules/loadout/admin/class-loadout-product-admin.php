@@ -73,11 +73,25 @@ class Loadout_Product_Admin
         $all_loadouts = Loadout::get_all(['status' => 1]);
         ?>
         <div id="loadout_product_data" class="panel woocommerce_options_panel">
+            <details class="loadout-help-box" style="margin:12px;">
+                <summary><strong><?php esc_html_e('How the Loadout tab works', 'ffl-funnels-addons'); ?></strong></summary>
+                <div class="loadout-help-content" style="padding:8px 12px;">
+                    <p><?php esc_html_e('You can attach a tiered cross-sell tab to this product. Customers see it as an extra tab on the product page and can add curated items (with optional discounts and a free bonus) alongside the main product.', 'ffl-funnels-addons'); ?></p>
+                    <ul>
+                        <li><?php esc_html_e('Enable the tab, then either pick a saved Loadout config or build a per-product one below.', 'ffl-funnels-addons'); ?></li>
+                        <li><strong><?php esc_html_e('Accessory Discount %', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('Discount applied to each item the customer adds individually.', 'ffl-funnels-addons'); ?></li>
+                        <li><strong><?php esc_html_e('Set Discount %', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('Extra discount when the customer adds the whole tier at once.', 'ffl-funnels-addons'); ?></li>
+                        <li><strong><?php esc_html_e('Perk Threshold + Perks + Bonus', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('Add N items to unlock perks and get a free bonus product. Set threshold to 0 to disable.', 'ffl-funnels-addons'); ?></li>
+                        <li><strong><?php esc_html_e('Pre-checked', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('The item is selected by default for the customer.', 'ffl-funnels-addons'); ?></li>
+                    </ul>
+                </div>
+            </details>
+
             <div class="options_group">
                 <p class="form-field">
                     <label for="loadout_enable_tab"><?php esc_html_e('Enable Loadout Tab', 'ffl-funnels-addons'); ?></label>
                     <input type="checkbox" name="loadout_enable_tab" id="loadout_enable_tab" value="1" <?php checked($enable_tab, 1); ?>>
-                    <span class="description"><?php esc_html_e('Show a Loadout tab on this product\'s page.', 'ffl-funnels-addons'); ?></span>
+                    <span class="description"><?php esc_html_e('Adds a "Loadout" tab to this product\'s page on the storefront. Without this checked, the tab is hidden even if you configure tiers below.', 'ffl-funnels-addons'); ?></span>
                 </p>
 
                 <p class="form-field">
@@ -90,13 +104,13 @@ class Loadout_Product_Admin
                             </option>
                         <?php endforeach; ?>
                     </select>
-                    <span class="description"><?php esc_html_e('When set, the linked loadout config is used and per-product config below is ignored.', 'ffl-funnels-addons'); ?></span>
+                    <span class="description"><?php esc_html_e('Optional. If you pick a saved Loadout here, that config drives the tab and any per-product config below is ignored. Use this when many products should share the same tier setup.', 'ffl-funnels-addons'); ?></span>
                 </p>
             </div>
 
             <div class="options_group">
                 <h4 style="padding:0 12px;"><?php esc_html_e('Per-Product Configuration', 'ffl-funnels-addons'); ?></h4>
-                <p style="padding:0 12px;color:#666;"><?php esc_html_e('Used only when no global loadout is linked above. Define tiers and items for this product specifically.', 'ffl-funnels-addons'); ?></p>
+                <p style="padding:0 12px;color:#666;"><?php esc_html_e('Used only when no global loadout is linked above. Each tier is a separate "package level" shown as a tab on the product page.', 'ffl-funnels-addons'); ?></p>
 
                 <div id="loadout-product-tiers" class="loadout-repeater" style="padding:0 12px;">
                     <?php foreach ($custom_tiers as $tier_index => $tier_data): ?>
@@ -194,28 +208,34 @@ class Loadout_Product_Admin
                 <div class="loadout-field">
                     <label><?php esc_html_e('Tier Name', 'ffl-funnels-addons'); ?></label>
                     <input type="text" name="product_tiers[<?php echo esc_attr($index); ?>][name]" value="<?php echo esc_attr($name); ?>" class="loadout-tier-name-input" placeholder="<?php esc_attr_e('Essential', 'ffl-funnels-addons'); ?>">
+                    <span class="loadout-help"><?php esc_html_e('Tab label shown to the customer.', 'ffl-funnels-addons'); ?></span>
                 </div>
                 <div class="loadout-field">
                     <label><?php esc_html_e('Accessory Discount %', 'ffl-funnels-addons'); ?></label>
                     <input type="number" name="product_tiers[<?php echo esc_attr($index); ?>][accessory_discount]" value="<?php echo esc_attr($accessory_discount); ?>" min="0" max="100" step="0.01">
+                    <span class="loadout-help"><?php esc_html_e('Per-item discount applied when customer adds items individually.', 'ffl-funnels-addons'); ?></span>
                 </div>
                 <div class="loadout-field">
                     <label><?php esc_html_e('Set Discount %', 'ffl-funnels-addons'); ?></label>
                     <input type="number" name="product_tiers[<?php echo esc_attr($index); ?>][set_discount_pct]" value="<?php echo esc_attr($set_discount); ?>" min="0" max="100" step="0.01">
+                    <span class="loadout-help"><?php esc_html_e('Extra discount when the customer adds the whole tier together.', 'ffl-funnels-addons'); ?></span>
                 </div>
                 <div class="loadout-field">
                     <label><?php esc_html_e('Perk Threshold', 'ffl-funnels-addons'); ?></label>
                     <input type="number" name="product_tiers[<?php echo esc_attr($index); ?>][threshold_items]" value="<?php echo esc_attr($threshold_items); ?>" min="0">
+                    <span class="loadout-help"><?php esc_html_e('Items the customer must add to unlock perks/bonus. 0 = always unlocked.', 'ffl-funnels-addons'); ?></span>
                 </div>
             </div>
 
             <div class="loadout-field loadout-field--full">
                 <label><?php esc_html_e('Perks (one per line)', 'ffl-funnels-addons'); ?></label>
                 <textarea name="product_tiers[<?php echo esc_attr($index); ?>][perks]" rows="3" placeholder="<?php esc_attr_e("10% OFF accessories&#10;Priority Order Processing&#10;Free Upgraded Shipping", 'ffl-funnels-addons'); ?>"><?php echo esc_textarea($perks_text); ?></textarea>
+                <span class="loadout-help"><?php esc_html_e('Cosmetic benefits shown when the threshold is met (display-only — these don\'t change cart pricing on their own).', 'ffl-funnels-addons'); ?></span>
             </div>
 
             <div class="loadout-tier-bonus">
                 <h5><?php esc_html_e('Bonus Item (Free Gift)', 'ffl-funnels-addons'); ?></h5>
+                <p class="loadout-help" style="margin:0 0 8px;"><?php esc_html_e('Free product auto-added to the cart at $0 when the customer hits the Perk Threshold. Auto-removed if they drop below threshold. Leave Bonus Product empty if you don\'t want a free gift.', 'ffl-funnels-addons'); ?></p>
                 <input type="hidden" class="loadout-bonus-id" name="product_tiers[<?php echo esc_attr($index); ?>][bonus_product_id]" value="<?php echo esc_attr($bonus_product_id); ?>">
                 <div class="loadout-bonus-row">
                     <div class="loadout-field loadout-field--product">
@@ -233,10 +253,12 @@ class Loadout_Product_Admin
                     <div class="loadout-field">
                         <label><?php esc_html_e('Bonus Label', 'ffl-funnels-addons'); ?></label>
                         <input type="text" name="product_tiers[<?php echo esc_attr($index); ?>][bonus_label]" value="<?php echo esc_attr($bonus_label); ?>" placeholder="<?php esc_attr_e('FREE Kinetic Armory', 'ffl-funnels-addons'); ?>">
+                        <span class="loadout-help"><?php esc_html_e('Custom display text for the bonus.', 'ffl-funnels-addons'); ?></span>
                     </div>
                     <div class="loadout-field">
                         <label><?php esc_html_e('Display Value', 'ffl-funnels-addons'); ?></label>
                         <input type="number" name="product_tiers[<?php echo esc_attr($index); ?>][bonus_display_value]" value="<?php echo esc_attr($bonus_display_value); ?>" min="0" step="0.01" placeholder="30.00">
+                        <span class="loadout-help"><?php esc_html_e('Cosmetic "valued at $X" amount.', 'ffl-funnels-addons'); ?></span>
                     </div>
                 </div>
             </div>

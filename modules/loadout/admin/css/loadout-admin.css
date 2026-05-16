@@ -1,5 +1,53 @@
 /* Loadout Admin Styles */
 
+/* Help / overview boxes at the top of the global form and per-product metabox */
+.loadout-help-box {
+    background: #f0f6fc;
+    border: 1px solid #c5d9ed;
+    border-radius: 4px;
+    padding: 12px 16px;
+    margin: 12px 0 20px;
+}
+.loadout-help-box summary {
+    cursor: pointer;
+    font-size: 14px;
+    color: #1d2327;
+    outline: none;
+}
+.loadout-help-box[open] summary {
+    margin-bottom: 8px;
+}
+.loadout-help-content p {
+    margin: 6px 0;
+    color: #444;
+    line-height: 1.5;
+}
+.loadout-help-content ul {
+    margin: 8px 0 8px 18px;
+    list-style: disc;
+}
+.loadout-help-content li {
+    margin: 4px 0;
+    line-height: 1.5;
+    color: #444;
+}
+.loadout-help-content em {
+    color: #666;
+}
+
+/* Inline tiny help text used in compact grids (per-product metabox) */
+#loadout_product_data .loadout-help,
+.loadout-help {
+    display: block;
+    margin-top: 4px;
+    font-size: 11px;
+    color: #666;
+    font-style: italic;
+    line-height: 1.4;
+    font-weight: 400;
+}
+
+
 /* =====================================================
  * Product editor metabox — neutralize WooCommerce's
  * .woocommerce_options_panel aggressive label/input floats
