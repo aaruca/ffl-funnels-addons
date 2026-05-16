@@ -2,6 +2,28 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.27.3] - 2026-05-15
+
+### Loadout — Product editor save flow fixes
+
+Three related bugs were preventing the per-product Loadout configuration from saving correctly when clicking **Update product**.
+
+**1. Wrong tier index on dynamically-added tier "+ Add Item" buttons.** When a user clicked "+ Add Tier", the JS only replaced the form-name placeholder `product_tiers[0]` but left `data-tier-index="0"` and `data-index="0"` baked in from the template. Items added to the new tier were therefore submitted under tier 0's name array (`product_tiers[0][items][N]`), overwriting tier 0's items and silently dropping the new tier's items.
+
+   - JS now replaces `product_tiers[0]`, `data-tier-index="0"`, AND `data-index="0"` when cloning the tier template
+
+**2. Tiers with empty names were silently discarded.** The save loop did `if (empty($name)) continue;` and skipped entire tiers, including their items, even if items were valid. So a tier with products but no typed name vanished on save.
+
+   - Save logic now keeps a tier as long as it has a name OR items
+   - Tiers with items but no name auto-fall back to "Tier N" so the data persists and the user can rename later
+   - Truly blank rows (no name AND no items) are still skipped
+
+**3. Save handler could nuke data on programmatic product saves.** `woocommerce_process_product_meta` also fires from REST API calls, `wc_update_product()`, etc., where `$_POST` is empty. The previous handler ran anyway and called `delete_post_meta` on the custom-tiers key, wiping configured loadouts.
+
+   - Handler now early-returns when none of `loadout_enable_tab`, `loadout_link`, or `product_tiers` are present in `$_POST`
+
+**Bonus:** added a `_ffla_loadout_last_save` post meta breadcrumb (timestamp) plus a `WP_DEBUG`-gated `error_log` line so future "did the save fire?" questions can be answered by checking the post meta or the PHP error log.
+
 ## [1.27.2] - 2026-05-15
 
 ### Loadout — Fix fatal error from Bricks integration filter signatures

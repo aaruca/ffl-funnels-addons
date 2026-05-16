@@ -121,7 +121,13 @@ class Loadout_Product_Admin
                 var index = $container.find('.loadout-tier-row').length;
                 var template = $('#tmpl-loadout-product-tier').html();
                 if (template) {
-                    var html = template.replace(/product_tiers\[0\]/g, 'product_tiers[' + index + ']');
+                    // Replace BOTH the form-name index AND data-tier-index/data-index
+                    // attributes — otherwise new tiers' items submit under tier 0 and
+                    // overwrite each other.
+                    var html = template
+                        .replace(/product_tiers\[0\]/g, 'product_tiers[' + index + ']')
+                        .replace(/data-tier-index="0"/g, 'data-tier-index="' + index + '"')
+                        .replace(/data-index="0"/g, 'data-index="' + index + '"');
                     $container.append(html);
                 }
             });
@@ -239,38 +245,58 @@ class Loadout_Product_Admin
             return;
         }
 
+        // The action `woocommerce_process_product_meta` also fires on programmatic
+        // saves (REST API, wc_update_product, etc.) where our form fields wouldn't
+        // be present. Only proceed if at least one of our markers is in $_POST.
+        if (
+            !isset($_POST['loadout_enable_tab']) &&
+            !isset($_POST['loadout_link']) &&
+            !isset($_POST['product_tiers'])
+        ) {
+            return;
+        }
+
         $enable_tab = !empty($_POST['loadout_enable_tab']) ? 1 : 0;
         $linked_id = isset($_POST['loadout_link']) ? absint($_POST['loadout_link']) : 0;
 
         update_post_meta($product_id, self::META_ENABLE_TAB, $enable_tab);
         update_post_meta($product_id, self::META_LOADOUT_LINK, $linked_id);
 
-        // Save custom tiers.
-        $tiers_raw = isset($_POST['product_tiers']) ? (array) $_POST['product_tiers'] : [];
+        // Save custom tiers — be permissive: keep tiers with name OR items, and
+        // re-key to sequential 0..N so the JSON stays clean.
+        $tiers_raw = isset($_POST['product_tiers']) && is_array($_POST['product_tiers']) ? $_POST['product_tiers'] : [];
         $custom_tiers = [];
         foreach ($tiers_raw as $tier_data) {
-            $name = isset($tier_data['name']) ? sanitize_text_field(wp_unslash($tier_data['name'])) : '';
-            if (empty($name)) {
+            if (!is_array($tier_data)) {
                 continue;
             }
+            $name = isset($tier_data['name']) ? sanitize_text_field(wp_unslash($tier_data['name'])) : '';
             $items = [];
-            $items_raw = isset($tier_data['items']) ? (array) $tier_data['items'] : [];
+            $items_raw = isset($tier_data['items']) && is_array($tier_data['items']) ? $tier_data['items'] : [];
             foreach ($items_raw as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
                 $pid = isset($item['product_id']) ? absint($item['product_id']) : 0;
                 if (!$pid) {
                     continue;
                 }
                 $items[] = [
-                    'product_id' => $pid,
-                    'quantity' => isset($item['quantity']) ? max(1, absint($item['quantity'])) : 1,
+                    'product_id'   => $pid,
+                    'quantity'     => isset($item['quantity']) ? max(1, absint($item['quantity'])) : 1,
                     'discount_pct' => isset($item['discount_pct']) ? floatval($item['discount_pct']) : 0,
                 ];
             }
+            // Skip only if BOTH name and items are empty (truly blank row).
+            if ($name === '' && empty($items)) {
+                continue;
+            }
+            $effective_name = $name !== '' ? $name : sprintf(__('Tier %d', 'ffl-funnels-addons'), count($custom_tiers) + 1);
             $custom_tiers[] = [
-                'name' => $name,
-                'slug' => sanitize_title($name),
+                'name'             => $effective_name,
+                'slug'             => sanitize_title($effective_name) ?: ('tier-' . (count($custom_tiers) + 1)),
                 'set_discount_pct' => isset($tier_data['set_discount_pct']) ? floatval($tier_data['set_discount_pct']) : 0,
-                'items' => $items,
+                'items'            => $items,
             ];
         }
 
@@ -278,6 +304,19 @@ class Loadout_Product_Admin
             update_post_meta($product_id, self::META_CUSTOM_TIERS, wp_json_encode($custom_tiers));
         } else {
             delete_post_meta($product_id, self::META_CUSTOM_TIERS);
+        }
+
+        // Debug breadcrumb so we can verify the save handler actually ran.
+        update_post_meta($product_id, '_ffla_loadout_last_save', current_time('mysql'));
+
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log(sprintf(
+                '[FFLA Loadout] Save fired on product #%d — enable_tab=%d, linked=%d, tiers=%d',
+                $product_id,
+                $enable_tab,
+                $linked_id,
+                count($custom_tiers)
+            ));
         }
     }
 
