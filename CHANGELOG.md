@@ -2,6 +2,37 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.29.0] - 2026-05-15
+
+### Loadout — "Add Entire Tier" now adds as a single inseparable bundle line (+ includes the anchor)
+
+The **ADD ENTIRE TIER / ADD CART** button now behaves like a WooBooster Bundle:
+
+- Adds **one synthetic cart line** representing the whole tier — instead of N separate cart lines
+- **The anchor / main product is automatically included** in that line (the rifle on a product page tab, or the loadout's configured anchor product in the standalone widget)
+- All discounts (per-item, accessory, set) are pre-applied; the line price is the final total
+- Removing the line removes the entire tier-bundle in one click — customers can't accidentally break the set apart
+- Cart shows "Includes: Daniel Defense V7, EOTech HWS, Magpul Sling × 1..." sub-list under the line
+- Same "Includes:" appears in the order line item meta (admin order view + customer emails)
+
+**Why:** the user requested that ADD ENTIRE TIER mirrors Bundle behavior so the discount can be applied as one atomic operation with no ambiguity about which items the discount belongs to, no orphaned items, and no risk of partial-set state.
+
+**Individual ADD buttons are unchanged** — they still add per-item cart lines so customers can mix and match. Only the master ADD ENTIRE TIER action uses the new bundle behavior.
+
+**Implementation:**
+
+- New cart-item meta: `_ffla_tier_bundle` (flag), `_ffla_tier_bundle_items` (composition), `_ffla_tier_bundle_total` (price), `_ffla_tier_bundle_hash` (unique key so two bundles never merge)
+- `Loadout_Cart::ajax_add_tier()` rewritten to:
+  - Resolve anchor (widget = `Loadout::get_anchor_product_id()`, product_tab = the current product)
+  - Build the bundle items list (anchor first as representative, then tier items at configured qty, skipping anchor duplication)
+  - Pre-compute the total with per-item + accessory + set discount baked in (capped at 100% per line; anchor itself is not discounted by accessory/set)
+  - Add one cart line with bundle meta + unique hash
+- `apply_loadout_pricing()` overrides the line price to the pre-computed total when `META_TIER_BUNDLE` is set
+- `display_cart_item_meta()` renders a styled "Includes:" list (HTML for cart display, plain comma list for emails)
+- Order line item save captures the full bundle composition + a human-readable "Includes" meta
+
+Works for both global Loadout tiers and per-product custom tiers. No schema migration needed — bundle meta is cart/order-side only.
+
 ## [1.28.2] - 2026-05-15
 
 ### Loadout — Self-service admin: collapsible "How Loadouts work" intro + per-field descriptions
