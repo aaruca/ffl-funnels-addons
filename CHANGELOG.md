@@ -2,6 +2,23 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.27.4] - 2026-05-15
+
+### Loadout — Fix "Class Loadout_Product_Admin not found" frontend fatal
+
+Patches a critical fatal triggered on **every WooCommerce product page render** since v1.26.0:
+
+```
+PHP Fatal error: Uncaught Error: Class "Loadout_Product_Admin" not found
+in .../modules/loadout/includes/class-loadout-product-tab.php:21
+```
+
+**Root cause:** `Loadout_Product_Tab::add_loadout_tab()` (hooked to `woocommerce_product_tabs`, runs on every frontend product page) calls `Loadout_Product_Admin::get_product_config()` to decide whether to render the Loadout tab. But the `class-loadout-product-admin.php` file was only required inside an `is_admin()` guard in `Loadout_Module::boot()` — so the class doesn't exist on the frontend, and calling its static method fatals.
+
+**Fix:** Moved the `require_once 'admin/class-loadout-product-admin.php'` outside the `is_admin()` block. The class is now always available (its definition has no side effects), but instantiation still only happens in admin. The static `get_product_config()` helper is now reachable from frontend code.
+
+Pure load-order fix. No behavior, schema, or data changes.
+
 ## [1.27.3] - 2026-05-15
 
 ### Loadout — Product editor save flow fixes

@@ -49,6 +49,11 @@ class Loadout_Module extends FFLA_Module
         require_once $path . 'includes/class-loadout-product-tab.php';
         require_once $path . 'includes/class-loadout-shortcode.php';
 
+        // Always load Loadout_Product_Admin — it owns meta-key constants and the
+        // static get_product_config() helper that Loadout_Product_Tab needs on
+        // frontend product pages. Instantiation stays admin-only below.
+        require_once $path . 'admin/class-loadout-product-admin.php';
+
         // Admin.
         if (is_admin()) {
             // Run pending schema migrations on file-based updates.
@@ -58,7 +63,6 @@ class Loadout_Module extends FFLA_Module
             require_once $path . 'admin/class-loadout-ajax.php';
             require_once $path . 'admin/class-loadout-form.php';
             require_once $path . 'admin/class-loadout-list.php';
-            require_once $path . 'admin/class-loadout-product-admin.php';
 
             $this->admin = new Loadout_Admin();
             $this->admin->init();
