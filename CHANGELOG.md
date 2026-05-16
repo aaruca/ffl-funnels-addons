@@ -2,6 +2,23 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.28.1] - 2026-05-15
+
+### Loadout — Show stock status in admin item rows
+
+Per the previous request, "quantity" actually meant **stock**. The admin product picker now surfaces stock alongside price.
+
+- **Search dropdown results** show each product's current stock with a colored chip: green "X in stock" (managed-stock products), yellow "X in stock" when ≤5, "In stock" (untracked), red "Out of stock", or blue "On backorder".
+- **Selected-product chip** (the one that appears next to the chosen product in the admin row) now shows the same stock chip beside the price chip.
+- Pre-existing items render with both price and stock chips on form load — so reopening a saved loadout immediately shows you whether each item is still in stock.
+
+Applies to:
+- Global Loadout edit form: tier items, bonus product
+- Per-product Loadout metabox in the WooCommerce product editor: tier items, bonus product
+- AJAX search response: new `stock_status`, `stock_quantity`, `manages_stock`, `stock_html` fields
+
+Shared helper `Loadout_Ajax::format_stock_html($product)` keeps the chip markup consistent across the AJAX response and PHP renderers.
+
 ## [1.28.0] - 2026-05-15
 
 ### Loadout — Per-product config feature parity with global + price/qty visibility

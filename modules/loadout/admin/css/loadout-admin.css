@@ -172,7 +172,7 @@
     display: none;
 }
 
-/* Price chip used in both global form and per-product metabox */
+/* Price + stock chips used in both global form and per-product metabox */
 .loadout-product-display .loadout-product-name {
     font-weight: 600;
 }
@@ -188,6 +188,32 @@
 .loadout-product-display .loadout-product-price s {
     opacity: 0.7;
     margin-right: 4px;
+}
+
+/* Stock chip — appears in search dropdown results AND selected product chip */
+.loadout-stock {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+}
+.loadout-stock--ok {
+    background: #d1e7dd;
+    color: #0f5132;
+}
+.loadout-stock--low {
+    background: #fff3cd;
+    color: #856404;
+}
+.loadout-stock--oos {
+    background: #f8d7da;
+    color: #842029;
+}
+.loadout-stock--backorder {
+    background: #cff4fc;
+    color: #055160;
 }
 
 #loadout_product_data .loadout-search-results {

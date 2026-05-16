@@ -86,13 +86,18 @@
                         var html = '<ul class="loadout-search-list">';
                         response.data.products.forEach(function (product) {
                             var priceAttr = product.price ? ' data-price="' + escapeHtml(product.price) + '"' : '';
-                            html += '<li data-id="' + product.id + '" data-name="' + escapeHtml(product.name) + '"' + priceAttr + '>';
+                            var stockAttr = product.stock_html ? ' data-stock="' + escapeHtml(product.stock_html) + '"' : '';
+                            html += '<li data-id="' + product.id + '" data-name="' + escapeHtml(product.name) + '"' + priceAttr + stockAttr + '>';
                             html += '<strong>' + escapeHtml(product.name) + '</strong>';
                             if (product.sku) {
                                 html += ' <span style="color:#666;">(SKU: ' + escapeHtml(product.sku) + ')</span>';
                             }
+                            html += '<br>';
                             if (product.price) {
-                                html += '<br><span style="color:#2271b1;font-size:11px;">' + product.price + '</span>';
+                                html += '<span style="color:#2271b1;font-size:11px;margin-right:6px;">' + product.price + '</span>';
+                            }
+                            if (product.stock_html) {
+                                html += product.stock_html;
                             }
                             html += '</li>';
                         });
@@ -109,6 +114,7 @@
             var productId = $li.data('id');
             var productName = $li.data('name');
             var productPrice = $li.attr('data-price') || '';
+            var productStock = $li.attr('data-stock') || '';
             var $results = $li.closest('.loadout-search-results');
             var $input = $results.siblings('.loadout-product-search').last();
             if (!$input.length) {
@@ -133,6 +139,9 @@
             var html = '<span class="loadout-product-name">' + escapeHtml(productName) + ' (#' + productId + ')</span>';
             if (productPrice) {
                 html += ' <span class="loadout-product-price">' + productPrice + '</span>';
+            }
+            if (productStock) {
+                html += ' ' + productStock;
             }
             html += ' <button type="button" class="button-link loadout-product-remove" data-target="' + targetSel + '" data-display="' + displaySel + '"' + (scope === 'row' ? ' data-scope="row"' : '') + '>Remove</button>';
             $display.html(html);

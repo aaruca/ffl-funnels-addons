@@ -474,11 +474,13 @@ class Loadout_Form
 
         $product_name = '';
         $price_html = '';
+        $stock_html = '';
         if ($product_id) {
             $p = wc_get_product($product_id);
             if ($p) {
                 $product_name = $p->get_name();
                 $price_html = $p->get_price_html();
+                $stock_html = class_exists('Loadout_Ajax') ? Loadout_Ajax::format_stock_html($p) : '';
             }
         }
         ?>
@@ -492,6 +494,7 @@ class Loadout_Form
                     <?php if ($product_name): ?>
                         <span class="loadout-product-name"><?php echo esc_html($product_name); ?> (#<?php echo esc_html($product_id); ?>)</span>
                         <span class="loadout-product-price"><?php echo wp_kses_post($price_html); ?></span>
+                        <?php echo wp_kses_post($stock_html); ?>
                     <?php endif; ?>
                 </div>
                 <div class="loadout-search-results"></div>

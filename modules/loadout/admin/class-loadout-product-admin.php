@@ -174,11 +174,13 @@ class Loadout_Product_Admin
 
         $bonus_name = '';
         $bonus_price_html = '';
+        $bonus_stock_html = '';
         if ($bonus_product_id) {
             $bp = wc_get_product($bonus_product_id);
             if ($bp) {
-                $bonus_name = $bp->get_name();
+                $bonus_name       = $bp->get_name();
                 $bonus_price_html = $bp->get_price_html();
+                $bonus_stock_html = class_exists('Loadout_Ajax') ? Loadout_Ajax::format_stock_html($bp) : '';
             }
         }
         ?>
@@ -221,7 +223,9 @@ class Loadout_Product_Admin
                         <input type="text" class="loadout-product-search" data-target=".loadout-bonus-id" data-display=".loadout-bonus-display" data-scope="row" placeholder="<?php esc_attr_e('Search products...', 'ffl-funnels-addons'); ?>">
                         <div class="loadout-bonus-display loadout-product-display">
                             <?php if ($bonus_name): ?>
-                                <span><?php echo esc_html($bonus_name); ?> (#<?php echo esc_html($bonus_product_id); ?>) <?php echo wp_kses_post($bonus_price_html); ?></span>
+                                <span class="loadout-product-name"><?php echo esc_html($bonus_name); ?> (#<?php echo esc_html($bonus_product_id); ?>)</span>
+                                <span class="loadout-product-price"><?php echo wp_kses_post($bonus_price_html); ?></span>
+                                <?php echo wp_kses_post($bonus_stock_html); ?>
                             <?php endif; ?>
                         </div>
                         <div class="loadout-search-results"></div>
@@ -259,11 +263,13 @@ class Loadout_Product_Admin
 
         $product_name = '';
         $price_html   = '';
+        $stock_html   = '';
         if ($product_id) {
             $p = wc_get_product($product_id);
             if ($p) {
                 $product_name = $p->get_name();
                 $price_html   = $p->get_price_html();
+                $stock_html   = (class_exists('Loadout_Ajax') ? Loadout_Ajax::format_stock_html($p) : '');
             }
         }
         ?>
@@ -278,6 +284,7 @@ class Loadout_Product_Admin
                         <?php if ($product_name): ?>
                             <span class="loadout-product-name"><?php echo esc_html($product_name); ?> (#<?php echo esc_html($product_id); ?>)</span>
                             <span class="loadout-product-price"><?php echo wp_kses_post($price_html); ?></span>
+                            <?php echo wp_kses_post($stock_html); ?>
                         <?php endif; ?>
                     </div>
                     <div class="loadout-search-results"></div>
