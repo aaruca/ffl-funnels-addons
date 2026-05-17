@@ -2,6 +2,35 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.30.0] - 2026-05-15
+
+### Loadout — Composable elements auto-detect the current product's loadout + full color tokenization
+
+**Auto-detection in composable Bricks elements.** Loadout: Tier Tabs, Loadout: Progress Bar, and Loadout: Cart Mirror now resolve which loadout to bind to automatically — no more manually picking from the dropdown each time you drop them on a product page. The dropdown still works for explicit overrides, but the first option is now **"— Auto-detect from current product —"** and that's what gets used when left blank.
+
+Resolution priority (shared across all three elements via new `Loadout_Element_Helpers::resolve_tiers_for_current_context()`):
+
+1. Explicit loadout picked from the dropdown
+2. Current Bricks Query Loop's Loadout/Tier object (so you can nest them inside Loadout loops)
+3. Current product page → linked global Loadout (set via the product editor's Loadout tab)
+4. Current product page → per-product custom tiers (also from the product editor's Loadout tab)
+
+Result: drop a **Loadout: Tier Tabs** element on a single-product template, configure the product's Loadout settings normally, and the tabs render automatically with the correct tier names/slugs/IDs — including for per-product custom tiers where there's no global Loadout to reference. Same for Progress Bar (gets `data-loadout-id` / `data-product-loadout-id` for cart-summary AJAX) and Cart Mirror (auto-filters to the current product's loadout).
+
+The `data-product-loadout-id` attribute on the root of these elements lets the frontend JS pass the right context when calling the cart-summary endpoint, so progress-bar fills correctly for per-product setups too.
+
+**Full color tokenization for plugin scalability.** Every hardcoded brand color in the Loadout frontend now reads from site CSS custom properties with safe fallbacks — so a single design-system update at `:root` retheme the entire loadout UI:
+
+- `--primary` (accent / "Main" tag / active tier underline) — fallback `#d4a017` gold
+- `--success` (savings / total savings) — fallback `#2e7d32` green
+- `--danger` (discount badge in product tab / OOS) — fallback `#e91e63`
+- `--warning` / `--warning-bg` (set-discount callout in product tab) — fallback `#f9a825` / `#fff8e1`
+- `--bg`, `--fg`, `--muted`, `--card`, `--border` (widget background, text, dim text, panel bg, dividers)
+
+Translucent accent backgrounds (perks panel, bonus panel) now use `color-mix(in srgb, var(--primary) 10%, transparent)` so the tint automatically derives from whatever primary color the site has set. Hex fallbacks are provided immediately before each `color-mix` declaration for older browsers.
+
+No schema, behavior, or data changes. Pure UX/scalability improvements.
+
 ## [1.29.3] - 2026-05-15
 
 ### Loadout — Cart actually updates after add (no more page-refresh needed)

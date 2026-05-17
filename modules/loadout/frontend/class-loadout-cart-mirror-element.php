@@ -21,16 +21,17 @@ class Loadout_Cart_Mirror_Element extends \Bricks\Element
 
     public function set_controls()
     {
-        $loadout_options = ['' => '— All Loadouts —'];
+        $loadout_options = ['' => esc_html__('— Auto-detect / all loadouts —', 'ffl-funnels-addons')];
         foreach (Loadout::get_all(['status' => 1]) as $l) {
             $loadout_options[$l->get_id()] = $l->get_name();
         }
 
         $this->controls['loadout_id'] = [
-            'tab' => 'content',
-            'label' => esc_html__('Filter by Loadout', 'ffl-funnels-addons'),
-            'type' => 'select',
-            'options' => $loadout_options,
+            'tab'         => 'content',
+            'label'       => esc_html__('Filter by Loadout', 'ffl-funnels-addons'),
+            'type'        => 'select',
+            'options'     => $loadout_options,
+            'description' => esc_html__('Leave empty to auto-pick based on the current product, or show all loadouts if not on a product page.', 'ffl-funnels-addons'),
         ];
 
         $this->controls['heading'] = [
@@ -43,13 +44,17 @@ class Loadout_Cart_Mirror_Element extends \Bricks\Element
 
     public function render()
     {
-        $settings = $this->settings;
+        $settings   = $this->settings;
         $loadout_id = absint($settings['loadout_id'] ?? 0);
-        $heading = $settings['heading'] ?? 'Your Cart';
+        $heading    = $settings['heading'] ?? 'Your Cart';
+
+        $resolved        = Loadout_Element_Helpers::resolve_tiers_for_current_context($loadout_id);
+        $loadout_id_attr = $resolved['loadout_id'];
 
         $this->set_attribute('_root', 'class', 'ffla-loadout ffla-loadout--cart-only');
-        $this->set_attribute('_root', 'data-loadout-id', $loadout_id);
-
+        if ($loadout_id_attr) {
+            $this->set_attribute('_root', 'data-loadout-id', $loadout_id_attr);
+        }
         ?>
         <div <?php echo $this->render_attributes('_root'); ?>>
             <aside class="ffla-loadout__cart">

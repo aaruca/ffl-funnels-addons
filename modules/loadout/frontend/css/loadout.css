@@ -1,12 +1,17 @@
 /* FFL Funnels — Loadout Widget Styles */
 
 .ffla-loadout {
-    --ffla-loadout-accent: #d4a017;
-    --ffla-loadout-bg: #1a1a1a;
-    --ffla-loadout-fg: #fff;
-    --ffla-loadout-muted: #888;
-    --ffla-loadout-card: #2a2a2a;
-    --ffla-loadout-border: #333;
+    /* All colors map to the site's design tokens with safe fallbacks.
+       Define --primary, --success, --bg, --fg, --muted, --card, --border
+       at :root (or any ancestor) to retheme automatically. */
+    --ffla-loadout-accent: var(--primary, #d4a017);
+    --ffla-loadout-success: var(--success, #2e7d32);
+    --ffla-loadout-danger: var(--danger, #b3261e);
+    --ffla-loadout-bg: var(--bg, #1a1a1a);
+    --ffla-loadout-fg: var(--fg, #fff);
+    --ffla-loadout-muted: var(--muted, #888);
+    --ffla-loadout-card: var(--card, #2a2a2a);
+    --ffla-loadout-border: var(--border, #333);
 
     background: var(--ffla-loadout-bg);
     color: var(--ffla-loadout-fg);
@@ -260,7 +265,9 @@
 .ffla-loadout__perks {
     margin-top: 16px;
     padding: 12px;
+    /* Translucent tint derived from the site's primary color. */
     background: rgba(212, 160, 23, 0.08);
+    background: color-mix(in srgb, var(--ffla-loadout-accent) 10%, transparent);
     border-left: 3px solid var(--ffla-loadout-accent);
     border-radius: 4px;
 }
@@ -294,6 +301,7 @@
     margin-top: 12px;
     padding: 12px;
     background: rgba(212, 160, 23, 0.1);
+    background: color-mix(in srgb, var(--ffla-loadout-accent) 12%, transparent);
     border-radius: 4px;
     text-align: center;
 }
@@ -437,14 +445,14 @@
     padding: 10px 20px;
     cursor: pointer;
     font-weight: 600;
-    color: #666;
+    color: var(--muted, #666);
     border-bottom: 2px solid transparent;
     transition: all 0.2s ease;
 }
 
 .ffla-loadout-tab__tier-btn.is-active {
-    color: #000;
-    border-bottom-color: #000;
+    color: var(--fg, #000);
+    border-bottom-color: var(--primary, #000);
 }
 
 .ffla-loadout-tab__panel {
@@ -456,8 +464,8 @@
 }
 
 .ffla-loadout-tab__set-discount {
-    background: #fff8e1;
-    border-left: 3px solid #f9a825;
+    background: var(--warning-bg, #fff8e1);
+    border-left: 3px solid var(--warning, #f9a825);
     padding: 12px;
     margin-bottom: 16px;
     border-radius: 4px;
@@ -494,7 +502,7 @@
 
 .ffla-loadout-tab__item-badge {
     display: inline-block;
-    background: #e91e63;
+    background: var(--danger, #e91e63);
     color: #fff;
     padding: 2px 8px;
     border-radius: 3px;
@@ -504,7 +512,7 @@
 }
 
 .ffla-loadout-tab__item-price s {
-    color: #999;
+    color: var(--muted, #999);
     margin-right: 6px;
 }
 

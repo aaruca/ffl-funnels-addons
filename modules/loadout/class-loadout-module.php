@@ -92,6 +92,7 @@ class Loadout_Module extends FFLA_Module
         // Bricks Builder integration.
         if (defined('BRICKS_VERSION')) {
             require_once $path . 'frontend/class-loadout-bricks.php';
+            require_once $path . 'frontend/class-loadout-element-helpers.php';
             $bricks = new Loadout_Bricks();
             $bricks->init();
 
