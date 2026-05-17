@@ -2,6 +2,25 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.29.1] - 2026-05-15
+
+### Loadout — Richer "Includes:" rendering in cart (links, prices, per-line savings, total savings)
+
+The bundle line's `Includes:` sub-list in the cart was previously plain product names. It now shows, for each contained product:
+
+- **Product name as a clickable link** to the product page
+- **Quantity** badge when > 1 (`× 2`)
+- **"Main" tag** on the anchor product so the customer can see at a glance which is the hero item vs. the accessories
+- **Original price** with strikethrough when discounted
+- **Final price** (after all loadout discounts applied) in bold
+- **Per-line "Save $X.XX"** badge in green showing how much the loadout saved them on that specific line
+
+Plus a **"Total Loadout Savings: $X.XX"** footer below the list summing all per-line savings — so the customer immediately sees the dollar value of the loadout discount on this bundle line.
+
+Layout is a flexbox row per item so it stays readable on dark/light themes. Colors use opacity-based dimming for strikethrough and an accessible green (`#2e7d32`) for savings — no hardcoded background that would clash with the theme.
+
+Plain-text fallback (used by emails and order line item meta) still uses the comma-separated `Name × Qty — $price` format so it renders cleanly when HTML is stripped.
+
 ## [1.29.0] - 2026-05-15
 
 ### Loadout — "Add Entire Tier" now adds as a single inseparable bundle line (+ includes the anchor)

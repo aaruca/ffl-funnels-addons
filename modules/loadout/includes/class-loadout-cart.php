@@ -331,21 +331,86 @@ class Loadout_Cart
             $items = (array) $cart_item[self::META_TIER_BUNDLE_ITEMS];
             $plain = [];
             $html_lines = [];
+            $total_savings = 0.0;
+
             foreach ($items as $bi) {
-                $name = isset($bi['name']) ? (string) $bi['name'] : '';
-                $qty  = isset($bi['quantity']) ? (int) $bi['quantity'] : 1;
+                $pid       = isset($bi['product_id']) ? (int) $bi['product_id'] : 0;
+                $name      = isset($bi['name']) ? (string) $bi['name'] : '';
+                $qty       = isset($bi['quantity']) ? max(1, (int) $bi['quantity']) : 1;
+                $original  = isset($bi['original']) ? (float) $bi['original'] : 0;
+                $final     = isset($bi['final']) ? (float) $bi['final'] : $original;
+                $is_anchor = !empty($bi['is_anchor']);
+
                 if ($name === '') {
                     continue;
                 }
-                $label = $qty > 1 ? sprintf('%s × %d', $name, $qty) : $name;
-                $plain[] = $label;
-                $html_lines[] = '<li style="padding:4px 0;border-bottom:1px solid rgba(0,0,0,0.06);">' . esc_html($label) . '</li>';
+
+                $line_original = $original * $qty;
+                $line_final    = $final * $qty;
+                $line_savings  = max(0, $line_original - $line_final);
+                $total_savings += $line_savings;
+
+                // Plain text version for emails / non-HTML contexts.
+                $plain_label = $qty > 1 ? sprintf('%s × %d', $name, $qty) : $name;
+                $plain[]     = $plain_label . ' — ' . wp_strip_all_tags(wc_price($line_final));
+
+                // HTML version with link + prices + savings.
+                $link = $pid ? get_permalink($pid) : '';
+
+                $html  = '<li class="ffla-bundle-item" style="padding:8px 0;border-bottom:1px solid rgba(128,128,128,0.25);display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline;">';
+                $html .= '<span class="ffla-bundle-item__name" style="flex:1 1 60%;min-width:160px;">';
+                if ($link) {
+                    $html .= '<a href="' . esc_url($link) . '" style="text-decoration:none;color:inherit;font-weight:600;">' . esc_html($name) . '</a>';
+                } else {
+                    $html .= '<strong>' . esc_html($name) . '</strong>';
+                }
+                if ($qty > 1) {
+                    $html .= ' <span class="ffla-bundle-item__qty" style="opacity:0.7;">× ' . esc_html($qty) . '</span>';
+                }
+                if ($is_anchor) {
+                    $html .= ' <span class="ffla-bundle-item__badge" style="margin-left:6px;padding:1px 6px;background:rgba(212,160,23,0.2);color:#d4a017;border-radius:3px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">' . esc_html__('Main', 'ffl-funnels-addons') . '</span>';
+                }
+                $html .= '</span>';
+
+                $html .= '<span class="ffla-bundle-item__price" style="white-space:nowrap;">';
+                if ($line_savings > 0) {
+                    $html .= '<s style="opacity:0.6;margin-right:6px;">' . wp_kses_post(wc_price($line_original)) . '</s>';
+                }
+                $html .= '<strong>' . wp_kses_post(wc_price($line_final)) . '</strong>';
+                $html .= '</span>';
+
+                if ($line_savings > 0) {
+                    $html .= '<span class="ffla-bundle-item__savings" style="white-space:nowrap;color:#2e7d32;font-size:12px;font-weight:600;">'
+                          . sprintf(
+                              /* translators: %s: savings amount */
+                              esc_html__('Save %s', 'ffl-funnels-addons'),
+                              wp_kses_post(wc_price($line_savings))
+                          )
+                          . '</span>';
+                }
+                $html .= '</li>';
+
+                $html_lines[] = $html;
             }
+
             if (!empty($html_lines)) {
+                $display  = '<ul class="ffla-loadout-bundle-includes" style="margin:6px 0 0;padding:0;list-style:none;font-size:13px;">';
+                $display .= implode('', $html_lines);
+                $display .= '</ul>';
+                if ($total_savings > 0) {
+                    $display .= '<p class="ffla-loadout-bundle-total-savings" style="margin:8px 0 0;font-size:13px;font-weight:700;color:#2e7d32;">'
+                              . sprintf(
+                                  /* translators: %s: total savings amount */
+                                  esc_html__('Total Loadout Savings: %s', 'ffl-funnels-addons'),
+                                  wp_kses_post(wc_price($total_savings))
+                              )
+                              . '</p>';
+                }
+
                 $item_data[] = [
                     'name'    => __('Includes', 'ffl-funnels-addons'),
                     'value'   => implode(', ', $plain),
-                    'display' => '<ul class="ffla-loadout-bundle-includes" style="margin:4px 0 0;padding:0;list-style:none;font-size:13px;">' . implode('', $html_lines) . '</ul>',
+                    'display' => $display,
                 ];
             }
         }
