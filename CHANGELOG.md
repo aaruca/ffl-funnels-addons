@@ -2,6 +2,27 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.29.3] - 2026-05-15
+
+### Loadout — Cart actually updates after add (no more page-refresh needed)
+
+The AJAX add flows (`loadout_add_item` and `loadout_add_tier`) were not returning WooCommerce cart fragments, so the mini-cart widget and any cart-related UI never knew to refresh. On the cart page itself, fragments don't help either — that page requires a reload to show new items in the cart table.
+
+**Server side:**
+
+- New `Loadout_Cart::build_cart_response()` helper that calls `WC()->cart->calculate_totals()`, ensures cart cookies are set, renders the standard mini-cart template, runs the `woocommerce_add_to_cart_fragments` filter, and returns the standard payload (`fragments`, `cart_hash`, `cart_count`, `cart_total`, `cart_url`).
+- All three AJAX endpoints (`ajax_add_item`, `ajax_add_tier`, `ajax_get_cart_summary`) now return this payload — same shape WC's own AJAX add-to-cart returns. Result: mini-cart widgets, cart counters, and any `wc_cart_fragments_params`-aware theme/plugin auto-update.
+
+**Client side:**
+
+- New `addToCart()` flow detects whether we're on the cart/checkout page (by `body.woocommerce-cart` / `body.woocommerce-checkout` classes, the cart-form selector, or by comparing the path against `loadoutFrontend.cartUrl`). If yes, it reloads the page — fragments can't update the cart table itself, so a reload is the only reliable way to show the new line.
+- If we're NOT on cart/checkout, the JS:
+  - Writes the new fragments to `sessionStorage` (the WC Cart Fragments cache used to persist cart UI across page navigations)
+  - Manually `.replaceWith()` each fragment selector returned by the server — so mini-cart updates even if the theme isn't using `wc-cart-fragments.js`
+  - Fires `wc_fragments_refreshed`, `added_to_cart`, and `wc_fragment_refresh` events for any other plugins/themes hooked in
+
+Result: after clicking ADD (single item or entire tier), the cart visibly updates without a manual refresh.
+
 ## [1.29.2] - 2026-05-15
 
 ### Loadout — Use site CSS variables for the "Main" tag and savings colors

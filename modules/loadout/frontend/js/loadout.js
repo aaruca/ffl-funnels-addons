@@ -140,25 +140,73 @@
             method: 'POST',
             data: data,
             success: function (response) {
-                if (response.success) {
-                    $btn.text(loadoutFrontend.strings.added);
-                    $(document.body).trigger('added_to_cart', [
-                        response.data.fragments || {},
-                        response.data.cart_hash || '',
-                        $btn,
-                    ]);
-                    if (onSuccess) onSuccess();
-                    setTimeout(function () { $btn.text(originalText).prop('disabled', false); }, 1500);
-                } else {
+                if (!response || !response.success) {
                     $btn.text(loadoutFrontend.strings.addError).prop('disabled', false);
                     setTimeout(function () { $btn.text(originalText); }, 2000);
+                    return;
                 }
+
+                var d = response.data || {};
+                $btn.text(loadoutFrontend.strings.added);
+
+                // Two paths:
+                // 1. If we're on the cart or checkout page, WC's mini-cart fragments
+                //    don't update the cart-table itself — only a page reload does.
+                //    Reload so the customer sees the new line(s) immediately.
+                // 2. Otherwise, fire the standard WC events so the mini-cart widget
+                //    swaps its HTML and Cart Fragments cache updates.
+                if (isCartOrCheckoutPage()) {
+                    window.location.href = d.cart_url || window.location.href;
+                    return;
+                }
+
+                // Update the WC fragments cache (powers persistent cart across pages).
+                if (d.fragments && window.sessionStorage) {
+                    try {
+                        sessionStorage.setItem('wc_fragments_' + (window.wc_cart_fragments_params ? wc_cart_fragments_params.ajax_url_hash || '' : ''), JSON.stringify(d.fragments));
+                        sessionStorage.setItem('wc_cart_hash', d.cart_hash || '');
+                    } catch (e) { /* sessionStorage may be unavailable */ }
+                }
+
+                // Replace each fragment in the DOM (mini-cart widget, counters, etc.)
+                if (d.fragments) {
+                    $.each(d.fragments, function (selector, html) {
+                        $(selector).replaceWith(html);
+                    });
+                }
+
+                // Trigger the standard WC events so other plugins/themes hook in.
+                $(document.body).trigger('wc_fragments_refreshed');
+                $(document.body).trigger('added_to_cart', [
+                    d.fragments || {},
+                    d.cart_hash || '',
+                    $btn,
+                ]);
+                $(document.body).trigger('wc_fragment_refresh');
+
+                if (onSuccess) onSuccess();
+                setTimeout(function () { $btn.text(originalText).prop('disabled', false); }, 1500);
             },
             error: function () {
                 $btn.text(loadoutFrontend.strings.addError).prop('disabled', false);
                 setTimeout(function () { $btn.text(originalText); }, 2000);
             }
         });
+    }
+
+    function isCartOrCheckoutPage() {
+        if (typeof loadoutFrontend !== 'undefined' && loadoutFrontend.cartUrl) {
+            var here = window.location.pathname.replace(/\/+$/, '');
+            var cartPath = '';
+            try {
+                cartPath = new URL(loadoutFrontend.cartUrl).pathname.replace(/\/+$/, '');
+            } catch (e) { /* older browsers */ }
+            if (cartPath && here === cartPath) return true;
+        }
+        // Class-based detection (works for cart, checkout, and most themes/builders).
+        return $('body').hasClass('woocommerce-cart')
+            || $('body').hasClass('woocommerce-checkout')
+            || $('form.woocommerce-cart-form').length > 0;
     }
 
     function refreshAllCartSummaries() {

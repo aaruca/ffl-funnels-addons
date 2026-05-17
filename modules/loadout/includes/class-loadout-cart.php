@@ -455,6 +455,43 @@ class Loadout_Cart
         }
     }
 
+    /**
+     * Build the standard WooCommerce add-to-cart AJAX response payload:
+     * - fragments (mini-cart HTML and any other registered fragments)
+     * - cart_hash (so wc-add-to-cart-fragments.js knows to swap)
+     * - cart_count, cart_total
+     *
+     * Without these, the mini-cart widget never refreshes after our AJAX
+     * calls and the customer has to reload the page to see new items.
+     */
+    private static function build_cart_response(array $extra = []): array
+    {
+        if (!function_exists('WC') || !WC()->cart) {
+            return $extra;
+        }
+
+        WC()->cart->calculate_totals();
+        WC()->cart->maybe_set_cart_cookies();
+
+        ob_start();
+        if (function_exists('woocommerce_mini_cart')) {
+            woocommerce_mini_cart();
+        }
+        $mini_cart = ob_get_clean();
+
+        $fragments = apply_filters('woocommerce_add_to_cart_fragments', [
+            'div.widget_shopping_cart_content' => '<div class="widget_shopping_cart_content">' . $mini_cart . '</div>',
+        ]);
+
+        return array_merge($extra, [
+            'fragments'  => $fragments,
+            'cart_hash'  => WC()->cart->get_cart_hash(),
+            'cart_count' => WC()->cart->get_cart_contents_count(),
+            'cart_total' => WC()->cart->get_cart_total(),
+            'cart_url'   => wc_get_cart_url(),
+        ]);
+    }
+
     public static function ajax_add_item(): void
     {
         check_ajax_referer('loadout_frontend', 'nonce');
@@ -491,11 +528,9 @@ class Loadout_Cart
             wp_send_json_error(['message' => __('Could not add to cart.', 'ffl-funnels-addons')]);
         }
 
-        wp_send_json_success([
+        wp_send_json_success(self::build_cart_response([
             'cart_key' => $cart_key,
-            'cart_count' => WC()->cart->get_cart_contents_count(),
-            'cart_total' => WC()->cart->get_cart_total(),
-        ]);
+        ]));
     }
 
     /**
@@ -656,14 +691,12 @@ class Loadout_Cart
             wp_send_json_error(['message' => __('Could not add tier bundle to cart.', 'ffl-funnels-addons')]);
         }
 
-        wp_send_json_success([
-            'cart_key'      => $cart_key,
-            'items_added'   => count($bundle_items),
-            'bundle_total'  => wc_price($bundle_total),
-            'tier_name'     => $tier_name,
-            'cart_count'    => WC()->cart->get_cart_contents_count(),
-            'cart_total'    => WC()->cart->get_cart_total(),
-        ]);
+        wp_send_json_success(self::build_cart_response([
+            'cart_key'     => $cart_key,
+            'items_added'  => count($bundle_items),
+            'bundle_total' => wc_price($bundle_total),
+            'tier_name'    => $tier_name,
+        ]));
     }
 
     public static function ajax_get_cart_summary(): void
