@@ -2,6 +2,20 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.29.2] - 2026-05-15
+
+### Loadout — Use site CSS variables for the "Main" tag and savings colors
+
+The bundle "Includes:" rendering hardcoded brand colors (`#d4a017` gold for the Main tag, `#2e7d32` green for savings). Swapped to site-defined CSS custom properties so the colors automatically match each site's design system:
+
+- **Main tag background:** `var(--primary, #d4a017)` — uses the site's primary color, fallback to gold
+- **Per-line "Save $X.XX" text:** `var(--success, #2e7d32)` — uses the site's success/positive color, fallback to green
+- **"Total Loadout Savings" footer text:** `var(--success, #2e7d32)`
+
+Sites that define `--primary` and `--success` at the `:root` (or any ancestor of the cart) get a perfectly themed bundle line. Sites that don't define them fall back to the previous defaults — no breakage.
+
+The "Main" tag also now uses white text (`#fff`) instead of the gold-on-tinted-gold combo, since the background now varies per site.
+
 ## [1.29.1] - 2026-05-15
 
 ### Loadout — Richer "Includes:" rendering in cart (links, prices, per-line savings, total savings)

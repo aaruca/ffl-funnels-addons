@@ -368,7 +368,7 @@ class Loadout_Cart
                     $html .= ' <span class="ffla-bundle-item__qty" style="opacity:0.7;">× ' . esc_html($qty) . '</span>';
                 }
                 if ($is_anchor) {
-                    $html .= ' <span class="ffla-bundle-item__badge" style="margin-left:6px;padding:1px 6px;background:rgba(212,160,23,0.2);color:#d4a017;border-radius:3px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">' . esc_html__('Main', 'ffl-funnels-addons') . '</span>';
+                    $html .= ' <span class="ffla-bundle-item__badge" style="margin-left:6px;padding:1px 6px;background:var(--primary,#d4a017);color:#fff;border-radius:3px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">' . esc_html__('Main', 'ffl-funnels-addons') . '</span>';
                 }
                 $html .= '</span>';
 
@@ -380,7 +380,7 @@ class Loadout_Cart
                 $html .= '</span>';
 
                 if ($line_savings > 0) {
-                    $html .= '<span class="ffla-bundle-item__savings" style="white-space:nowrap;color:#2e7d32;font-size:12px;font-weight:600;">'
+                    $html .= '<span class="ffla-bundle-item__savings" style="white-space:nowrap;color:var(--success,#2e7d32);font-size:12px;font-weight:600;">'
                           . sprintf(
                               /* translators: %s: savings amount */
                               esc_html__('Save %s', 'ffl-funnels-addons'),
@@ -398,7 +398,7 @@ class Loadout_Cart
                 $display .= implode('', $html_lines);
                 $display .= '</ul>';
                 if ($total_savings > 0) {
-                    $display .= '<p class="ffla-loadout-bundle-total-savings" style="margin:8px 0 0;font-size:13px;font-weight:700;color:#2e7d32;">'
+                    $display .= '<p class="ffla-loadout-bundle-total-savings" style="margin:8px 0 0;font-size:13px;font-weight:700;color:var(--success,#2e7d32);">'
                               . sprintf(
                                   /* translators: %s: total savings amount */
                                   esc_html__('Total Loadout Savings: %s', 'ffl-funnels-addons'),
