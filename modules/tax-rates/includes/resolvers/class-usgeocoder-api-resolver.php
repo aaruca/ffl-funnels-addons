@@ -322,6 +322,22 @@ class USGeocoder_API_Resolver extends Tax_Resolver_Base
             ];
         }
 
+        // Dedupe by (jurisdiction lowercase + rate to 6dp). Belt-and-suspenders
+        // in case the JSON shape changes again and a row gets collected at two
+        // depths — better to display one accurate line than two and double the
+        // total.
+        $seen = [];
+        $deduped = [];
+        foreach ($items as $item) {
+            $key = strtolower((string) $item['jurisdiction']) . '|' . number_format((float) $item['rate'], 6, '.', '');
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $deduped[] = $item;
+        }
+        $items = $deduped;
+
         if (count($items) > 8) {
             $items = array_slice($items, 0, 8);
         }
@@ -341,6 +357,16 @@ class USGeocoder_API_Resolver extends Tax_Resolver_Base
     }
 
     /**
+     * Walk the JSON depth-first and collect rate-bearing nodes, preferring
+     * the deepest match in each branch.
+     *
+     * USGeocoder returns both a summary (e.g. `total_sales_tax_rate`) AND
+     * itemized details. Including both produces a double-count where the
+     * summary row gets summed with the detail rows. The fix is to recurse
+     * first: if any nested descendant carries a rate-like key, use those
+     * detail rows and skip the current (summary) node. We only fall back to
+     * the current node when nothing deeper qualifies.
+     *
      * @return array<int,array<string,mixed>>
      */
     private static function collect_arrays_with_rate($node): array
@@ -351,21 +377,27 @@ class USGeocoder_API_Resolver extends Tax_Resolver_Base
             return $rows;
         }
 
-        $has_rate_like_key = false;
-        foreach ($node as $key => $value) {
-            if (is_string($key) && (stripos($key, 'rate') !== false || stripos($key, 'tax') !== false) && is_scalar($value)) {
-                $has_rate_like_key = true;
-                break;
-            }
-        }
-
-        if ($has_rate_like_key) {
-            $rows[] = $node;
-        }
-
+        // Depth-first: collect from descendants first.
         foreach ($node as $value) {
             if (is_array($value)) {
                 $rows = array_merge($rows, self::collect_arrays_with_rate($value));
+            }
+        }
+
+        // Any descendant returned a row → prefer those (they're more specific
+        // than the current summary node). Skip the current node.
+        if (!empty($rows)) {
+            return $rows;
+        }
+
+        // Leaf-ish node: include only if it has a rate-like scalar key.
+        foreach ($node as $key => $value) {
+            if (is_string($key)
+                && (stripos($key, 'rate') !== false || stripos($key, 'tax') !== false)
+                && is_scalar($value)
+            ) {
+                $rows[] = $node;
+                break;
             }
         }
 

@@ -2,6 +2,22 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.30.1] - 2026-05-18
+
+### Tax Rates — Fix double-counting in USGeocoder breakdown parser
+
+The Lookup tab was showing the total tax rate **doubled** — for an address that should have returned ~10%, the engine displayed 20.00% as two breakdown rows of 10.0000% each, both labeled "USGeocoder Detail".
+
+**Root cause:** `USGeocoder_API_Resolver::collect_arrays_with_rate()` walked the response tree and added every node that had a rate-like key (`*rate*` / `*tax*`) to the candidate list — **including parent nodes whose children also matched**. USGeocoder returns both a summary (`total_sales_tax_rate`) and itemized details nested below it, so the parser collected both depths and summed them.
+
+**Fix:**
+
+1. **Depth-first preference.** `collect_arrays_with_rate()` now recurses into descendants first. If any descendant returns a row, those are used (they're the more specific detail rows) and the current node is skipped. The current node is only included when no descendant qualifies — eliminating summary+detail double-counting at the source.
+
+2. **Defensive dedupe in `extract_breakdown_items()`.** Rows are now de-duplicated by `(jurisdiction lowercased | rate to 6dp)`. If the JSON shape ever changes and a row gets collected at two depths anyway, only one copy makes it into the breakdown.
+
+The "USGeocoder Detail" generic fallback label also tells us the rate is being pulled from a node that has no jurisdiction name field — which means we're still parsing the wrong level for naming. The proper fix is to write explicit field mappings against the real response shape; share one successful JSON response from the dashboard and that landing will be a one-commit follow-up.
+
 ## [1.30.0] - 2026-05-15
 
 ### Loadout — Composable elements auto-detect the current product's loadout + full color tokenization
