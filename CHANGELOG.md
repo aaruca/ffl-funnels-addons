@@ -2,6 +2,39 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.30.2] - 2026-05-18
+
+### Tax Rates — USGeocoder parser now uses the documented field schema
+
+Audited our resolver against the official USGeocoder API Integration Guide (v17.0825) and replaced fuzzy keyword matching with explicit field mappings. The parser previously walked the response tree looking for any node with a `*rate*` / `*tax*` key, which was the root cause of the v1.30.1 double-count bug (summary AND details rows both got collected).
+
+**Now using the documented schema:**
+
+The response wraps everything under `usgeocoder.*`. The sales-tax payload lives in two sibling modules:
+
+- `totalcollection_tax_summary` + `totalcollection_tax_details` (`t_tax_*` field prefix) — what your current plan returns
+- `mandatorycollection_tax_summary` + `mandatorycollection_tax_details` (`m_tax_*` field prefix) — available on full plans
+
+The resolver now:
+
+1. **Honors `usgeocoder.request_status.request_status_code.value`** — if USGeocoder returned `Denied` / `Invalid` / `Error` / `NoMatch` with HTTP 200, the resolver returns a clean error result instead of trying to scrape rates from an empty payload. Status string is captured in `trace.requestStatus`.
+2. **Prefers `totalcollection_tax_details` over `_summary`** (when both exist) since details includes district breakdowns. Falls back to `_summary` if details isn't included. Falls back again to `mandatorycollection_*` if neither Total Collection variant is present.
+3. **Explicit field extraction** instead of fuzzy walks:
+    - State: `t_tax_state_tax` + `t_tax_state_jurisction_name` (note vendor typo in field name)
+    - County: `t_tax_county_tax` + `t_tax_county_jurisdiction_name`
+    - City: `t_tax_city_tax` + `t_tax_city_jurisdiction_name`
+    - County districts 1..N: `t_tax_county_district{N}_tax` + `t_tax_county_district{N}_name`
+    - City districts 1..N: `t_tax_city_district{N}_tax` + `t_tax_city_district{N}_name`
+    - Special districts 1..N: `t_tax_special_district{N}_tax` + `t_tax_special_district{N}_name`
+4. **Skips non-numeric rate values** like `"Collections Not Required"` (mandatory-collection sentinel for jurisdictions with no obligation) by requiring at least one digit in the raw field.
+5. **Captures `t_tax_code` and `t_tax_incorporated_city` to the audit trace** so the order admin / audit log shows the vendor's state-specific tax code and incorporated-city designation.
+6. **Bumps confidence from `MEDIUM` to `HIGH`** when the explicit parser finds known fields — we're no longer guessing at the response shape.
+7. **`extract_total_rate()` now reads `t_tax_total_tax` / `m_tax_total_tax` directly** instead of pattern-matching for total-like keys.
+
+The old fuzzy parser is kept as a fallback for response shapes that don't match the documented schema (e.g. if USGeocoder ever returns a payload without the `usgeocoder.*` wrapper).
+
+**Result for Santa Cruz, CA example from the docs:** state CA 7.250%, county Santa Cruz 1.250%, city Santa Cruz 0.750%, plus 3 county districts (0.250% + 0.500% + 0.500%) and 2 city districts (0.500% + 0.250%) — total 9.250% with proper jurisdiction names and types. Previously this showed as 2 rows of "USGeocoder Detail / SPECIAL" summing to ~18.5%.
+
 ## [1.30.1] - 2026-05-18
 
 ### Tax Rates — Fix double-counting in USGeocoder breakdown parser

@@ -124,6 +124,30 @@ class USGeocoder_API_Resolver extends Tax_Resolver_Base
 
         $payload = $response['payload'];
 
+        // Honor USGeocoder's own request_status before doing anything else.
+        // If they returned a hard "Denied" / "Invalid" / "NoMatch" we should
+        // not try to scrape rates out of an empty payload.
+        $status = self::extract_request_status_value($payload);
+        $status_lower = strtolower($status);
+        if (in_array($status_lower, ['denied', 'invalid', 'error'], true)) {
+            return $this->error_result(
+                $normalized,
+                $state_code,
+                Tax_Coverage::DEGRADED,
+                Tax_Quote_Result::OUTCOME_SOURCE_UNAVAILABLE,
+                sprintf('USGeocoder rejected the request (request_status_code=%s).', $status ?: 'unknown')
+            );
+        }
+        if (in_array($status_lower, ['nomatch'], true)) {
+            return $this->error_result(
+                $normalized,
+                $state_code,
+                Tax_Coverage::DEGRADED,
+                Tax_Quote_Result::OUTCOME_VALIDATION_ERROR,
+                'USGeocoder did not match the address (request_status_code=NoMatch).'
+            );
+        }
+
         $result = new Tax_Quote_Result();
         $result->inputAddress       = $normalized;
         $result->normalizedAddress  = $normalized;
@@ -137,8 +161,13 @@ class USGeocoder_API_Resolver extends Tax_Resolver_Base
         $result->trace['resolver']  = $this->get_id();
         $result->trace['geocodeUsed'] = false;
         $result->trace['sourceUrl']   = self::API_ENDPOINT;
+        if ($status !== '') {
+            $result->trace['requestStatus'] = $status;
+        }
 
         $matched_address = self::pick_first_string($payload, [
+            ['usgeocoder', 'request_status', 'request_address'],
+            ['request_status', 'request_address'],
             ['result', 'address'],
             ['address'],
             ['matchedAddress'],
@@ -149,9 +178,20 @@ class USGeocoder_API_Resolver extends Tax_Resolver_Base
             $result->matchedAddress = $matched_address;
         }
 
-        $breakdown = self::extract_breakdown_items($payload);
-        foreach ($breakdown as $item) {
-            $result->add_breakdown($item['type'], $item['jurisdiction'], $item['rate']);
+        // Preferred path: explicit field mappings against the documented
+        // Total Collection / Mandatory Collection schema. Skips the fuzzy
+        // walker entirely when known fields are present.
+        $known_breakdown = self::extract_known_breakdown($payload, $result);
+        if (!empty($known_breakdown)) {
+            foreach ($known_breakdown as $item) {
+                $result->add_breakdown($item['type'], $item['jurisdiction'], $item['rate']);
+            }
+        } else {
+            // Fallback: fuzzy parser for unknown payload shapes.
+            $breakdown = self::extract_breakdown_items($payload);
+            foreach ($breakdown as $item) {
+                $result->add_breakdown($item['type'], $item['jurisdiction'], $item['rate']);
+            }
         }
 
         if (empty($result->breakdown)) {
@@ -272,6 +312,231 @@ class USGeocoder_API_Resolver extends Tax_Resolver_Base
     }
 
     /**
+     * Extract `usgeocoder.request_status.request_status_code.value` (or the
+     * XML-decoded equivalent) so we can act on Denied / Invalid / NoMatch
+     * before we try to scrape rates.
+     */
+    private static function extract_request_status_value(array $payload): string
+    {
+        // JSON path: usgeocoder.request_status.request_status_code.{value|0}
+        $candidates = [
+            ['usgeocoder', 'request_status', 'request_status_code', 'value'],
+            ['request_status', 'request_status_code', 'value'],
+            ['usgeocoder', 'request_status', 'request_status_code'],
+            ['request_status', 'request_status_code'],
+        ];
+        foreach ($candidates as $path) {
+            $node = $payload;
+            foreach ($path as $part) {
+                if (!is_array($node) || !array_key_exists($part, $node)) {
+                    $node = null;
+                    break;
+                }
+                $node = $node[$part];
+            }
+            if (is_scalar($node) && trim((string) $node) !== '') {
+                return trim((string) $node);
+            }
+            if (is_array($node) && isset($node['value']) && is_scalar($node['value'])) {
+                return trim((string) $node['value']);
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Build the breakdown using the documented USGeocoder field names.
+     *
+     * The response wraps everything under `usgeocoder.*` and the sales-tax
+     * payload lives in two siblings:
+     *  - totalcollection_tax_summary  → state / county / city + totals
+     *  - totalcollection_tax_details  → adds county/city/special district lines
+     *
+     * `mandatorycollection_*` mirrors the same shape but with `m_tax_*`
+     * field names; values can be "Collections Not Required" strings on
+     * jurisdictions where the seller has no obligation.
+     *
+     * Strategy:
+     *  - Prefer Total Collection details (most specific)
+     *  - Fall back to Total Collection summary
+     *  - Fall back again to Mandatory Collection details / summary
+     *  - Skip non-numeric rates ("Collections Not Required")
+     *  - Capture t_tax_code / t_tax_incorporated_city on trace
+     *
+     * @return array<int,array{type:string,jurisdiction:string,rate:float}>
+     */
+    private static function extract_known_breakdown(array $payload, Tax_Quote_Result $result): array
+    {
+        $root = isset($payload['usgeocoder']) && is_array($payload['usgeocoder'])
+            ? $payload['usgeocoder']
+            : $payload;
+
+        // Try total-collection paths first (paid plans typically include this),
+        // then mandatory-collection (some plans only include this).
+        $module_groups = [
+            ['details_key' => 'totalcollection_tax_details', 'summary_key' => 'totalcollection_tax_summary', 'prefix' => 't_tax_'],
+            ['details_key' => 'mandatorycollection_tax_details', 'summary_key' => 'mandatorycollection_tax_summary', 'prefix' => 'm_tax_'],
+        ];
+
+        foreach ($module_groups as $group) {
+            // Use details if available (richer), else summary.
+            $node = null;
+            $is_details = false;
+            if (isset($root[$group['details_key']]) && is_array($root[$group['details_key']])) {
+                $node = $root[$group['details_key']];
+                $is_details = true;
+            } elseif (isset($root[$group['summary_key']]) && is_array($root[$group['summary_key']])) {
+                $node = $root[$group['summary_key']];
+            }
+            if (!$node) {
+                continue;
+            }
+
+            $p = $group['prefix'];
+            $items = [];
+
+            // State
+            $state_rate = self::numeric_field($node, $p . 'state_tax');
+            if ($state_rate !== null) {
+                $state_name = self::scalar_field($node, [$p . 'state_jurisction_name', $p . 'state_jurisdiction_name']);
+                $items[] = [
+                    'type'         => 'state',
+                    'jurisdiction' => $state_name !== '' ? $state_name : 'State Tax',
+                    'rate'         => $state_rate,
+                ];
+            }
+
+            // County (base rate)
+            $county_rate = self::numeric_field($node, $p . 'county_tax');
+            if ($county_rate !== null) {
+                $county_name = self::scalar_field($node, [$p . 'county_jurisdiction_name']);
+                $items[] = [
+                    'type'         => 'county',
+                    'jurisdiction' => $county_name !== '' ? $county_name . ' County' : 'County Tax',
+                    'rate'         => $county_rate,
+                ];
+            }
+
+            // County districts 1..N (details only). Names live in *_district{N}_name,
+            // rates in *_district{N}_tax. Documented N ≤ 3, but we walk until missing
+            // to stay safe if USGeocoder ever extends the schema.
+            if ($is_details) {
+                for ($i = 1; $i <= 10; $i++) {
+                    $rate = self::numeric_field($node, $p . 'county_district' . $i . '_tax');
+                    if ($rate === null) {
+                        break;
+                    }
+                    $name = self::scalar_field($node, [$p . 'county_district' . $i . '_name', $p . 'county_district' . $i . '_abbr']);
+                    $items[] = [
+                        'type'         => 'special',
+                        'jurisdiction' => $name !== '' ? $name : ('County District ' . $i),
+                        'rate'         => $rate,
+                    ];
+                }
+            }
+
+            // City (base rate)
+            $city_rate = self::numeric_field($node, $p . 'city_tax');
+            if ($city_rate !== null) {
+                $city_name = self::scalar_field($node, [$p . 'city_jurisdiction_name', $p . 'incorporated_city']);
+                $items[] = [
+                    'type'         => 'city',
+                    'jurisdiction' => $city_name !== '' ? $city_name . ' City' : 'City Tax',
+                    'rate'         => $city_rate,
+                ];
+            }
+
+            // City districts 1..N (details only).
+            if ($is_details) {
+                for ($i = 1; $i <= 10; $i++) {
+                    $rate = self::numeric_field($node, $p . 'city_district' . $i . '_tax');
+                    if ($rate === null) {
+                        break;
+                    }
+                    $name = self::scalar_field($node, [$p . 'city_district' . $i . '_name', $p . 'city_district' . $i . '_abbr']);
+                    $items[] = [
+                        'type'         => 'special',
+                        'jurisdiction' => $name !== '' ? $name : ('City District ' . $i),
+                        'rate'         => $rate,
+                    ];
+                }
+
+                // Special districts (details only).
+                for ($i = 1; $i <= 10; $i++) {
+                    $rate = self::numeric_field($node, $p . 'special_district' . $i . '_tax');
+                    if ($rate === null) {
+                        break;
+                    }
+                    $name = self::scalar_field($node, [$p . 'special_district' . $i . '_name', $p . 'special_district' . $i . '_abbr']);
+                    $items[] = [
+                        'type'         => 'special',
+                        'jurisdiction' => $name !== '' ? $name : ('Special District ' . $i),
+                        'rate'         => $rate,
+                    ];
+                }
+            }
+
+            // Capture tax code + incorporated city in the trace so the audit
+            // table has the full vendor metadata.
+            $tax_code = self::scalar_field($node, [$p . 'code']);
+            if ($tax_code !== '') {
+                $result->trace['taxCode'] = $tax_code;
+            }
+            $incorp_city = self::scalar_field($node, [$p . 'incorporated_city']);
+            if ($incorp_city !== '') {
+                $result->trace['incorporatedCity'] = $incorp_city;
+            }
+            $result->trace['usgeocoderModule'] = ($group['prefix'] === 't_tax_') ? 'total_collection' : 'mandatory_collection';
+
+            if (!empty($items)) {
+                // Explicit field mappings → bump confidence from medium to high
+                // because we're no longer guessing at the response shape.
+                $result->confidence = Tax_Quote_Result::CONFIDENCE_HIGH;
+                return $items;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Read a numeric field from a USGeocoder node. Accepts "9.250%" / "0.0925"
+     * / "Collections Not Required" — only returns a float when the value
+     * parses to a usable rate (>= 0). Anything else returns null so the
+     * caller can decide whether to skip the line entirely.
+     */
+    private static function numeric_field(array $node, string $key): ?float
+    {
+        if (!array_key_exists($key, $node) || !is_scalar($node[$key])) {
+            return null;
+        }
+        $raw = trim((string) $node[$key]);
+        if ($raw === '') {
+            return null;
+        }
+        // USGeocoder uses string sentinels like "Collections Not Required"
+        // for mandatory-collection jurisdictions with no obligation. Skip
+        // anything that doesn't contain a digit.
+        if (!preg_match('/\d/', $raw)) {
+            return null;
+        }
+        return self::to_decimal_rate($raw);
+    }
+
+    private static function scalar_field(array $node, array $keys): string
+    {
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $node) && is_scalar($node[$key])) {
+                $val = trim((string) $node[$key]);
+                if ($val !== '') {
+                    return $val;
+                }
+            }
+        }
+        return '';
+    }
+
+    /**
      * @return array<int,array{type:string,jurisdiction:string,rate:float}>
      */
     private static function extract_breakdown_items(array $payload): array
@@ -347,11 +612,39 @@ class USGeocoder_API_Resolver extends Tax_Resolver_Base
 
     public static function extract_total_rate(array $payload): ?float
     {
+        // Documented schema: usgeocoder.totalcollection_tax_*.t_tax_total_tax
+        // (paid plans) or usgeocoder.mandatorycollection_tax_*.m_tax_total_tax.
+        $root = isset($payload['usgeocoder']) && is_array($payload['usgeocoder'])
+            ? $payload['usgeocoder']
+            : $payload;
+        $known_paths = [
+            ['totalcollection_tax_details', 't_tax_total_tax'],
+            ['totalcollection_tax_summary', 't_tax_total_tax'],
+            ['mandatorycollection_tax_details', 'm_tax_total_tax'],
+            ['mandatorycollection_tax_summary', 'm_tax_total_tax'],
+        ];
+        foreach ($known_paths as $path) {
+            $node = $root;
+            foreach ($path as $part) {
+                if (!is_array($node) || !array_key_exists($part, $node)) {
+                    $node = null;
+                    break;
+                }
+                $node = $node[$part];
+            }
+            if (is_scalar($node)) {
+                $rate = self::to_decimal_rate((string) $node);
+                if ($rate !== null) {
+                    return $rate;
+                }
+            }
+        }
+
+        // Fallback: keyword scan (kept for compatibility with unknown shapes).
         $preferred = self::find_numeric_by_key_pattern($payload, '/(total|combined).*(tax|rate)|(tax|rate).*(total|combined)/i');
         if ($preferred !== null) {
             return self::to_decimal_rate((string) $preferred);
         }
-
         $fallback = self::find_numeric_by_key_pattern($payload, '/(tax|rate)/i');
         return $fallback !== null ? self::to_decimal_rate((string) $fallback) : null;
     }
