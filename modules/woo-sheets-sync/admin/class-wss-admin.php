@@ -107,6 +107,11 @@ class WSS_Admin
         if (isset($_GET['wss_saved'])) {
             FFLA_Admin::render_notice('success', __('Settings saved.', 'ffl-funnels-addons'));
         }
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $sa_error_msg = isset($_GET['wss_sa_error']) ? sanitize_text_field(wp_unslash($_GET['wss_sa_error'])) : '';
+        if ($sa_error_msg !== '') {
+            FFLA_Admin::render_notice('danger', $sa_error_msg);
+        }
         ?>
 
         <!-- Google Account Connection -->
@@ -145,6 +150,77 @@ class WSS_Admin
         <!-- Sheet Configuration -->
         <form method="post" action="">
             <?php wp_nonce_field('wss_save_settings', 'wss_settings_nonce'); ?>
+
+            <?php
+            $sa_email    = class_exists('WSS_Google_Service_Account') ? WSS_Google_Service_Account::configured_email() : '';
+            $sa_active   = ($settings['auth_mode'] ?? '') === 'service_account' && $sa_email !== '';
+            $sa_constant = (defined('WSS_SERVICE_ACCOUNT_JSON') && WSS_SERVICE_ACCOUNT_JSON !== '')
+                || (defined('WSS_SERVICE_ACCOUNT_FILE') && WSS_SERVICE_ACCOUNT_FILE !== '');
+            ?>
+            <div class="wb-card">
+                <div class="wb-card__header">
+                    <h2><?php esc_html_e('Authentication — Service Account (Recommended)', 'ffl-funnels-addons'); ?></h2>
+                </div>
+                <div class="wb-card__body">
+                    <p class="wb-field__desc">
+                        <?php esc_html_e('A Google service account connects once and never expires — no monthly re-authorization. Create one in Google Cloud, download its JSON key, paste it below, then share your Google Sheet (as Editor) with the service account email shown after saving.', 'ffl-funnels-addons'); ?>
+                    </p>
+
+                    <?php if ($sa_constant): ?>
+                        <div class="wss-oauth-status wss-oauth-status--connected">
+                            <span class="wss-oauth-status__icon">&#x2705;</span>
+                            <span><?php esc_html_e('A service account is configured via a wp-config.php constant and is in use.', 'ffl-funnels-addons'); ?></span>
+                        </div>
+                        <?php if ($sa_email !== ''): ?>
+                            <p class="wb-field__desc"><?php
+                                /* translators: %s: service account email address. */
+                                printf(
+                                    esc_html__('Share your sheet (as Editor) with: %s', 'ffl-funnels-addons'),
+                                    '<strong><code>' . esc_html($sa_email) . '</code></strong>'
+                                );
+                            ?></p>
+                        <?php endif; ?>
+                    <?php else: ?>
+                        <?php if ($sa_active): ?>
+                            <div class="wss-oauth-status wss-oauth-status--connected">
+                                <span class="wss-oauth-status__icon">&#x2705;</span>
+                                <span><?php
+                                    /* translators: %s: service account email address. */
+                                    printf(
+                                        esc_html__('Service account active. Share your sheet (as Editor) with: %s', 'ffl-funnels-addons'),
+                                        '<strong><code>' . esc_html($sa_email) . '</code></strong>'
+                                    );
+                                ?></span>
+                            </div>
+                            <div class="wb-field" style="margin-top:var(--wb-spacing-sm);">
+                                <label>
+                                    <input type="checkbox" name="wss_remove_service_account" value="1">
+                                    <?php esc_html_e('Remove this service account (revert to OAuth).', 'ffl-funnels-addons'); ?>
+                                </label>
+                            </div>
+                        <?php endif; ?>
+
+                        <div class="wb-field">
+                            <label class="wb-field__label" for="wss_service_account_json">
+                                <?php echo $sa_active
+                                    ? esc_html__('Replace service account key (paste new JSON)', 'ffl-funnels-addons')
+                                    : esc_html__('Service account JSON key', 'ffl-funnels-addons'); ?>
+                            </label>
+                            <div class="wb-field__control">
+                                <textarea id="wss_service_account_json" name="wss_service_account_json" rows="8" class="wb-input" style="font-family:monospace;" placeholder='{ "type": "service_account", "client_email": "...", "private_key": "..." }'></textarea>
+                                <p class="wb-field__desc"><?php esc_html_e('Paste the entire downloaded JSON key. It is stored encrypted and never displayed again.', 'ffl-funnels-addons'); ?></p>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                </div>
+                <?php if (!$sa_constant): ?>
+                    <div class="wb-card__footer" style="display:flex;justify-content:flex-end;align-items:center;">
+                        <button type="submit" name="wss_save" class="wb-btn wb-btn--primary">
+                            <?php esc_html_e('Save Settings', 'ffl-funnels-addons'); ?>
+                        </button>
+                    </div>
+                <?php endif; ?>
+            </div>
 
             <div class="wb-card">
                 <div class="wb-card__header">
@@ -271,13 +347,45 @@ class WSS_Admin
             'sync_time' => $sync_time,
         ]);
 
+        // Service account key: remove, replace, or set.
+        $sa_error = '';
+        if (!empty($_POST['wss_remove_service_account'])) {
+            unset($settings['service_account_json']);
+            if (($settings['auth_mode'] ?? '') === 'service_account') {
+                $settings['auth_mode'] = 'oauth';
+            }
+            if (class_exists('WSS_Google_Service_Account')) {
+                WSS_Google_Service_Account::flush_token_cache();
+            }
+        } else {
+            // JSON keys contain escaped newlines/quotes; only unslash, never sanitize.
+            $raw_json = isset($_POST['wss_service_account_json'])
+                ? trim((string) wp_unslash($_POST['wss_service_account_json'])) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+                : '';
+
+            if ($raw_json !== '' && class_exists('WSS_Google_Service_Account')) {
+                $validated = WSS_Google_Service_Account::validate_json($raw_json);
+                if (is_wp_error($validated)) {
+                    $sa_error = $validated->get_error_message();
+                } else {
+                    $settings['service_account_json'] = WSS_Crypto::encrypt($raw_json);
+                    $settings['auth_mode']            = 'service_account';
+                    WSS_Google_Service_Account::flush_token_cache();
+                }
+            }
+        }
+
         update_option('wss_settings', $settings);
         if (class_exists('WSS_Cron')) {
             WSS_Cron::reschedule();
         }
 
         // Redirect to prevent resubmission.
-        wp_safe_redirect(add_query_arg('wss_saved', '1', wp_get_referer() ?: admin_url('admin.php?page=ffla-wss-settings')));
+        $redirect = add_query_arg('wss_saved', '1', wp_get_referer() ?: admin_url('admin.php?page=ffla-wss-settings'));
+        if ($sa_error !== '') {
+            $redirect = add_query_arg('wss_sa_error', rawurlencode($sa_error), $redirect);
+        }
+        wp_safe_redirect($redirect);
         exit;
     }
 
@@ -884,12 +992,12 @@ class WSS_Admin
             if (
                 $removed_tab !== ''
                 && !empty($settings['sheet_id'])
-                && class_exists('WSS_Google_OAuth')
+                && class_exists('WSS_Auth')
                 && class_exists('WSS_Google_Sheets')
             ) {
-                $oauth = new WSS_Google_OAuth();
-                if ($oauth->is_connected()) {
-                    $sheets = new WSS_Google_Sheets($oauth);
+                $provider = WSS_Auth::get_provider();
+                if ($provider->is_connected()) {
+                    $sheets = new WSS_Google_Sheets($provider);
                     $deleted = $sheets->delete_tab_if_exists((string) $settings['sheet_id'], $removed_tab);
                     if (is_wp_error($deleted)) {
                         $delete_warning = $deleted->get_error_message();

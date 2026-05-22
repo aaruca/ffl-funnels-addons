@@ -140,16 +140,16 @@ class WSS_Sync_Job
             return ['error' => __('No Google Sheet ID configured.', 'ffl-funnels-addons')];
         }
 
-        if (!class_exists('WSS_Google_OAuth') || !class_exists('WSS_Google_Sheets') || !class_exists('WSS_Logger') || !class_exists('WSS_Sync_Orchestrator')) {
+        if (!class_exists('WSS_Auth') || !class_exists('WSS_Google_Sheets') || !class_exists('WSS_Logger') || !class_exists('WSS_Sync_Orchestrator')) {
             return ['error' => __('Sync orchestrator not available.', 'ffl-funnels-addons')];
         }
 
-        $oauth = new WSS_Google_OAuth();
-        if (!$oauth->is_connected()) {
-            return ['error' => __('Not connected to Google. Please authorize first.', 'ffl-funnels-addons')];
+        $provider = WSS_Auth::get_provider();
+        if (!$provider->is_connected()) {
+            return ['error' => __('Not connected to Google. Configure a service account or connect with Google first.', 'ffl-funnels-addons')];
         }
 
-        $sheets = new WSS_Google_Sheets($oauth);
+        $sheets = new WSS_Google_Sheets($provider);
         $logger = new WSS_Logger();
 
         return WSS_Sync_Orchestrator::run_all($sheets, $logger);

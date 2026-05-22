@@ -42,7 +42,11 @@ class WooSheets_Module extends FFLA_Module
         $path = $this->get_path();
 
         // Core includes.
+        require_once $path . 'includes/class-wss-crypto.php';
+        require_once $path . 'includes/interface-wss-token-provider.php';
         require_once $path . 'includes/class-wss-google-oauth.php';
+        require_once $path . 'includes/class-wss-google-service-account.php';
+        require_once $path . 'includes/class-wss-auth.php';
         require_once $path . 'includes/class-wss-google-sheets.php';
         require_once $path . 'includes/class-wss-logger.php';
         require_once $path . 'includes/class-wss-sync-groups.php';

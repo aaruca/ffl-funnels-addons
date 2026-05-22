@@ -108,6 +108,7 @@ if (in_array('woo-sheets-sync', $ffla_active_modules, true)) {
 
     // Transients used during OAuth/sync.
     delete_transient('wss_oauth_state');
+    delete_transient('wss_sa_access_token');
     $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_wss_oauth_state_%' OR option_name LIKE '_transient_timeout_wss_oauth_state_%'");
 
     // Unschedule cron events.
