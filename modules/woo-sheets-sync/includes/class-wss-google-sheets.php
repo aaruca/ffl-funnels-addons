@@ -13,7 +13,7 @@ class WSS_Google_Sheets
 {
     private const API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 
-    /** @var WSS_Google_OAuth */
+    /** @var WSS_Token_Provider */
     private $oauth;
 
     /**
@@ -23,7 +23,7 @@ class WSS_Google_Sheets
      */
     private $tab_title_cache = [];
 
-    public function __construct(WSS_Google_OAuth $oauth)
+    public function __construct(WSS_Token_Provider $oauth)
     {
         $this->oauth = $oauth;
     }

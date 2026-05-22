@@ -40,7 +40,7 @@ A visual element for Bricks Builder to help customers locate nearby FFL dealers 
 
 ### 5. Woo Sheets Sync
 *   Bidirectional synchronization between WooCommerce inventory and Google Sheets.
-*   OAuth 2.0 connection.
+*   **Two ways to connect:** a **Google service account** (recommended — connect once, never expires, no consent screen) or the proxy-based **OAuth 2.0** flow. Paste the service-account JSON key on the WSS Settings page and share the sheet with the service-account email as an Editor.
 *   **Multiple sheet tabs:** configure groups (tab name + products, categories, and tags per tab); the same product can sync to more than one tab; Sheet→Woo conflicts use **last tab in list wins** when the same variation appears in multiple tabs.
 *   Edit prices, stock, and SKU directly from Google Sheets.
 *   Create simple products and variations from the sheet.

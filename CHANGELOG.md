@@ -2,6 +2,26 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.32.0] - 2026-05-22
+
+### Woo Sheets Sync — Service Account authentication (no more monthly re-auth)
+
+Added a **Google service account** auth path alongside the existing proxy-based OAuth flow. Service accounts use the server-to-server JWT bearer grant, so there is **no OAuth consent screen, no refresh-token expiry, and no proxy dependency** — the #1 cause of syncs silently breaking on a recurring basis (Google expires refresh tokens every 7 days while an OAuth app is in "Testing" status). Connect once, share the sheet with the service-account email, and it keeps working.
+
+**New:**
+- `includes/interface-wss-token-provider.php` — `WSS_Token_Provider` contract (`get_access_token()`, `is_connected()`, `get_user_email()`). `WSS_Google_OAuth` now implements it.
+- `includes/class-wss-google-service-account.php` — `WSS_Google_Service_Account`: mints access tokens via the RS256 JWT bearer flow, caches them in a transient until just before expiry, and validates pasted keys. Reads credentials from (in order) the `WSS_SERVICE_ACCOUNT_JSON` constant, the `WSS_SERVICE_ACCOUNT_FILE` path, or the encrypted `wss_settings['service_account_json']` option.
+- `includes/class-wss-auth.php` — `WSS_Auth::get_provider()` returns the service account when one is configured (or forced via constant) and falls back to OAuth otherwise.
+- `includes/class-wss-crypto.php` — `WSS_Crypto` AES-256-CBC helper (AUTH_KEY-derived key, compatible with the OAuth class) for at-rest key storage.
+
+**Changed:**
+- `WSS_Google_Sheets` now type-hints `WSS_Token_Provider` instead of the concrete OAuth class — sync logic is unchanged.
+- `WSS_Cron`, `WSS_Sync_Job`, and the dashboard tab-delete path resolve their provider through `WSS_Auth::get_provider()`, so a configured service account drives scheduled, background, and manual syncs.
+- **Settings page:** new "Authentication — Service Account (Recommended)" card to paste the JSON key (stored encrypted, never echoed back), see the service-account email to share the sheet with, or remove it to revert to OAuth.
+- `uninstall.php` clears the `wss_sa_access_token` transient.
+
+**Upgrade safety:** existing OAuth connections are untouched and remain the default until a service account is saved.
+
 ## [1.31.0] - 2026-05-18
 
 ### Removed — Doofinder Sync addon and all Doofinder integration

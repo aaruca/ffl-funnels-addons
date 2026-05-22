@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class WSS_Google_OAuth
+class WSS_Google_OAuth implements WSS_Token_Provider
 {
     private const TOKEN_OPTION      = 'wss_google_tokens';
     private const TOKEN_ENDPOINT    = 'https://oauth2.googleapis.com/token';

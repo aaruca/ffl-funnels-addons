@@ -87,9 +87,9 @@ class WSS_Cron
         }
 
         try {
-            $oauth  = new WSS_Google_OAuth();
-            $sheets = new WSS_Google_Sheets($oauth);
-            $logger = new WSS_Logger();
+            $provider = WSS_Auth::get_provider();
+            $sheets   = new WSS_Google_Sheets($provider);
+            $logger   = new WSS_Logger();
 
             WSS_Sync_Orchestrator::run_all($sheets, $logger);
         } catch (\Throwable $e) {
