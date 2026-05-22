@@ -90,6 +90,8 @@ class WSS_Admin
     {
         $settings = get_option('wss_settings', []);
         ?>
+
+        <?php
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         if (isset($_GET['wss_saved'])) {
             FFLA_Admin::render_notice('success', __('Settings saved.', 'ffl-funnels-addons'));
