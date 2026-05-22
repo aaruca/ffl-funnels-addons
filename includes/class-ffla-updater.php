@@ -388,7 +388,7 @@ class FFLA_Updater
 
         if (!empty($release->body)) {
             $info->sections = [
-                'description' => 'Modular WooCommerce toolkit — WooBooster, Wishlist, and Doofinder Sync in a single unified plugin.',
+                'description' => 'Modular WooCommerce toolkit — WooBooster, Wishlist, Loadout, Checkout, Tax Rates, and Product Reviews in a single unified plugin.',
                 'changelog' => nl2br(esc_html($release->body)),
             ];
         }

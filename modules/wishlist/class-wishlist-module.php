@@ -27,7 +27,7 @@ class Wishlist_Module extends FFLA_Module
 
     public function get_description(): string
     {
-        return __('High-performance Wishlist with guest support, Bricks Builder integration, Doofinder and SnapFind (Typesense) compatibility.', 'ffl-funnels-addons');
+        return __('High-performance Wishlist with guest support, Bricks Builder integration, and SnapFind (Typesense) compatibility.', 'ffl-funnels-addons');
     }
 
     public function get_icon_svg(): string
@@ -73,12 +73,12 @@ class Wishlist_Module extends FFLA_Module
             add_action('admin_init', [$this, 'verify_database_tables']);
         }
 
-        // Integrations (Bricks, Doofinder).
+        // Integrations (Bricks, SnapFind).
         $this->load_integrations();
     }
 
     /**
-     * Load Bricks, Doofinder & SnapFind integrations.
+     * Load Bricks & SnapFind integrations.
      */
     public function load_integrations(): void
     {
@@ -86,10 +86,6 @@ class Wishlist_Module extends FFLA_Module
 
         require_once $base . 'integrations/class-wishlist-bricks.php';
         Alg_Wishlist_Bricks::init();
-
-        require_once $base . 'integrations/class-wishlist-doofinder.php';
-        $doofinder = new Alg_Wishlist_Doofinder();
-        add_action('wp_enqueue_scripts', [$doofinder, 'enqueue_compatibility_script']);
 
         if (defined('SNAPFIND_DIR')) {
             require_once $base . 'integrations/class-wishlist-snapfind.php';

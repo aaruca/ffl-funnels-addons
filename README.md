@@ -24,7 +24,6 @@ A lightweight wishlist implementation optimized for performance.
 *   Item toggling via AJAX.
 *   Bricks Builder integration (with native elements: Button and Counter).
 *   Guest wishlist support.
-*   Doofinder shadow DOM integration.
 *   **SnapFind (Typesense):** when the SnapFind search plugin is active, wishlist heart buttons on search results; optional **ranking boost** for wishlisted products (off by default; enable in Wishlist settings). See **FFL Funnels → Wishlist → Documentation** for the optional `wishlist_count` index field.
 
 ### 3. FFL Checkout Module
@@ -39,18 +38,14 @@ A visual element for Bricks Builder to help customers locate nearby FFL dealers 
 *   **Extensive Customization:** 10+ control groups for typography, colors, layouts, icons, and more.
 *   **Dynamic Data:** Fetches live dealer data points to display in a customized interface.
 
-### 5. Doofinder Sync
-*   Automatically injects product metadata for Doofinder search indexing.
-*   Ensures your search engine always has the latest product data.
-
-### 6. Woo Sheets Sync
+### 5. Woo Sheets Sync
 *   Bidirectional synchronization between WooCommerce inventory and Google Sheets.
 *   OAuth 2.0 connection.
 *   **Multiple sheet tabs:** configure groups (tab name + products, categories, and tags per tab); the same product can sync to more than one tab; Sheet→Woo conflicts use **last tab in list wins** when the same variation appears in multiple tabs.
 *   Edit prices, stock, and SKU directly from Google Sheets.
 *   Create simple products and variations from the sheet.
 
-### 7. Tax Address Resolver
+### 6. Tax Address Resolver
 US sales tax resolution for WooCommerce using live USGeocoder API lookups (JSON), with optional legacy local sheet tooling still available.
 *   **Live API mode:** Checkout and Quote Lookup can resolve from USGeocoder in real time.
 *   **Legacy sheet mode (optional):** Existing Google Sheet local dataset flow can remain as fallback if no API key is configured.
@@ -59,7 +54,7 @@ US sales tax resolution for WooCommerce using live USGeocoder API lookups (JSON)
 *   **Admin tooling:** Includes Quote Lookup, Coverage Matrix, Datasets, Audit Log, and Settings screens.
 *   **Cleanup tool:** Includes a one-click button to delete old legacy local tax database rows after migrating to USGeocoder.
 
-### 8. Product Reviews
+### 7. Product Reviews
 Advanced WooCommerce product reviews with native Bricks elements and post-purchase review workflows.
 *   **WooCommerce tab (optional):** In **FFL Funnels → Product Reviews**, enable **Replace WooCommerce reviews tab with FFL form** to use the advanced list and form inside the standard product **Reviews** tab (no duplicate Bricks blocks required).
 *   **Bricks Native Elements:** Rating Badge, Reviews List, Review Form, and **Order reviews hub** under the **`FFL Funnels`** element category (with partial star styling and style controls).

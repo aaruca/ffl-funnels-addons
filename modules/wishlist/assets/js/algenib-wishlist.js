@@ -37,19 +37,12 @@ window.AlgWishlist = {
                 this.toggle(btn);
             }
         });
-
-        // Sync Doofinder Shadow DOMs whenever they render asynchronous layers
-        document.addEventListener('df:layer:render', (e) => {
-            setTimeout(() => {
-                this.updateShadowRoots();
-            }, 100);
-        });
     },
 
     /**
      * Public method to toggle wishlist state for a button.
      * Can be called directly via onclick="window.AlgWishlist.toggle(this)"
-     * which is required for elements inside Shadow DOM (like Doofinder).
+     * which is required for elements inside Shadow DOM.
      * Can be called directly via onclick or triggered by custom event.
      */
     toggle: function (btn) {
@@ -265,25 +258,8 @@ window.AlgWishlist = {
         }
     },
 
-    updateShadowRoots: function () {
-        if (typeof AlgWishlistSettings === 'undefined' || !Array.isArray(AlgWishlistSettings.initial_items)) {
-            return;
-        }
-
-        // Loop over potential custom elements that might hold shadow DOMs
-        const tags = document.querySelectorAll('*');
-        tags.forEach(node => {
-            if (node.shadowRoot) {
-                AlgWishlistSettings.initial_items.forEach(id => {
-                    const buttons = node.shadowRoot.querySelectorAll(`[data-product-id="${id}"]`);
-                    this._updateButtonsState(buttons, true);
-                });
-            }
-        });
-    },
-
     markAsActive: function (productId) {
-        // Update ALL buttons for this product (standard + Doofinder if outside shadow DOM)
+        // Update ALL buttons for this product (including any inside shadow DOM)
         const buttons = document.querySelectorAll(`[data-product-id="${productId}"]`);
         this._updateButtonsState(buttons, true);
 

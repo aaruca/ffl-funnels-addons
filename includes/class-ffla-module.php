@@ -2,7 +2,7 @@
 /**
  * Abstract Module base class.
  *
- * Every module (WooBooster, Wishlist, Doofinder) extends this class
+ * Every module (WooBooster, Wishlist, etc.) extends this class
  * and registers itself with the Module Registry.
  *
  * @package FFL_Funnels_Addons
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
 abstract class FFLA_Module
 {
     /**
-     * Unique module identifier (e.g. 'woobooster', 'wishlist', 'doofinder-sync').
+     * Unique module identifier (e.g. 'woobooster', 'wishlist', 'loadout').
      */
     abstract public function get_id(): string;
 

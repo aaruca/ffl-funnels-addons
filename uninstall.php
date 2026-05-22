@@ -48,11 +48,11 @@ if (in_array('wishlist', $ffla_active_modules, true)) {
     delete_option('alg_wishlist_settings');
 }
 
-// ── Doofinder Sync cleanup ──────────────────────────────────────────
-if (in_array('doofinder-sync', $ffla_active_modules, true)) {
-    delete_option('dsync_settings');
-    delete_option('dsync_layer_hash');
-}
+// ── Legacy cleanup: Doofinder Sync (addon removed in v1.31.0) ───────
+// Purge orphaned options from installs that ran the old Doofinder Sync
+// addon, so uninstalling never leaves stale rows behind.
+delete_option('dsync_settings');
+delete_option('dsync_layer_hash');
 
 // ── FFL Checkout cleanup ────────────────────────────────────────────
 if (in_array('ffl-checkout', $ffla_active_modules, true)) {

@@ -3,7 +3,7 @@
  * Plugin Name:       FFL Funnels Addons
  * Plugin URI:        https://github.com/aaruca/ffl-funnels-addons
  * Description:       Modular WooCommerce toolkit with WooBooster, Wishlist, Checkout, Sheets Sync, Tax Resolver, and Product Reviews.
- * Version:           1.30.2
+ * Version:           1.31.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants.
-define('FFLA_VERSION', '1.30.2');
+define('FFLA_VERSION', '1.31.0');
 define('FFLA_FILE', __FILE__);
 define('FFLA_PATH', plugin_dir_path(__FILE__));
 define('FFLA_URL', plugin_dir_url(__FILE__));
@@ -80,7 +80,6 @@ if (!class_exists('FFL_Funnels_Addons')):
             // Module entry points (always loaded so they can be registered).
             require_once FFLA_PATH . 'modules/woobooster/class-woobooster-module.php';
             require_once FFLA_PATH . 'modules/wishlist/class-wishlist-module.php';
-            require_once FFLA_PATH . 'modules/doofinder-sync/class-doofinder-module.php';
             require_once FFLA_PATH . 'modules/ffl-checkout/class-ffl-checkout-module.php';
             require_once FFLA_PATH . 'modules/woo-sheets-sync/class-woo-sheets-module.php';
             require_once FFLA_PATH . 'modules/tax-rates/class-tax-rates-module.php';
@@ -96,7 +95,6 @@ if (!class_exists('FFL_Funnels_Addons')):
             $this->registry = FFLA_Module_Registry::instance();
             $this->registry->register(new WooBooster_Module());
             $this->registry->register(new Wishlist_Module());
-            $this->registry->register(new Doofinder_Module());
             $this->registry->register(new FFL_Checkout_Module());
             $this->registry->register(new WooSheets_Module());
             $this->registry->register(new Tax_Rates_Module());
@@ -149,19 +147,6 @@ if (!class_exists('FFL_Funnels_Addons')):
                 }
                 if (!defined('ALG_WISHLIST_BASENAME')) {
                     define('ALG_WISHLIST_BASENAME', FFLA_BASENAME);
-                }
-            }
-
-            // Doofinder Sync compat constants.
-            if ($this->registry->is_active('doofinder-sync')) {
-                if (!defined('DSYNC_PREFIX')) {
-                    define('DSYNC_PREFIX', 'dsync_');
-                }
-                if (!defined('DSYNC_PLUGIN_BASENAME')) {
-                    define('DSYNC_PLUGIN_BASENAME', FFLA_BASENAME);
-                }
-                if (!defined('DSYNC_PLUGIN_SLUG')) {
-                    define('DSYNC_PLUGIN_SLUG', 'ffl-funnels-addons');
                 }
             }
 

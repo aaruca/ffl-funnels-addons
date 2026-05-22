@@ -15,7 +15,6 @@ class FFLA_Conflict_Checker
     private static $conflicts = [
         'woobooster/woobooster.php'            => 'WooBooster',
         'algenib-wishlist/algenib-wishlist.php' => 'Algenib Wishlist',
-        'doofinder-sync/doofinder-sync.php'     => 'Doofinder Sync',
     ];
 
     /**

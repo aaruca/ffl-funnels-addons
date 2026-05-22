@@ -153,31 +153,6 @@ class Wishlist_Admin
 
         echo '<hr class="wb-hr">';
 
-        echo '<h4>' . esc_html__('Doofinder Integration', 'ffl-funnels-addons') . '</h4>';
-        echo '<p>' . esc_html__('Add this HTML to your Doofinder Layer Template (Product Card) to show a wishlist button in search results. The plugin JS will automatically detect this button and handle wishlist logic.', 'ffl-funnels-addons') . '</p>';
-
-        $df_snippet = '<button' . "\n"
-            . '  type="button"' . "\n"
-            . '  class="wbw-doofinder-btn"' . "\n"
-            . '  data-product-id={@item["id"]}' . "\n"
-            . '  onclick="window.AlgWishlist.toggle(this); return false;"' . "\n"
-            . '  title="Add to Wishlist"' . "\n"
-            . '>' . "\n"
-            . '  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">' . "\n"
-            . '    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />' . "\n"
-            . '  </svg>' . "\n"
-            . '</button>';
-
-        echo '<div id="wbw-df-snippet-wrap" style="position:relative;background:#1e1e1e;border-radius:6px;padding:16px 48px 16px 16px;margin-top:12px;">';
-        echo '<button type="button" id="wbw-df-copy-btn" title="' . esc_attr__('Copy to clipboard', 'ffl-funnels-addons') . '" '
-            . 'style="position:absolute;top:10px;right:10px;background:none;border:1px solid #555;border-radius:4px;cursor:pointer;color:#ccc;padding:4px 8px;font-size:12px;line-height:1;" '
-            . 'onclick="(function(btn){var code=document.getElementById(\'wbw-df-snippet-code\').textContent;navigator.clipboard.writeText(code).then(function(){btn.textContent=\'✓ Copied\';btn.style.color=\'#4ade80\';setTimeout(function(){btn.textContent=\'Copy\';btn.style.color=\'#ccc\';},1800)});})(this)">'
-            . esc_html__('Copy', 'ffl-funnels-addons') . '</button>';
-        echo '<pre id="wbw-df-snippet-code" style="margin:0;white-space:pre;overflow-x:auto;color:#d4d4d4;font-size:13px;font-family:monospace;line-height:1.5;">' . esc_html($df_snippet) . '</pre>';
-        echo '</div>';
-
-        echo '<hr class="wb-hr">';
-
         echo '<h4>' . esc_html__('SnapFind (Typesense) integration', 'ffl-funnels-addons') . '</h4>';
         if (defined('SNAPFIND_DIR')) {
             echo '<p class="description">' . esc_html__('The SnapFind plugin is active. FFL Funnels will automatically add wishlist support on SnapFind product search: heart buttons on each result and ranking boost for products the visitor has saved in their wishlist. No custom template code is required.', 'ffl-funnels-addons') . '</p>';

@@ -2,6 +2,36 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.31.0] - 2026-05-18
+
+### Removed — Doofinder Sync addon and all Doofinder integration
+
+The **Doofinder Sync** addon has been fully removed from the plugin, along with the Wishlist module's Doofinder search-layer integration. The plugin no longer ships, registers, or references any Doofinder functionality.
+
+**Deleted:**
+- `modules/doofinder-sync/` — the entire Doofinder Sync module (entry class, includes, admin, assets)
+- `modules/wishlist/integrations/class-wishlist-doofinder.php` — the Wishlist→Doofinder search-layer compatibility class
+
+**Core plugin (`ffl-funnels-addons.php`):**
+- Removed the `Doofinder_Module` include and registration
+- Removed the `DSYNC_PREFIX` / `DSYNC_PLUGIN_BASENAME` / `DSYNC_PLUGIN_SLUG` compat-constant block
+
+**Wishlist module:**
+- Removed Doofinder integration loading from `load_integrations()` (Bricks + SnapFind remain)
+- Removed the "Doofinder Integration" admin card (the Layer-Template HTML snippet + copy button)
+- Removed the `df:layer:render` event listener and the now-orphaned `updateShadowRoots()` from the frontend JS (generic shadow-DOM button syncing for SnapFind is retained)
+- Removed the `.wbw-doofinder-btn` CSS rules
+- Updated the module description to drop "Doofinder"
+
+**Supporting files:**
+- `includes/class-ffla-conflict-checker.php` — dropped the `doofinder-sync/doofinder-sync.php` conflict entry
+- `includes/class-ffla-updater.php` — refreshed the plugin-info description
+- `includes/class-ffla-module.php` — updated doc-comment examples
+- `README.md` — removed the Doofinder Sync section and the Wishlist Doofinder bullet; renumbered subsequent module sections
+- `uninstall.php` — converted the conditional Doofinder cleanup into an **unconditional legacy purge** of `dsync_settings` / `dsync_layer_hash`, so installs that previously ran the addon don't leave orphaned options behind on uninstall
+
+**Upgrade safety:** Sites that had `doofinder-sync` in their saved active-modules list are unaffected — `FFLA_Module_Registry::get_active()` ignores module IDs that are no longer registered, so the stale entry is silently dropped with no errors.
+
 ## [1.30.2] - 2026-05-18
 
 ### Tax Rates — USGeocoder parser now uses the documented field schema
