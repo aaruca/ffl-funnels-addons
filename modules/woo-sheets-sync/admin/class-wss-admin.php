@@ -88,21 +88,10 @@ class WSS_Admin
      */
     public function render_settings_page(): void
     {
-        $oauth    = new WSS_Google_OAuth();
         $settings = get_option('wss_settings', []);
         ?>
 
         <?php
-        // Show success/error from OAuth redirect or settings save.
-        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-        $oauth_result = sanitize_key($_GET['wss_oauth_result'] ?? '');
-        if ($oauth_result === 'success') {
-            FFLA_Admin::render_notice('success', __('Google account connected successfully.', 'ffl-funnels-addons'));
-        } elseif ($oauth_result === 'error') {
-            // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-            $error_msg = sanitize_text_field(wp_unslash($_GET['wss_oauth_error'] ?? ''));
-            FFLA_Admin::render_notice('danger', $error_msg ?: __('OAuth connection failed.', 'ffl-funnels-addons'));
-        }
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         if (isset($_GET['wss_saved'])) {
             FFLA_Admin::render_notice('success', __('Settings saved.', 'ffl-funnels-addons'));
@@ -113,39 +102,6 @@ class WSS_Admin
             FFLA_Admin::render_notice('danger', $sa_error_msg);
         }
         ?>
-
-        <!-- Google Account Connection -->
-        <div class="wb-card">
-            <div class="wb-card__header">
-                <h2><?php esc_html_e('Google Account Connection', 'ffl-funnels-addons'); ?></h2>
-            </div>
-            <div class="wb-card__body">
-                <?php if ($oauth->is_connected()): ?>
-                    <div class="wss-oauth-status wss-oauth-status--connected">
-                        <span class="wss-oauth-status__icon">&#x2705;</span>
-                        <span>
-                            <?php
-                            printf(
-                                /* translators: %s: Google account email */
-                                esc_html__('Connected as %s', 'ffl-funnels-addons'),
-                                '<strong>' . esc_html($oauth->get_user_email()) . '</strong>'
-                            );
-                            ?>
-                        </span>
-                        <button type="button" class="wb-btn wb-btn--sm wb-btn--danger" id="wss-disconnect-btn">
-                            <?php esc_html_e('Disconnect', 'ffl-funnels-addons'); ?>
-                        </button>
-                    </div>
-                <?php else: ?>
-                    <a href="<?php echo esc_url($oauth->get_auth_url()); ?>" class="wb-btn wb-btn--primary">
-                        <?php esc_html_e('Connect with Google', 'ffl-funnels-addons'); ?>
-                    </a>
-                    <p class="wb-field__desc" style="margin-top: var(--wb-spacing-sm);">
-                        <?php esc_html_e('You will be redirected to Google to authorize access to your spreadsheets.', 'ffl-funnels-addons'); ?>
-                    </p>
-                <?php endif; ?>
-            </div>
-        </div>
 
         <!-- Sheet Configuration -->
         <form method="post" action="">
@@ -172,30 +128,57 @@ class WSS_Admin
                             <span><?php esc_html_e('A service account is configured via a wp-config.php constant and is in use.', 'ffl-funnels-addons'); ?></span>
                         </div>
                         <?php if ($sa_email !== ''): ?>
-                            <p class="wb-field__desc"><?php
-                                /* translators: %s: service account email address. */
-                                printf(
-                                    esc_html__('Share your sheet (as Editor) with: %s', 'ffl-funnels-addons'),
-                                    '<strong><code>' . esc_html($sa_email) . '</code></strong>'
-                                );
-                            ?></p>
+                            <div style="margin-top: var(--wb-spacing-md); padding: var(--wb-spacing-md); background: #f5f5f5; border-left: 4px solid #0073aa;">
+                                <p class="wb-field__label" style="margin: 0 0 var(--wb-spacing-sm) 0;">
+                                    <?php esc_html_e('Client Setup Instructions', 'ffl-funnels-addons'); ?>
+                                </p>
+                                <p class="wb-field__desc" style="margin: 0 0 var(--wb-spacing-md) 0;">
+                                    <?php esc_html_e('Share your Google Sheet with the service account email below. Follow these steps:', 'ffl-funnels-addons'); ?>
+                                </p>
+                                <ol style="margin: 0; padding-left: 20px; color: #444;">
+                                    <li><?php esc_html_e('Open your Google Sheet in a browser', 'ffl-funnels-addons'); ?></li>
+                                    <li><?php esc_html_e('Click the Share button (top-right)', 'ffl-funnels-addons'); ?></li>
+                                    <li><?php esc_html_e('Paste this email address in the field', 'ffl-funnels-addons'); ?></li>
+                                    <li><?php esc_html_e('Set the role to Editor', 'ffl-funnels-addons'); ?></li>
+                                    <li><?php esc_html_e('Turn off notifications (uncheck "Notify people")', 'ffl-funnels-addons'); ?></li>
+                                    <li><?php esc_html_e('Click Share', 'ffl-funnels-addons'); ?></li>
+                                </ol>
+                                <p style="margin: var(--wb-spacing-md) 0 0 0; padding: var(--wb-spacing-md); background: #fff; border-radius: 4px; font-family: monospace; word-break: break-all;">
+                                    <strong><?php esc_html_e('Service Account Email:', 'ffl-funnels-addons'); ?></strong><br>
+                                    <code style="color: #0073aa; font-weight: bold;"><?php echo esc_html($sa_email); ?></code>
+                                </p>
+                            </div>
                         <?php endif; ?>
                     <?php else: ?>
                         <?php if ($sa_active): ?>
                             <div class="wss-oauth-status wss-oauth-status--connected">
                                 <span class="wss-oauth-status__icon">&#x2705;</span>
-                                <span><?php
-                                    /* translators: %s: service account email address. */
-                                    printf(
-                                        esc_html__('Service account active. Share your sheet (as Editor) with: %s', 'ffl-funnels-addons'),
-                                        '<strong><code>' . esc_html($sa_email) . '</code></strong>'
-                                    );
-                                ?></span>
+                                <span><?php esc_html_e('Service account is active and ready to sync.', 'ffl-funnels-addons'); ?></span>
                             </div>
-                            <div class="wb-field" style="margin-top:var(--wb-spacing-sm);">
+                            <div style="margin-top: var(--wb-spacing-md); padding: var(--wb-spacing-md); background: #f5f5f5; border-left: 4px solid #0073aa;">
+                                <p class="wb-field__label" style="margin: 0 0 var(--wb-spacing-sm) 0;">
+                                    <?php esc_html_e('Client Setup Instructions', 'ffl-funnels-addons'); ?>
+                                </p>
+                                <p class="wb-field__desc" style="margin: 0 0 var(--wb-spacing-md) 0;">
+                                    <?php esc_html_e('Share your Google Sheet with the service account email below. Follow these steps:', 'ffl-funnels-addons'); ?>
+                                </p>
+                                <ol style="margin: 0; padding-left: 20px; color: #444;">
+                                    <li><?php esc_html_e('Open your Google Sheet in a browser', 'ffl-funnels-addons'); ?></li>
+                                    <li><?php esc_html_e('Click the Share button (top-right)', 'ffl-funnels-addons'); ?></li>
+                                    <li><?php esc_html_e('Paste this email address in the field', 'ffl-funnels-addons'); ?></li>
+                                    <li><?php esc_html_e('Set the role to Editor', 'ffl-funnels-addons'); ?></li>
+                                    <li><?php esc_html_e('Turn off notifications (uncheck "Notify people")', 'ffl-funnels-addons'); ?></li>
+                                    <li><?php esc_html_e('Click Share', 'ffl-funnels-addons'); ?></li>
+                                </ol>
+                                <p style="margin: var(--wb-spacing-md) 0 0 0; padding: var(--wb-spacing-md); background: #fff; border-radius: 4px; font-family: monospace; word-break: break-all;">
+                                    <strong><?php esc_html_e('Service Account Email:', 'ffl-funnels-addons'); ?></strong><br>
+                                    <code style="color: #0073aa; font-weight: bold;"><?php echo esc_html($sa_email); ?></code>
+                                </p>
+                            </div>
+                            <div class="wb-field" style="margin-top:var(--wb-spacing-md);">
                                 <label>
                                     <input type="checkbox" name="wss_remove_service_account" value="1">
-                                    <?php esc_html_e('Remove this service account (revert to OAuth).', 'ffl-funnels-addons'); ?>
+                                    <?php esc_html_e('Remove this service account and revert to OAuth.', 'ffl-funnels-addons'); ?>
                                 </label>
                             </div>
                         <?php endif; ?>

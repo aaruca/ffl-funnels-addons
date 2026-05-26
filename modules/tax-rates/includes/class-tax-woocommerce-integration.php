@@ -294,66 +294,57 @@ class Tax_WooCommerce_Integration
     }
 
     /**
-     * Convert a tax quote result into WooCommerce-style matched rates.
+     * Convert a tax quote result into a single combined WooCommerce rate.
+     *
+     * The resolver may return a multi-jurisdiction breakdown (state + county +
+     * city + special district). WooCommerce renders one tax line per matched
+     * rate, so we sum the breakdown into a single rate to show the customer one
+     * "Sales Tax" line at checkout. The full jurisdiction breakdown is still
+     * preserved on the order via store_order_tax_quote() for auditing.
      */
     private static function build_wc_rates_from_quote(Tax_Quote_Result $quote, string $tax_class): array
     {
-        $rates = [];
-        $runtime_meta = [];
+        $total_rate = 0.0;
+        foreach ($quote->breakdown as $item) {
+            $total_rate += (float) ($item['rate'] ?? 0);
+        }
 
-        foreach ($quote->breakdown as $index => $item) {
-            $rate_percent = (float) number_format(((float) $item['rate']) * 100, 4, '.', '');
-            if ($rate_percent <= 0) {
-                continue;
-            }
+        if (empty($quote->breakdown)) {
+            $total_rate = (float) $quote->totalRate;
+        }
 
-            $rate_id = 990000 + $index;
-            $label   = self::build_rate_label($item);
-            $code    = self::build_rate_code($quote->state, $rate_id, $item);
+        $rate_percent = (float) number_format($total_rate * 100, 4, '.', '');
+        if ($rate_percent <= 0) {
+            self::store_runtime_tax_meta([]);
+            return [];
+        }
 
-            $rates[$rate_id] = [
+        $rate_id = 990000;
+        $label   = __('Sales Tax', 'ffl-funnels-addons');
+        $code    = sprintf('US-%s-FFLA-TOTAL', strtoupper($quote->state));
+
+        $rates = [
+            $rate_id => [
                 'rate'     => $rate_percent,
                 'label'    => $label,
                 'shipping' => 'yes',
                 'compound' => 'no',
-            ];
+            ],
+        ];
 
-            $runtime_meta[(string) $rate_id] = [
+        self::store_runtime_tax_meta([
+            (string) $rate_id => [
                 'id'       => $rate_id,
                 'label'    => $label,
                 'code'     => $code,
                 'rate'     => $rate_percent,
                 'compound' => false,
                 'state'    => $quote->state,
-                'type'     => (string) ($item['type'] ?? 'tax'),
-            ];
-        }
-
-        self::store_runtime_tax_meta($runtime_meta);
+                'type'     => 'tax',
+            ],
+        ]);
 
         return $rates;
-    }
-
-    /**
-     * Build a readable rate label for WooCommerce tax lines.
-     */
-    private static function build_rate_label(array $item): string
-    {
-        $type = strtoupper((string) ($item['type'] ?? 'tax'));
-        $jurisdiction = (string) ($item['jurisdiction'] ?? 'Tax');
-
-        return 'FFLA ' . $type . ': ' . $jurisdiction;
-    }
-
-    /**
-     * Build a Woo-compatible rate code for runtime-generated rates.
-     */
-    private static function build_rate_code(string $state, int $rate_id, array $item): string
-    {
-        $type = strtoupper(preg_replace('/[^A-Z0-9]+/', '', (string) ($item['type'] ?? 'TAX')));
-        $suffix = strtoupper(substr(md5(wp_json_encode($item) . '|' . $rate_id), 0, 6));
-
-        return sprintf('US-%s-FFLA-%s-%s', strtoupper($state), $type ?: 'TAX', $suffix);
     }
 
     /**

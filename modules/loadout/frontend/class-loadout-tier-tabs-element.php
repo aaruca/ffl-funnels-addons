@@ -40,6 +40,14 @@ class Loadout_Tier_Tabs_Element extends \Bricks\Element
             'type'    => 'number',
             'default' => 0,
         ];
+
+        $this->controls['show_products'] = [
+            'tab'         => 'content',
+            'label'       => esc_html__('Show products under tabs', 'ffl-funnels-addons'),
+            'type'        => 'checkbox',
+            'default'     => true,
+            'description' => esc_html__('Render the recommended products for each tier directly below the tabs. Turn off if you place a separate "Loadout: Products" element elsewhere on the page.', 'ffl-funnels-addons'),
+        ];
     }
 
     public function render()
@@ -47,13 +55,14 @@ class Loadout_Tier_Tabs_Element extends \Bricks\Element
         $settings      = $this->settings;
         $loadout_id    = absint($settings['loadout_id'] ?? 0);
         $default_index = absint($settings['default_tier_index'] ?? 0);
+        $show_products = !isset($settings['show_products']) || $settings['show_products'];
 
-        $tiers_data        = Loadout_Element_Helpers::resolve_tiers_for_current_context($loadout_id);
-        $loadout_id_attr   = $tiers_data['loadout_id'];
-        $product_loadout_id = $tiers_data['product_loadout_id'];
-        $tiers             = $tiers_data['tiers'];
+        $data               = Loadout_Element_Helpers::resolve_full_tiers_for_current_context($loadout_id);
+        $loadout_id_attr    = $data['loadout_id'];
+        $product_loadout_id = $data['product_loadout_id'];
+        $tiers              = $data['tiers'];
 
-        $this->set_attribute('_root', 'class', 'ffla-loadout__tiers');
+        $this->set_attribute('_root', 'class', 'ffla-loadout ffla-loadout--composable');
         if ($loadout_id_attr) {
             $this->set_attribute('_root', 'data-loadout-id', $loadout_id_attr);
         }
@@ -61,14 +70,17 @@ class Loadout_Tier_Tabs_Element extends \Bricks\Element
             $this->set_attribute('_root', 'data-product-loadout-id', $product_loadout_id);
         }
 
+        echo '<div ' . $this->render_attributes('_root') . '>';
+
         if (empty($tiers)) {
-            echo '<nav ' . $this->render_attributes('_root') . '>';
+            echo '<nav class="ffla-loadout__tiers">';
             echo '<span class="ffla-loadout__tier-empty">' . esc_html__('No loadout configured for this context.', 'ffl-funnels-addons') . '</span>';
             echo '</nav>';
+            echo '</div>';
             return;
         }
 
-        echo '<nav ' . $this->render_attributes('_root') . '>';
+        echo '<nav class="ffla-loadout__tiers">';
         foreach ($tiers as $i => $tier) {
             $active = $i === $default_index;
             printf(
@@ -81,5 +93,11 @@ class Loadout_Tier_Tabs_Element extends \Bricks\Element
             );
         }
         echo '</nav>';
+
+        if ($show_products) {
+            Loadout_Element_Helpers::render_recommended_section($tiers, $default_index);
+        }
+
+        echo '</div>';
     }
 }
