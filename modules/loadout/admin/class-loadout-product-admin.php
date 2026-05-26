@@ -15,6 +15,71 @@ class Loadout_Product_Admin
         add_action('woocommerce_product_data_panels', [$this, 'render_product_panel']);
         add_action('woocommerce_process_product_meta', [$this, 'save_product_meta']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_scripts']);
+        add_action('restrict_manage_posts', [$this, 'render_products_filter']);
+        add_filter('parse_query', [$this, 'filter_products_query']);
+    }
+
+    /**
+     * Render a "Loadout" dropdown on the admin Products list table.
+     */
+    public function render_products_filter($post_type): void
+    {
+        if ($post_type !== 'product') {
+            return;
+        }
+
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $current = isset($_GET['loadout_filter']) ? sanitize_key(wp_unslash($_GET['loadout_filter'])) : '';
+        ?>
+        <select name="loadout_filter">
+            <option value=""><?php esc_html_e('All loadouts', 'ffl-funnels-addons'); ?></option>
+            <option value="has" <?php selected($current, 'has'); ?>><?php esc_html_e('With loadout', 'ffl-funnels-addons'); ?></option>
+            <option value="none" <?php selected($current, 'none'); ?>><?php esc_html_e('Without loadout', 'ffl-funnels-addons'); ?></option>
+        </select>
+        <?php
+    }
+
+    /**
+     * Filter the Products list by loadout status (enabled tab meta).
+     */
+    public function filter_products_query($query): void
+    {
+        global $pagenow, $typenow;
+
+        if (!is_admin() || $pagenow !== 'edit.php' || $typenow !== 'product' || !$query->is_main_query()) {
+            return;
+        }
+
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $filter = isset($_GET['loadout_filter']) ? sanitize_key(wp_unslash($_GET['loadout_filter'])) : '';
+        if ($filter !== 'has' && $filter !== 'none') {
+            return;
+        }
+
+        $meta_query = (array) $query->get('meta_query');
+
+        if ($filter === 'has') {
+            $meta_query[] = [
+                'key'     => self::META_ENABLE_TAB,
+                'value'   => '1',
+                'compare' => '=',
+            ];
+        } else {
+            $meta_query[] = [
+                'relation' => 'OR',
+                [
+                    'key'     => self::META_ENABLE_TAB,
+                    'compare' => 'NOT EXISTS',
+                ],
+                [
+                    'key'     => self::META_ENABLE_TAB,
+                    'value'   => '1',
+                    'compare' => '!=',
+                ],
+            ];
+        }
+
+        $query->set('meta_query', $meta_query);
     }
 
     public function enqueue_scripts($hook): void

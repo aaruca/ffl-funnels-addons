@@ -91,6 +91,7 @@ class Tax_Rates_Module extends FFLA_Module
 
         $settings = get_option('ffla_tax_resolver_settings', []);
         Tax_Quote_Engine::set_cache_ttl((int) ($settings['cache_ttl'] ?? 86400));
+        Tax_Resolver_Router::set_forced_source((string) ($settings['rate_source'] ?? 'auto'));
 
         // Reconcile coverage rows when the settings option changes instead of
         // writing to the DB on every request (the old boot() loop).
@@ -133,6 +134,7 @@ class Tax_Rates_Module extends FFLA_Module
                 'sync_schedule'   => 'monthly',
                 'restrict_states' => '0',
                 'enabled_states'  => [],
+                'rate_source'     => 'auto',
                 'sheet_source_url'=> Tax_Dataset_Pipeline::DEFAULT_SHEET_URL,
                 'usgeocoder_auth_key' => '',
                 'tax_role_restrict' => '0',

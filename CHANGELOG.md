@@ -2,6 +2,28 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.33.0] - 2026-05-26
+
+### Loadout — composable Bricks elements now render products; admin product filter
+
+The composable **"Loadout: Tier Tabs"** Bricks element previously rendered only the tab buttons, with no element responsible for the per-tier product panels — so products never appeared unless you used the monolithic "Loadout" element.
+
+**New:**
+- **"Loadout: Products"** Bricks element (`Loadout_Products_Element`) — renders the per-tier recommended-product panels. Drop it next to a "Loadout: Tier Tabs" element (tabs control all matching panels on the page) or use it on its own.
+- **Loadout filter on the admin Products list** — a "With loadout / Without loadout" dropdown on `edit.php?post_type=product`, filtering by the `_ffla_product_loadout_enable_tab` meta.
+
+**Changed:**
+- **"Loadout: Tier Tabs"** now renders the product panels directly below the tabs by default (new "Show products under tabs" control to turn this off when pairing with a standalone "Loadout: Products" element). The element now outputs a `.ffla-loadout` wrapper carrying `data-loadout-id` so the add-to-cart handler resolves context correctly.
+- Shared panel-rendering logic was extracted into `Loadout_Element_Helpers` (`resolve_full_tiers_for_current_context()` + `render_recommended_section()`) and reused by both elements; markup matches the monolithic element so existing CSS/JS (tier switching, add-to-cart) works unchanged.
+
+### Tax Resolver — single checkout tax line + rate-source selector
+
+**Changed:**
+- **Checkout now shows a single "Sales Tax" line.** The resolver still computes the full state/county/city/special-district breakdown (and stores it on the order via `_ffla_tax_quote` for auditing), but the jurisdictions are summed into one combined WooCommerce rate instead of one line per jurisdiction.
+
+**New:**
+- **"Tax rate source" setting** — choose where rates come from: **Automatic** (per-state best source, current behavior), **Google Sheet ZIP dataset** (fully local), or **USGeocoder API** (live address-level). `Tax_Resolver_Router::set_forced_source()` honors the choice and falls back to automatic routing when the selected source doesn't cover a state. Changing the source flushes the address cache.
+
 ## [1.32.0] - 2026-05-22
 
 ### Woo Sheets Sync — Service Account authentication (no more monthly re-auth)

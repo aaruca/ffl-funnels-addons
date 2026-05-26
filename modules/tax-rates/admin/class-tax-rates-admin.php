@@ -160,6 +160,11 @@ class Tax_Rates_Admin
         $tax_exempt_roles = array_values(array_unique($tax_exempt_roles));
         sort($tax_exempt_roles);
 
+        $rate_source = sanitize_key(wp_unslash($_POST['rate_source'] ?? 'auto'));
+        if (!in_array($rate_source, ['auto', 'sheet_zip_dataset', 'usgeocoder_api'], true)) {
+            $rate_source = 'auto';
+        }
+
         $settings = [
             'cache_ttl'       => max(60, (int) ($_POST['cache_ttl'] ?? 86400)),
             'auto_sync'       => isset($_POST['auto_sync']) ? '1' : '0',
@@ -167,6 +172,7 @@ class Tax_Rates_Admin
             'wc_auto_sync'    => '0',
             'restrict_states' => isset($_POST['restrict_states']) ? '1' : '0',
             'enabled_states'  => $enabled_states,
+            'rate_source'     => $rate_source,
             'sheet_source_url'=> esc_url_raw(wp_unslash($_POST['sheet_source_url'] ?? Tax_Dataset_Pipeline::DEFAULT_SHEET_URL)),
             'usgeocoder_auth_key' => sanitize_text_field(wp_unslash($_POST['usgeocoder_auth_key'] ?? '')),
             'tax_role_restrict'   => isset($_POST['tax_role_restrict']) ? '1' : '0',
@@ -204,6 +210,11 @@ class Tax_Rates_Admin
 
         if ($prev_restrict !== $new_restrict || $previous_enabled_states !== $enabled_states) {
             $flush_reasons[] = 'enabled_states_changed';
+        }
+
+        $prev_source = (string) ($previous_settings['rate_source'] ?? 'auto');
+        if ($prev_source !== $rate_source) {
+            $flush_reasons[] = 'rate_source_changed';
         }
 
         $prev_ttl = (int) ($previous_settings['cache_ttl'] ?? 86400);
@@ -1047,6 +1058,7 @@ class Tax_Rates_Admin
             'wc_auto_sync'    => '0',
             'restrict_states' => '0',
             'enabled_states'  => [],
+            'rate_source'     => 'auto',
             'sheet_source_url'=> Tax_Dataset_Pipeline::DEFAULT_SHEET_URL,
             'usgeocoder_auth_key' => '',
         ]);
@@ -1080,6 +1092,18 @@ class Tax_Rates_Admin
             'auto_sync',
             (string) $settings['auto_sync'],
             __('Automatically refresh the local Google Sheet datasets once per month for the states enabled in this store.', 'ffl-funnels-addons')
+        );
+
+        FFLA_Admin::render_select_field(
+            __('Tax rate source', 'ffl-funnels-addons'),
+            'rate_source',
+            (string) $settings['rate_source'],
+            [
+                'auto'              => __('Automatic (recommended)', 'ffl-funnels-addons'),
+                'sheet_zip_dataset' => __('Google Sheet ZIP dataset', 'ffl-funnels-addons'),
+                'usgeocoder_api'    => __('USGeocoder API (live)', 'ffl-funnels-addons'),
+            ],
+            __('Where the resolver pulls rates from. "Automatic" picks the best source per state. Force the Sheet ZIP dataset for fully local lookups, or the USGeocoder API for live address-level precision. If the chosen source does not cover a state, the resolver falls back to automatic routing.', 'ffl-funnels-addons')
         );
 
         echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-sm)">' . esc_html__('WooCommerce checkout reads taxes from the runtime resolver and local imported datasets. Legacy WooCommerce tax-table sync is no longer part of the normal flow.', 'ffl-funnels-addons') . '</p>';

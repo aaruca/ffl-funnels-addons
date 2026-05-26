@@ -17,12 +17,25 @@ class Tax_Resolver_Router
     /** @var Tax_Resolver_Base[] Registered resolvers keyed by ID. */
     private static $resolvers = [];
 
+    /** @var string Forced resolver ID from settings ('' or 'auto' = automatic). */
+    private static $forced_source = '';
+
     /**
      * Register a resolver instance.
      */
     public static function register(Tax_Resolver_Base $resolver): void
     {
         self::$resolvers[$resolver->get_id()] = $resolver;
+    }
+
+    /**
+     * Force a specific resolver as the rate source. When set to a registered
+     * resolver ID, route() returns that resolver for any state it supports;
+     * '' or 'auto' restores the automatic coverage-based routing.
+     */
+    public static function set_forced_source(string $source): void
+    {
+        self::$forced_source = $source;
     }
 
     /**
@@ -44,6 +57,13 @@ class Tax_Resolver_Router
     public static function route(string $state_code): ?Tax_Resolver_Base
     {
         $state_code = strtoupper($state_code);
+
+        // Admin-forced source takes precedence when it supports this state.
+        if (self::$forced_source !== '' && self::$forced_source !== 'auto'
+            && isset(self::$resolvers[self::$forced_source])
+            && self::$resolvers[self::$forced_source]->supports_state($state_code)) {
+            return self::$resolvers[self::$forced_source];
+        }
 
         // First, check coverage rules for a named resolver.
         $rule = Tax_Coverage::get_state($state_code);
