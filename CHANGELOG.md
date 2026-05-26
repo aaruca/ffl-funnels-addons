@@ -27,6 +27,14 @@ The Loadout Bricks surface was trimmed to match real-world use (the configurator
 **New:**
 - **"Tax rate source" setting** — choose where rates come from: **Automatic** (per-state best source, current behavior), **Google Sheet ZIP dataset** (fully local), or **USGeocoder API** (live address-level). `Tax_Resolver_Router::set_forced_source()` honors the choice and falls back to automatic routing when the selected source doesn't cover a state. Changing the source flushes the address cache.
 
+### Woo Sheets Sync — Settings simplified to the service-account path
+
+Following the v1.32.0 service-account release, the WSS Settings page now leads with the service account as the single connection method for client sites.
+
+**Changed:**
+- Removed the "Connect with Google" OAuth button/card from the Settings page. The OAuth code path remains intact as an internal fallback, but clients no longer see two competing connection options.
+- The service-account card now shows a clear step-by-step guide for sharing the Google Sheet with the service-account email (open sheet → Share → paste the email → set Editor → uncheck "Notify people" → Share), with the email displayed prominently for copy/paste.
+
 ## [1.32.0] - 2026-05-22
 
 ### Woo Sheets Sync — Service Account authentication (no more monthly re-auth)
