@@ -4,16 +4,15 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Shared resolver used by the small composable Bricks elements (Tier Tabs,
- * Progress Bar, Cart Mirror) so they can auto-detect the right Loadout
- * config when placed on a product page — without making the builder pick
- * the loadout from a dropdown every time.
+ * Shared resolver used by the Loadout Bricks elements (Tier Tabs, Progress
+ * Bar, Cart Mirror) so they can auto-detect the right Loadout config when
+ * placed on a product page — without making the builder pick the loadout
+ * from a dropdown every time.
  *
  * Priority:
  *   1. Explicit loadout_id passed in (builder selected one from the dropdown)
- *   2. Current loop's Loadout / Loadout_Tier object (if inside a Bricks loop)
- *   3. Current single product page → linked global Loadout
- *   4. Current single product page → per-product custom tiers
+ *   2. Current single product page → linked global Loadout
+ *   3. Current single product page → per-product custom tiers
  */
 class Loadout_Element_Helpers
 {
@@ -50,31 +49,7 @@ class Loadout_Element_Helpers
             ];
         }
 
-        // 2. Bricks query loop context.
-        if (class_exists('Loadout_Bricks')) {
-            $loadout = Loadout_Bricks::current_loop_object(Loadout_Bricks::QUERY_LOADOUTS);
-            $tier    = Loadout_Bricks::current_loop_object(Loadout_Bricks::QUERY_TIERS);
-            if (!$loadout && $tier instanceof Loadout_Tier) {
-                $loadout = Loadout::get($tier->get_loadout_id());
-            }
-            if ($loadout instanceof Loadout) {
-                $loadout_id = $loadout->get_id();
-                foreach (Loadout_Tier::get_by_loadout($loadout_id) as $t) {
-                    $tiers[] = [
-                        'id'   => (int) $t->get_id(),
-                        'slug' => (string) $t->get_slug(),
-                        'name' => (string) $t->get_name(),
-                    ];
-                }
-                return [
-                    'loadout_id'         => $loadout_id,
-                    'product_loadout_id' => 0,
-                    'tiers'              => $tiers,
-                ];
-            }
-        }
-
-        // 3 + 4. Current product page.
+        // 2 + 3. Current product page.
         $product_id = self::current_product_id();
         if ($product_id && class_exists('Loadout_Product_Admin')) {
             $config = Loadout_Product_Admin::get_product_config($product_id);
@@ -144,25 +119,7 @@ class Loadout_Element_Helpers
             ];
         }
 
-        // 2. Bricks query loop context.
-        if (class_exists('Loadout_Bricks')) {
-            $loadout = Loadout_Bricks::current_loop_object(Loadout_Bricks::QUERY_LOADOUTS);
-            $tier    = Loadout_Bricks::current_loop_object(Loadout_Bricks::QUERY_TIERS);
-            if (!$loadout && $tier instanceof Loadout_Tier) {
-                $loadout = Loadout::get($tier->get_loadout_id());
-            }
-            if ($loadout instanceof Loadout) {
-                $loadout_id = $loadout->get_id();
-                $tiers      = self::normalize_global_tiers(Loadout_Tier::get_by_loadout($loadout_id));
-                return [
-                    'loadout_id'         => $loadout_id,
-                    'product_loadout_id' => 0,
-                    'tiers'              => $tiers,
-                ];
-            }
-        }
-
-        // 3 + 4. Current product page.
+        // 2 + 3. Current product page.
         $product_id = self::current_product_id();
         if ($product_id && class_exists('Loadout_Product_Admin')) {
             $config = Loadout_Product_Admin::get_product_config($product_id);

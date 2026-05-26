@@ -4,17 +4,20 @@ All notable changes to FFL Funnels Addons are documented in this file.
 
 ## [1.33.0] - 2026-05-26
 
-### Loadout — composable Bricks elements now render products; admin product filter
+### Loadout — focused on single-product use; Tier Tabs now renders products
 
-The composable **"Loadout: Tier Tabs"** Bricks element previously rendered only the tab buttons, with no element responsible for the per-tier product panels — so products never appeared unless you used the monolithic "Loadout" element.
-
-**New:**
-- **"Loadout: Products"** Bricks element (`Loadout_Products_Element`) — renders the per-tier recommended-product panels. Drop it next to a "Loadout: Tier Tabs" element (tabs control all matching panels on the page) or use it on its own.
-- **Loadout filter on the admin Products list** — a "With loadout / Without loadout" dropdown on `edit.php?post_type=product`, filtering by the `_ffla_product_loadout_enable_tab` meta.
+The Loadout Bricks surface was trimmed to match real-world use (the configurator runs almost entirely on single product pages). **"Loadout: Tier Tabs"** is now the one element you drop into a product template: it auto-detects the current product's loadout and renders the tabs **plus** the per-tier product panels and add buttons in a single element.
 
 **Changed:**
-- **"Loadout: Tier Tabs"** now renders the product panels directly below the tabs by default (new "Show products under tabs" control to turn this off when pairing with a standalone "Loadout: Products" element). The element now outputs a `.ffla-loadout` wrapper carrying `data-loadout-id` so the add-to-cart handler resolves context correctly.
-- Shared panel-rendering logic was extracted into `Loadout_Element_Helpers` (`resolve_full_tiers_for_current_context()` + `render_recommended_section()`) and reused by both elements; markup matches the monolithic element so existing CSS/JS (tier switching, add-to-cart) works unchanged.
+- **"Loadout: Tier Tabs"** now renders the product panels directly below the tabs by default (new "Show products under tabs" control to turn this off). It outputs a `.ffla-loadout` wrapper carrying `data-loadout-id` so add-to-cart resolves the loadout context correctly.
+- Shared panel-rendering logic was extracted into `Loadout_Element_Helpers` (`resolve_full_tiers_for_current_context()` + `render_recommended_section()`) so the Tier Tabs element and the native product tab stay in sync; markup is unchanged so existing CSS/JS (tier switching, add-to-cart) still works.
+
+**New:**
+- **Loadout filter on the admin Products list** — a "With loadout / Without loadout" dropdown on `edit.php?post_type=product`, filtering by the `_ffla_product_loadout_enable_tab` meta.
+
+**Removed (unused for the single-product flow):**
+- The monolithic **"Loadout"** Bricks element, the **"Loadout: Add Item Button"** and **"Loadout: Add Tier Button"** elements, and the Bricks **query-loop / dynamic-data** integration (`Loadout_Bricks`). These existed for hand-built custom layouts and standalone landing pages.
+- Kept: **"Loadout: Tier Tabs"**, **"Loadout: Progress Bar"**, **"Loadout: Cart Mirror"**, the automatic native WooCommerce **product "Loadout" tab**, and the `[loadout]` shortcode (for the occasional standalone landing page).
 
 ### Tax Resolver — single checkout tax line + rate-source selector
 

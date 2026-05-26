@@ -49,15 +49,7 @@ class Loadout_Shortcode
         ob_start();
         ?>
         <div class="ffla-loadout" data-loadout-id="<?php echo esc_attr($loadout_id); ?>">
-            <?php
-            // Reuse rendering by instantiating element if available, else inline render.
-            if (class_exists('Loadout_Element')) {
-                // The element class has the renderer but it's private; call via helper here.
-                self::render_inline($loadout, $tiers, $cross_sells, $anchor_product, $hero_url, $brand_logo_url, $default_index, $show_cart, $show_cross_sells);
-            } else {
-                self::render_inline($loadout, $tiers, $cross_sells, $anchor_product, $hero_url, $brand_logo_url, $default_index, $show_cart, $show_cross_sells);
-            }
-            ?>
+            <?php self::render_inline($loadout, $tiers, $cross_sells, $anchor_product, $hero_url, $brand_logo_url, $default_index, $show_cart, $show_cross_sells); ?>
         </div>
         <?php
         return ob_get_clean();
