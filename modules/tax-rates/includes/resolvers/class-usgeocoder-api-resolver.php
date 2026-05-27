@@ -420,7 +420,9 @@ class USGeocoder_API_Resolver extends Tax_Resolver_Base
             // County districts 1..N (details only). Names live in *_district{N}_name,
             // rates in *_district{N}_tax. Documented N ≤ 3, but we walk until missing
             // to stay safe if USGeocoder ever extends the schema.
-            if ($is_details) {
+            // Skip these itemizations when a positive county base rate already covers them — USGeocoder
+            // reports county_tax as the rolled-up total *and* repeats it as county_district1_tax, causing double-counting.
+            if ($is_details && !($county_rate !== null && $county_rate > 0)) {
                 for ($i = 1; $i <= 10; $i++) {
                     $rate = self::numeric_field($node, $p . 'county_district' . $i . '_tax');
                     if ($rate === null) {
@@ -447,7 +449,8 @@ class USGeocoder_API_Resolver extends Tax_Resolver_Base
             }
 
             // City districts 1..N (details only).
-            if ($is_details) {
+            // Same de-duplication: skip when a positive city base rate already covers them.
+            if ($is_details && !($city_rate !== null && $city_rate > 0)) {
                 for ($i = 1; $i <= 10; $i++) {
                     $rate = self::numeric_field($node, $p . 'city_district' . $i . '_tax');
                     if ($rate === null) {
@@ -763,9 +766,10 @@ class USGeocoder_API_Resolver extends Tax_Resolver_Base
         }
 
         $rate = (float) $number;
-        if ($rate > 1) {
-            $rate /= 100;
-        }
+        // USGeocoder always returns percentages (e.g. 2.9 for 2.9%).
+        // Always divide by 100 — the old "> 1" guard left sub-1% jurisdictions
+        // (0.5% county, 0.1% SCFD) unscaled, producing 50% / 10% rates.
+        $rate /= 100;
 
         if ($rate < 0) {
             return null;

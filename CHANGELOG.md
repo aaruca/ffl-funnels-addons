@@ -2,6 +2,20 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.33.1] - 2026-05-27
+
+### Tax Resolver — Critical fix for wildly inflated tax rates
+
+**Fixed:**
+- **Sub-1% jurisdiction rates were being returned as 50–1000× inflated.** The `to_decimal_rate()` method had a guard condition (`if ($rate > 1)`) that only divided by 100 when rates exceeded 1. This left sub-1% jurisdictions (e.g., 0.5% county, 0.1% SCFD) unscaled, arriving as 50% and 10% respectively. Example: Colorado quote on a $273.65 product returned $640.25 tax (220% rate) instead of $21.89 (8% rate) because Jefferson County (0.5%) was treated as 50% and district rates stacked on top.
+- **County and city base rates were double-counted alongside their own itemized districts.** USGeocoder returns `county_tax` as a rolled-up total, then repeats it as the first element in `county_district1_tax`, `county_district2_tax`, etc. The resolver was adding both: base rate + all districts. Fixed by skipping itemization loops when a positive base rate exists.
+
+**Technical details:**
+- `to_decimal_rate()` now **always divides by 100** — USGeocoder universally returns percentages (2.9 for 2.9%).
+- County and city district loops are now guarded: `if ($is_details && !($rate !== null && $rate > 0))` to skip itemizations when base rate already covers them.
+
+**Verification:** Wheat Ridge, Colorado (Jefferson County, ZIP 80033) now correctly resolves to 8.0% (2.9% state + 0.5% county + 3.5% city + 1.0% RTD + 0.1% SCFD) instead of 220%.
+
 ## [1.33.0] - 2026-05-26
 
 ### Loadout — focused on single-product use; Tier Tabs now renders products
