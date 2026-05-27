@@ -104,9 +104,9 @@ class Loadout
         return $loadout;
     }
 
-    public static function load($id): ?self
+    public static function load($id = null): ?self
     {
-        return self::get($id);
+        return $id ? self::get($id) : null;
     }
 
     public static function get_by_slug($slug): ?self
