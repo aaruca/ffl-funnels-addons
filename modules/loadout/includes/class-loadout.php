@@ -104,6 +104,11 @@ class Loadout
         return $loadout;
     }
 
+    public static function load($id): ?self
+    {
+        return self::get($id);
+    }
+
     public static function get_by_slug($slug): ?self
     {
         global $wpdb;
