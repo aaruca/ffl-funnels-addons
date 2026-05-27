@@ -2,6 +2,13 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.33.2] - 2026-05-27
+
+### Loadout — Hotfix for element initialization
+
+**Fixed:**
+- **Loadout element fatal error on product pages** — `Loadout::load()` static method was defined with a required `$id` parameter, but Bricks calls it with no arguments during element initialization, causing `ArgumentCountError`. Made the `$id` parameter optional with `null` default.
+
 ## [1.33.1] - 2026-05-27
 
 ### Tax Resolver — Critical fix for wildly inflated tax rates
