@@ -2,6 +2,12 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.33.3] - 2026-05-27
+
+### Hotfix release — consolidated deployment
+
+Repackaged v1.33.2 fixes (Loadout element + tax resolver) as v1.33.3 to ensure clean production deployment. Includes all fixes from v1.33.2 and v1.33.1.
+
 ## [1.33.2] - 2026-05-27
 
 ### Loadout — Hotfix for element initialization
