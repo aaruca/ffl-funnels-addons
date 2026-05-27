@@ -2,6 +2,19 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.33.4] - 2026-05-27
+
+### Loadout — Critical fix for product-page fatal errors
+
+**Fixed:**
+- **Loadout element fatal errors on product pages** — Bricks templates saved before v1.33.0 reference the legacy monolithic "loadout" element that was removed in v1.33.0. When Bricks tries to render those templates, the unregistered element name "loadout" (kebab-case) is converted to StudlyCaps ("Loadout") and Bricks attempts to instantiate the same-named PHP class as an Element. Since a `Loadout` data model class exists, Bricks calls element methods (`init()`, `load()`) on the data class instead of an Element class, causing `Call to undefined method Loadout::init()` and related fatals.
+- **Solution:** Re-registered a proper `Loadout_Element` class (extends `\Bricks\Element`) with `$name = 'loadout'`. This provides a real Element implementation so saved templates get the correct class, not the data model. The element auto-detects the current product's Loadout configuration and renders the complete widget, or renders nothing if not on a product page. Full backward compatibility with v1.33.0+ templates is maintained.
+
+**Technical details:**
+- New file: `modules/loadout/frontend/class-loadout-element.php` — complete Loadout widget element. Rendering is driven through `Loadout_Element_Helpers` (the same shared resolver/renderer used by the composable Tier Tabs element), so it shows the identical tier/products UI: branding header, progress bar, tier navigation, anchor product, recommended products, cart panel, cross-sells, and checkout footer. Auto-detects the current product's linked global Loadout or per-product tiers.
+- `class-loadout-module.php` — Bricks element registration now registers `Loadout_Element` first (with a comment explaining the rationale).
+- All composable elements (`Loadout_Tier_Tabs_Element`, `Loadout_Progress_Element`, `Loadout_Cart_Mirror_Element`) remain in the global namespace (no namespace declaration) so their unprefixed calls to `Loadout::` and `Loadout_Element_Helpers::` resolve correctly.
+
 ## [1.33.3] - 2026-05-27
 
 ### Hotfix release — consolidated deployment

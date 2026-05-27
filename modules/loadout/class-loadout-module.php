@@ -95,6 +95,15 @@ class Loadout_Module extends FFLA_Module
 
             add_action('init', function () use ($path) {
                 if (class_exists('\Bricks\Elements')) {
+                    // Register the complete monolithic "loadout" element first. This maintains
+                    // backward compatibility with Bricks templates saved before v1.33.0 that
+                    // reference the legacy "loadout" element name. Without this, unregistered
+                    // element names resolve to same-named global PHP classes (via StudlyCaps
+                    // conversion), causing Bricks to instantiate the Loadout data model class
+                    // as if it were an Element, resulting in fatal errors.
+                    \Bricks\Elements::register_element($path . 'frontend/class-loadout-element.php');
+
+                    // Register the composable elements that can be placed independently.
                     \Bricks\Elements::register_element($path . 'frontend/class-loadout-tier-tabs-element.php');
                     \Bricks\Elements::register_element($path . 'frontend/class-loadout-progress-element.php');
                     \Bricks\Elements::register_element($path . 'frontend/class-loadout-cart-mirror-element.php');
