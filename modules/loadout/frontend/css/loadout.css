@@ -246,6 +246,14 @@
     cursor: not-allowed;
 }
 
+.ffla-loadout__add-btn.is-added,
+.ffla-loadout__add-btn.is-added:disabled {
+    opacity: 1;
+    background: var(--ffla-loadout-success);
+    color: #fff;
+    cursor: default;
+}
+
 .ffla-loadout__add-tier-btn {
     display: block;
     width: 100%;

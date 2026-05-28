@@ -136,12 +136,6 @@ class Loadout_Element extends \Bricks\Element
             echo '</header>';
         }
 
-        // Progress bar.
-        echo '<div class="ffla-loadout__progress">'
-            . '<div class="ffla-loadout__progress-track"><div class="ffla-loadout__progress-bar" style="width:0%;"></div></div>'
-            . '<span class="ffla-loadout__progress-label"></span>'
-            . '</div>';
-
         // Tier navigation.
         echo '<nav class="ffla-loadout__tiers">';
         foreach (array_values($tiers) as $i => $tier) {

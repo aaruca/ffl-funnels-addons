@@ -185,7 +185,9 @@
                 $(document.body).trigger('wc_fragment_refresh');
 
                 if (onSuccess) onSuccess();
-                setTimeout(function () { $btn.text(originalText).prop('disabled', false); }, 1500);
+                // Keep the button locked as "Added!" so the customer can see what
+                // they've added. They remove items from the WC cart, not by re-clicking.
+                $btn.prop('disabled', true).addClass('is-added');
             },
             error: function () {
                 $btn.text(loadoutFrontend.strings.addError).prop('disabled', false);

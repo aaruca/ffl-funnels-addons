@@ -705,7 +705,7 @@ class Loadout_Cart
 
         $loadout_id = isset($_POST['loadout_id']) ? absint($_POST['loadout_id']) : 0;
 
-        // Calculate cart totals so pricing filters (discount application) run.
+        // Run pricing filters so single-line items reflect their discounted price.
         WC()->cart->calculate_totals();
 
         $items = [];
@@ -720,10 +720,27 @@ class Loadout_Cart
             }
 
             $product = $ci['data'];
-            $regular = (float) $product->get_regular_price();
-            $current = (float) $product->get_price();
-            $savings += max(0, ($regular - $current) * $ci['quantity']);
-            $loadout_count += (int) $ci['quantity'];
+            $qty = (int) $ci['quantity'];
+
+            // Tier-bundle line: savings live inside the bundle items metadata
+            // (each entry has its own 'original' and 'final' price).
+            if (!empty($ci[self::META_TIER_BUNDLE]) && !empty($ci[self::META_TIER_BUNDLE_ITEMS])) {
+                foreach ((array) $ci[self::META_TIER_BUNDLE_ITEMS] as $bi) {
+                    $bo = (float) ($bi['original'] ?? 0);
+                    $bf = (float) ($bi['final'] ?? $bo);
+                    $bq = (int) ($bi['quantity'] ?? 1);
+                    $savings += max(0, ($bo - $bf) * $bq * $qty);
+                }
+            } else {
+                $regular = (float) $product->get_regular_price();
+                if ($regular <= 0) {
+                    $regular = (float) $product->get_price();
+                }
+                $current = (float) $product->get_price();
+                $savings += max(0, ($regular - $current) * $qty);
+            }
+
+            $loadout_count += $qty;
 
             $tid = (int) ($ci[self::META_TIER_ID] ?? 0);
             if ($tid) {
@@ -732,9 +749,9 @@ class Loadout_Cart
 
             $items[] = [
                 'name' => $product->get_name(),
-                'quantity' => $ci['quantity'],
-                'regular' => wc_price($regular),
-                'current' => wc_price($current),
+                'quantity' => $qty,
+                'regular' => wc_price((float) $product->get_regular_price()),
+                'current' => wc_price((float) $product->get_price()),
                 'is_bonus' => !empty($ci[self::META_IS_BONUS]),
                 'cart_key' => $cart_key,
             ];
