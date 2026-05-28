@@ -705,6 +705,9 @@ class Loadout_Cart
 
         $loadout_id = isset($_POST['loadout_id']) ? absint($_POST['loadout_id']) : 0;
 
+        // Calculate cart totals so pricing filters (discount application) run.
+        WC()->cart->calculate_totals();
+
         $items = [];
         $savings = 0;
         $loadout_count = 0;

@@ -355,7 +355,7 @@
 }
 
 .ffla-loadout__cart-savings {
-    color: var(--ffla-loadout-accent);
+    color: var(--ffla-loadout-success);
     font-weight: 700;
 }
 
