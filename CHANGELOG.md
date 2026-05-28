@@ -2,6 +2,17 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.33.9] - 2026-05-28
+
+### Loadout — Critical fix: "Added!" button now visible after add-to-cart
+
+**Fixed:**
+- **The "Added!" button text was invisible due to WooCommerce replacing the button element** — when we triggered the `added_to_cart` event with the button reference, WooCommerce/Bricks would immediately replace the entire button DOM node with a "View cart" link, destroying the button before the "Added!" text could render. The button classes and styling were applied to a ghost element that no longer existed in the DOM.
+- **Solution:** Set the button's `is-added` class, disabled state, and "Added!" text **before** triggering WooCommerce events, and omit the button reference from the `added_to_cart` event to prevent DOM replacement. Button now persists in DOM with all styling and text visible.
+
+**Technical details:**
+- `modules/loadout/frontend/js/loadout.js` — restructured the AJAX success handler to apply button state before firing WC events. The button remains in the DOM under full styling control and never gets replaced.
+
 ## [1.33.8] - 2026-05-28
 
 ### Loadout — Fix invisible "Added!" button label
