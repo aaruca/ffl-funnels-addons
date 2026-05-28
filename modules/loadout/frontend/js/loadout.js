@@ -147,7 +147,6 @@
                 }
 
                 var d = response.data || {};
-                $btn.text(loadoutFrontend.strings.added);
 
                 // Two paths:
                 // 1. If we're on the cart or checkout page, WC's mini-cart fragments
@@ -175,19 +174,21 @@
                     });
                 }
 
+                // Set the button to "Added!" state BEFORE triggering events
+                // (to prevent WC from replacing the button with a link before we can set the text)
+                $btn.prop('disabled', true).addClass('is-added').text(loadoutFrontend.strings.added);
+
                 // Trigger the standard WC events so other plugins/themes hook in.
+                // Note: We pass empty array instead of $btn to prevent WooCommerce from
+                // replacing the button element with a "View cart" link.
                 $(document.body).trigger('wc_fragments_refreshed');
                 $(document.body).trigger('added_to_cart', [
                     d.fragments || {},
                     d.cart_hash || '',
-                    $btn,
                 ]);
                 $(document.body).trigger('wc_fragment_refresh');
 
                 if (onSuccess) onSuccess();
-                // Keep the button locked as "Added!" so the customer can see what
-                // they've added. They remove items from the WC cart, not by re-clicking.
-                $btn.prop('disabled', true).addClass('is-added');
             },
             error: function () {
                 $btn.text(loadoutFrontend.strings.addError).prop('disabled', false);
