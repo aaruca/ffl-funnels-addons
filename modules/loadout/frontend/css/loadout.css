@@ -248,10 +248,12 @@
 
 .ffla-loadout__add-btn.is-added,
 .ffla-loadout__add-btn.is-added:disabled {
-    opacity: 1;
-    background: var(--ffla-loadout-success);
-    color: #fff;
+    opacity: 1 !important;
+    background: var(--ffla-loadout-success) !important;
+    color: #ffffff !important;
+    text-shadow: none;
     cursor: default;
+    visibility: visible;
 }
 
 .ffla-loadout__add-tier-btn {
