@@ -2,6 +2,26 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.34.0] - 2026-05-28
+
+### Loadout — Bricks dynamic tag for conditional rendering
+
+**Added:**
+- **`{ffla_product_has_loadout}` Bricks dynamic tag** — returns `1` when the current product resolves to a Loadout that would actually render content (linked global Loadout or per-product custom tiers with the loadout tab enabled), empty string otherwise. The tag mirrors the same resolver used by the Loadout elements, so the condition value always matches what the elements would actually render.
+- Tag appears in Bricks' dynamic data picker under the **"FFL Funnels"** group, so it's discoverable from any element's Conditions tab, attribute values, or text content.
+
+**Usage in Bricks Conditions tab:**
+- Source: `Dynamic data`
+- Dynamic data: `{ffla_product_has_loadout}`
+- Compare: `==` (or `is not empty`)
+- Value: `1`
+
+This lets builders show/hide a Loadout element automatically based on whether the current product actually has loadout content, without chaining multiple post meta checks.
+
+**Technical details:**
+- New file: `modules/loadout/frontend/class-loadout-bricks-tags.php` — registers the tag via three Bricks filters: `bricks/dynamic_tags_list` (picker), `bricks/dynamic_data/render_tag` (single tag resolution used by Conditions), and `bricks/dynamic_data/render_content` (inline text substitution).
+- `class-loadout-module.php` — boots `Loadout_Bricks_Tags::init()` alongside the existing Bricks element registration.
+
 ## [1.33.9] - 2026-05-28
 
 ### Loadout — Critical fix: "Added!" button now visible after add-to-cart
