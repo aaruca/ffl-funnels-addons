@@ -2,6 +2,32 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.33.8] - 2026-05-28
+
+### Loadout — Fix invisible "Added!" button label
+
+**Fixed:**
+- **"Added!" text was invisible on the green confirmation button** — after a successful add-to-cart from the Loadout widget, the button correctly turned green via the `.is-added` state, but the white label text did not render visibly due to competing CSS rules cascading through theme/builder stylesheets.
+
+**Technical details:**
+- `modules/loadout/frontend/css/loadout.css` — strengthened the `.ffla-loadout__add-btn.is-added` rule with `!important` flags on `color: #ffffff`, `opacity: 1`, and `background: var(--ffla-loadout-success)`, plus explicit `visibility: visible` and `text-shadow: none` to defeat any overriding rules.
+
+## [1.33.7] - 2026-05-28
+
+### Loadout — Layout polish, persistent "Added!" state, bundle savings fix
+
+**Added:**
+- **Main product card now anchors the Loadout widget on product pages** — when a Loadout element renders inside a per-product context (no explicit global loadout), the first column displays the current product's image, name, and price.
+
+**Changed:**
+- **"Added!" button now persists** instead of reverting after 1.5 seconds, so customers can clearly see what they have added until they remove it from the WooCommerce cart.
+- **Progress bar removed** from the Loadout widget — it was duplicative with the cart summary and not requested in the final design.
+
+**Fixed:**
+- **Cart savings displayed $0 even when discounts had been applied** — the AJAX cart-summary endpoint was reading prices before WooCommerce ran its pricing filters. Now calls `WC()->cart->calculate_totals()` before comparing prices.
+- **Tier-bundle line savings were unreadable** — bundle lines store per-item savings inside the `_ffla_tier_bundle_items` cart-item metadata, not on the product object. The summary now reads bundle metadata for accurate aggregated savings.
+- **Savings color is now green** (`var(--ffla-loadout-success)`) instead of gold, matching the discount design language.
+
 ## [1.33.4] - 2026-05-27
 
 ### Loadout — Critical fix for product-page fatal errors
