@@ -157,11 +157,13 @@ class Loadout_Element extends \Bricks\Element
         }
         echo '</nav>';
 
-        // Body: anchor (global only) + recommended products + cart panel.
+        // Body: anchor (global loadout OR current product) + recommended products + cart panel.
         echo '<div class="ffla-loadout__body">';
 
         if ($loadout) {
             $this->render_anchor($loadout);
+        } elseif ($product_loadout_id) {
+            $this->render_product_anchor($product_loadout_id);
         }
 
         Loadout_Element_Helpers::render_recommended_section($tiers, $default_index);
@@ -213,6 +215,24 @@ class Loadout_Element extends \Bricks\Element
                 esc_html__('ADD HERO', 'ffl-funnels-addons')
             );
         }
+        echo '</aside>';
+    }
+
+    /**
+     * Anchor card for the product-page context (no global loadout backing it).
+     * Shows the current product's image, name and price as the first column.
+     */
+    private function render_product_anchor(int $product_id): void
+    {
+        $product = wc_get_product($product_id);
+        if (!$product) {
+            return;
+        }
+
+        echo '<aside class="ffla-loadout__anchor">';
+        echo '<div class="ffla-loadout__hero-fallback">' . $product->get_image('medium') . '</div>';
+        echo '<h3 class="ffla-loadout__anchor-name">' . esc_html($product->get_name()) . '</h3>';
+        echo '<div class="ffla-loadout__anchor-price">' . $product->get_price_html() . '</div>';
         echo '</aside>';
     }
 
