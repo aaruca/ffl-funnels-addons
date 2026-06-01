@@ -2,6 +2,28 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.35.0] - 2026-05-28
+
+### Loadout — Bricks-only; removed the storefront WooCommerce tab + enable toggle
+
+The Loadout surfaces are driven entirely by the Bricks elements now, so the
+legacy storefront WooCommerce "Loadout" tab and its **"Enable Loadout Tab"**
+checkbox were causing confusion: when the checkbox was unchecked, the Bricks
+widget showed no content even though tiers were configured.
+
+**Changed:**
+- **Loadout config now resolves whenever a product has a linked global Loadout or per-product custom tiers** — the "Enable Loadout Tab" toggle is no longer consulted. Configure tiers and the Bricks elements render them immediately. This fixes the Bricks Loadout elements rendering empty on configured products.
+- **Removed the "Enable Loadout Tab" checkbox** from the product editor's Loadout panel. Help text updated to explain the config is rendered by the Bricks elements.
+- **Products list "With/Without loadout" filter** now keys off the actual config (linked Loadout or custom tiers) instead of the removed enable flag.
+
+**Removed:**
+- **Storefront WooCommerce Loadout product tab** (`woocommerce_product_tabs` integration) and its renderer class `Loadout_Product_Tab`. Deleted `modules/loadout/includes/class-loadout-product-tab.php`.
+
+**Technical details:**
+- `Loadout_Product_Admin::get_product_config()` no longer gates on `META_ENABLE_TAB`; the constant is kept (deprecated) so stored meta references stay resolvable.
+- `class-loadout-module.php` no longer requires or initializes `Loadout_Product_Tab`.
+- `save_product_meta()` stops reading/writing the `loadout_enable_tab` field.
+
 ## [1.34.1] - 2026-05-28
 
 ### FFL Dealer Finder — Highlight the selected dealer

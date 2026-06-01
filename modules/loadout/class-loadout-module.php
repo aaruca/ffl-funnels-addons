@@ -46,11 +46,10 @@ class Loadout_Module extends FFLA_Module
         require_once $path . 'includes/class-loadout-tier-item.php';
         require_once $path . 'includes/class-loadout-cross-sell.php';
         require_once $path . 'includes/class-loadout-cart.php';
-        require_once $path . 'includes/class-loadout-product-tab.php';
         require_once $path . 'includes/class-loadout-shortcode.php';
 
-        // Always load Loadout_Product_Admin — it owns meta-key constants and the
-        // static get_product_config() helper that Loadout_Product_Tab needs on
+        // Always load Loadout_Product_Admin — it owns the meta-key constants and
+        // the static get_product_config() helper that the Bricks elements use on
         // frontend product pages. Instantiation stays admin-only below.
         require_once $path . 'admin/class-loadout-product-admin.php';
 
@@ -82,9 +81,6 @@ class Loadout_Module extends FFLA_Module
 
         // Cart integration.
         Loadout_Cart::init();
-
-        // Product tab.
-        Loadout_Product_Tab::init();
 
         // Shortcode.
         Loadout_Shortcode::init();
