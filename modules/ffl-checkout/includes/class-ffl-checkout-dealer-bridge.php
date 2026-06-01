@@ -67,9 +67,42 @@ class FFL_Checkout_Dealer_Bridge
 
         // ── Build the widget output ──────────────────────────────────
         ob_start();
+        self::render_styles();
         self::render_ffl_map($api_key);
         self::render_document_upload();
         return ob_get_clean();
+    }
+
+    /* ── Widget Styles ───────────────────────────────────────────────── */
+
+    /**
+     * Output the custom styling for the dealer finder widget.
+     *
+     * The g-FFL Checkout plugin's JS (ffl-widget.js) toggles the
+     * `selectedFFLDivButton` class on a dealer button when the customer
+     * picks an FFL. The base plugin gives it no distinct styling, so we
+     * highlight the selected dealer here using the theme's --success token.
+     *
+     * Guarded with a static flag so the <style> block is emitted at most
+     * once per request even if the widget renders more than once (e.g. the
+     * shortcode and the Bricks element both appear on a page).
+     */
+    private static function render_styles(): void
+    {
+        static $printed = false;
+        if ($printed) {
+            return;
+        }
+        $printed = true;
+        ?>
+        <style id="ffla-dealer-finder-styles">
+            div .selectedFFLDivButton {
+                border: solid var(--success) 1px !important;
+                background: #09fa003d !important;
+                color: white !important;
+            }
+        </style>
+        <?php
     }
 
     /* ── FFL Requirement Check ───────────────────────────────────────── */

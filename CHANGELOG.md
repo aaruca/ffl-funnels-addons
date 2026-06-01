@@ -2,6 +2,16 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.34.1] - 2026-05-28
+
+### FFL Dealer Finder — Highlight the selected dealer
+
+**Added:**
+- **Selected FFL dealer button is now visually highlighted.** The g-FFL Checkout widget toggles a `selectedFFLDivButton` class on the chosen dealer but ships no distinct styling for it. The Dealer Finder bridge now emits a small style block that highlights the selected dealer using the theme's `--success` token (green border, translucent green background, white text).
+
+**Technical details:**
+- `modules/ffl-checkout/includes/class-ffl-checkout-dealer-bridge.php` — new `render_styles()` method outputs the `<style id="ffla-dealer-finder-styles">` block as part of the widget render. Guarded with a static flag so it prints at most once per request even when both the `[ffl_dealer_finder]` shortcode and the Bricks element appear on the same page.
+
 ## [1.34.0] - 2026-05-28
 
 ### Loadout — Bricks dynamic tag for conditional rendering
