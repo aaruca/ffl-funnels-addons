@@ -231,6 +231,18 @@ class WSS_Admin
                         </div>
                     </div>
 
+                    <?php $realtime_push = !array_key_exists('realtime_push', $settings) || !empty($settings['realtime_push']); ?>
+                    <div class="wb-field">
+                        <label class="wb-field__label" for="wss_realtime_push"><?php esc_html_e('Real-time stock push', 'ffl-funnels-addons'); ?></label>
+                        <div class="wb-field__control">
+                            <label>
+                                <input type="checkbox" id="wss_realtime_push" name="wss_realtime_push" value="1" <?php checked($realtime_push); ?>>
+                                <?php esc_html_e('Immediately push stock changes from orders, refunds, and cancellations to the Sheet (recommended).', 'ffl-funnels-addons'); ?>
+                            </label>
+                            <p class="wb-field__desc"><?php esc_html_e('Keeps the Sheet in step with sales as they happen instead of waiting for the nightly sync. Manual Sheet edits still win at the next sync.', 'ffl-funnels-addons'); ?></p>
+                        </div>
+                    </div>
+
                     <?php
                     ?>
                     <p class="wb-field__desc">
@@ -326,8 +338,9 @@ class WSS_Admin
         }
 
         $settings = array_merge($existing, [
-            'sheet_id'  => $sheet_id,
-            'sync_time' => $sync_time,
+            'sheet_id'      => $sheet_id,
+            'sync_time'     => $sync_time,
+            'realtime_push' => isset($_POST['wss_realtime_push']),
         ]);
 
         // Service account key: remove, replace, or set.

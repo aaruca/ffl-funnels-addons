@@ -2,6 +2,56 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.36.0] - 2026-06-07
+
+### Woo Sheets Sync — Fix nightly sync reverting every sale + real-time stock push
+
+**The bug:** The nightly sync ran Sheet→Woo first and the Sheet won on *any*
+difference. With no real-time push, an order that reduced Woo stock left the
+Sheet showing the old quantity, so the next nightly run saw `Sheet(old) ≠
+Woo(reduced)` and pushed Woo back **up** — silently undoing the sale. The engine
+could not tell "a human edited the Sheet" from "an order changed Woo".
+
+**Fixed — snapshot-based change detection (scope: stock qty + status only):**
+- Added per-variation snapshots `_wss_snap_woo` / `_wss_snap_sheet` recording the
+  quantity both sides agreed on at the last sync.
+- The nightly sync now resolves direction per snapshots instead of "Sheet always
+  wins":
+  - Sheet moved & Woo didn't → apply Sheet→Woo.
+  - Woo moved & Sheet didn't → push Woo→Sheet (the sale is preserved).
+  - Both moved → conflict: **Woo wins** for quantity, logged via `WSS_Logger`.
+  - Neither → skip.
+  After acting, both snapshots are written to the agreed final value.
+- **Migration:** rows with missing snapshots seed both snapshots to current
+  values and apply the legacy "Sheet→Woo on diff" behavior for that one row, so
+  deploying never drops a pending Sheet edit.
+- **Price/sale price/manage_stock stay Sheet-authoritative** exactly as before;
+  only stock quantity + status use the new directional logic.
+
+**Added — real-time Woo→Sheet stock push (`WSS_Realtime_Push`):**
+- Hooks `woocommerce_reduce_order_stock`, `woocommerce_restore_order_stock`, and
+  `woocommerce_restock_refunded_item` so orders, cancels, and refunds mirror the
+  new Woo quantity to the Sheet immediately instead of waiting for 02:00.
+- Resolves each variation's Sheet row via a persisted `wss_row_map`
+  (variation_id → {tab, row}), refreshed by the nightly sync. Verifies the row's
+  `variation_id` (column B) before writing; on drift it skips and lets the
+  nightly sync reconcile.
+- Writes stock qty + status for all of an order's items in **one batched call**,
+  deferred to `shutdown` so a slow Sheets API never delays checkout. Updates the
+  snapshots after a successful write.
+- **Checkout safety:** every entry point is wrapped in try/catch and never
+  throws; failures are logged and recovered by the nightly sync.
+- **Feedback-loop guard:** `WSS_Sync_Engine::$applying` (exposed via
+  `is_applying()`) is set around the engine's Sheet→Woo apply+save; the push
+  bails while it is true.
+- New **"Real-time stock push"** setting (`realtime_push`, default on) with a
+  checkbox on the WSS Settings page; the push is gated on it and on a configured
+  Sheet ID.
+
+**Tests:** `tests/unit/StockDirectionTest.php` covers the reconciliation matrix
+(T1–T6: realtime reduce, manual Sheet control, refund restore, conflict
+resolution, price regression, and no-op/no-loop).
+
 ## [1.35.0] - 2026-05-28
 
 ### Loadout — Bricks-only; removed the storefront WooCommerce tab + enable toggle
