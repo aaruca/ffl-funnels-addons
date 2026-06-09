@@ -49,6 +49,7 @@ class FFLA_Updater
         add_filter('pre_set_site_transient_update_plugins', [$this, 'check_update']);
         add_filter('plugins_api', [$this, 'plugin_info'], 10, 3);
         add_filter('upgrader_source_selection', [$this, 'source_selection'], 10, 4);
+        add_filter('upgrader_pre_install', [$this, 'verify_download_integrity'], 10, 2);
 
         add_filter('plugin_action_links_' . $this->plugin_basename, [$this, 'add_check_update_link']);
         add_action('after_plugin_row_' . $this->plugin_basename, [$this, 'show_update_notice'], 10, 2);
@@ -332,7 +333,7 @@ class FFLA_Updater
         if (version_compare($latest_version, $this->current_version, '>')) {
             $download_url = $this->get_download_url($release);
 
-            if ($download_url) {
+            if (!empty($download_url)) {
                 $plugin_data = new stdClass();
                 $plugin_data->slug = $this->plugin_slug;
                 $plugin_data->plugin = $this->plugin_basename;
@@ -384,7 +385,7 @@ class FFLA_Updater
         $info->requires_php = '7.4';
         $info->downloaded = 0;
         $info->last_updated = $release->published_at;
-        $info->download_link = $this->get_download_url($release);
+        $info->download_link = $this->get_download_url($release) ?: '';
 
         if (!empty($release->body)) {
             $info->sections = [
@@ -461,21 +462,137 @@ class FFLA_Updater
     }
 
     /**
+     * Validate download URL against a whitelist of allowed hosts.
+     *
+     * Prevents remote code execution via compromised/man-in-the-middle packages.
+     *
+     * @param string $url URL to validate.
+     * @return bool True if URL is from a trusted GitHub host.
+     */
+    private function is_trusted_download_url(string $url): bool
+    {
+        $parsed = wp_parse_url($url);
+        if (empty($parsed['scheme']) || empty($parsed['host'])) {
+            return false;
+        }
+
+        $scheme = strtolower($parsed['scheme']);
+        $host = strtolower($parsed['host']);
+
+        if ('https' !== $scheme) {
+            return false;
+        }
+
+        $allowed_hosts = [
+            'github.com',
+            'api.github.com',
+            'objects.githubusercontent.com',
+            'codeload.github.com',
+        ];
+
+        foreach ($allowed_hosts as $allowed) {
+            if ($host === $allowed || substr($host, -strlen($allowed) - 1) === '.' . $allowed) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Verify download integrity before installation.
+     *
+     * Checks for a SHA-256 checksum in the release notes and validates the
+     * downloaded file. Format: "SHA-256: abc123def456..."
+     *
+     * @param bool|WP_Error $response Installation response.
+     * @param array $hook_extra Extra arguments (contains 'plugin' for targeted installs).
+     * @return bool|WP_Error Validation result.
+     */
+    public function verify_download_integrity($response, array $hook_extra = [])
+    {
+        if (is_wp_error($response)) {
+            return $response;
+        }
+
+        $is_our_plugin = isset($hook_extra['plugin']) && $hook_extra['plugin'] === $this->plugin_basename;
+        if (!$is_our_plugin) {
+            return $response;
+        }
+
+        $release = $this->github_response;
+        if (!$release || empty($release->body)) {
+            return $response;
+        }
+
+        if (!preg_match('/SHA-256:\s*([a-f0-9]{64})/i', $release->body, $matches)) {
+            return $response;
+        }
+
+        $expected_hash = strtolower($matches[1]);
+
+        global $wp_filesystem;
+        if (!$wp_filesystem) {
+            return $response;
+        }
+
+        $temp_dir = WP_CONTENT_DIR . '/upgrade/';
+        if ($wp_filesystem->is_dir($temp_dir)) {
+            $files = $wp_filesystem->dirlist($temp_dir);
+            if (is_array($files)) {
+                foreach ($files as $file => $info) {
+                    $file_path = $temp_dir . $file;
+                    if ($wp_filesystem->is_file($file_path) && substr($file, -4) === '.zip') {
+                        $contents = $wp_filesystem->get_contents($file_path);
+                        if ($contents !== false) {
+                            $file_hash = hash('sha256', $contents);
+                            if ($file_hash !== $expected_hash) {
+                                return new WP_Error(
+                                    'ffla_checksum_mismatch',
+                                    sprintf(
+                                        esc_html__('FFL Funnels Addons update integrity check failed. Expected hash: %s, got: %s', 'ffl-funnels-addons'),
+                                        esc_html($expected_hash),
+                                        esc_html($file_hash)
+                                    )
+                                );
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        return $response;
+    }
+
+    /**
      * Get the download URL from a release.
+     *
+     * Validates that the URL is from a trusted GitHub host before returning.
      */
     private function get_download_url(object $release): string
     {
         if (!empty($release->assets) && is_array($release->assets)) {
             foreach ($release->assets as $asset) {
+                $url = null;
                 if (isset($asset->content_type) && 'application/zip' === $asset->content_type) {
-                    return $asset->browser_download_url;
+                    $url = $asset->browser_download_url ?? null;
+                } elseif (isset($asset->name) && substr($asset->name, -4) === '.zip') {
+                    $url = $asset->browser_download_url ?? null;
                 }
-                if (isset($asset->name) && substr($asset->name, -4) === '.zip') {
-                    return $asset->browser_download_url;
+
+                if ($url && $this->is_trusted_download_url($url)) {
+                    return $url;
                 }
             }
         }
 
-        return $release->zipball_url;
+        $zipball = $release->zipball_url ?? '';
+        if ($zipball && $this->is_trusted_download_url($zipball)) {
+            return $zipball;
+        }
+
+        return '';
     }
 }
