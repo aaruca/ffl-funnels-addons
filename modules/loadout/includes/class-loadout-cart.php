@@ -52,7 +52,6 @@ class Loadout_Cart
         $tier_id = isset($context['tier_id']) ? absint($context['tier_id']) : 0;
         $source = isset($context['source']) ? sanitize_key($context['source']) : '';
         $product_loadout = isset($context['product_loadout_id']) ? absint($context['product_loadout_id']) : 0;
-        $discount_pct = isset($context['discount_pct']) ? floatval($context['discount_pct']) : 0;
         $item_id = isset($context['item_id']) ? absint($context['item_id']) : 0;
         $is_bonus = !empty($context['is_bonus']) ? 1 : 0;
 
@@ -67,7 +66,6 @@ class Loadout_Cart
         $cart_item_data[self::META_TIER_SLUG] = $tier_slug;
         $cart_item_data[self::META_SOURCE] = $source ?: 'widget';
         $cart_item_data[self::META_PRODUCT_LOADOUT] = $product_loadout;
-        $cart_item_data[self::META_DISCOUNT_PCT] = $discount_pct;
         $cart_item_data[self::META_ITEM_ID] = $item_id;
         $cart_item_data[self::META_IS_BONUS] = $is_bonus;
 
@@ -75,7 +73,6 @@ class Loadout_Cart
         if (!empty($context['tier_bundle'])) {
             $cart_item_data[self::META_TIER_BUNDLE]       = 1;
             $cart_item_data[self::META_TIER_BUNDLE_ITEMS] = $context['bundle_items'] ?? [];
-            $cart_item_data[self::META_TIER_BUNDLE_TOTAL] = $context['bundle_total'] ?? 0;
             $cart_item_data[self::META_TIER_BUNDLE_HASH]  = $context['bundle_hash'] ?? wp_generate_password(16, false, false);
             // Inseparable: hash is the unique key so it can never merge with another line.
             $cart_item_data['unique_key'] = $cart_item_data[self::META_TIER_BUNDLE_HASH];
@@ -98,10 +95,10 @@ class Loadout_Cart
     {
         foreach ([
             self::META_LOADOUT_ID, self::META_TIER_ID, self::META_TIER_SLUG, self::META_SOURCE,
-            self::META_PRODUCT_LOADOUT, self::META_SET_DISCOUNT, self::META_DISCOUNT_PCT,
+            self::META_PRODUCT_LOADOUT, self::META_SET_DISCOUNT,
             self::META_IS_BONUS, self::META_ITEM_ID,
             self::META_TIER_BUNDLE, self::META_TIER_BUNDLE_ITEMS,
-            self::META_TIER_BUNDLE_TOTAL, self::META_TIER_BUNDLE_HASH,
+            self::META_TIER_BUNDLE_HASH,
         ] as $key) {
             if (isset($values[$key])) {
                 $cart_item[$key] = $values[$key];
@@ -200,17 +197,67 @@ class Loadout_Cart
                 continue;
             }
 
-            // Bundle line: price is the pre-computed total of (anchor + tier items
-            // with all discounts already applied). One inseparable line.
+            // Bundle line: recompute total from bundle_items (never trust client bundle_total).
             if (!empty($item[self::META_TIER_BUNDLE])) {
-                $bundle_total = (float) ($item[self::META_TIER_BUNDLE_TOTAL] ?? 0);
-                $product->set_price(max(0, $bundle_total));
+                $bundle_items = (array) ($item[self::META_TIER_BUNDLE_ITEMS] ?? []);
+                $computed_total = 0.0;
+                foreach ($bundle_items as $bi) {
+                    $qty = (int) ($bi['quantity'] ?? 1);
+                    $final = (float) ($bi['final'] ?? 0);
+                    $computed_total += $final * $qty;
+                }
+                $product->set_price(max(0, $computed_total));
                 continue;
             }
 
-            // Bonus items are zero-priced.
+            // Bonus items: only zero-price if product matches tier's stored bonus_product_id
+            // AND threshold is currently met. Never trust client is_bonus flag alone.
             if (!empty($item[self::META_IS_BONUS])) {
-                $product->set_price(0);
+                $is_valid_bonus = false;
+                $tier_id = (int) ($item[self::META_TIER_ID] ?? 0);
+                $tier_slug = (string) ($item[self::META_TIER_SLUG] ?? '');
+                $product_id = (int) $product->get_id();
+
+                if ($tier_id) {
+                    $tier = Loadout_Tier::get($tier_id);
+                    if ($tier && (int) $tier->get_bonus_product_id() === $product_id) {
+                        // Verify threshold is currently met.
+                        $key = $loadout_id . ':' . $tier_id;
+                        if (isset($groups[$key])) {
+                            $count = $groups[$key];
+                            $threshold = $tier->get_threshold_items();
+                            $is_valid_bonus = $count >= $threshold;
+                        }
+                    }
+                } elseif ($tier_slug && $product_loadout) {
+                    // Custom tier: look up bonus from product meta.
+                    $custom_json = get_post_meta($product_loadout, Loadout_Product_Admin::META_CUSTOM_TIERS, true);
+                    $custom_tiers = $custom_json ? json_decode($custom_json, true) : [];
+                    foreach ($custom_tiers as $ct) {
+                        if (($ct['slug'] ?? sanitize_title($ct['name'] ?? '')) === $tier_slug) {
+                            $bonus_pid = (int) ($ct['bonus_product_id'] ?? 0);
+                            if ($bonus_pid === $product_id) {
+                                // Count items in this tier from cart.
+                                $count = 0;
+                                foreach ($cart->get_cart() as $ci) {
+                                    if (($ci[self::META_SOURCE] ?? '') === 'widget' &&
+                                        (int) ($ci[self::META_PRODUCT_LOADOUT] ?? 0) === $product_loadout &&
+                                        ($ci[self::META_TIER_SLUG] ?? '') === $tier_slug &&
+                                        empty($ci[self::META_IS_BONUS])) {
+                                        $count += (int) ($ci['quantity'] ?? 1);
+                                    }
+                                }
+                                $threshold = (int) ($ct['threshold_items'] ?? 0);
+                                $is_valid_bonus = $threshold > 0 && $count >= $threshold;
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                if ($is_valid_bonus) {
+                    $product->set_price(0);
+                }
                 continue;
             }
 
@@ -219,7 +266,16 @@ class Loadout_Cart
                 $base_price = (float) $product->get_price();
             }
 
-            $discount_pct = (float) ($item[self::META_DISCOUNT_PCT] ?? 0);
+            // Recompute discount_pct from database, never trust client value.
+            $discount_pct = 0;
+            $item_id = (int) ($item[self::META_ITEM_ID] ?? 0);
+            if ($item_id) {
+                $tier_item = Loadout_Tier_Item::get($item_id);
+                if ($tier_item) {
+                    $discount_pct = (float) $tier_item->get_discount_pct();
+                }
+            }
+
             $source = $item[self::META_SOURCE] ?? 'widget';
 
             // Widget items also get the tier accessory discount on top of any per-item discount.
@@ -422,9 +478,9 @@ class Loadout_Cart
     {
         foreach ([
             self::META_LOADOUT_ID, self::META_TIER_ID, self::META_TIER_SLUG, self::META_SOURCE,
-            self::META_PRODUCT_LOADOUT, self::META_DISCOUNT_PCT,
+            self::META_PRODUCT_LOADOUT,
             self::META_IS_BONUS, self::META_ITEM_ID,
-            self::META_TIER_BUNDLE, self::META_TIER_BUNDLE_ITEMS, self::META_TIER_BUNDLE_TOTAL,
+            self::META_TIER_BUNDLE, self::META_TIER_BUNDLE_ITEMS,
         ] as $key) {
             if (!empty($values[$key])) {
                 $item->add_meta_data($key, $values[$key], true);
@@ -503,7 +559,6 @@ class Loadout_Cart
         $source = isset($_POST['source']) ? sanitize_key($_POST['source']) : 'widget';
         $product_loadout_id = isset($_POST['product_loadout_id']) ? absint($_POST['product_loadout_id']) : 0;
         $item_id = isset($_POST['item_id']) ? absint($_POST['item_id']) : 0;
-        $discount_pct = isset($_POST['discount_pct']) ? floatval($_POST['discount_pct']) : 0;
 
         if (!$product_id) {
             wp_send_json_error(['message' => __('Invalid product.', 'ffl-funnels-addons')]);
@@ -518,7 +573,6 @@ class Loadout_Cart
             'source' => $source,
             'product_loadout_id' => $product_loadout_id,
             'item_id' => $item_id,
-            'discount_pct' => $discount_pct,
         ];
 
         $cart_key = WC()->cart->add_to_cart($product_id, $quantity);
