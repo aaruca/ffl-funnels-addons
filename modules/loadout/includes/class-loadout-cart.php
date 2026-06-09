@@ -32,6 +32,11 @@ class Loadout_Cart
         add_action('woocommerce_checkout_create_order_line_item', [__CLASS__, 'save_order_line_item_meta'], 10, 4);
         add_action('woocommerce_cart_item_removed', [__CLASS__, 'on_cart_item_removed'], 10, 2);
 
+        // Stock management for tier-bundle lines.
+        add_action('woocommerce_reduce_order_stock', [__CLASS__, 'reduce_component_stock'], 10, 1);
+        add_action('woocommerce_restore_order_stock', [__CLASS__, 'restore_component_stock'], 10, 1);
+        add_action('woocommerce_restock_refunded_item', [__CLASS__, 'restock_refunded_component'], 10, 3);
+
         // AJAX handlers for frontend.
         add_action('wp_ajax_loadout_add_item', [__CLASS__, 'ajax_add_item']);
         add_action('wp_ajax_nopriv_loadout_add_item', [__CLASS__, 'ajax_add_item']);
@@ -508,6 +513,104 @@ class Loadout_Cart
         // Trigger bonus sync after removal.
         if (function_exists('WC') && WC()->cart) {
             self::sync_bonus_items(WC()->cart);
+        }
+    }
+
+    /**
+     * Reduce stock for all component products in a tier-bundle when order is placed.
+     *
+     * When a tier-bundle line is created, only the representative product is added
+     * to the cart. WooCommerce therefore only reduces stock for that product.
+     * This hook ensures all component products also have their stock decremented.
+     */
+    public static function reduce_component_stock($order): void
+    {
+        if (!$order || !is_a($order, 'WC_Order')) {
+            return;
+        }
+
+        foreach ($order->get_items() as $item) {
+            $bundle_items = $item->get_meta(self::META_TIER_BUNDLE_ITEMS);
+            if (empty($bundle_items)) {
+                continue;
+            }
+
+            foreach ((array) $bundle_items as $bundle_item) {
+                $pid = isset($bundle_item['product_id']) ? (int) $bundle_item['product_id'] : 0;
+                $qty = isset($bundle_item['quantity']) ? (int) $bundle_item['quantity'] : 1;
+
+                if ($pid <= 0 || $qty <= 0) {
+                    continue;
+                }
+
+                $product = wc_get_product($pid);
+                if ($product && $product->get_manage_stock()) {
+                    wc_update_product_stock($product, $qty, 'decrease');
+                }
+            }
+        }
+    }
+
+    /**
+     * Restore stock for all component products when order is cancelled or status changes.
+     */
+    public static function restore_component_stock($order): void
+    {
+        if (!$order || !is_a($order, 'WC_Order')) {
+            return;
+        }
+
+        foreach ($order->get_items() as $item) {
+            $bundle_items = $item->get_meta(self::META_TIER_BUNDLE_ITEMS);
+            if (empty($bundle_items)) {
+                continue;
+            }
+
+            foreach ((array) $bundle_items as $bundle_item) {
+                $pid = isset($bundle_item['product_id']) ? (int) $bundle_item['product_id'] : 0;
+                $qty = isset($bundle_item['quantity']) ? (int) $bundle_item['quantity'] : 1;
+
+                if ($pid <= 0 || $qty <= 0) {
+                    continue;
+                }
+
+                $product = wc_get_product($pid);
+                if ($product && $product->get_manage_stock()) {
+                    wc_update_product_stock($product, $qty, 'increase');
+                }
+            }
+        }
+    }
+
+    /**
+     * Restock component products when a tier-bundle item is refunded.
+     *
+     * WooCommerce calls this hook per refunded item. When a refunded item is part
+     * of a tier-bundle, we need to also restore stock for all components.
+     */
+    public static function restock_refunded_component($item, $qty, $refund): void
+    {
+        if (!$item || !is_a($item, 'WC_Order_Item') || !$refund || !is_a($refund, 'WC_Order_Refund')) {
+            return;
+        }
+
+        $bundle_items = $item->get_meta(self::META_TIER_BUNDLE_ITEMS);
+        if (empty($bundle_items)) {
+            return;
+        }
+
+        foreach ((array) $bundle_items as $bundle_item) {
+            $pid = isset($bundle_item['product_id']) ? (int) $bundle_item['product_id'] : 0;
+            $comp_qty = isset($bundle_item['quantity']) ? (int) $bundle_item['quantity'] : 1;
+
+            if ($pid <= 0 || $comp_qty <= 0) {
+                continue;
+            }
+
+            $product = wc_get_product($pid);
+            if ($product && $product->get_manage_stock()) {
+                wc_update_product_stock($product, $comp_qty, 'increase');
+            }
         }
     }
 
