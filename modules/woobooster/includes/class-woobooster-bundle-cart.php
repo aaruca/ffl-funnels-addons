@@ -97,8 +97,23 @@ class WooBooster_Bundle_Cart
             wp_send_json_error(array('message' => __('Selected products do not belong to this bundle.', 'ffl-funnels-addons')));
         }
 
-        // Compute authoritative price snapshots server-side.
-        $price_map = WooBooster_Bundle::calculate_item_prices($bundle, $product_ids);
+        // Validate that required items are included (for fixed pricing, all items usually required).
+        $bundle_items = WooBooster_Bundle::get_items($bundle->id);
+        $required_ids = array_map(
+            fn($item) => absint($item->product_id),
+            array_filter($bundle_items, fn($item) => !empty($item->required))
+        );
+        $missing_required = array_diff($required_ids, $product_ids);
+        if (!empty($missing_required)) {
+            wp_send_json_error(array('message' => __('Bundle requires all items to be selected.', 'ffl-funnels-addons')));
+        }
+
+        // Compute authoritative price snapshots server-side using the FULL bundle.
+        // For fixed pricing, this ensures the target price is distributed across the complete set.
+        $full_price_map = WooBooster_Bundle::calculate_item_prices($bundle, $resolved_items);
+
+        // Extract prices for only the selected items.
+        $price_map = array_intersect_key($full_price_map, array_flip($product_ids));
 
         // Static item quantities (dynamic items default to qty 1).
         $qty_map      = array();
