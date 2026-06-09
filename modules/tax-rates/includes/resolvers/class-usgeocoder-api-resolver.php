@@ -463,8 +463,11 @@ class USGeocoder_API_Resolver extends Tax_Resolver_Base
                         'rate'         => $rate,
                     ];
                 }
+            }
 
-                // Special districts (details only).
+            // Special districts (details only).
+            // These are independent of city/county and should always be extracted.
+            if ($is_details) {
                 for ($i = 1; $i <= 10; $i++) {
                     $rate = self::numeric_field($node, $p . 'special_district' . $i . '_tax');
                     if ($rate === null) {
