@@ -246,22 +246,30 @@ class Product_Reviews_Core
             return $commentdata;
         }
 
-        // Nonce check runs first as defense-in-depth, before honeypot and
-        // Turnstile. A submission with no nonce field is rejected outright;
-        // previously a missing field silently bypassed the nonce check.
-        $nonce = isset($_POST['ffla_review_form_nonce'])
-            ? sanitize_text_field(wp_unslash($_POST['ffla_review_form_nonce']))
-            : '';
-        if (!$nonce || !wp_verify_nonce($nonce, 'ffla_review_form')) {
-            wp_die(esc_html__('Security check failed. Please refresh and try again.', 'ffl-funnels-addons'));
+        // Allow admins with moderate_comments capability to bypass checks
+        // (e.g., replies from the comments table, REST API submissions).
+        if (is_user_logged_in()) {
+            $user_id = get_current_user_id();
+            if ($user_id && user_can($user_id, 'moderate_comments')) {
+                return self::apply_review_comment_approval($commentdata);
+            }
         }
 
-        if (self::review_honeypot_triggered()) {
-            wp_die(esc_html__('Your review could not be submitted.', 'ffl-funnels-addons'));
-        }
+        // Only enforce nonce check for comments from the FFLA form.
+        // Native product comments and REST API don't have this nonce.
+        if (isset($_POST['ffla_review_form_nonce'])) {
+            $nonce = sanitize_text_field(wp_unslash($_POST['ffla_review_form_nonce']));
+            if (!wp_verify_nonce($nonce, 'ffla_review_form')) {
+                wp_die(esc_html__('Security check failed. Please refresh and try again.', 'ffl-funnels-addons'));
+            }
 
-        if (!self::turnstile_token_valid_for_request()) {
-            wp_die(esc_html__('Cloudflare validation failed. Please try again.', 'ffl-funnels-addons'));
+            if (self::review_honeypot_triggered()) {
+                wp_die(esc_html__('Your review could not be submitted.', 'ffl-funnels-addons'));
+            }
+
+            if (!self::turnstile_token_valid_for_request()) {
+                wp_die(esc_html__('Cloudflare validation failed. Please try again.', 'ffl-funnels-addons'));
+            }
         }
 
         return self::apply_review_comment_approval($commentdata);
