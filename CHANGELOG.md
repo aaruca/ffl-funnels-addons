@@ -2,6 +2,69 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.37.0] - 2026-06-10
+
+### FFL Checkout — Mapbox token "Auto + override"
+
+The FFL Checkout module can now power Mapbox address autocomplete without a
+dedicated token: leave the **Mapbox Public Token** field blank and it borrows a
+token from the g-FFL Checkout plugin, which is normally active alongside it.
+
+- New `FFL_Checkout_Mapbox::resolve_token()` resolution order:
+  1. The admin's **own token** (Settings → Mapbox Public Token) always wins.
+  2. Otherwise **borrow from g-FFL Checkout** — posts `{action:get_mapbox_token}`
+     to the vendor using the `ffl_api_key_option` key that g-FFL already stores.
+     Borrowed tokens are cached in a transient (50 min) so checkout pages don't
+     re-fetch on every load.
+  3. Otherwise empty — autocomplete simply doesn't load.
+- The asset loader and the `ffl_get_mapbox_token` AJAX handler both go through
+  the resolver, so borrowing is consistent across paths.
+- The settings page marks the token field as optional and shows a live status
+  line naming the **active source** (your token / borrowed / none available).
+- The g-FFL vendor key is never stored or exposed — only the resolved public
+  token reaches the frontend.
+
+### Security — critical & high-severity hardening
+
+A focused security pass across the suite. No schema or settings changes.
+
+- **Loadout — cart price manipulation (CRITICAL).** Per-item discount, bundle
+  total, and "bonus" (free) status were read from client-supplied POST data,
+  letting a visitor zero-price or deeply discount any product. All pricing is
+  now re-derived server-side from stored Loadout config; the bonus line is only
+  free when the product matches the tier's configured bonus **and** the
+  threshold is met.
+- **Updater — package install hardening (HIGH).** Update package URLs are now
+  restricted to an allowlist of GitHub hosts (https only), and an optional
+  SHA-256 published in the release notes is verified before install. Closes a
+  remote-code-execution path if a release or its assets were tampered with.
+- **Woo Sheets Sync — credential encryption (HIGH).** Service-account JSON,
+  OAuth tokens, and the OAuth proxy payload now use AES-256-CBC **with an
+  HMAC-SHA256** (encrypt-then-MAC, constant-time verify). Tampered or
+  garbage ciphertext is rejected instead of being returned as "plaintext".
+- **Tax Resolver — special-district undercharge (HIGH).** Special-district
+  rates (e.g. CO RTD/SCFD) were dropped whenever a positive city rate existed,
+  undercharging tax in affected jurisdictions. Special districts are now always
+  extracted, independent of city/county base rates.
+- **Product Reviews — comment outage (HIGH).** The FFLA review nonce was being
+  enforced on *every* comment, breaking native product comments, admin replies,
+  and REST submissions. The nonce/honeypot/Turnstile checks now apply only to
+  the FFLA review form; `moderate_comments` users are exempt.
+- **WooBooster — bundle subset repricing (HIGH).** Adding a subset of a bundle
+  could under- or over-charge because pricing was computed on the submitted
+  items only. Prices are now computed over the full configured set, required
+  items are enforced, and the selected items draw from that result.
+- **Loadout — tier-bundle stock (HIGH).** Tier-bundles only reduced stock for
+  the representative product, oversold components, and skewed inventory reports.
+  Component stock is now decremented on order, restored on cancel, and restocked
+  on refund.
+- **WooBooster — AI tool fatal (HIGH).** The AI assistant's "get rules" tool
+  called a non-existent method (HTTP 500). It now uses `WooBooster_Rule::get_all()`
+  and reads conditions/actions from their tables.
+- **FFL Checkout — compliance bypass (HIGH).** The FFL dealer selector could be
+  suppressed with a client-set cookie. The C&R override now requires
+  server-verified license state, not a raw cookie.
+
 ## [1.36.0] - 2026-06-07
 
 ### Woo Sheets Sync — Fix nightly sync reverting every sale + real-time stock push
