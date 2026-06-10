@@ -36,8 +36,12 @@ class FFL_Checkout_Assets
         $module_url = FFLA_URL . 'modules/ffl-checkout/';
 
         // ── Mapbox Address Autocomplete ──────────────────────────────────
+        // Token follows the "Auto + override" model: the admin's own token if
+        // set, otherwise one borrowed from the g-FFL Checkout plugin.
         $autocomplete_enabled = ($settings['autocomplete_enabled'] ?? '0') === '1';
-        $token                = $settings['mapbox_public_token'] ?? '';
+        $token                = $autocomplete_enabled
+            ? FFL_Checkout_Mapbox::resolve_token($settings)
+            : '';
 
         if ($autocomplete_enabled && !empty($token)) {
             wp_enqueue_script(

@@ -76,14 +76,31 @@ class FFL_Checkout_Admin
         echo '<div class="wb-card">';
         echo '<div class="wb-card__header"><h3>' . esc_html__('Mapbox Settings', 'ffl-funnels-addons') . '</h3></div>';
         echo '<div class="wb-card__body">';
-        echo '<p class="wb-section-desc">' . esc_html__('Your Mapbox token powers the address autocomplete on checkout fields.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-section-desc">' . esc_html__('Your Mapbox token powers the address autocomplete on checkout fields. Leave it blank to automatically borrow a token from the g-FFL Checkout plugin; enter your own to override.', 'ffl-funnels-addons') . '</p>';
 
         FFLA_Admin::render_password_field(
             __('Mapbox Public Token', 'ffl-funnels-addons'),
             'mapbox_public_token',
             $s['mapbox_public_token'],
-            __('Your Mapbox public access token (starts with pk.eyJ1). Found in the Mapbox Dashboard > Account > Access Tokens.', 'ffl-funnels-addons')
+            __('Optional. Your Mapbox public access token (starts with pk.eyJ1), from the Mapbox Dashboard > Account > Access Tokens. Leave blank to use the g-FFL Checkout token automatically.', 'ffl-funnels-addons')
         );
+
+        // Show which token source is currently active so the operator knows
+        // whether the "Auto" fallback will work.
+        $has_own         = trim((string) $s['mapbox_public_token']) !== '';
+        $borrow_possible = class_exists('FFL_Checkout_Mapbox') && FFL_Checkout_Mapbox::is_borrow_available();
+
+        if ($has_own) {
+            $status_class = 'success';
+            $status_text  = __('Active source: your own Mapbox token.', 'ffl-funnels-addons');
+        } elseif ($borrow_possible) {
+            $status_class = 'success';
+            $status_text  = __('Active source: borrowed from g-FFL Checkout (no token entered).', 'ffl-funnels-addons');
+        } else {
+            $status_class = 'warning';
+            $status_text  = __('No token available — enter your own above, or configure the g-FFL Checkout plugin so a token can be borrowed.', 'ffl-funnels-addons');
+        }
+        echo '<p class="wb-status wb-status--' . esc_attr($status_class) . '" style="margin-top:8px;">' . esc_html($status_text) . '</p>';
 
         FFLA_Admin::render_toggle_field(
             __('Enable Address Autocomplete', 'ffl-funnels-addons'),

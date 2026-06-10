@@ -33,14 +33,16 @@ class FFL_Checkout_Ajax
     /* ── Mapbox Token ────────────────────────────────────────────────── */
 
     /**
-     * Return the Mapbox public token via AJAX.
+     * Return the resolved Mapbox token via AJAX.
+     *
+     * Uses the same "Auto + override" resolution as the asset loader: the
+     * admin's own token if set, otherwise one borrowed from g-FFL Checkout.
      */
     public static function get_mapbox_token(): void
     {
         check_ajax_referer('ffl_checkout_nonce', 'security');
 
-        $settings = get_option('ffl_checkout_settings', []);
-        $token    = $settings['mapbox_public_token'] ?? '';
+        $token = FFL_Checkout_Mapbox::resolve_token();
 
         if (empty($token)) {
             wp_send_json_error('Mapbox token not configured.');
