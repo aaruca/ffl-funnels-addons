@@ -197,13 +197,62 @@ class WSS_Admin
                     <?php endif; ?>
                 </div>
                 <?php if (!$sa_constant): ?>
-                    <div class="wb-card__footer" style="display:flex;justify-content:flex-end;align-items:center;">
+                    <div class="wb-card__footer">
                         <button type="submit" name="wss_save" class="wb-btn wb-btn--primary">
                             <?php esc_html_e('Save Settings', 'ffl-funnels-addons'); ?>
                         </button>
                     </div>
                 <?php endif; ?>
             </div>
+
+            <?php
+            // ── Authentication — Google OAuth (alternative to service account) ──
+            // Only offered when a service account isn't the active/forced method,
+            // since the service account is the recommended path.
+            if (!$sa_constant && !$sa_active):
+                $oauth            = new WSS_Google_OAuth();
+                $oauth_connected  = $oauth->is_connected();
+                $oauth_email      = $oauth_connected ? $oauth->get_user_email() : '';
+            ?>
+            <div class="wb-card">
+                <div class="wb-card__header">
+                    <h2><?php esc_html_e('Authentication — Google OAuth (Alternative)', 'ffl-funnels-addons'); ?></h2>
+                </div>
+                <div class="wb-card__body">
+                    <p class="wb-field__desc">
+                        <?php esc_html_e('Prefer not to create a service account? Connect a Google account instead. This uses OAuth and may need periodic re-authorization. If a service account key is saved above, it takes precedence over this connection.', 'ffl-funnels-addons'); ?>
+                    </p>
+
+                    <?php if ($oauth_connected): ?>
+                        <div class="wss-oauth-status wss-oauth-status--connected">
+                            <span class="wss-oauth-status__icon">&#x2705;</span>
+                            <span>
+                                <?php
+                                if ($oauth_email !== '') {
+                                    printf(
+                                        /* translators: %s: connected Google account email */
+                                        esc_html__('Connected to Google as %s.', 'ffl-funnels-addons'),
+                                        '<strong>' . esc_html($oauth_email) . '</strong>'
+                                    );
+                                } else {
+                                    esc_html_e('Connected to Google.', 'ffl-funnels-addons');
+                                }
+                                ?>
+                            </span>
+                        </div>
+                        <div style="margin-top: var(--wb-spacing-md);">
+                            <button type="button" id="wss-disconnect-btn" class="wb-btn wb-btn--secondary">
+                                <?php esc_html_e('Disconnect', 'ffl-funnels-addons'); ?>
+                            </button>
+                        </div>
+                    <?php else: ?>
+                        <a href="<?php echo esc_url($oauth->get_auth_url()); ?>" class="wb-btn wb-btn--primary">
+                            <?php esc_html_e('Connect with Google', 'ffl-funnels-addons'); ?>
+                        </a>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php endif; ?>
 
             <div class="wb-card">
                 <div class="wb-card__header">
@@ -249,7 +298,7 @@ class WSS_Admin
                         <?php esc_html_e('Sheet tab names are managed in WSS Dashboard → Sheet tab groups.', 'ffl-funnels-addons'); ?>
                     </p>
                 </div>
-                <div class="wb-card__footer" style="display:flex;justify-content:flex-end;align-items:center;">
+                <div class="wb-card__footer">
                     <button type="submit" name="wss_save" class="wb-btn wb-btn--primary">
                         <?php esc_html_e('Save Settings', 'ffl-funnels-addons'); ?>
                     </button>
