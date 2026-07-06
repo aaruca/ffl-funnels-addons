@@ -44,6 +44,18 @@ class WSS_Google_OAuth implements WSS_Token_Provider
     }
 
     /**
+     * Whether the OAuth proxy is usable.
+     *
+     * OAuth "Connect with Google" only works when the shared proxy secret is
+     * configured. When it isn't, the connect flow is a dead end, so callers use
+     * this to hide the OAuth option entirely.
+     */
+    public static function proxy_enabled(): bool
+    {
+        return self::get_proxy_secret() !== '';
+    }
+
+    /**
      * Get the Client ID — stored in wss_settings after proxy callback.
      */
     public function get_client_id(): string

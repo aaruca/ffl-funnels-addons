@@ -2,6 +2,28 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.37.1] - 2026-06-10
+
+### Woo Sheets Sync — Google connection UI + documentation
+
+- **Restored the Google OAuth "Connect with Google" option.** The OAuth flow was
+  fully wired in the backend but had no button on the Settings page — only the
+  Service Account card was shown. Added a "Authentication — Google OAuth
+  (Alternative)" card with Connect / connected-email + Disconnect states.
+- **Gated OAuth on the proxy actually being configured.** The Connect card and
+  the OAuth docs now appear only when `WSS_PROXY_SECRET` is defined (or an OAuth
+  connection already exists, so it can still be disconnected). Previously the
+  button could render even when the proxy was disabled, leading to a dead end.
+  Added `WSS_Google_OAuth::proxy_enabled()`.
+- **Rewrote the "Connect Your Google Account" documentation.** The Docs page now
+  leads with a full **Service Account** step-by-step (create project, enable the
+  Google Sheets API, create the service account, download the JSON key, paste it,
+  and share the Sheet as Editor), with OAuth kept as a clearly-labeled
+  alternative. Updated the related troubleshooting entry to cover both methods.
+- **Fixed the Save Settings button padding.** Added a proper `.wb-card__footer`
+  style (right/bottom padding + top divider) so the buttons no longer sit flush
+  against the card edges.
+
 ## [1.37.0] - 2026-06-10
 
 ### FFL Checkout — Mapbox token "Auto + override"
