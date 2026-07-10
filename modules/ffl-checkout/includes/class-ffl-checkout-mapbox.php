@@ -26,6 +26,12 @@ class FFL_Checkout_Mapbox
     /** Transient holding the borrowed token. */
     const BORROW_TRANSIENT = 'ffla_borrowed_mapbox_token';
 
+    /** Sentinel set after a failed borrow, so we stop retrying on every render. */
+    const BORROW_FAIL_TRANSIENT = 'ffla_borrowed_mapbox_token_fail';
+
+    /** How long to skip retrying the vendor after a failure. */
+    const BORROW_FAIL_TTL = 60;
+
     /** Cache lifetime for a borrowed token — short enough to tolerate rotation. */
     const BORROW_TTL = 50 * MINUTE_IN_SECONDS;
 
@@ -91,6 +97,13 @@ class FFL_Checkout_Mapbox
             return $cached;
         }
 
+        // This runs while the checkout page is rendering. Only successes were
+        // cached, so a vendor outage meant every single render re-issued the
+        // request and blocked for the full timeout. Back off instead.
+        if (false !== get_transient(self::BORROW_FAIL_TRANSIENT)) {
+            return '';
+        }
+
         $api_key = self::ffl_api_key();
         if ($api_key === '') {
             return '';
@@ -104,21 +117,28 @@ class FFL_Checkout_Mapbox
                 'x-api-key'    => $api_key,
             ],
             'body'    => wp_json_encode(['action' => 'get_mapbox_token']),
-            'timeout' => 15,
+            // Render-blocking: fail fast rather than hold the page open.
+            'timeout' => 5,
         ]);
 
         if (is_wp_error($response)) {
+            set_transient(self::BORROW_FAIL_TRANSIENT, 1, self::BORROW_FAIL_TTL);
             return '';
         }
         if ((int) wp_remote_retrieve_response_code($response) !== 200) {
+            set_transient(self::BORROW_FAIL_TRANSIENT, 1, self::BORROW_FAIL_TTL);
             return '';
         }
 
         $data  = json_decode(wp_remote_retrieve_body($response), true);
         $token = self::extract_token($data);
         if ($token === '') {
+            set_transient(self::BORROW_FAIL_TRANSIENT, 1, self::BORROW_FAIL_TTL);
             return '';
         }
+
+        // Clear any stale failure sentinel now that the vendor is healthy again.
+        delete_transient(self::BORROW_FAIL_TRANSIENT);
 
         set_transient(self::BORROW_TRANSIENT, $token, self::BORROW_TTL);
         return $token;

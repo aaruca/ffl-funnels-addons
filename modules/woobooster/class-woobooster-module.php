@@ -68,6 +68,10 @@ class WooBooster_Module extends FFLA_Module
             require_once $path . 'admin/class-woobooster-bundle-form.php';
             require_once $path . 'admin/class-woobooster-bundle-list.php';
 
+            // The analytics dashboard is only ever rendered from render_admin_page().
+            // It was previously required on every front-end request too.
+            require_once $path . 'analytics/class-woobooster-analytics.php';
+
             $this->admin = new WooBooster_Admin();
             $this->admin->init();
 
@@ -75,9 +79,8 @@ class WooBooster_Module extends FFLA_Module
             $ajax->init();
         }
 
-        // Analytics.
+        // Attribution tracker registers front-end hooks, so it loads everywhere.
         require_once $path . 'analytics/class-woobooster-tracker.php';
-        require_once $path . 'analytics/class-woobooster-analytics.php';
 
         $tracker = new WooBooster_Tracker();
         $tracker->init();

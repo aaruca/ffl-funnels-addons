@@ -53,6 +53,8 @@ jobs:
             --exclude='.editorconfig' \
             --exclude='.eslintrc.json' \
             --exclude='AUDIT_*.md' \
+            --exclude='.mailmap' \
+            --exclude='CHANGELOG.md' \
             ./ /tmp/ffl-funnels-addons/
           cd /tmp
           zip -r "ffl-funnels-addons-${{ steps.tag.outputs.value }}.zip" ffl-funnels-addons/
@@ -61,7 +63,7 @@ jobs:
         run: |
           cd /tmp
           if unzip -Z1 "ffl-funnels-addons-${{ steps.tag.outputs.value }}.zip" \
-              | grep -Ei '(^|/)(tests?/|composer\.(json|lock)|package(-lock)?\.json|phpstan|phpunit|\.phpcs|\.editorconfig|\.eslintrc|AUDIT_)'; then
+              | grep -Ei '(^|/)(tests?/|composer\.(json|lock)|package(-lock)?\.json|phpstan|phpunit|\.phpcs|\.editorconfig|\.eslintrc|AUDIT_|CHANGELOG\.md|\.mailmap)'; then
             echo "::error::Developer tooling leaked into the release ZIP"
             exit 1
           fi

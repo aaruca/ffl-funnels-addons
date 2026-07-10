@@ -383,8 +383,23 @@ class Tax_Quote_Engine
     /**
      * Return the cache schema version used to invalidate stale quote payloads.
      */
+    /**
+     * Version stamped into every cached quote; a mismatch discards the row.
+     *
+     * This deliberately does NOT include FFLA_VERSION. The plugin auto-updates,
+     * so folding the plugin version in here invalidated the entire address cache
+     * on every single release — and the first checkout for each address then had
+     * to re-resolve it, which for USGeocoder states is a billed API call on the
+     * checkout path.
+     *
+     * The cache is keyed to the *payload shape*, not the release. Bump
+     * CACHE_SCHEMA_VERSION by hand whenever the persisted quote structure changes;
+     * that is precisely what the constant exists for. Data changes still flush via
+     * Tax_Resolver_DB::clear_state_cache() during a dataset sync, and the TTL
+     * bounds staleness regardless.
+     */
     private static function get_cache_schema_version(): string
     {
-        return (defined('FFLA_VERSION') ? FFLA_VERSION : 'dev') . ':' . self::CACHE_SCHEMA_VERSION;
+        return self::CACHE_SCHEMA_VERSION;
     }
 }

@@ -64,6 +64,14 @@ class WooBooster_Coupon
         // Get currently tracked auto-applied coupons.
         $auto_coupons = $session->get(self::SESSION_KEY, array());
 
+        // Nothing to apply and nothing previously applied to remove — skip the
+        // condition evaluation entirely. Most stores define no coupon rules and
+        // were paying for the full match pass on every totals recalculation.
+        if (empty($auto_coupons) && empty($this->get_coupon_rules())) {
+            $running = false;
+            return;
+        }
+
         // Find all coupon IDs that should be applied based on current cart.
         // Returns coupon_id => message pairs.
         $should_apply = $this->get_matching_coupon_ids($cart);
@@ -191,18 +199,32 @@ class WooBooster_Coupon
      */
     private function get_coupon_rules()
     {
+        // WooCommerce recalculates totals several times per request, and this
+        // JOIN ran on every pass. Rules only change from the admin, never midway
+        // through a front-end request, so a per-request memo cannot go stale.
+        static $memo = null;
+        if (null !== $memo) {
+            return $memo;
+        }
+
         global $wpdb;
 
         $rules_table = $wpdb->prefix . 'woobooster_rules';
         $actions_table = $wpdb->prefix . 'woobooster_rule_actions';
 
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery
-        return $wpdb->get_results(
+        $memo = $wpdb->get_results(
             "SELECT DISTINCT r.* FROM {$rules_table} r
              INNER JOIN {$actions_table} a ON r.id = a.rule_id
              WHERE r.status = 1 AND a.action_source = 'apply_coupon'
              ORDER BY r.priority ASC"
         );
+
+        if (!is_array($memo)) {
+            $memo = array();
+        }
+
+        return $memo;
     }
 
     /**

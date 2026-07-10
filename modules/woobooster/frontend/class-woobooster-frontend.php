@@ -111,6 +111,11 @@ class WooBooster_Frontend
             );
         }
 
+        // The matcher returns bare IDs and deliberately skips post/meta/term cache
+        // warming, so the loop below would issue one post query plus one meta query
+        // per recommendation. Prime them all in a couple of queries instead.
+        _prime_post_caches($product_ids, true, true);
+
         $section_title = woobooster_get_option('section_title', __('You May Also Like', 'ffl-funnels-addons'));
         $columns = min(count($product_ids), 4);
 

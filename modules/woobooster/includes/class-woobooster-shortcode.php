@@ -83,6 +83,9 @@ class WooBooster_Shortcode
             return '';
         }
 
+        // Prime post/meta caches in bulk; the loop below hydrates each ID.
+        _prime_post_caches($product_ids, true, true);
+
         // Render output.
         ob_start();
 
