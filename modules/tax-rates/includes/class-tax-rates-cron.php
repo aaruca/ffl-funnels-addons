@@ -19,6 +19,17 @@ class Tax_Rates_Cron
     const SYNC_HOOK    = 'ffla_tax_dataset_sync';
     const CLEANUP_HOOK = 'ffla_tax_cache_cleanup';
     const PURGE_HOOK   = 'ffla_tax_audit_purge';
+    const FLUSH_HOOK   = 'ffla_tax_cache_flush';
+
+    /** Timestamp of the last full cache flush (manual or automatic). */
+    const LAST_FLUSH_OPTION = 'ffla_tax_last_cache_flush';
+
+    /** Map the saved interval setting onto a WP-Cron recurrence. */
+    const FLUSH_RECURRENCE = [
+        'daily'   => 'daily',
+        'weekly'  => 'weekly',
+        'monthly' => 'ffla_monthly',
+    ];
 
     public static function init(): void
     {
@@ -29,6 +40,7 @@ class Tax_Rates_Cron
         add_action(self::SYNC_HOOK, [__CLASS__, 'run_sync']);
         add_action(self::CLEANUP_HOOK, [__CLASS__, 'run_cleanup']);
         add_action(self::PURGE_HOOK, [__CLASS__, 'run_purge']);
+        add_action(self::FLUSH_HOOK, [__CLASS__, 'run_cache_flush']);
 
         // Schedule on init.
         add_action('init', [__CLASS__, 'maybe_schedule']);
@@ -76,6 +88,39 @@ class Tax_Rates_Cron
         if (!wp_next_scheduled(self::PURGE_HOOK)) {
             wp_schedule_event(time(), 'weekly', self::PURGE_HOOK);
         }
+
+        // Full cache flush — opt-in, and rescheduled when the interval changes.
+        $interval   = (string) ($settings['cache_flush_interval'] ?? 'never');
+        $recurrence = self::FLUSH_RECURRENCE[$interval] ?? '';
+
+        if ('' === $recurrence) {
+            wp_clear_scheduled_hook(self::FLUSH_HOOK);
+            return;
+        }
+
+        $scheduled_flush = wp_get_scheduled_event(self::FLUSH_HOOK);
+        if (!$scheduled_flush || $scheduled_flush->schedule !== $recurrence) {
+            // Clear first: wp_schedule_event() is a no-op while an event with a
+            // different recurrence is still registered, so changing the setting
+            // would otherwise never take effect.
+            wp_clear_scheduled_hook(self::FLUSH_HOOK);
+            wp_schedule_event(time() + self::flush_interval_seconds($recurrence), $recurrence, self::FLUSH_HOOK);
+        }
+    }
+
+    /**
+     * Seconds until the first run of a newly-scheduled flush.
+     *
+     * Delayed by one full interval so saving settings never wipes the cache
+     * immediately (every cleared address costs a billed API call to re-resolve).
+     */
+    private static function flush_interval_seconds(string $recurrence): int
+    {
+        $schedules = wp_get_schedules();
+
+        return isset($schedules[$recurrence]['interval'])
+            ? (int) $schedules[$recurrence]['interval']
+            : DAY_IN_SECONDS;
     }
 
     /**
@@ -106,5 +151,20 @@ class Tax_Rates_Cron
         if (class_exists('Tax_Resolver_DB')) {
             Tax_Resolver_DB::purge_audit(90);
         }
+    }
+
+    /**
+     * Empty the whole address cache (scheduled "auto-clear").
+     *
+     * Distinct from run_cleanup(), which only removes already-expired rows.
+     */
+    public static function run_cache_flush(): void
+    {
+        if (!class_exists('Tax_Resolver_DB')) {
+            return;
+        }
+
+        Tax_Resolver_DB::flush_address_cache();
+        update_option(self::LAST_FLUSH_OPTION, time(), false);
     }
 }

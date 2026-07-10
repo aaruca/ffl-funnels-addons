@@ -25,6 +25,28 @@ class Tax_Quote_Engine
     /** @var int Cache TTL in seconds (default 24 hours). */
     private static $cache_ttl = 86400;
 
+    /**
+     * TTL for cached *negative* answers (default 1 hour).
+     *
+     * Short on purpose: a definitive "this address has no match" is worth
+     * remembering so we stop paying USGeocoder for it on every checkout
+     * request, but not so long that a corrected address stays broken.
+     */
+    private static $negative_cache_ttl = 3600;
+
+    /**
+     * Outcomes that are a definitive answer *about this address* and are
+     * therefore safe to cache.
+     *
+     * Deliberately excludes SOURCE_UNAVAILABLE, INTERNAL_ERROR and
+     * DATASET_STALE: those describe infrastructure, not the address. Caching
+     * them would keep serving a failure after the API recovered.
+     */
+    private const CACHEABLE_NEGATIVE_OUTCOMES = [
+        Tax_Quote_Result::OUTCOME_VALIDATION_ERROR,      // USGeocoder "NoMatch"
+        Tax_Quote_Result::OUTCOME_RATE_NOT_DETERMINABLE, // resolved, but no rate for it
+    ];
+
     private const CACHE_SCHEMA_VERSION = '2026-04-01-sheet-dataset-v1';
 
     /**
@@ -146,6 +168,11 @@ class Tax_Quote_Engine
 
         if ($result->is_success()) {
             self::cache_result($normalized['key'], $state_code, $result);
+        } elseif (in_array($result->outcomeCode, self::CACHEABLE_NEGATIVE_OUTCOMES, true)) {
+            // Cache definitive negative answers too, on a short TTL. USGeocoder
+            // bills per call, and without this the same unmatched address hits
+            // the paid API on every single checkout recalculation.
+            self::cache_result($normalized['key'], $state_code, $result, self::$negative_cache_ttl);
         }
 
         return self::audit($result, $start_time);
@@ -271,13 +298,15 @@ class Tax_Quote_Engine
 
     /**
      * Cache a quote result.
+     *
+     * @param int|null $ttl Override TTL in seconds (used for negative caching).
      */
-    private static function cache_result(string $cache_key, string $state_code, Tax_Quote_Result $result): void
+    private static function cache_result(string $cache_key, string $state_code, Tax_Quote_Result $result, ?int $ttl = null): void
     {
         global $wpdb;
 
         $table = Tax_Resolver_DB::table('address_cache');
-        $expires_at = wp_date('Y-m-d H:i:s', time() + self::$cache_ttl);
+        $expires_at = wp_date('Y-m-d H:i:s', time() + ($ttl ?? self::$cache_ttl));
         $result->trace['cacheSchemaVersion'] = self::get_cache_schema_version();
 
         $wpdb->replace($table, [

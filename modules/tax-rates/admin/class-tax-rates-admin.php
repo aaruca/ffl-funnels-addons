@@ -20,6 +20,7 @@ class Tax_Rates_Admin
         add_action('wp_ajax_ffla_tax_run_sync', [$this, 'ajax_run_sync']);
         add_action('wp_ajax_ffla_tax_purge_legacy_data', [$this, 'ajax_purge_legacy_data']);
         add_action('wp_ajax_ffla_tax_test_usgeocoder', [$this, 'ajax_test_usgeocoder']);
+        add_action('wp_ajax_ffla_tax_clear_cache', [$this, 'ajax_clear_cache']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
     }
 
@@ -165,8 +166,14 @@ class Tax_Rates_Admin
             $rate_source = 'auto';
         }
 
+        $flush_interval = sanitize_key(wp_unslash($_POST['cache_flush_interval'] ?? 'never'));
+        if (!in_array($flush_interval, ['never', 'daily', 'weekly', 'monthly'], true)) {
+            $flush_interval = 'never';
+        }
+
         $settings = [
             'cache_ttl'       => max(60, (int) ($_POST['cache_ttl'] ?? 86400)),
+            'cache_flush_interval' => $flush_interval,
             'auto_sync'       => isset($_POST['auto_sync']) ? '1' : '0',
             'sync_schedule'   => 'monthly',
             'wc_auto_sync'    => '0',
@@ -314,6 +321,40 @@ class Tax_Rates_Admin
         ]);
     }
 
+    /**
+     * AJAX: empty the whole address cache.
+     *
+     * Every cleared address costs a fresh (billed) USGeocoder call the next time
+     * it is quoted, so this is a deliberate manual action.
+     */
+    public function ajax_clear_cache(): void
+    {
+        check_ajax_referer('ffla_tax_resolver_nonce', 'security');
+
+        if (!current_user_can('manage_woocommerce')) {
+            wp_send_json_error('Permission denied.');
+        }
+
+        $deleted = Tax_Resolver_DB::flush_address_cache();
+
+        // Keep the automatic flush a full interval away from a manual one.
+        update_option(Tax_Rates_Cron::LAST_FLUSH_OPTION, time(), false);
+
+        wp_send_json_success([
+            'deleted' => $deleted,
+            'message' => sprintf(
+                /* translators: %d: number of cached addresses removed. */
+                _n(
+                    'Cache cleared — %d cached address removed.',
+                    'Cache cleared — %d cached addresses removed.',
+                    $deleted,
+                    'ffl-funnels-addons'
+                ),
+                $deleted
+            ),
+        ]);
+    }
+
     public function ajax_purge_legacy_data(): void
     {
         check_ajax_referer('ffla_tax_resolver_nonce', 'security');
@@ -366,6 +407,21 @@ class Tax_Rates_Admin
             ]);
         }
 
+        // USGeocoder bills per call, and the sample lookup below is a real one.
+        // If we already proved THIS key works within the last hour, reuse that
+        // answer instead of paying again. Only successes short-circuit, so a
+        // failed test can still be retried immediately.
+        $key_hash = md5($key);
+        $cached   = get_transient('ffla_tax_key_validation');
+        if (
+            is_array($cached)
+            && ($cached['status'] ?? '') === 'ok'
+            && ($cached['keyHash'] ?? '') === $key_hash
+        ) {
+            $cached['cached'] = true;
+            wp_send_json_success($cached);
+        }
+
         // Sample address from the USGeocoder documentation; any valid key
         // should resolve it to a usable tax rate.
         $response = USGeocoder_API_Resolver::fetch_api($key, [
@@ -377,6 +433,7 @@ class Tax_Rates_Admin
             'status'    => 'ok',
             'http_code' => (int) ($response['http_code'] ?? 0),
             'checkedAt' => current_time('mysql'),
+            'keyHash'   => $key_hash,
             'message'   => __('Key works. Sample lookup succeeded.', 'ffl-funnels-addons'),
         ];
 
@@ -462,11 +519,13 @@ class Tax_Rates_Admin
             ['a' => ['href' => [], 'target' => [], 'rel' => []]]
         ) . '</p>';
 
-        FFLA_Admin::render_text_field(
+        // Masked: this is a paid API credential and was previously rendered as a
+        // plain, readable text input.
+        FFLA_Admin::render_password_field(
             __('USGeocoder Auth Key', 'ffl-funnels-addons'),
             'usgeocoder_auth_key',
             $auth_key,
-            __('32-character authkey from your USGeocoder account. Example: 0e3152f320d173d00885ed2926c90887.', 'ffl-funnels-addons')
+            __('32-character authkey from your USGeocoder account.', 'ffl-funnels-addons')
         );
 
         echo '<p class="wb-field__actions" style="margin-top:var(--wb-spacing-sm);display:flex;gap:var(--wb-spacing-sm);align-items:center;flex-wrap:wrap;">';
@@ -1052,15 +1111,16 @@ class Tax_Rates_Admin
     private function render_settings_tab(): void
     {
         $settings = wp_parse_args(get_option(self::SETTINGS_KEY, []), [
-            'cache_ttl'       => 86400,
-            'auto_sync'       => '1',
-            'sync_schedule'   => 'monthly',
-            'wc_auto_sync'    => '0',
-            'restrict_states' => '0',
-            'enabled_states'  => [],
-            'rate_source'     => 'auto',
-            'sheet_source_url'=> Tax_Dataset_Pipeline::DEFAULT_SHEET_URL,
-            'usgeocoder_auth_key' => '',
+            'cache_ttl'            => 86400,
+            'cache_flush_interval' => 'never',
+            'auto_sync'            => '1',
+            'sync_schedule'        => 'monthly',
+            'wc_auto_sync'         => '0',
+            'restrict_states'      => '0',
+            'enabled_states'       => [],
+            'rate_source'          => 'auto',
+            'sheet_source_url'     => Tax_Dataset_Pipeline::DEFAULT_SHEET_URL,
+            'usgeocoder_auth_key'  => '',
         ]);
 
         $enabled_states = is_array($settings['enabled_states']) ? $settings['enabled_states'] : [];
@@ -1079,12 +1139,26 @@ class Tax_Rates_Admin
             'cache_ttl',
             (string) $settings['cache_ttl'],
             [
-                '3600'   => __('1 hour', 'ffl-funnels-addons'),
-                '21600'  => __('6 hours', 'ffl-funnels-addons'),
-                '86400'  => __('24 hours (recommended)', 'ffl-funnels-addons'),
-                '604800' => __('7 days', 'ffl-funnels-addons'),
+                '3600'    => __('1 hour', 'ffl-funnels-addons'),
+                '21600'   => __('6 hours', 'ffl-funnels-addons'),
+                '86400'   => __('24 hours (recommended)', 'ffl-funnels-addons'),
+                '604800'  => __('7 days', 'ffl-funnels-addons'),
+                '2592000' => __('30 days (fewest paid API calls)', 'ffl-funnels-addons'),
             ],
-            __('How long to cache tax quote results.', 'ffl-funnels-addons')
+            __('How long an address stays cached. While cached, the address is never re-sent to the paid USGeocoder API. Longer means fewer billed calls.', 'ffl-funnels-addons')
+        );
+
+        FFLA_Admin::render_select_field(
+            __('Auto-clear cache', 'ffl-funnels-addons'),
+            'cache_flush_interval',
+            (string) $settings['cache_flush_interval'],
+            [
+                'never'   => __('Never — clear manually (recommended)', 'ffl-funnels-addons'),
+                'daily'   => __('Every day', 'ffl-funnels-addons'),
+                'weekly'  => __('Every week', 'ffl-funnels-addons'),
+                'monthly' => __('Every month', 'ffl-funnels-addons'),
+            ],
+            __('Automatically empty the whole address cache on a schedule. Note: every cleared address must be looked up again, and USGeocoder bills per call — leave this on "Never" unless rates change often.', 'ffl-funnels-addons')
         );
 
         FFLA_Admin::render_toggle_field(
@@ -1179,6 +1253,26 @@ class Tax_Rates_Admin
         echo '</div>';
 
         echo '</form>';
+
+        // Rendered outside the settings <form> on purpose: a button inside it
+        // would submit and silently re-save settings instead of firing AJAX.
+        echo '<div class="wb-card" style="margin-top:var(--wb-spacing-xl)">';
+        echo '<div class="wb-card__header"><h3>' . esc_html__('Address Cache', 'ffl-funnels-addons') . '</h3></div>';
+        echo '<div class="wb-card__body">';
+        echo '<p class="wb-field__desc">' . esc_html__('Cached addresses are served without contacting USGeocoder, so they cost nothing. Clearing forces every address to be looked up again on its next checkout — which will bill a new API call each.', 'ffl-funnels-addons') . '</p>';
+
+        $last_flush = (int) get_option(Tax_Rates_Cron::LAST_FLUSH_OPTION, 0);
+        if ($last_flush > 0) {
+            echo '<p class="wb-field__desc">' . esc_html(sprintf(
+                /* translators: %s: date/time the cache was last cleared. */
+                __('Last cleared: %s', 'ffl-funnels-addons'),
+                wp_date('Y-m-d H:i', $last_flush)
+            )) . '</p>';
+        }
+
+        echo '<button type="button" id="ffla-clear-cache-btn" class="wb-btn wb-btn--secondary">' . esc_html__('Clear cache now', 'ffl-funnels-addons') . '</button>';
+        echo '<div id="ffla-clear-cache-status" class="ffla-tax-upload-status" style="display:none;margin-top:var(--wb-spacing-sm)"></div>';
+        echo '</div></div>';
 
         echo '<div class="wb-card" style="margin-top:var(--wb-spacing-xl)">';
         echo '<div class="wb-card__header"><h3>' . esc_html__('Legacy Data Cleanup', 'ffl-funnels-addons') . '</h3></div>';
