@@ -72,6 +72,18 @@ Build tiered, single-product "loadout" offers (a base product plus configurable 
 *   **Dynamic tag:** `{ffla_product_has_loadout}` for conditional rendering in Bricks.
 *   **Data:** Stores its configuration in four custom tables. Uninstalling **keeps** that data unless you explicitly enable delete-on-uninstall.
 
+### 9. Media Cleaner
+Find and safely remove media that nothing references, plus broken, orphaned, and duplicate files.
+*   **Admin:** Scan and review under **FFL Funnels → Media Cleaner**. Batched (AJAX-paged) so large libraries do not time out.
+*   **Bricks-aware:** Reads the full Bricks surface — page content, headers, footers, `bricks_template` posts, and global settings/theme styles — not just the main content meta. An image used only in a Bricks design is never flagged.
+*   **Self-aware:** Knows this plugin's own image references — customer review photos (comment meta), Loadout hero/brand/item images and WooBooster bundle images (custom tables) — so they are never reported as unused.
+*   **Also understands:** WooCommerce (galleries, variation images, category/placeholder thumbnails), ACF (image/gallery/file fields, including repeaters and options), Elementor, Beaver Builder, Oxygen, and the common WordPress surface (galleries, featured images, widgets, theme logo/header/background, site icon).
+*   **Scan modes:** Unused media, broken/missing files, orphan files on disk (not in the library), and byte-for-byte duplicates.
+*   **Reversible trash:** Removals move to `uploads/ffla-media-trash/` (attachments are hidden, not destroyed) with one-click restore and an optional auto-empty schedule. A **Skip trash** option deletes immediately for those who want it.
+*   **WP-CLI:** `wp ffla-media scan`, `status`, `list`, `trash --all`, `empty-trash --yes`.
+*   **Data:** Uses two custom tables (`ffla_mclean_scan`, `ffla_mclean_refs`). Uninstalling drops them but **keeps** the trash folder on disk, since it holds real files you could still restore.
+*   **Always back up** your database and uploads before deleting media in bulk.
+
 ## Installation
 
 1.  Download the `ffl-funnels-addons.zip` file from the [Releases](https://github.com/aaruca/ffl-funnels-addons/releases) page.

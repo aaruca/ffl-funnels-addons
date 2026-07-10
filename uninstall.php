@@ -170,6 +170,10 @@ if (in_array('woo-sheets-sync', $ffla_active_modules, true)) {
 if (in_array('product-reviews', $ffla_active_modules, true)) {
     delete_option('ffla_product_reviews_settings');
 
+    // `ffla_review_email_optouts` is deliberately NOT deleted. It is the record
+    // of who asked to stop receiving review requests. Dropping it would mean a
+    // reinstall silently starts emailing those people again.
+
     wp_unschedule_hook('ffla_send_product_review_request');
     wp_unschedule_hook('ffla_send_order_review_bundle');
 
@@ -177,6 +181,15 @@ if (in_array('product-reviews', $ffla_active_modules, true)) {
         as_unschedule_all_actions('ffla_send_product_review_request', null, 'ffla-product-reviews');
         as_unschedule_all_actions('ffla_send_order_review_bundle', null, 'ffla-product-reviews');
     }
+
+    // Cached rating histograms — one transient per product, so they cannot be
+    // enumerated by name.
+    // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+    $wpdb->query(
+        "DELETE FROM {$wpdb->options}
+         WHERE option_name LIKE '\_transient\_ffla\_rev\_dist\_%'
+            OR option_name LIKE '\_transient\_timeout\_ffla\_rev\_dist\_%'"
+    );
 }
 
 // ── Loadout cleanup (opt-in) ────────────────────────────────────────
@@ -197,6 +210,31 @@ if (in_array('loadout', $ffla_active_modules, true)) {
         delete_option('ffla_loadout_settings');
         delete_option('ffla_loadout_db_version');
     }
+}
+
+// ── Media Cleaner cleanup ──────────────────────────────────────────
+// Drop the tracking tables, options, and cron. The trash FOLDER
+// (uploads/ffla-media-trash) is deliberately left on disk: it holds real files
+// a shop chose to remove but could still restore, and uninstalling a plugin
+// must never permanently destroy media. Delete that folder by hand if wanted.
+if (in_array('media-cleaner', $ffla_active_modules, true)) {
+    $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}ffla_mclean_scan");
+    $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}ffla_mclean_refs");
+
+    delete_option('ffla_media_cleaner_settings');
+    delete_option('ffla_media_cleaner_db_version');
+    delete_option('ffla_mclean_job');
+    delete_option('ffla_mclean_file_list');
+
+    $mc_ts = wp_next_scheduled('ffla_mclean_auto_empty');
+    while ($mc_ts) {
+        wp_unschedule_event($mc_ts, 'ffla_mclean_auto_empty');
+        $mc_ts = wp_next_scheduled('ffla_mclean_auto_empty');
+    }
+
+    // The ignore flag lives on attachments; sweep it so removing the plugin
+    // does not leave stray post meta behind.
+    $wpdb->delete($wpdb->postmeta, ['meta_key' => '_ffla_mclean_ignored']);
 }
 
 // ── FFLA core cleanup ──────────────────────────────────────────────

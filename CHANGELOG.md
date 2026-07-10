@@ -2,6 +2,44 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.40.0] - 2026-07-10
+
+New **Media Cleaner** module.
+
+### Added
+- **Media Cleaner** — find and safely remove unused, broken, orphaned, and duplicate media, modelled on the proven Media-Cleaner scan engine (a reference cache plus a batched, AJAX-paged scan) but written from scratch and tailored to this stack.
+  - **Full Bricks awareness.** Reads page content, headers, footers, `bricks_template` posts, and global settings/theme styles — not just the main content meta a generic scan would check — so an image used only in a Bricks design is never flagged as unused.
+  - **Self-aware.** Understands this plugin's own image references, which no third-party cleaner can see: customer review photos (comment meta), Loadout hero/brand/tier-item and cross-sell images and WooBooster bundle images (custom-table columns). These are keyed on table existence, not module activation, so a deactivated module's data still protects its images.
+  - **Also parses** WooCommerce (product galleries, variation images, category/tag/brand and placeholder thumbnails), ACF (image/gallery/file fields including repeaters, flexible content, and options pages), Elementor, Beaver Builder, Oxygen, and the common WordPress surface (classic galleries, `wp-image-N`, featured images, text/media widgets, theme logo/header/background, site icon).
+  - **Scan modes:** unused library media, broken (missing-file) media, orphan files on disk that are not in the library, and byte-for-byte duplicate detection.
+  - **Reversible trash.** Removals move to `uploads/ffla-media-trash/` — attachments are hidden behind a sentinel post type rather than destroyed — with one-click restore, an ignore list, an optional auto-empty schedule, and a Skip-trash option for immediate deletion. The trash directory is protected from public access.
+  - **WP-CLI:** `wp ffla-media scan | status | list | trash | empty-trash`.
+  - Gated behind the `manage_options` capability; every AJAX action is nonce-checked. Two custom tables (`ffla_mclean_scan`, `ffla_mclean_refs`). Uninstall drops the tables but deliberately leaves the trash folder on disk, since it holds recoverable files.
+  - **Offload/CDN note:** URL matching anchors on the site's `/wp-content/uploads` path. If you serve media from a CDN that rewrites that path away (e.g. `cdn.example.com/2024/03/…`), register your CDN prefix via the `ffla_mclean_url_anchors` filter so those references are still detected — otherwise a scan could flag CDN-only-referenced images as unused.
+
+## [1.39.0] - 2026-07-10
+
+Product Reviews gains the JetReviews features worth having, plus a repair of the review-request emails.
+
+### Added — Reviews
+- **Configurable rating criteria.** The hard-coded "Quality" and "Value for money" star groups are now an editable list (`slug|Label`, up to 6). Scores for the two original criteria keep their existing meta keys, so nothing written before this release is lost. Removing a criterion hides it without deleting data; add it back and the historical scores reappear.
+- **Pinned reviews.** A "Pin review" row action under Comments floats a review to the top of every list, sorted in SQL via the otherwise-unused `comment_karma` column.
+- **Store replies, shown as replies.** Replies left from the WordPress comments screen now render nested beneath the review and are badged as a store response. Authorship is stamped at reply time, so a staff member later losing their role does not silently reclassify old replies.
+- **Rating summary.** Average score plus a star-by-star histogram above the review list, cached per product for 12 hours and invalidated on every comment write. Toggleable per Bricks element and site-wide.
+- **"Not helpful" votes.** Off by default. Each visitor still gets one vote per review, in one direction only, and "most helpful" now sorts on net score rather than upvotes alone.
+- **Forbidden-word screening.** A term list that either holds a matching review for moderation or refuses it with a message asking the customer to revise. Matching is case-insensitive and substring-based, the same semantics as WordPress's own disallowed comment keys. Users who can moderate comments are exempt.
+- **Bricks dynamic tags:** `{ffla_review_count}`, `{ffla_review_average}`, `{ffla_review_recommend_percent}`.
+- **Reviewer notifications.** "Your review was published" when a held review is approved, and "someone replied to your review" — neither of which WordPress sends on its own, since `wp_notify_postauthor()` notifies the author of the *post*, never the author of the parent comment.
+
+### Fixed — Review request emails
+- **Customers were asked to review products they had already reviewed.** Neither the per-product nor the bundle email checked, even though `customer_has_review_for_product()` already existed. Now checked at schedule time *and* again at send time, since the delay is days long.
+- **Duplicate emails on re-completion.** The only guard was `as_next_scheduled_action()`, which sees pending actions but not completed ones — so an order going completed → refunded → completed sent the request twice. Now guarded by order meta.
+- **Refunded and cancelled orders still sent review requests.** Pending actions are now unscheduled, and the send re-checks that the order is still completed.
+- **No unsubscribe.** Every review request now carries an opt-out link, honoured by both send paths and re-checked after the delay. Place `{unsubscribe_url}` yourself or it is appended. The link renders a confirmation form rather than opting out on GET, so a corporate mail scanner prefetching links cannot unsubscribe people who never opened the email. The opt-out list survives uninstall on purpose.
+
+### Fixed — Moderation
+- **Media-bearing reviews were never actually held.** `wp_new_comment()` runs `wp_allow_comment()` *after* `preprocess_comment` and overwrites `comment_approved` wholesale, so the hold set there was discarded on the main submit path. Every approval rule now runs in `pre_comment_approved`, the last filter to touch the verdict. Reviews with attached photos or video will now correctly wait for approval, as the setting always claimed.
+
 ## [1.38.1] - 2026-07-10
 
 Optimization and cleanup pass. No feature changes.

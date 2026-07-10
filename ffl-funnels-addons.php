@@ -3,7 +3,7 @@
  * Plugin Name:       FFL Funnels Addons
  * Plugin URI:        https://github.com/aaruca/ffl-funnels-addons
  * Description:       Modular WooCommerce toolkit with WooBooster, Wishlist, Checkout, Sheets Sync, Tax Resolver, and Product Reviews.
- * Version:           1.38.1
+ * Version:           1.40.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants.
-define('FFLA_VERSION', '1.38.1');
+define('FFLA_VERSION', '1.40.0');
 define('FFLA_FILE', __FILE__);
 define('FFLA_PATH', plugin_dir_path(__FILE__));
 define('FFLA_URL', plugin_dir_url(__FILE__));
@@ -85,6 +85,7 @@ if (!class_exists('FFL_Funnels_Addons')):
             require_once FFLA_PATH . 'modules/tax-rates/class-tax-rates-module.php';
             require_once FFLA_PATH . 'modules/product-reviews/class-product-reviews-module.php';
             require_once FFLA_PATH . 'modules/loadout/class-loadout-module.php';
+            require_once FFLA_PATH . 'modules/media-cleaner/class-media-cleaner-module.php';
         }
 
         /**
@@ -100,6 +101,7 @@ if (!class_exists('FFL_Funnels_Addons')):
             $this->registry->register(new Tax_Rates_Module());
             $this->registry->register(new Product_Reviews_Module());
             $this->registry->register(new Loadout_Module());
+            $this->registry->register(new Media_Cleaner_Module());
         }
 
         /**

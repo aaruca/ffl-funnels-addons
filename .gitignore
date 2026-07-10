@@ -18,6 +18,11 @@ dist/
 build/
 *.zip
 
+# Third-party archives dropped in for study — never commit (may be commercial).
+*.rar
+*.7z
+mediacleanerpro711*
+
 # Local config
 wp-config.php
 
