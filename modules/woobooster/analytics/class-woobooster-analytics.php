@@ -41,12 +41,14 @@ class WooBooster_Analytics
         $prev_to = gmdate('Y-m-d', strtotime($range['from'] . ' -1 day'));
         $prev_data = $this->compute_all_data($prev_from, $prev_to);
 
-        // Chart.js is served from the plugin, not a third-party CDN. Loading an
-        // external script into wp-admin makes the dashboard depend on that host
-        // and trusts whatever it serves (the old URL pinned only the floating
-        // "@4" tag, with no integrity hash).
+        // Chart.js 4.4.7, served from the plugin rather than a third-party CDN.
+        // The previous URL pinned only the floating "@4" tag and pointed at a
+        // jsdelivr-generated file, which cannot be protected with an integrity
+        // hash. This copy is dist/chart.umd.js taken verbatim from the published
+        // npm package (tarball sha1 7a01ee0b4dac3c03f2ab0589af888db296d896fa,
+        // matching the npm registry shasum).
         $module_url = FFLA_URL . 'modules/woobooster/';
-        wp_enqueue_script('chartjs', $module_url . 'assets/lib/chart.umd.min.js', array(), '4.4.7', true);
+        wp_enqueue_script('chartjs', $module_url . 'assets/lib/chart.umd.js', array(), '4.4.7', true);
 
         // Enqueue our analytics chart initializer.
         wp_enqueue_script('woobooster-analytics-chart', $module_url . 'admin/js/woobooster-analytics.js', array('chartjs'), FFLA_VERSION, true);
