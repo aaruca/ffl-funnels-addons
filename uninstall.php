@@ -87,12 +87,14 @@ if (in_array('tax-rates', $ffla_active_modules, true) || $tax_has_tables || get_
     delete_option('ffla_tax_usgeocoder_usage');
     delete_option('ffla_tax_rates_settings');
     delete_option('ffla_tax_rates_last_import');
+    delete_option('ffla_tax_last_cache_flush');
 
     delete_transient('ffla_tax_key_validation');
 
     wp_clear_scheduled_hook('ffla_tax_dataset_sync');
     wp_clear_scheduled_hook('ffla_tax_cache_cleanup');
     wp_clear_scheduled_hook('ffla_tax_audit_purge');
+    wp_clear_scheduled_hook('ffla_tax_cache_flush');
 }
 
 // ── Woo Sheets Sync cleanup ────────────────────────────────────────

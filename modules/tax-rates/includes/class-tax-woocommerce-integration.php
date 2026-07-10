@@ -191,106 +191,56 @@ class Tax_WooCommerce_Integration
 
     /**
      * Build address input for the quote engine from the active customer.
+     *
+     * WooCommerce already resolved the taxable location before calling this
+     * filter: $state/$postcode/$city come from WC_Customer::get_taxable_address(),
+     * which honours the `woocommerce_tax_based_on` option and the customer's
+     * "Ship to a different address" choice. Those are authoritative.
+     *
+     * Only the street line has to be fetched separately, and it MUST come from
+     * the same address WooCommerce taxed — otherwise we geocode one address's
+     * street against another address's ZIP and land in the wrong jurisdiction.
+     *
+     * We deliberately do NOT read the street from $_POST. WooCommerce serializes
+     * the hidden shipping_* inputs into the posted checkout form even when "Ship
+     * to a different address" is unchecked, so a street the customer typed and
+     * then abandoned would beat the billing address they actually intend. Reading
+     * WC()->customer avoids that: WooCommerce syncs billing into the customer's
+     * shipping fields whenever ship-to-different is off, so the shipping getter
+     * already returns the billing street in the same-address case.
      */
     private static function build_address_input(string $state, string $postcode, string $city): array
     {
-        $request_fields = self::get_checkout_request_fields();
-        $street = '';
-        $request_street = self::pick_first_non_empty([
-            $request_fields['shipping_address_1'] ?? '',
-            $request_fields['billing_address_1'] ?? '',
-        ]);
-        $request_city = self::pick_first_non_empty([
-            $request_fields['shipping_city'] ?? '',
-            $request_fields['billing_city'] ?? '',
-            $city,
-        ]);
-        $request_state = self::pick_first_non_empty([
-            $request_fields['shipping_state'] ?? '',
-            $request_fields['billing_state'] ?? '',
-            $state,
-        ]);
-        $request_postcode = self::pick_first_non_empty([
-            $request_fields['shipping_postcode'] ?? '',
-            $request_fields['billing_postcode'] ?? '',
-            $postcode,
-        ]);
-
-        if (function_exists('WC') && WC()->customer) {
-            $street = $request_street !== '' ? $request_street : WC()->customer->get_shipping_address();
-            if ($street === '') {
-                $street = WC()->customer->get_billing_address();
-            }
-
-            if ($request_city === '') {
-                $request_city = WC()->customer->get_shipping_city();
-                if ($request_city === '') {
-                    $request_city = WC()->customer->get_billing_city();
-                }
-            }
-
-            if ($request_state === '') {
-                $request_state = WC()->customer->get_shipping_state();
-                if ($request_state === '') {
-                    $request_state = WC()->customer->get_billing_state();
-                }
-            }
-
-            if ($request_postcode === '') {
-                $request_postcode = WC()->customer->get_shipping_postcode();
-                if ($request_postcode === '') {
-                    $request_postcode = WC()->customer->get_billing_postcode();
-                }
-            }
-        }
-
-        return [
-            'street' => $street,
-            'city'   => $request_city,
-            'state'  => $request_state,
-            'zip'    => $request_postcode,
+        $input = [
+            'street' => '',
+            'city'   => $city,
+            'state'  => $state,
+            'zip'    => $postcode,
         ];
-    }
 
-    /**
-     * Read the latest checkout fields from the current request payload.
-     */
-    private static function get_checkout_request_fields(): array
-    {
-        $fields = [];
-
-        if (!empty($_POST['post_data']) && is_string($_POST['post_data'])) {
-            parse_str(wp_unslash($_POST['post_data']), $fields);
+        if (!function_exists('WC') || !WC()->customer) {
+            return $input;
         }
 
-        if (empty($fields) && !empty($_POST) && is_array($_POST)) {
-            foreach ($_POST as $key => $value) {
-                if (is_scalar($value)) {
-                    $fields[(string) $key] = wp_unslash((string) $value);
-                }
+        $customer = WC()->customer;
+        $based_on = get_option('woocommerce_tax_based_on', 'shipping');
+
+        if ('billing' === $based_on) {
+            $input['street'] = (string) $customer->get_billing_address_1();
+        } elseif ('base' === $based_on) {
+            // Store base address — there is no per-customer street. Leaving it
+            // empty lets the resolver fall back to ZIP-level matching; the caller
+            // only bails when street AND zip are both empty.
+            $input['street'] = '';
+        } else {
+            // 'shipping' (WooCommerce default).
+            $input['street'] = (string) $customer->get_shipping_address_1();
+            if ('' === $input['street']) {
+                $input['street'] = (string) $customer->get_billing_address_1();
             }
         }
 
-        return $fields;
-    }
-
-    /**
-     * Return the first non-empty scalar string from a list.
-     */
-    private static function pick_first_non_empty(array $values): string
-    {
-        foreach ($values as $value) {
-            if (!is_scalar($value)) {
-                continue;
-            }
-
-            $value = trim((string) $value);
-            if ($value !== '') {
-                return $value;
-            }
-        }
-
-        return '';
+        return $input;
     }
 
     /**

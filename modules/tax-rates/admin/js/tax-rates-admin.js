@@ -282,6 +282,42 @@
                 });
         });
 
+        $('#ffla-clear-cache-btn').on('click', function () {
+            var $btn = $(this);
+            var $status = $('#ffla-clear-cache-status');
+
+            if (!window.confirm(t('confirmClearCache', 'This empties the address cache. Every address will be looked up again on its next checkout, and USGeocoder bills per call. Continue?'))) {
+                return;
+            }
+
+            $btn.prop('disabled', true).text(t('clearingCache', 'Clearing cache…'));
+            $status
+                .show()
+                .html('<div class="wb-ai-loading-message"><span>' +
+                    escHtml(t('clearingCacheDescription', 'Removing cached addresses.')) +
+                    '</span><span class="wb-ai-dots"><span></span><span></span><span></span></span></div>');
+
+            $.post(FflaTaxResolver.ajaxUrl, {
+                action: 'ffla_tax_clear_cache',
+                security: FflaTaxResolver.nonce
+            })
+                .done(function (res) {
+                    if (res && res.success) {
+                        var message = (res.data && res.data.message) ? res.data.message : t('cacheCleared', 'Cache cleared.');
+                        $status.html('<strong>' + escHtml(message) + '</strong>');
+                    } else {
+                        var err = (res && res.data && res.data.message) ? res.data.message : (res && res.data) || t('clearCacheFailed', 'Could not clear the cache.');
+                        $status.html('<span class="ffla-tax-error">' + escHtml(err) + '</span>');
+                    }
+                })
+                .fail(function () {
+                    $status.html('<span class="ffla-tax-error">' + escHtml(t('clearCacheRequestFailed', 'Clear cache request failed.')) + '</span>');
+                })
+                .always(function () {
+                    $btn.prop('disabled', false).text(t('clearCacheNow', 'Clear cache now'));
+                });
+        });
+
         var $restrictStates = $('input[name="restrict_states"]');
         var $statePicker = $('#ffla-tax-state-picker');
 
