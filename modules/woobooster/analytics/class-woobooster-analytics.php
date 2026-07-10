@@ -17,6 +17,15 @@ if (!defined('ABSPATH')) {
 
 class WooBooster_Analytics
 {
+    /**
+     * Hard ceiling on orders loaded per period.
+     *
+     * compute_all_data() hydrates full order objects and runs twice per view
+     * (current + previous period). On a large store an unbounded scan will
+     * exhaust memory or the request timeout. When the cap is reached the
+     * dashboard says so rather than quietly showing partial numbers.
+     */
+    const MAX_ORDERS_SCANNED = 5000;
 
     /**
      * Render the analytics dashboard.
@@ -32,12 +41,28 @@ class WooBooster_Analytics
         $prev_to = gmdate('Y-m-d', strtotime($range['from'] . ' -1 day'));
         $prev_data = $this->compute_all_data($prev_from, $prev_to);
 
-        // Enqueue Chart.js from CDN (loaded in footer).
-        wp_enqueue_script('chartjs', 'https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js', array(), '4.4.7', true);
+        // Chart.js is served from the plugin, not a third-party CDN. Loading an
+        // external script into wp-admin makes the dashboard depend on that host
+        // and trusts whatever it serves (the old URL pinned only the floating
+        // "@4" tag, with no integrity hash).
+        $module_url = FFLA_URL . 'modules/woobooster/';
+        wp_enqueue_script('chartjs', $module_url . 'assets/lib/chart.umd.min.js', array(), '4.4.7', true);
 
         // Enqueue our analytics chart initializer.
-        $module_url = FFLA_URL . 'modules/woobooster/';
         wp_enqueue_script('woobooster-analytics-chart', $module_url . 'admin/js/woobooster-analytics.js', array('chartjs'), FFLA_VERSION, true);
+
+        // Never present a capped scan as if it were the full picture.
+        if (!empty($data['truncated']) || !empty($prev_data['truncated'])) {
+            FFLA_Admin::render_notice(
+                'warning',
+                sprintf(
+                    /* translators: %s: maximum number of orders analysed. */
+                    esc_html__('This range contains more than %s orders. Figures below are based on the most recent %s and are therefore partial — narrow the date range for exact numbers.', 'ffl-funnels-addons'),
+                    number_format_i18n(self::MAX_ORDERS_SCANNED),
+                    number_format_i18n(self::MAX_ORDERS_SCANNED)
+                )
+            );
+        }
 
         // Prepare donut data (top 5 rules + other).
         $donut = $this->prepare_donut_data($data['top_rules']);
@@ -135,10 +160,11 @@ class WooBooster_Analytics
         $rules_data = array();
         $products_data = array();
 
-        // Paginated query — all completed/processing orders in range.
+        // Paginated query — completed/processing orders in range, up to the cap.
         $offset = 0;
         $page_size = 500;
         $all_processed = false;
+        $truncated = false;
 
         while (!$all_processed) {
             $orders = wc_get_orders(array(
@@ -209,6 +235,11 @@ class WooBooster_Analytics
         }
 
             $offset += $page_size;
+
+            if ($stats['total_orders'] >= self::MAX_ORDERS_SCANNED) {
+                $truncated = true;
+                break;
+            }
         } // end while
 
         // Build daily arrays.
@@ -242,7 +273,7 @@ class WooBooster_Analytics
         // Conversion data from ATC counter.
         $conversion = $this->get_conversion_rate($date_from, $date_to, $stats['items_sold']);
 
-        return compact('stats', 'daily', 'top_rules', 'top_products', 'conversion');
+        return compact('stats', 'daily', 'top_rules', 'top_products', 'conversion', 'truncated');
     }
 
     /**

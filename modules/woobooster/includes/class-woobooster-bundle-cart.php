@@ -83,6 +83,13 @@ class WooBooster_Bundle_Cart
             wp_send_json_error(array('message' => __('Bundle not found or inactive.', 'ffl-funnels-addons')));
         }
 
+        // The schedule is enforced for widget visibility, but a captured or
+        // replayed request must not be able to redeem an expired (or not yet
+        // started) bundle.
+        if (!self::bundle_schedule_is_active($bundle)) {
+            wp_send_json_error(array('message' => __('This bundle offer is not currently available.', 'ffl-funnels-addons')));
+        }
+
         // Source product fallback: first checkbox if not sent explicitly.
         if (!$source_product_id) {
             $source_product_id = $product_ids[0];
@@ -274,12 +281,53 @@ class WooBooster_Bundle_Cart
             return;
         }
 
+        $schedule_cache = array();
+
         foreach ($cart->get_cart() as $cart_item) {
             if (!isset($cart_item[self::META_BUNDLE_TOTAL]) || empty($cart_item['data']) || !is_object($cart_item['data'])) {
                 continue;
             }
+
+            // Don't honour the stored bundle price once the bundle is disabled or
+            // its scheduled window has passed — the line may have been sitting in
+            // the cart (or a persistent session) since before it expired.
+            $bundle_id = isset($cart_item[self::META_BUNDLE_ID]) ? absint($cart_item[self::META_BUNDLE_ID]) : 0;
+            if ($bundle_id) {
+                if (!array_key_exists($bundle_id, $schedule_cache)) {
+                    $bundle = WooBooster_Bundle::get($bundle_id);
+                    $schedule_cache[$bundle_id] = ($bundle && $bundle->status && self::bundle_schedule_is_active($bundle));
+                }
+                if (!$schedule_cache[$bundle_id]) {
+                    continue;
+                }
+            }
+
             $cart_item['data']->set_price((float) $cart_item[self::META_BUNDLE_TOTAL]);
         }
+    }
+
+    /**
+     * Whether a bundle is inside its scheduled window.
+     *
+     * start_date/end_date are stored as GMT (the admin form converts via
+     * get_gmt_from_date), so compare against GMT "now" — the same clock the
+     * matcher uses. An empty bound means "unbounded".
+     *
+     * @param object $bundle Bundle row.
+     * @return bool
+     */
+    private static function bundle_schedule_is_active($bundle)
+    {
+        $now = current_time('mysql', true);
+
+        if (!empty($bundle->start_date) && $now < $bundle->start_date) {
+            return false;
+        }
+        if (!empty($bundle->end_date) && $now > $bundle->end_date) {
+            return false;
+        }
+
+        return true;
     }
 
     /**

@@ -338,7 +338,7 @@ class FFLA_Updater
                 $plugin_data->slug = $this->plugin_slug;
                 $plugin_data->plugin = $this->plugin_basename;
                 $plugin_data->new_version = $latest_version;
-                $plugin_data->url = $release->html_url;
+                $plugin_data->url = $release->html_url ?? '';
                 $plugin_data->package = $download_url;
                 $plugin_data->icons = [];
                 $plugin_data->banners = [];
@@ -384,7 +384,7 @@ class FFLA_Updater
         $info->tested = '';
         $info->requires_php = '7.4';
         $info->downloaded = 0;
-        $info->last_updated = $release->published_at;
+        $info->last_updated = $release->published_at ?? '';
         $info->download_link = $this->get_download_url($release) ?: '';
 
         if (!empty($release->body)) {

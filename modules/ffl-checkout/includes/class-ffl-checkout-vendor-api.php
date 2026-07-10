@@ -20,6 +20,12 @@ class FFL_Checkout_Vendor_Api
     /** Transient TTL in seconds (5 minutes). */
     const CACHE_TTL = 300;
 
+    /** How long to skip retrying an API that just failed. */
+    const NEG_CACHE_TTL = 60;
+
+    /** Request timeout in seconds. */
+    const REQUEST_TIMEOUT = 10;
+
     /* ── Warehouse Options ───────────────────────────────────────────── */
 
     /**
@@ -35,9 +41,17 @@ class FFL_Checkout_Vendor_Api
         }
 
         $cache_key = 'ffl_vendor_opts_' . md5($upc);
-        $cached    = get_transient($cache_key);
+        $neg_key   = 'ffl_vendor_opts_err_' . md5($upc);
+
+        $cached = get_transient($cache_key);
         if (false !== $cached) {
             return $cached;
+        }
+
+        // Negative cache: only successes were cached, so a downed API was retried
+        // on every checkout render — each attempt blocking for the full timeout.
+        if (false !== get_transient($neg_key)) {
+            return new \WP_Error('api_unavailable', 'Vendor options are temporarily unavailable. Please try again shortly.');
         }
 
         $api_key = get_option('g_ffl_cockpit_key', '');
@@ -54,7 +68,7 @@ class FFL_Checkout_Vendor_Api
         ]);
 
         $response = wp_remote_post(self::API_URL, [
-            'timeout' => 30,
+            'timeout' => self::REQUEST_TIMEOUT,
             'headers' => [
                 'Content-Type' => 'application/json',
                 'x-api-key'    => $api_key,
@@ -64,6 +78,7 @@ class FFL_Checkout_Vendor_Api
         ]);
 
         if (is_wp_error($response)) {
+            set_transient($neg_key, 1, self::NEG_CACHE_TTL);
             return $response;
         }
 
@@ -72,6 +87,7 @@ class FFL_Checkout_Vendor_Api
         $data = json_decode($body, true);
 
         if ($code !== 200 || empty($data) || isset($data['Error'])) {
+            set_transient($neg_key, 1, self::NEG_CACHE_TTL);
             $msg = $data['Error'] ?? ('API returned status ' . $code);
             return new \WP_Error('api_error', $msg);
         }

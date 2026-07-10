@@ -18,13 +18,11 @@ class FFL_Checkout_Ajax
      */
     public static function init(): void
     {
-        // Mapbox token.
-        add_action('wp_ajax_ffl_get_mapbox_token', [__CLASS__, 'get_mapbox_token']);
-        add_action('wp_ajax_nopriv_ffl_get_mapbox_token', [__CLASS__, 'get_mapbox_token']);
-
-        // Vendor selector.
-        add_action('wp_ajax_ffl_get_vendor_options', [__CLASS__, 'get_vendor_options']);
-        add_action('wp_ajax_nopriv_ffl_get_vendor_options', [__CLASS__, 'get_vendor_options']);
+        // Note: ffl_get_mapbox_token and ffl_get_vendor_options are intentionally
+        // not registered. No client code calls them, and exposing them (to
+        // unauthenticated users especially) only widened the attack surface —
+        // vendor-option enumeration and API-quota drain. The Mapbox token is
+        // already provided inline via wp_localize_script.
 
         add_action('wp_ajax_ffl_update_cart_vendor', [__CLASS__, 'update_cart_vendor']);
         add_action('wp_ajax_nopriv_ffl_update_cart_vendor', [__CLASS__, 'update_cart_vendor']);
@@ -154,11 +152,14 @@ class FFL_Checkout_Ajax
 
         $valid = false;
         foreach ($options as $option) {
+            // Cast both sides: the POST values are sanitized strings while the
+            // API payload is JSON-decoded, so a numeric warehouse_id/sku would
+            // fail a strict === and reject every legitimate selection.
             if (
-                ($option['warehouse_id'] ?? '') === $warehouse_id
+                (string) ($option['warehouse_id'] ?? '') === $warehouse_id
                 && abs(floatval($option['price'] ?? 0) - $price) < 0.01
-                && ($option['sku'] ?? '') === $sku
-                && ($option['shipping_class'] ?? '') === $shipping_class
+                && (string) ($option['sku'] ?? '') === $sku
+                && (string) ($option['shipping_class'] ?? '') === $shipping_class
             ) {
                 $valid = true;
                 break;

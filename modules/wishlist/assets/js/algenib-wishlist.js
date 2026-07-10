@@ -252,24 +252,39 @@ window.AlgWishlist = {
     updateUI: function () {
         // Use localized items from PHP to set initial UI state without extra AJAX calls
         if (typeof AlgWishlistSettings !== 'undefined' && Array.isArray(AlgWishlistSettings.initial_items)) {
+            // Collect shadow-DOM hosts ONCE for the whole batch. Scanning the
+            // entire document per wishlist item made a 500-item list run 500
+            // full-document walks on every page load.
+            const shadowHosts = this._collectShadowHosts();
             AlgWishlistSettings.initial_items.forEach(id => {
-                this.markAsActive(id);
+                this.markAsActive(id, shadowHosts);
             });
         }
     },
 
-    markAsActive: function (productId) {
+    /**
+     * Every element in the document that hosts an open shadow root.
+     */
+    _collectShadowHosts: function () {
+        const hosts = [];
+        document.querySelectorAll('*').forEach(node => {
+            if (node.shadowRoot) {
+                hosts.push(node);
+            }
+        });
+        return hosts;
+    },
+
+    markAsActive: function (productId, shadowHosts) {
         // Update ALL buttons for this product (including any inside shadow DOM)
         const buttons = document.querySelectorAll(`[data-product-id="${productId}"]`);
         this._updateButtonsState(buttons, true);
 
-        // Also sweep through any open Shadow DOMs just in case
-        const tags = document.querySelectorAll('*');
-        tags.forEach(node => {
-            if (node.shadowRoot) {
-                const shadowBtns = node.shadowRoot.querySelectorAll(`[data-product-id="${productId}"]`);
-                this._updateButtonsState(shadowBtns, true);
-            }
+        // Reuse the caller's host list when batching; otherwise scan once here.
+        const hosts = shadowHosts || this._collectShadowHosts();
+        hosts.forEach(node => {
+            const shadowBtns = node.shadowRoot.querySelectorAll(`[data-product-id="${productId}"]`);
+            this._updateButtonsState(shadowBtns, true);
         });
     },
 

@@ -79,6 +79,69 @@ class FFLA_Module_Registry
     }
 
     /**
+     * Define the backward-compat constants a module's legacy code expects.
+     *
+     * Must run before a module's activate()/boot(), because those reference the
+     * constants. The dashboard toggle reaches activation without the bootstrap
+     * that normally defines them. Idempotent — every define is guarded.
+     */
+    public function ensure_module_constants(string $id): void
+    {
+        if (!isset($this->modules[$id])) {
+            return;
+        }
+
+        $module = $this->modules[$id];
+
+        switch ($id) {
+            case 'woobooster':
+                if (!defined('WOOBOOSTER_VERSION')) {
+                    define('WOOBOOSTER_VERSION', FFLA_VERSION);
+                }
+                if (!defined('WOOBOOSTER_DB_VERSION')) {
+                    define('WOOBOOSTER_DB_VERSION', '1.10.0');
+                }
+                if (!defined('WOOBOOSTER_FILE')) {
+                    define('WOOBOOSTER_FILE', FFLA_FILE);
+                }
+                if (!defined('WOOBOOSTER_PATH')) {
+                    define('WOOBOOSTER_PATH', $module->get_path());
+                }
+                if (!defined('WOOBOOSTER_URL')) {
+                    define('WOOBOOSTER_URL', $module->get_url());
+                }
+                if (!defined('WOOBOOSTER_BASENAME')) {
+                    define('WOOBOOSTER_BASENAME', FFLA_BASENAME);
+                }
+                break;
+
+            case 'wishlist':
+                if (!defined('ALG_WISHLIST_VERSION')) {
+                    define('ALG_WISHLIST_VERSION', FFLA_VERSION);
+                }
+                if (!defined('ALG_WISHLIST_FILE')) {
+                    define('ALG_WISHLIST_FILE', FFLA_FILE);
+                }
+                if (!defined('ALG_WISHLIST_PATH')) {
+                    define('ALG_WISHLIST_PATH', $module->get_path());
+                }
+                if (!defined('ALG_WISHLIST_URL')) {
+                    define('ALG_WISHLIST_URL', $module->get_url());
+                }
+                if (!defined('ALG_WISHLIST_BASENAME')) {
+                    define('ALG_WISHLIST_BASENAME', FFLA_BASENAME);
+                }
+                break;
+
+            case 'loadout':
+                if (!defined('FFLA_LOADOUT_DB_VERSION')) {
+                    define('FFLA_LOADOUT_DB_VERSION', '1.0.0');
+                }
+                break;
+        }
+    }
+
+    /**
      * Activate a module.
      */
     public function activate_module(string $id): bool
@@ -87,8 +150,22 @@ class FFLA_Module_Registry
             return false;
         }
 
+        // The module's activation routine (table creation, version options)
+        // references its legacy constants, and the toggle path skips the normal
+        // bootstrap that defines them.
+        $this->ensure_module_constants($id);
+
+        // Activate FIRST, and only persist the module as active if it succeeded.
+        // Otherwise a fatal mid-activation leaves a half-created schema marked
+        // active, and the next boot fails on missing tables.
+        try {
+            $this->modules[$id]->activate();
+        } catch (\Throwable $e) {
+            return false;
+        }
+
         if (!$this->is_active($id)) {
-            // Re-read from DB to avoid race conditions under concurrency.
+            // Re-read from DB to avoid clobbering a concurrent change.
             $active_ids = get_option('ffla_active_modules', []);
             if (!is_array($active_ids)) {
                 $active_ids = [];
@@ -99,9 +176,6 @@ class FFLA_Module_Registry
             }
             $this->active_ids = $active_ids;
         }
-
-        // Run the module's activation routine (create tables, etc.).
-        $this->modules[$id]->activate();
 
         return true;
     }

@@ -73,9 +73,18 @@ class Alg_Wishlist_Core
     }
 
     /**
-     * Get default wishlist ID for current user
+     * Get default wishlist ID for current user.
+     *
+     * @param bool $create_if_missing Create the list when none exists. Only ever
+     *                                true on a real write (add_item). Read paths
+     *                                (page loads, counts, is-in checks) must NOT
+     *                                create rows: this method is reached from the
+     *                                asset enqueue on every frontend request, and
+     *                                cookieless crawlers would otherwise seed a
+     *                                new empty wishlist row per request.
+     * @return int|false
      */
-    public static function get_default_wishlist_id()
+    public static function get_default_wishlist_id($create_if_missing = false)
     {
         global $wpdb;
         $owner = self::get_current_owner();
@@ -85,16 +94,27 @@ class Alg_Wishlist_Core
 
         $table = $wpdb->prefix . 'alg_wishlists';
         $field = self::safe_owner_field($owner['field']);
+        // Deterministically pick the oldest default list, so if a race ever
+        // produced two, every request resolves to the same one.
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-        $sql = $wpdb->prepare("SELECT id FROM {$table} WHERE {$field} = %s AND is_default = 1", $owner['value']);
+        $sql = $wpdb->prepare("SELECT id FROM {$table} WHERE {$field} = %s AND is_default = 1 ORDER BY id ASC LIMIT 1", $owner['value']);
         $id = $wpdb->get_var($sql);
 
-        if (!$id) {
-            // Create default list if none exists
+        if (!$id && $create_if_missing) {
             $id = self::create_wishlist('My Wishlist', true);
+
+            // Collapse any duplicate default created by a concurrent request.
+            if ($id) {
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+                $wpdb->query($wpdb->prepare(
+                    "DELETE FROM {$table} WHERE {$field} = %s AND is_default = 1 AND id > %d",
+                    $owner['value'],
+                    (int) $id
+                ));
+            }
         }
 
-        return $id;
+        return $id ? (int) $id : false;
     }
 
     /**
@@ -130,7 +150,8 @@ class Alg_Wishlist_Core
     public static function add_item($product_id, $variation_id = 0)
     {
         global $wpdb;
-        $wishlist_id = self::get_default_wishlist_id();
+        // The only path allowed to create the list.
+        $wishlist_id = self::get_default_wishlist_id(true);
 
         if (!$wishlist_id)
             return false;
@@ -147,7 +168,7 @@ class Alg_Wishlist_Core
         if ($exists)
             return 'exists';
 
-        $wpdb->insert(
+        $inserted = $wpdb->insert(
             $table_items,
             array(
                 'wishlist_id' => $wishlist_id,
@@ -156,6 +177,12 @@ class Alg_Wishlist_Core
                 'date_added' => current_time('mysql')
             )
         );
+
+        // A concurrent request may have inserted the same item between the check
+        // above and here; the UNIQUE key rejects it. That's "already there", not
+        // a failure.
+        if (false === $inserted)
+            return 'exists';
 
         return 'added';
     }
@@ -167,6 +194,10 @@ class Alg_Wishlist_Core
     {
         global $wpdb;
         $wishlist_id = self::get_default_wishlist_id();
+
+        // Nothing to remove — don't create a list just to delete from it.
+        if (!$wishlist_id)
+            return 'removed';
 
         $table_items = $wpdb->prefix . 'alg_wishlist_items';
         $wpdb->delete(
@@ -214,8 +245,20 @@ class Alg_Wishlist_Core
         if (!$wishlist_id)
             return array();
 
+        // Join wp_posts so deleted/unpublished products are excluded. Without
+        // this the count badge disagrees with what the wishlist page renders
+        // (the page skips products that fail wc_get_product()).
         $table_items = $wpdb->prefix . 'alg_wishlist_items';
-        return $wpdb->get_col($wpdb->prepare("SELECT product_id FROM $table_items WHERE wishlist_id = %d LIMIT 500", $wishlist_id));
+        return $wpdb->get_col($wpdb->prepare(
+            "SELECT i.product_id
+             FROM {$table_items} i
+             INNER JOIN {$wpdb->posts} p ON p.ID = i.product_id
+             WHERE i.wishlist_id = %d
+               AND p.post_type = 'product'
+               AND p.post_status = 'publish'
+             LIMIT 500",
+            $wishlist_id
+        ));
     }
 
     /**
@@ -246,12 +289,25 @@ class Alg_Wishlist_Core
                     array('id' => $guest_list_id)
                 );
             } else {
-                // Merge items: Move items from guest list to user list
+                // Merge items from the guest list into the user list without
+                // creating duplicates. UPDATE IGNORE only suppresses key
+                // collisions, so drop guest rows whose product + variation is
+                // already in the target list first, then move the survivors.
                 $table_items = $wpdb->prefix . 'alg_wishlist_items';
-                // Update wishlist_id for all items in guest list to user list
-                // Note: Better to do INSERT IGNORE or check for duplicates, but simple UPDATE for MVP
+
                 $wpdb->query($wpdb->prepare(
-                    "UPDATE IGNORE $table_items SET wishlist_id = %d WHERE wishlist_id = %d",
+                    "DELETE g FROM {$table_items} g
+                     INNER JOIN {$table_items} u
+                        ON u.wishlist_id = %d
+                       AND u.product_id = g.product_id
+                       AND u.variation_id = g.variation_id
+                     WHERE g.wishlist_id = %d",
+                    $user_list_id,
+                    $guest_list_id
+                ));
+
+                $wpdb->query($wpdb->prepare(
+                    "UPDATE {$table_items} SET wishlist_id = %d WHERE wishlist_id = %d",
                     $user_list_id,
                     $guest_list_id
                 ));

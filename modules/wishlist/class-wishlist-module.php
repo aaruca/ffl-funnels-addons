@@ -100,11 +100,17 @@ class Wishlist_Module extends FFLA_Module
     public function verify_database_tables(): void
     {
         global $wpdb;
+        require_once $this->get_path() . 'includes/class-wishlist-activator.php';
+
         $table = $wpdb->prefix . 'alg_wishlists';
         if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table)) !== $table) {
-            require_once $this->get_path() . 'includes/class-wishlist-activator.php';
             Alg_Wishlist_Activator::activate();
+            return;
         }
+
+        // Apply pending schema migrations after an in-place update, which never
+        // re-runs activate(). No-op once the DB version is current.
+        Alg_Wishlist_Activator::maybe_upgrade();
     }
 
     /* ── Activation / Deactivation ─────────────────────────────────── */

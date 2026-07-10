@@ -11,6 +11,26 @@ if (!defined('ABSPATH')) {
 
 class Alg_Wishlist_Activator
 {
+    /**
+     * Schema version. Bump when the table definitions below change so that
+     * maybe_upgrade() re-runs dbDelta after an in-place plugin update (the
+     * GitHub updater never calls activate()).
+     */
+    const DB_VERSION = '1.1.0';
+
+    /**
+     * Apply pending schema changes after an in-place update.
+     *
+     * Cheap no-op once current: one option read plus a comparison.
+     */
+    public static function maybe_upgrade()
+    {
+        if (get_option('alg_wishlist_db_version') === self::DB_VERSION) {
+            return;
+        }
+
+        self::activate();
+    }
 
     /**
      * Create database tables on activation.
@@ -18,6 +38,10 @@ class Alg_Wishlist_Activator
     public static function activate()
     {
         global $wpdb;
+
+        // Must run BEFORE dbDelta: the items table gains a UNIQUE key below and
+        // MySQL refuses to add it while duplicate rows exist.
+        self::dedupe_items();
 
         $charset_collate = $wpdb->get_charset_collate();
 
@@ -46,9 +70,10 @@ class Alg_Wishlist_Activator
 			item_id bigint(20) NOT NULL AUTO_INCREMENT,
 			wishlist_id bigint(20) NOT NULL,
 			product_id bigint(20) NOT NULL,
-			variation_id bigint(20) DEFAULT 0,
+			variation_id bigint(20) NOT NULL DEFAULT 0,
 			date_added datetime DEFAULT '0000-00-00 00:00:00' NOT NULL,
 			PRIMARY KEY  (item_id),
+			UNIQUE KEY uniq_item (wishlist_id,product_id,variation_id),
 			KEY wishlist_id (wishlist_id),
 			KEY product_id (product_id)
 		) $charset_collate;";
@@ -61,6 +86,40 @@ class Alg_Wishlist_Activator
         if (get_option('alg_wishlist_version') !== ALG_WISHLIST_VERSION) {
             update_option('alg_wishlist_version', ALG_WISHLIST_VERSION);
         }
+
+        update_option('alg_wishlist_db_version', self::DB_VERSION);
     }
 
+    /**
+     * Remove duplicate wishlist items, keeping the earliest row of each
+     * (wishlist_id, product_id, variation_id) group.
+     *
+     * Existing installs can already hold duplicates (the guest->user merge used
+     * UPDATE IGNORE against a table with no unique key), and the UNIQUE index
+     * added above cannot be created until they are gone.
+     */
+    private static function dedupe_items()
+    {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'alg_wishlist_items';
+
+        // Nothing to do on a fresh install.
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) !== $table) {
+            return;
+        }
+
+        // Normalise NULLs first so they collapse under the unique key and the
+        // NOT NULL column change cannot fail in strict mode.
+        $wpdb->query("UPDATE {$table} SET variation_id = 0 WHERE variation_id IS NULL"); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+        $wpdb->query( // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            "DELETE a FROM {$table} a
+             INNER JOIN {$table} b
+                ON a.wishlist_id = b.wishlist_id
+               AND a.product_id  = b.product_id
+               AND a.variation_id = b.variation_id
+               AND a.item_id > b.item_id"
+        );
+    }
 }

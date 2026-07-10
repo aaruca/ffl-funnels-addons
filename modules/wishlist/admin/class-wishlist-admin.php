@@ -119,6 +119,20 @@ class Wishlist_Admin
             echo '</div></div>'; // end card
         }
 
+        // Data retention.
+        echo '<div class="wb-card">';
+        echo '<div class="wb-card__header"><h3>' . esc_html__('Data', 'ffl-funnels-addons') . '</h3></div>';
+        echo '<div class="wb-card__body">';
+
+        FFLA_Admin::render_toggle_field(
+            __('Delete wishlist data on uninstall', 'ffl-funnels-addons'),
+            'delete_data_uninstall',
+            isset($options['delete_data_uninstall']) ? $options['delete_data_uninstall'] : '0',
+            __('Off by default. When off, uninstalling the plugin keeps every customer wishlist so a reinstall restores them. Turn on only if you want the wishlist tables permanently dropped on uninstall.', 'ffl-funnels-addons')
+        );
+
+        echo '</div></div>'; // end card
+
         // Save button.
         echo '<div class="wb-actions-bar">';
         echo '<button type="submit" class="wb-btn wb-btn--primary">';
@@ -221,6 +235,9 @@ class Wishlist_Admin
         if (defined('SNAPFIND_DIR')) {
             $options['alg_wishlist_snapfind_boost'] = isset($_POST['alg_wishlist_snapfind_boost']) ? '1' : '0';
         }
+
+        // Gates the destructive wishlist cleanup in uninstall.php.
+        $options['delete_data_uninstall'] = isset($_POST['delete_data_uninstall']) ? '1' : '0';
 
         update_option('alg_wishlist_settings', $options);
 

@@ -2,6 +2,35 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.38.0] - 2026-07-09
+
+Correctness, cost and hardening release. `main` is also reconciled to the shipped
+code — it had been left at v1.33.0 while v1.34–v1.37.1 were tagged on a side branch.
+
+### Tax Resolver
+- **Checkout now uses the correct taxable address.** The street was read from the posted checkout form, preferring `shipping_address_1` whenever it was non-empty. WooCommerce keeps those shipping fields in the form even when "Ship to a different address" is unchecked, so a stale shipping street could beat the billing address the customer intended — and because the state/ZIP come from WooCommerce's taxable address, one address's street could be geocoded against another's ZIP. The street now comes from `WC()->customer`, following `woocommerce_tax_based_on` exactly as WooCommerce does.
+- **Stop paying for the same address twice.** USGeocoder bills per call. Definitive answers about an address (`VALIDATION_ERROR` / "NoMatch", `RATE_NOT_DETERMINABLE`) are now cached on a short TTL; previously only successes were cached, so an unmatched address re-billed the API on *every* checkout recalculation. Transient failures (`SOURCE_UNAVAILABLE`, `INTERNAL_ERROR`) are deliberately never cached.
+- "Test key" reuses a successful validation of the same key for an hour instead of firing a fresh billed lookup on each click. Failures stay retryable.
+- Added a **Clear cache now** button and an **Auto-clear cache** schedule (never / daily / weekly / monthly, defaulting to never — every cleared address costs a billed re-lookup). Added a 30-day cache TTL option.
+- The USGeocoder auth key is masked; removed the literal example key from the field description.
+- Audit rows are no longer written for cache hits, and dataset imports run in a single transaction.
+
+### Fixed
+- **Module toggle:** activating a module from the dashboard defined its legacy constants *after* activation and marked it active *before* activation succeeded — fataling on PHP 8 and leaving a half-created schema marked active. Constants are now defined first, and the module is only recorded as active once activation completes.
+- **Bundles:** the schedule was enforced only for widget visibility. An expired (or not-yet-started) bundle could still be redeemed via a replayed add-to-cart request, and items already in a cart kept their bundle price after the window closed. Both paths now check against GMT.
+- **Wishlist:** a wishlist row was created on read paths — including the asset enqueue that runs on every front-end request — so cookieless crawlers seeded an empty row per request. Creation is now lazy (only on add).
+- **Wishlist:** guest→user merge produced duplicate items. Duplicates are removed on merge, and a `UNIQUE(wishlist_id, product_id, variation_id)` index now prevents them (existing duplicates are cleaned up first by a migration).
+- **Wishlist:** the count badge included deleted/unpublished products and disagreed with the rendered page.
+- **FFL Checkout:** vendor-option lookups had no negative cache, so an API outage retried on every checkout render with a 30s timeout. Added a negative cache and a 10s timeout.
+- **FFL Checkout:** removed two unused unauthenticated AJAX endpoints, and made vendor-option comparison type-safe.
+- **Updater:** now registers even when WooCommerce is inactive (previously it could not update itself in exactly that state), and guards partial GitHub API responses.
+- **Uninstall:** drops the bundle tables and version options it previously missed. **Wishlist data is now preserved unless you opt in** via a new "Delete wishlist data on uninstall" setting — uninstalling in order to reinstall no longer destroys every customer's wishlist.
+
+### Performance / Security
+- **Analytics:** Chart.js is served from the plugin instead of a third-party CDN (the old URL pinned only a floating `@4` tag, with no integrity hash).
+- **Analytics:** the order scan is capped, and the dashboard says so when a range exceeds the cap rather than quietly showing partial figures.
+- **Wishlist:** the front-end no longer walks the entire document once per wishlist item.
+
 ## [1.37.1] - 2026-06-10
 
 ### Woo Sheets Sync — Google connection UI + documentation

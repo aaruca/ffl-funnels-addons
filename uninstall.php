@@ -2,7 +2,12 @@
 /**
  * Fired when the plugin is uninstalled.
  *
- * Cleans up all data created by any module that was ever active.
+ * Destructive cleanup of customer-facing data (WooBooster rules/bundles,
+ * wishlists) is gated behind each module's own "delete data on uninstall"
+ * opt-in, so reinstalling never silently wipes live data.
+ *
+ * Modules whose data can be detected independently (tax-rates) are cleaned even
+ * when the module is not currently active; the rest are cleaned when active.
  *
  * @package FFL_Funnels_Addons
  */
@@ -20,14 +25,22 @@ if (in_array('woobooster', $ffla_active_modules, true)) {
     $wb_settings = get_option('woobooster_settings', []);
 
     if (!empty($wb_settings['delete_data_uninstall'])) {
-        // Drop custom tables.
+        // Rules engine tables.
         $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}woobooster_rules");
         $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}woobooster_rule_conditions");
         $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}woobooster_rule_actions");
         $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}woobooster_rule_index");
 
+        // Bundle tables.
+        $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}woobooster_bundles");
+        $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}woobooster_bundle_items");
+        $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}woobooster_bundle_actions");
+        $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}woobooster_bundle_conditions");
+        $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}woobooster_bundle_index");
+
         // Delete options.
         delete_option('woobooster_settings');
+        delete_option('woobooster_version');
         delete_option('woobooster_db_version');
         delete_option('woobooster_last_build');
 
@@ -40,12 +53,21 @@ if (in_array('woobooster', $ffla_active_modules, true)) {
     }
 }
 
-// ── Wishlist cleanup ────────────────────────────────────────────────
+// ── Wishlist cleanup (opt-in) ───────────────────────────────────────
+// Customer wishlists are destroyed only when the module's own delete-data
+// setting is enabled. Previously an uninstall (a common troubleshooting step
+// before reinstalling) permanently wiped every customer's wishlist.
 if (in_array('wishlist', $ffla_active_modules, true)) {
-    $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}alg_wishlists");
-    $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}alg_wishlist_items");
+    $wl_settings = get_option('alg_wishlist_settings', []);
 
-    delete_option('alg_wishlist_settings');
+    if (is_array($wl_settings) && !empty($wl_settings['delete_data_uninstall'])) {
+        $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}alg_wishlists");
+        $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}alg_wishlist_items");
+
+        delete_option('alg_wishlist_settings');
+        delete_option('alg_wishlist_version');
+        delete_option('alg_wishlist_db_version');
+    }
 }
 
 // ── Legacy cleanup: Doofinder Sync (addon removed in v1.31.0) ───────

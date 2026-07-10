@@ -3,7 +3,7 @@
  * Plugin Name:       FFL Funnels Addons
  * Plugin URI:        https://github.com/aaruca/ffl-funnels-addons
  * Description:       Modular WooCommerce toolkit with WooBooster, Wishlist, Checkout, Sheets Sync, Tax Resolver, and Product Reviews.
- * Version:           1.37.1
+ * Version:           1.38.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants.
-define('FFLA_VERSION', '1.37.1');
+define('FFLA_VERSION', '1.38.0');
 define('FFLA_FILE', __FILE__);
 define('FFLA_PATH', plugin_dir_path(__FILE__));
 define('FFLA_URL', plugin_dir_url(__FILE__));
@@ -104,57 +104,15 @@ if (!class_exists('FFL_Funnels_Addons')):
 
         /**
          * Define backward-compatibility constants for active modules.
+         *
+         * Delegates to the registry so the definitions live in one place and stay
+         * consistent with the module-toggle activation path, which also needs
+         * them before running a module's activate().
          */
         private function define_compat_constants(): void
         {
-            // WooBooster compat constants.
-            if ($this->registry->is_active('woobooster')) {
-                $wb_module = $this->registry->get('woobooster');
-                if (!defined('WOOBOOSTER_VERSION')) {
-                    define('WOOBOOSTER_VERSION', FFLA_VERSION);
-                }
-                if (!defined('WOOBOOSTER_DB_VERSION')) {
-                    define('WOOBOOSTER_DB_VERSION', '1.10.0');
-                }
-                if (!defined('WOOBOOSTER_FILE')) {
-                    define('WOOBOOSTER_FILE', FFLA_FILE);
-                }
-                if (!defined('WOOBOOSTER_PATH')) {
-                    define('WOOBOOSTER_PATH', $wb_module->get_path());
-                }
-                if (!defined('WOOBOOSTER_URL')) {
-                    define('WOOBOOSTER_URL', $wb_module->get_url());
-                }
-                if (!defined('WOOBOOSTER_BASENAME')) {
-                    define('WOOBOOSTER_BASENAME', FFLA_BASENAME);
-                }
-            }
-
-            // Wishlist compat constants.
-            if ($this->registry->is_active('wishlist')) {
-                $wl_module = $this->registry->get('wishlist');
-                if (!defined('ALG_WISHLIST_VERSION')) {
-                    define('ALG_WISHLIST_VERSION', FFLA_VERSION);
-                }
-                if (!defined('ALG_WISHLIST_FILE')) {
-                    define('ALG_WISHLIST_FILE', FFLA_FILE);
-                }
-                if (!defined('ALG_WISHLIST_PATH')) {
-                    define('ALG_WISHLIST_PATH', $wl_module->get_path());
-                }
-                if (!defined('ALG_WISHLIST_URL')) {
-                    define('ALG_WISHLIST_URL', $wl_module->get_url());
-                }
-                if (!defined('ALG_WISHLIST_BASENAME')) {
-                    define('ALG_WISHLIST_BASENAME', FFLA_BASENAME);
-                }
-            }
-
-            // Loadout compat constants.
-            if ($this->registry->is_active('loadout')) {
-                if (!defined('FFLA_LOADOUT_DB_VERSION')) {
-                    define('FFLA_LOADOUT_DB_VERSION', '1.0.0');
-                }
+            foreach (array_keys($this->registry->get_active()) as $id) {
+                $this->registry->ensure_module_constants($id);
             }
         }
 
@@ -253,6 +211,18 @@ if (!class_exists('FFL_Funnels_Addons')):
          */
         public function init(): void
         {
+            // Updater — registered before the dependency gate (and globally,
+            // including WP-Cron) so the plugin can still see and install its own
+            // updates while WooCommerce is inactive, which is exactly when a fix
+            // may be needed.
+            $updater = new FFLA_Updater(
+                'aaruca',
+                'ffl-funnels-addons',
+                FFLA_BASENAME,
+                FFLA_VERSION
+            );
+            $updater->init();
+
             if (!$this->dependencies_met) {
                 return;
             }
@@ -262,16 +232,6 @@ if (!class_exists('FFL_Funnels_Addons')):
                 $admin = new FFLA_Admin($this->registry);
                 $admin->init();
             }
-
-            // Updater — registered globally (including WP-Cron) so background
-            // update checks inject our plugin into the update_plugins transient.
-            $updater = new FFLA_Updater(
-                'aaruca',
-                'ffl-funnels-addons',
-                FFLA_BASENAME,
-                FFLA_VERSION
-            );
-            $updater->init();
 
             // Boot active modules.
             $this->registry->boot_active_modules();

@@ -323,12 +323,22 @@ class Tax_Quote_Engine
 
     /**
      * Persist audit record and return the result.
+     *
+     * Cache hits are not audited. WooCommerce recalculates tax several times per
+     * checkout, and a cached quote performs no lookup and costs no API call — so
+     * writing an audit row for each repeat only amplifies writes on the hottest
+     * path. Every other outcome (validation, disabled, unsupported, resolver) is
+     * still recorded.
      */
     private static function audit(Tax_Quote_Result $result, float $start_time): Tax_Quote_Result
     {
         global $wpdb;
 
         $result->trace['durationMs'] = self::elapsed($start_time);
+
+        if (!empty($result->trace['cacheHit'])) {
+            return $result;
+        }
 
         $table = Tax_Resolver_DB::table('quotes_audit');
 

@@ -1298,6 +1298,13 @@ class Tax_Dataset_Pipeline
         $table = Tax_Resolver_DB::table('jurisdiction_rates');
         $count = 0;
 
+        // A full-state import is thousands of rows. Commit once instead of
+        // autocommitting per INSERT, which dominates the cost of a sync.
+        // $wpdb->insert is kept for its NULL handling; on a non-transactional
+        // engine this degrades to a no-op and the caller still discards a short
+        // load by deleting the pending version.
+        $wpdb->query('START TRANSACTION');
+
         foreach ($rates as $rate) {
             $inserted = $wpdb->insert($table, [
                 'dataset_version_id' => $version_id,
@@ -1318,6 +1325,14 @@ class Tax_Dataset_Pipeline
             if ($inserted) {
                 $count++;
             }
+        }
+
+        if ($count === count($rates)) {
+            $wpdb->query('COMMIT');
+        } else {
+            // Partial load — throw it away. The caller treats a short count as an
+            // error and removes the pending dataset version.
+            $wpdb->query('ROLLBACK');
         }
 
         return $count;
