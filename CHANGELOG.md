@@ -2,6 +2,31 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.38.1] - 2026-07-10
+
+Optimization and cleanup pass. No feature changes.
+
+### Cost / Checkout
+- **Tax address cache is no longer invalidated by every plugin update.** The cache stamp folded in the plugin version, so each auto-update discarded 100% of cached addresses at once — and the next checkout for each address had to re-resolve it, which for USGeocoder states is a *billed* API call on the checkout path. The cache is now keyed to the stored payload shape. Expect one cold start on this upgrade, then stable.
+- **Mapbox token borrowing no longer stalls checkout during a vendor outage.** Only successful responses were cached, so every checkout render re-issued the request and blocked for the full timeout. Added a 60-second failure back-off (cleared on recovery) and reduced the render-blocking timeout from 15s to 5s.
+- **Coupon engine no longer queries on every totals recalculation.** WooCommerce recalculates several times per request; the rule lookup now runs once per request, and stores with no coupon rules skip the match pass entirely.
+
+### Performance
+- Recommendation and shortcode renderers now warm the post/meta caches in bulk instead of hydrating each product one at a time.
+- The WooBooster analytics dashboard class is no longer loaded on front-end requests; it is only used in wp-admin.
+
+### Fixed
+- **Uninstall:** added the Loadout cleanup branch, which did not exist — four tables and a version option were orphaned permanently. Loadout data is **preserved** unless you explicitly opt in to deletion, since those tables hold merchant-authored configuration. Also cleans `woobooster_atc_counter`, `woobooster_cache_version`, `wss_row_map`, and the co-purchase/trending cron events.
+- Removed `restUrl`/`restNonce` from the tax admin script data; neither was ever read. The REST routes are unchanged.
+
+### Packaging
+- The update ZIP no longer ships developer tooling (`tests/`, phpstan/phpunit/phpcs configs, `composer.json`, `package-lock.json`, `.editorconfig`, `.eslintrc.json`, stale audit notes) or `CHANGELOG.md`. **205 KB lighter**, with a CI check that fails the build if any of it leaks back in.
+- Fixed the release workflow's manual-dispatch path, which produced a zip named `ffl-funnels-addons-.zip`.
+- `.gitignore` now scopes the Composer rule to `/vendor/`; a bare `vendor/` also matched `modules/*/assets/vendor/` and silently excluded legitimately vendored runtime assets.
+
+### Docs
+- README documents the Loadout module, which shipped undocumented.
+
 ## [1.38.0] - 2026-07-09
 
 Correctness, cost and hardening release. `main` is also reconciled to the shipped
