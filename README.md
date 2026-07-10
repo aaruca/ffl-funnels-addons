@@ -575,7 +575,7 @@ Hardening pass across every module. Highlights:
 
 ## Author
 
-**Ale Aruca**
+**Alejandro Aruca** — [github.com/aaruca](https://github.com/aaruca)
 
 ---
 *For internal use by FFL Funnels clients.*

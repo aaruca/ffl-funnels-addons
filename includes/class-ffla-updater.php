@@ -378,7 +378,7 @@ class FFLA_Updater
         $info->name = 'FFL Funnels Addons';
         $info->slug = $this->plugin_slug;
         $info->version = $latest_version;
-        $info->author = '<a href="https://github.com/' . esc_attr($this->github_user) . '">Ale Aruca</a>';
+        $info->author = '<a href="https://github.com/' . esc_attr($this->github_user) . '">Alejandro Aruca</a>';
         $info->homepage = 'https://github.com/' . $this->github_user . '/' . $this->github_repo;
         $info->requires = '6.0';
         $info->tested = '';
