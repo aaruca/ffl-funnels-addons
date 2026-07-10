@@ -1660,17 +1660,45 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
     private function ai_tool_get_rules(): string
     {
         require_once WOOBOOSTER_PATH . 'includes/class-woobooster-rule.php';
-        $rules = WooBooster_Rule::get_all_rules();
+        $rules = WooBooster_Rule::get_all();
         $summary = array();
 
         foreach ($rules as $rule) {
+            $conditions = WooBooster_Rule::get_conditions($rule->id);
+            $actions = WooBooster_Rule::get_actions($rule->id);
+
+            $condition_str = '';
+            if (!empty($conditions[0])) {
+                $cond = $conditions[0][0] ?? null;
+                if ($cond) {
+                    $condition_str = sprintf(
+                        '%s %s %s',
+                        $cond->condition_attribute ?? '',
+                        $cond->condition_operator ?? '',
+                        $cond->condition_value ?? ''
+                    );
+                }
+            }
+
+            $action_str = '';
+            if (!empty($actions[0])) {
+                $act = $actions[0][0] ?? null;
+                if ($act) {
+                    $action_str = sprintf(
+                        '%s:%s',
+                        $act->action_source ?? '',
+                        $act->action_value ?? ''
+                    );
+                }
+            }
+
             $summary[] = array(
                 'id' => $rule->id,
                 'name' => $rule->name,
                 'priority' => $rule->priority,
                 'status' => $rule->status ? 'active' : 'inactive',
-                'condition' => $rule->condition_attribute . ' ' . $rule->condition_operator . ' ' . $rule->condition_value,
-                'action' => $rule->action_source . ':' . $rule->action_value,
+                'condition' => $condition_str,
+                'action' => $action_str,
             );
         }
 

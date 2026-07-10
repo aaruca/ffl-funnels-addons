@@ -6,8 +6,14 @@ if (!defined('ABSPATH')) {
 class Loadout_Product_Admin
 {
     const META_LOADOUT_LINK = '_ffla_product_loadout_link';
-    const META_ENABLE_TAB = '_ffla_product_loadout_enable_tab';
     const META_CUSTOM_TIERS = '_ffla_product_loadout_tiers';
+
+    /**
+     * @deprecated Loadout surfaces are now driven entirely by the Bricks
+     * elements; the storefront WooCommerce tab and its enable toggle were
+     * removed. Kept only so any stored meta key reference stays resolvable.
+     */
+    const META_ENABLE_TAB = '_ffla_product_loadout_enable_tab';
 
     public function init(): void
     {
@@ -58,23 +64,41 @@ class Loadout_Product_Admin
 
         $meta_query = (array) $query->get('meta_query');
 
+        // A product "has a loadout" when it links a global Loadout (link > 0)
+        // OR stores per-product custom tiers.
         if ($filter === 'has') {
-            $meta_query[] = [
-                'key'     => self::META_ENABLE_TAB,
-                'value'   => '1',
-                'compare' => '=',
-            ];
-        } else {
             $meta_query[] = [
                 'relation' => 'OR',
                 [
-                    'key'     => self::META_ENABLE_TAB,
-                    'compare' => 'NOT EXISTS',
+                    'key'     => self::META_LOADOUT_LINK,
+                    'value'   => 0,
+                    'compare' => '>',
+                    'type'    => 'NUMERIC',
                 ],
                 [
-                    'key'     => self::META_ENABLE_TAB,
-                    'value'   => '1',
-                    'compare' => '!=',
+                    'key'     => self::META_CUSTOM_TIERS,
+                    'compare' => 'EXISTS',
+                ],
+            ];
+        } else {
+            $meta_query[] = [
+                'relation' => 'AND',
+                [
+                    'relation' => 'OR',
+                    [
+                        'key'     => self::META_LOADOUT_LINK,
+                        'compare' => 'NOT EXISTS',
+                    ],
+                    [
+                        'key'     => self::META_LOADOUT_LINK,
+                        'value'   => 0,
+                        'compare' => '<=',
+                        'type'    => 'NUMERIC',
+                    ],
+                ],
+                [
+                    'key'     => self::META_CUSTOM_TIERS,
+                    'compare' => 'NOT EXISTS',
                 ],
             ];
         }
@@ -131,7 +155,6 @@ class Loadout_Product_Admin
         $product_id = $post->ID;
 
         $linked_id = get_post_meta($product_id, self::META_LOADOUT_LINK, true);
-        $enable_tab = get_post_meta($product_id, self::META_ENABLE_TAB, true);
         $custom_tiers_json = get_post_meta($product_id, self::META_CUSTOM_TIERS, true);
         $custom_tiers = $custom_tiers_json ? json_decode($custom_tiers_json, true) : [];
 
@@ -139,11 +162,11 @@ class Loadout_Product_Admin
         ?>
         <div id="loadout_product_data" class="panel woocommerce_options_panel">
             <details class="loadout-help-box" style="margin:12px;">
-                <summary><strong><?php esc_html_e('How the Loadout tab works', 'ffl-funnels-addons'); ?></strong></summary>
+                <summary><strong><?php esc_html_e('How the Loadout config works', 'ffl-funnels-addons'); ?></strong></summary>
                 <div class="loadout-help-content" style="padding:8px 12px;">
-                    <p><?php esc_html_e('You can attach a tiered cross-sell tab to this product. Customers see it as an extra tab on the product page and can add curated items (with optional discounts and a free bonus) alongside the main product.', 'ffl-funnels-addons'); ?></p>
+                    <p><?php esc_html_e('Attach a tiered cross-sell configuration to this product. The tiers and items you set up here are rendered by the Loadout Bricks elements (drop them into your product template). Customers can add curated items (with optional discounts and a free bonus) alongside the main product.', 'ffl-funnels-addons'); ?></p>
                     <ul>
-                        <li><?php esc_html_e('Enable the tab, then either pick a saved Loadout config or build a per-product one below.', 'ffl-funnels-addons'); ?></li>
+                        <li><?php esc_html_e('Either pick a saved Loadout config or build a per-product one below.', 'ffl-funnels-addons'); ?></li>
                         <li><strong><?php esc_html_e('Accessory Discount %', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('Discount applied to each item the customer adds individually.', 'ffl-funnels-addons'); ?></li>
                         <li><strong><?php esc_html_e('Set Discount %', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('Extra discount when the customer adds the whole tier at once.', 'ffl-funnels-addons'); ?></li>
                         <li><strong><?php esc_html_e('Perk Threshold + Perks + Bonus', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('Add N items to unlock perks and get a free bonus product. Set threshold to 0 to disable.', 'ffl-funnels-addons'); ?></li>
@@ -153,12 +176,6 @@ class Loadout_Product_Admin
             </details>
 
             <div class="options_group">
-                <p class="form-field">
-                    <label for="loadout_enable_tab"><?php esc_html_e('Enable Loadout Tab', 'ffl-funnels-addons'); ?></label>
-                    <input type="checkbox" name="loadout_enable_tab" id="loadout_enable_tab" value="1" <?php checked($enable_tab, 1); ?>>
-                    <span class="description"><?php esc_html_e('Adds a "Loadout" tab to this product\'s page on the storefront. Without this checked, the tab is hidden even if you configure tiers below.', 'ffl-funnels-addons'); ?></span>
-                </p>
-
                 <p class="form-field">
                     <label for="loadout_link"><?php esc_html_e('Link to Global Loadout', 'ffl-funnels-addons'); ?></label>
                     <select name="loadout_link" id="loadout_link">
@@ -406,17 +423,14 @@ class Loadout_Product_Admin
         // saves (REST API, wc_update_product, etc.) where our form fields wouldn't
         // be present. Only proceed if at least one of our markers is in $_POST.
         if (
-            !isset($_POST['loadout_enable_tab']) &&
             !isset($_POST['loadout_link']) &&
             !isset($_POST['product_tiers'])
         ) {
             return;
         }
 
-        $enable_tab = !empty($_POST['loadout_enable_tab']) ? 1 : 0;
         $linked_id = isset($_POST['loadout_link']) ? absint($_POST['loadout_link']) : 0;
 
-        update_post_meta($product_id, self::META_ENABLE_TAB, $enable_tab);
         update_post_meta($product_id, self::META_LOADOUT_LINK, $linked_id);
 
         // Save custom tiers — be permissive: keep tiers with name OR items, and
@@ -483,9 +497,8 @@ class Loadout_Product_Admin
 
         if (defined('WP_DEBUG') && WP_DEBUG) {
             error_log(sprintf(
-                '[FFLA Loadout] Save fired on product #%d — enable_tab=%d, linked=%d, tiers=%d',
+                '[FFLA Loadout] Save fired on product #%d — linked=%d, tiers=%d',
                 $product_id,
-                $enable_tab,
                 $linked_id,
                 count($custom_tiers)
             ));
@@ -494,14 +507,15 @@ class Loadout_Product_Admin
 
     /**
      * Get the active loadout config for a product.
-     * Returns ['type' => 'global'|'custom', 'loadout' => Loadout|null, 'tiers' => array]
+     * Returns ['type' => 'global'|'custom'|'disabled', 'loadout' => Loadout|null, 'tiers' => array]
+     *
+     * Resolution is based purely on whether the product has a linked global
+     * Loadout or per-product custom tiers. The legacy "Enable Loadout Tab"
+     * toggle is no longer consulted — the Loadout surfaces are driven entirely
+     * by the Bricks elements now, so a configured product always resolves.
      */
     public static function get_product_config(int $product_id): array
     {
-        if (!get_post_meta($product_id, self::META_ENABLE_TAB, true)) {
-            return ['type' => 'disabled', 'loadout' => null, 'tiers' => []];
-        }
-
         $linked_id = (int) get_post_meta($product_id, self::META_LOADOUT_LINK, true);
         if ($linked_id) {
             $loadout = Loadout::get($linked_id);

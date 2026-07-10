@@ -197,13 +197,65 @@ class WSS_Admin
                     <?php endif; ?>
                 </div>
                 <?php if (!$sa_constant): ?>
-                    <div class="wb-card__footer" style="display:flex;justify-content:flex-end;align-items:center;">
+                    <div class="wb-card__footer">
                         <button type="submit" name="wss_save" class="wb-btn wb-btn--primary">
                             <?php esc_html_e('Save Settings', 'ffl-funnels-addons'); ?>
                         </button>
                     </div>
                 <?php endif; ?>
             </div>
+
+            <?php
+            // ── Authentication — Google OAuth (alternative to service account) ──
+            // Only offered when a service account isn't the active/forced method
+            // (service account is the recommended path) AND the OAuth proxy is
+            // actually configured — otherwise "Connect with Google" is a dead end.
+            // Still shown when already connected so the account can be disconnected.
+            $oauth            = new WSS_Google_OAuth();
+            $oauth_connected  = $oauth->is_connected();
+            $oauth_email      = $oauth_connected ? $oauth->get_user_email() : '';
+            $oauth_available  = WSS_Google_OAuth::proxy_enabled() || $oauth_connected;
+            if (!$sa_constant && !$sa_active && $oauth_available):
+            ?>
+            <div class="wb-card">
+                <div class="wb-card__header">
+                    <h2><?php esc_html_e('Authentication — Google OAuth (Alternative)', 'ffl-funnels-addons'); ?></h2>
+                </div>
+                <div class="wb-card__body">
+                    <p class="wb-field__desc">
+                        <?php esc_html_e('Prefer not to create a service account? Connect a Google account instead. This uses OAuth and may need periodic re-authorization. If a service account key is saved above, it takes precedence over this connection.', 'ffl-funnels-addons'); ?>
+                    </p>
+
+                    <?php if ($oauth_connected): ?>
+                        <div class="wss-oauth-status wss-oauth-status--connected">
+                            <span class="wss-oauth-status__icon">&#x2705;</span>
+                            <span>
+                                <?php
+                                if ($oauth_email !== '') {
+                                    printf(
+                                        /* translators: %s: connected Google account email */
+                                        esc_html__('Connected to Google as %s.', 'ffl-funnels-addons'),
+                                        '<strong>' . esc_html($oauth_email) . '</strong>'
+                                    );
+                                } else {
+                                    esc_html_e('Connected to Google.', 'ffl-funnels-addons');
+                                }
+                                ?>
+                            </span>
+                        </div>
+                        <div style="margin-top: var(--wb-spacing-md);">
+                            <button type="button" id="wss-disconnect-btn" class="wb-btn wb-btn--secondary">
+                                <?php esc_html_e('Disconnect', 'ffl-funnels-addons'); ?>
+                            </button>
+                        </div>
+                    <?php else: ?>
+                        <a href="<?php echo esc_url($oauth->get_auth_url()); ?>" class="wb-btn wb-btn--primary">
+                            <?php esc_html_e('Connect with Google', 'ffl-funnels-addons'); ?>
+                        </a>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php endif; ?>
 
             <div class="wb-card">
                 <div class="wb-card__header">
@@ -231,13 +283,25 @@ class WSS_Admin
                         </div>
                     </div>
 
+                    <?php $realtime_push = !array_key_exists('realtime_push', $settings) || !empty($settings['realtime_push']); ?>
+                    <div class="wb-field">
+                        <label class="wb-field__label" for="wss_realtime_push"><?php esc_html_e('Real-time stock push', 'ffl-funnels-addons'); ?></label>
+                        <div class="wb-field__control">
+                            <label>
+                                <input type="checkbox" id="wss_realtime_push" name="wss_realtime_push" value="1" <?php checked($realtime_push); ?>>
+                                <?php esc_html_e('Immediately push stock changes from orders, refunds, and cancellations to the Sheet (recommended).', 'ffl-funnels-addons'); ?>
+                            </label>
+                            <p class="wb-field__desc"><?php esc_html_e('Keeps the Sheet in step with sales as they happen instead of waiting for the nightly sync. Manual Sheet edits still win at the next sync.', 'ffl-funnels-addons'); ?></p>
+                        </div>
+                    </div>
+
                     <?php
                     ?>
                     <p class="wb-field__desc">
                         <?php esc_html_e('Sheet tab names are managed in WSS Dashboard → Sheet tab groups.', 'ffl-funnels-addons'); ?>
                     </p>
                 </div>
-                <div class="wb-card__footer" style="display:flex;justify-content:flex-end;align-items:center;">
+                <div class="wb-card__footer">
                     <button type="submit" name="wss_save" class="wb-btn wb-btn--primary">
                         <?php esc_html_e('Save Settings', 'ffl-funnels-addons'); ?>
                     </button>
@@ -326,8 +390,9 @@ class WSS_Admin
         }
 
         $settings = array_merge($existing, [
-            'sheet_id'  => $sheet_id,
-            'sync_time' => $sync_time,
+            'sheet_id'      => $sheet_id,
+            'sync_time'     => $sync_time,
+            'realtime_push' => isset($_POST['wss_realtime_push']),
         ]);
 
         // Service account key: remove, replace, or set.
@@ -1359,21 +1424,65 @@ class WSS_Admin
             </div>
             <div class="wb-card__body">
                 <h3><?php esc_html_e('1. Connect Your Google Account', 'ffl-funnels-addons'); ?></h3>
+                <p><?php echo wp_kses(
+                    /* translators: %s: "Service Account" emphasized */
+                    sprintf(__('The recommended way to connect is a %s. It connects once, never expires, and needs no monthly re-authorization. Follow these steps:', 'ffl-funnels-addons'), '<strong>' . esc_html__('Service Account', 'ffl-funnels-addons') . '</strong>'),
+                    array('strong' => array())
+                ); ?></p>
                 <ol>
                     <li><?php echo wp_kses(
-                        /* translators: %s: WSS Settings label */
-                        sprintf(__('Go to %s.', 'ffl-funnels-addons'), '<strong>' . esc_html__('WSS Settings', 'ffl-funnels-addons') . '</strong>'),
+                        /* translators: %s: Google Cloud Console link */
+                        sprintf(__('Open the %s and create a new project (or select an existing one).', 'ffl-funnels-addons'), '<a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">' . esc_html__('Google Cloud Console', 'ffl-funnels-addons') . '</a>'),
+                        array('a' => array('href' => array(), 'target' => array(), 'rel' => array()))
+                    ); ?></li>
+                    <li><?php echo wp_kses(
+                        /* translators: 1: APIs & Services > Library path, 2: Google Sheets API name */
+                        sprintf(__('Go to %1$s, search for %2$s, and click Enable.', 'ffl-funnels-addons'), '<strong>' . esc_html__('APIs & Services → Library', 'ffl-funnels-addons') . '</strong>', '<strong>' . esc_html__('Google Sheets API', 'ffl-funnels-addons') . '</strong>'),
                         array('strong' => array())
                     ); ?></li>
                     <li><?php echo wp_kses(
-                        /* translators: %s: Connect with Google label */
-                        sprintf(__('Click %s.', 'ffl-funnels-addons'), '<strong>' . esc_html__('Connect with Google', 'ffl-funnels-addons') . '</strong>'),
+                        /* translators: %s: Credentials > Create credentials > Service account path */
+                        sprintf(__('Go to %s. Give it any name; you do not need to grant it any roles. Click Done.', 'ffl-funnels-addons'), '<strong>' . esc_html__('APIs & Services → Credentials → Create credentials → Service account', 'ffl-funnels-addons') . '</strong>'),
                         array('strong' => array())
                     ); ?></li>
-                    <li><?php esc_html_e('Sign in with the Google account that has access to the spreadsheet you want to use.', 'ffl-funnels-addons'); ?></li>
-                    <li><?php esc_html_e('Grant the requested permissions (Spreadsheets + Email).', 'ffl-funnels-addons'); ?></li>
-                    <li><?php esc_html_e('You will be redirected back. A green "Connected" badge confirms the connection.', 'ffl-funnels-addons'); ?></li>
+                    <li><?php echo wp_kses(
+                        /* translators: 1: Keys tab path, 2: JSON emphasized */
+                        sprintf(__('Open the new service account, go to the %1$s tab, click Add key → Create new key, choose %2$s, and download the file.', 'ffl-funnels-addons'), '<strong>' . esc_html__('Keys', 'ffl-funnels-addons') . '</strong>', '<strong>' . esc_html__('JSON', 'ffl-funnels-addons') . '</strong>'),
+                        array('strong' => array())
+                    ); ?></li>
+                    <li><?php echo wp_kses(
+                        /* translators: 1: WSS Settings label, 2: Service account JSON key field label */
+                        sprintf(__('In %1$s, paste the entire contents of that JSON file into %2$s and click Save Settings. The service account email address will appear.', 'ffl-funnels-addons'), '<strong>' . esc_html__('WSS Settings', 'ffl-funnels-addons') . '</strong>', '<strong>' . esc_html__('Service account JSON key', 'ffl-funnels-addons') . '</strong>'),
+                        array('strong' => array())
+                    ); ?></li>
+                    <li><?php echo wp_kses(
+                        /* translators: 1: Share button, 2: Editor role, 3: Notify people checkbox */
+                        sprintf(__('Open your Google Sheet, click %1$s, paste the service account email, set the role to %2$s, uncheck %3$s, and click Share.', 'ffl-funnels-addons'), '<strong>' . esc_html__('Share', 'ffl-funnels-addons') . '</strong>', '<strong>' . esc_html__('Editor', 'ffl-funnels-addons') . '</strong>', '<strong>' . esc_html__('Notify people', 'ffl-funnels-addons') . '</strong>'),
+                        array('strong' => array())
+                    ); ?></li>
                 </ol>
+                <div class="wss-note">
+                    <?php echo wp_kses(
+                        /* translators: %s: Editor emphasized */
+                        sprintf(__('The share step is essential — without it the sync fails with a permission error. The service account must be added to the Sheet as an %s.', 'ffl-funnels-addons'), '<strong>' . esc_html__('Editor', 'ffl-funnels-addons') . '</strong>'),
+                        array('strong' => array())
+                    ); ?>
+                </div>
+
+                <?php if (WSS_Google_OAuth::proxy_enabled()): ?>
+                    <h3><?php esc_html_e('Alternative: Connect with Google (OAuth)', 'ffl-funnels-addons'); ?></h3>
+                    <p><?php esc_html_e('If you prefer not to create a service account, you can connect a Google account directly. This uses OAuth and may require re-authorization from time to time.', 'ffl-funnels-addons'); ?></p>
+                    <ol>
+                        <li><?php echo wp_kses(
+                            /* translators: 1: WSS Settings label, 2: Connect with Google label */
+                            sprintf(__('In %1$s, click %2$s.', 'ffl-funnels-addons'), '<strong>' . esc_html__('WSS Settings', 'ffl-funnels-addons') . '</strong>', '<strong>' . esc_html__('Connect with Google', 'ffl-funnels-addons') . '</strong>'),
+                            array('strong' => array())
+                        ); ?></li>
+                        <li><?php esc_html_e('Sign in with the Google account that has access to the spreadsheet you want to use.', 'ffl-funnels-addons'); ?></li>
+                        <li><?php esc_html_e('Grant the requested permissions (Spreadsheets + Email).', 'ffl-funnels-addons'); ?></li>
+                        <li><?php esc_html_e('You will be redirected back. A green "Connected" badge confirms the connection.', 'ffl-funnels-addons'); ?></li>
+                    </ol>
+                <?php endif; ?>
 
                 <h3><?php esc_html_e('2. Configure Your Spreadsheet', 'ffl-funnels-addons'); ?></h3>
                 <ol>
@@ -1646,8 +1755,8 @@ class WSS_Admin
                         <tr>
                             <td><?php esc_html_e('"Not connected to Google" error', 'ffl-funnels-addons'); ?></td>
                             <td><?php echo wp_kses(
-                                /* translators: %s: Connect with Google button label */
-                                sprintf(__('Go to WSS Settings and click %s to re-authorize.', 'ffl-funnels-addons'), '<strong>' . esc_html__('Connect with Google', 'ffl-funnels-addons') . '</strong>'),
+                                /* translators: 1: WSS Settings label, 2: Editor role emphasized */
+                                sprintf(__('Service account: confirm the JSON key is saved in %1$s and that the Sheet is shared with the service account email as an %2$s. OAuth: re-connect the Google account from WSS Settings.', 'ffl-funnels-addons'), '<strong>' . esc_html__('WSS Settings', 'ffl-funnels-addons') . '</strong>', '<strong>' . esc_html__('Editor', 'ffl-funnels-addons') . '</strong>'),
                                 array('strong' => array())
                             ); ?></td>
                         </tr>

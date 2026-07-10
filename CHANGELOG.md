@@ -2,6 +2,270 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.37.1] - 2026-06-10
+
+### Woo Sheets Sync — Google connection UI + documentation
+
+- **Restored the Google OAuth "Connect with Google" option.** The OAuth flow was
+  fully wired in the backend but had no button on the Settings page — only the
+  Service Account card was shown. Added a "Authentication — Google OAuth
+  (Alternative)" card with Connect / connected-email + Disconnect states.
+- **Gated OAuth on the proxy actually being configured.** The Connect card and
+  the OAuth docs now appear only when `WSS_PROXY_SECRET` is defined (or an OAuth
+  connection already exists, so it can still be disconnected). Previously the
+  button could render even when the proxy was disabled, leading to a dead end.
+  Added `WSS_Google_OAuth::proxy_enabled()`.
+- **Rewrote the "Connect Your Google Account" documentation.** The Docs page now
+  leads with a full **Service Account** step-by-step (create project, enable the
+  Google Sheets API, create the service account, download the JSON key, paste it,
+  and share the Sheet as Editor), with OAuth kept as a clearly-labeled
+  alternative. Updated the related troubleshooting entry to cover both methods.
+- **Fixed the Save Settings button padding.** Added a proper `.wb-card__footer`
+  style (right/bottom padding + top divider) so the buttons no longer sit flush
+  against the card edges.
+
+## [1.37.0] - 2026-06-10
+
+### FFL Checkout — Mapbox token "Auto + override"
+
+The FFL Checkout module can now power Mapbox address autocomplete without a
+dedicated token: leave the **Mapbox Public Token** field blank and it borrows a
+token from the g-FFL Checkout plugin, which is normally active alongside it.
+
+- New `FFL_Checkout_Mapbox::resolve_token()` resolution order:
+  1. The admin's **own token** (Settings → Mapbox Public Token) always wins.
+  2. Otherwise **borrow from g-FFL Checkout** — posts `{action:get_mapbox_token}`
+     to the vendor using the `ffl_api_key_option` key that g-FFL already stores.
+     Borrowed tokens are cached in a transient (50 min) so checkout pages don't
+     re-fetch on every load.
+  3. Otherwise empty — autocomplete simply doesn't load.
+- The asset loader and the `ffl_get_mapbox_token` AJAX handler both go through
+  the resolver, so borrowing is consistent across paths.
+- The settings page marks the token field as optional and shows a live status
+  line naming the **active source** (your token / borrowed / none available).
+- The g-FFL vendor key is never stored or exposed — only the resolved public
+  token reaches the frontend.
+
+### Security — critical & high-severity hardening
+
+A focused security pass across the suite. No schema or settings changes.
+
+- **Loadout — cart price manipulation (CRITICAL).** Per-item discount, bundle
+  total, and "bonus" (free) status were read from client-supplied POST data,
+  letting a visitor zero-price or deeply discount any product. All pricing is
+  now re-derived server-side from stored Loadout config; the bonus line is only
+  free when the product matches the tier's configured bonus **and** the
+  threshold is met.
+- **Updater — package install hardening (HIGH).** Update package URLs are now
+  restricted to an allowlist of GitHub hosts (https only), and an optional
+  SHA-256 published in the release notes is verified before install. Closes a
+  remote-code-execution path if a release or its assets were tampered with.
+- **Woo Sheets Sync — credential encryption (HIGH).** Service-account JSON,
+  OAuth tokens, and the OAuth proxy payload now use AES-256-CBC **with an
+  HMAC-SHA256** (encrypt-then-MAC, constant-time verify). Tampered or
+  garbage ciphertext is rejected instead of being returned as "plaintext".
+- **Tax Resolver — special-district undercharge (HIGH).** Special-district
+  rates (e.g. CO RTD/SCFD) were dropped whenever a positive city rate existed,
+  undercharging tax in affected jurisdictions. Special districts are now always
+  extracted, independent of city/county base rates.
+- **Product Reviews — comment outage (HIGH).** The FFLA review nonce was being
+  enforced on *every* comment, breaking native product comments, admin replies,
+  and REST submissions. The nonce/honeypot/Turnstile checks now apply only to
+  the FFLA review form; `moderate_comments` users are exempt.
+- **WooBooster — bundle subset repricing (HIGH).** Adding a subset of a bundle
+  could under- or over-charge because pricing was computed on the submitted
+  items only. Prices are now computed over the full configured set, required
+  items are enforced, and the selected items draw from that result.
+- **Loadout — tier-bundle stock (HIGH).** Tier-bundles only reduced stock for
+  the representative product, oversold components, and skewed inventory reports.
+  Component stock is now decremented on order, restored on cancel, and restocked
+  on refund.
+- **WooBooster — AI tool fatal (HIGH).** The AI assistant's "get rules" tool
+  called a non-existent method (HTTP 500). It now uses `WooBooster_Rule::get_all()`
+  and reads conditions/actions from their tables.
+- **FFL Checkout — compliance bypass (HIGH).** The FFL dealer selector could be
+  suppressed with a client-set cookie. The C&R override now requires
+  server-verified license state, not a raw cookie.
+
+## [1.36.0] - 2026-06-07
+
+### Woo Sheets Sync — Fix nightly sync reverting every sale + real-time stock push
+
+**The bug:** The nightly sync ran Sheet→Woo first and the Sheet won on *any*
+difference. With no real-time push, an order that reduced Woo stock left the
+Sheet showing the old quantity, so the next nightly run saw `Sheet(old) ≠
+Woo(reduced)` and pushed Woo back **up** — silently undoing the sale. The engine
+could not tell "a human edited the Sheet" from "an order changed Woo".
+
+**Fixed — snapshot-based change detection (scope: stock qty + status only):**
+- Added per-variation snapshots `_wss_snap_woo` / `_wss_snap_sheet` recording the
+  quantity both sides agreed on at the last sync.
+- The nightly sync now resolves direction per snapshots instead of "Sheet always
+  wins":
+  - Sheet moved & Woo didn't → apply Sheet→Woo.
+  - Woo moved & Sheet didn't → push Woo→Sheet (the sale is preserved).
+  - Both moved → conflict: **Woo wins** for quantity, logged via `WSS_Logger`.
+  - Neither → skip.
+  After acting, both snapshots are written to the agreed final value.
+- **Migration:** rows with missing snapshots seed both snapshots to current
+  values and apply the legacy "Sheet→Woo on diff" behavior for that one row, so
+  deploying never drops a pending Sheet edit.
+- **Price/sale price/manage_stock stay Sheet-authoritative** exactly as before;
+  only stock quantity + status use the new directional logic.
+
+**Added — real-time Woo→Sheet stock push (`WSS_Realtime_Push`):**
+- Hooks `woocommerce_reduce_order_stock`, `woocommerce_restore_order_stock`, and
+  `woocommerce_restock_refunded_item` so orders, cancels, and refunds mirror the
+  new Woo quantity to the Sheet immediately instead of waiting for 02:00.
+- Resolves each variation's Sheet row via a persisted `wss_row_map`
+  (variation_id → {tab, row}), refreshed by the nightly sync. Verifies the row's
+  `variation_id` (column B) before writing; on drift it skips and lets the
+  nightly sync reconcile.
+- Writes stock qty + status for all of an order's items in **one batched call**,
+  deferred to `shutdown` so a slow Sheets API never delays checkout. Updates the
+  snapshots after a successful write.
+- **Checkout safety:** every entry point is wrapped in try/catch and never
+  throws; failures are logged and recovered by the nightly sync.
+- **Feedback-loop guard:** `WSS_Sync_Engine::$applying` (exposed via
+  `is_applying()`) is set around the engine's Sheet→Woo apply+save; the push
+  bails while it is true.
+- New **"Real-time stock push"** setting (`realtime_push`, default on) with a
+  checkbox on the WSS Settings page; the push is gated on it and on a configured
+  Sheet ID.
+
+**Tests:** `tests/unit/StockDirectionTest.php` covers the reconciliation matrix
+(T1–T6: realtime reduce, manual Sheet control, refund restore, conflict
+resolution, price regression, and no-op/no-loop).
+
+## [1.35.0] - 2026-05-28
+
+### Loadout — Bricks-only; removed the storefront WooCommerce tab + enable toggle
+
+The Loadout surfaces are driven entirely by the Bricks elements now, so the
+legacy storefront WooCommerce "Loadout" tab and its **"Enable Loadout Tab"**
+checkbox were causing confusion: when the checkbox was unchecked, the Bricks
+widget showed no content even though tiers were configured.
+
+**Changed:**
+- **Loadout config now resolves whenever a product has a linked global Loadout or per-product custom tiers** — the "Enable Loadout Tab" toggle is no longer consulted. Configure tiers and the Bricks elements render them immediately. This fixes the Bricks Loadout elements rendering empty on configured products.
+- **Removed the "Enable Loadout Tab" checkbox** from the product editor's Loadout panel. Help text updated to explain the config is rendered by the Bricks elements.
+- **Products list "With/Without loadout" filter** now keys off the actual config (linked Loadout or custom tiers) instead of the removed enable flag.
+
+**Removed:**
+- **Storefront WooCommerce Loadout product tab** (`woocommerce_product_tabs` integration) and its renderer class `Loadout_Product_Tab`. Deleted `modules/loadout/includes/class-loadout-product-tab.php`.
+
+**Technical details:**
+- `Loadout_Product_Admin::get_product_config()` no longer gates on `META_ENABLE_TAB`; the constant is kept (deprecated) so stored meta references stay resolvable.
+- `class-loadout-module.php` no longer requires or initializes `Loadout_Product_Tab`.
+- `save_product_meta()` stops reading/writing the `loadout_enable_tab` field.
+
+## [1.34.1] - 2026-05-28
+
+### FFL Dealer Finder — Highlight the selected dealer
+
+**Added:**
+- **Selected FFL dealer button is now visually highlighted.** The g-FFL Checkout widget toggles a `selectedFFLDivButton` class on the chosen dealer but ships no distinct styling for it. The Dealer Finder bridge now emits a small style block that highlights the selected dealer using the theme's `--success` token (green border, translucent green background, white text).
+
+**Technical details:**
+- `modules/ffl-checkout/includes/class-ffl-checkout-dealer-bridge.php` — new `render_styles()` method outputs the `<style id="ffla-dealer-finder-styles">` block as part of the widget render. Guarded with a static flag so it prints at most once per request even when both the `[ffl_dealer_finder]` shortcode and the Bricks element appear on the same page.
+
+## [1.34.0] - 2026-05-28
+
+### Loadout — Bricks dynamic tag for conditional rendering
+
+**Added:**
+- **`{ffla_product_has_loadout}` Bricks dynamic tag** — returns `1` when the current product resolves to a Loadout that would actually render content (linked global Loadout or per-product custom tiers with the loadout tab enabled), empty string otherwise. The tag mirrors the same resolver used by the Loadout elements, so the condition value always matches what the elements would actually render.
+- Tag appears in Bricks' dynamic data picker under the **"FFL Funnels"** group, so it's discoverable from any element's Conditions tab, attribute values, or text content.
+
+**Usage in Bricks Conditions tab:**
+- Source: `Dynamic data`
+- Dynamic data: `{ffla_product_has_loadout}`
+- Compare: `==` (or `is not empty`)
+- Value: `1`
+
+This lets builders show/hide a Loadout element automatically based on whether the current product actually has loadout content, without chaining multiple post meta checks.
+
+**Technical details:**
+- New file: `modules/loadout/frontend/class-loadout-bricks-tags.php` — registers the tag via three Bricks filters: `bricks/dynamic_tags_list` (picker), `bricks/dynamic_data/render_tag` (single tag resolution used by Conditions), and `bricks/dynamic_data/render_content` (inline text substitution).
+- `class-loadout-module.php` — boots `Loadout_Bricks_Tags::init()` alongside the existing Bricks element registration.
+
+## [1.33.9] - 2026-05-28
+
+### Loadout — Critical fix: "Added!" button now visible after add-to-cart
+
+**Fixed:**
+- **The "Added!" button text was invisible due to WooCommerce replacing the button element** — when we triggered the `added_to_cart` event with the button reference, WooCommerce/Bricks would immediately replace the entire button DOM node with a "View cart" link, destroying the button before the "Added!" text could render. The button classes and styling were applied to a ghost element that no longer existed in the DOM.
+- **Solution:** Set the button's `is-added` class, disabled state, and "Added!" text **before** triggering WooCommerce events, and omit the button reference from the `added_to_cart` event to prevent DOM replacement. Button now persists in DOM with all styling and text visible.
+
+**Technical details:**
+- `modules/loadout/frontend/js/loadout.js` — restructured the AJAX success handler to apply button state before firing WC events. The button remains in the DOM under full styling control and never gets replaced.
+
+## [1.33.8] - 2026-05-28
+
+### Loadout — Fix invisible "Added!" button label
+
+**Fixed:**
+- **"Added!" text was invisible on the green confirmation button** — after a successful add-to-cart from the Loadout widget, the button correctly turned green via the `.is-added` state, but the white label text did not render visibly due to competing CSS rules cascading through theme/builder stylesheets.
+
+**Technical details:**
+- `modules/loadout/frontend/css/loadout.css` — strengthened the `.ffla-loadout__add-btn.is-added` rule with `!important` flags on `color: #ffffff`, `opacity: 1`, and `background: var(--ffla-loadout-success)`, plus explicit `visibility: visible` and `text-shadow: none` to defeat any overriding rules.
+
+## [1.33.7] - 2026-05-28
+
+### Loadout — Layout polish, persistent "Added!" state, bundle savings fix
+
+**Added:**
+- **Main product card now anchors the Loadout widget on product pages** — when a Loadout element renders inside a per-product context (no explicit global loadout), the first column displays the current product's image, name, and price.
+
+**Changed:**
+- **"Added!" button now persists** instead of reverting after 1.5 seconds, so customers can clearly see what they have added until they remove it from the WooCommerce cart.
+- **Progress bar removed** from the Loadout widget — it was duplicative with the cart summary and not requested in the final design.
+
+**Fixed:**
+- **Cart savings displayed $0 even when discounts had been applied** — the AJAX cart-summary endpoint was reading prices before WooCommerce ran its pricing filters. Now calls `WC()->cart->calculate_totals()` before comparing prices.
+- **Tier-bundle line savings were unreadable** — bundle lines store per-item savings inside the `_ffla_tier_bundle_items` cart-item metadata, not on the product object. The summary now reads bundle metadata for accurate aggregated savings.
+- **Savings color is now green** (`var(--ffla-loadout-success)`) instead of gold, matching the discount design language.
+
+## [1.33.4] - 2026-05-27
+
+### Loadout — Critical fix for product-page fatal errors
+
+**Fixed:**
+- **Loadout element fatal errors on product pages** — Bricks templates saved before v1.33.0 reference the legacy monolithic "loadout" element that was removed in v1.33.0. When Bricks tries to render those templates, the unregistered element name "loadout" (kebab-case) is converted to StudlyCaps ("Loadout") and Bricks attempts to instantiate the same-named PHP class as an Element. Since a `Loadout` data model class exists, Bricks calls element methods (`init()`, `load()`) on the data class instead of an Element class, causing `Call to undefined method Loadout::init()` and related fatals.
+- **Solution:** Re-registered a proper `Loadout_Element` class (extends `\Bricks\Element`) with `$name = 'loadout'`. This provides a real Element implementation so saved templates get the correct class, not the data model. The element auto-detects the current product's Loadout configuration and renders the complete widget, or renders nothing if not on a product page. Full backward compatibility with v1.33.0+ templates is maintained.
+
+**Technical details:**
+- New file: `modules/loadout/frontend/class-loadout-element.php` — complete Loadout widget element. Rendering is driven through `Loadout_Element_Helpers` (the same shared resolver/renderer used by the composable Tier Tabs element), so it shows the identical tier/products UI: branding header, progress bar, tier navigation, anchor product, recommended products, cart panel, cross-sells, and checkout footer. Auto-detects the current product's linked global Loadout or per-product tiers.
+- `class-loadout-module.php` — Bricks element registration now registers `Loadout_Element` first (with a comment explaining the rationale).
+- All composable elements (`Loadout_Tier_Tabs_Element`, `Loadout_Progress_Element`, `Loadout_Cart_Mirror_Element`) remain in the global namespace (no namespace declaration) so their unprefixed calls to `Loadout::` and `Loadout_Element_Helpers::` resolve correctly.
+
+## [1.33.3] - 2026-05-27
+
+### Hotfix release — consolidated deployment
+
+Repackaged v1.33.2 fixes (Loadout element + tax resolver) as v1.33.3 to ensure clean production deployment. Includes all fixes from v1.33.2 and v1.33.1.
+
+## [1.33.2] - 2026-05-27
+
+### Loadout — Hotfix for element initialization
+
+**Fixed:**
+- **Loadout element fatal error on product pages** — `Loadout::load()` static method was defined with a required `$id` parameter, but Bricks calls it with no arguments during element initialization, causing `ArgumentCountError`. Made the `$id` parameter optional with `null` default.
+
+## [1.33.1] - 2026-05-27
+
+### Tax Resolver — Critical fix for wildly inflated tax rates
+
+**Fixed:**
+- **Sub-1% jurisdiction rates were being returned as 50–1000× inflated.** The `to_decimal_rate()` method had a guard condition (`if ($rate > 1)`) that only divided by 100 when rates exceeded 1. This left sub-1% jurisdictions (e.g., 0.5% county, 0.1% SCFD) unscaled, arriving as 50% and 10% respectively. Example: Colorado quote on a $273.65 product returned $640.25 tax (220% rate) instead of $21.89 (8% rate) because Jefferson County (0.5%) was treated as 50% and district rates stacked on top.
+- **County and city base rates were double-counted alongside their own itemized districts.** USGeocoder returns `county_tax` as a rolled-up total, then repeats it as the first element in `county_district1_tax`, `county_district2_tax`, etc. The resolver was adding both: base rate + all districts. Fixed by skipping itemization loops when a positive base rate exists.
+
+**Technical details:**
+- `to_decimal_rate()` now **always divides by 100** — USGeocoder universally returns percentages (2.9 for 2.9%).
+- County and city district loops are now guarded: `if ($is_details && !($rate !== null && $rate > 0))` to skip itemizations when base rate already covers them.
+
+**Verification:** Wheat Ridge, Colorado (Jefferson County, ZIP 80033) now correctly resolves to 8.0% (2.9% state + 0.5% county + 3.5% city + 1.0% RTD + 0.1% SCFD) instead of 220%.
+
 ## [1.33.0] - 2026-05-26
 
 ### Loadout — focused on single-product use; Tier Tabs now renders products

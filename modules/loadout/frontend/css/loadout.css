@@ -246,6 +246,16 @@
     cursor: not-allowed;
 }
 
+.ffla-loadout__add-btn.is-added,
+.ffla-loadout__add-btn.is-added:disabled {
+    opacity: 1 !important;
+    background: var(--ffla-loadout-success) !important;
+    color: #ffffff !important;
+    text-shadow: none;
+    cursor: default;
+    visibility: visible;
+}
+
 .ffla-loadout__add-tier-btn {
     display: block;
     width: 100%;
@@ -355,7 +365,7 @@
 }
 
 .ffla-loadout__cart-savings {
-    color: var(--ffla-loadout-accent);
+    color: var(--ffla-loadout-success);
     font-weight: 700;
 }
 

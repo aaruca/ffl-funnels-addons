@@ -79,6 +79,30 @@ class WSS_Sync_Engine
     private const VALID_STOCK_STATUSES = ['instock', 'outofstock', 'onbackorder'];
 
     /**
+     * Per-variation snapshot meta: the stock qty that Woo and the Sheet last
+     * AGREED on at the end of a sync. Change detection compares the live value
+     * to these to decide which side actually moved since then.
+     */
+    public const META_SNAP_WOO   = '_wss_snap_woo';
+    public const META_SNAP_SHEET = '_wss_snap_sheet';
+
+    /**
+     * True while the engine is writing Sheet→Woo (apply + save). The real-time
+     * push hook checks this to avoid reacting to our own stock writes.
+     *
+     * @var bool
+     */
+    private static $applying = false;
+
+    /**
+     * Whether a Sheet→Woo apply is currently in progress.
+     */
+    public static function is_applying(): bool
+    {
+        return self::$applying;
+    }
+
+    /**
      * @param array<string,mixed> $settings   wss_settings option.
      * @param array<string,mixed> $context    Optional: tab_name, allowed_parent_product_ids, group_id, persist_last_sync.
      */
@@ -188,6 +212,36 @@ class WSS_Sync_Engine
     }
 
     /**
+     * Merge this tab's variation_id → row mapping into the persisted option
+     * used by the real-time push (WSS_Realtime_Push).
+     *
+     * Stored shape: [ (int)variation_id => ['tab' => string, 'row' => int] ]
+     * where row is the 1-based sheet row number.
+     *
+     * @param array<int,int> $row_map variation_id → 0-based data index.
+     */
+    private function persist_row_map(array $row_map): void
+    {
+        $persisted = get_option('wss_row_map', []);
+        if (!is_array($persisted)) {
+            $persisted = [];
+        }
+
+        foreach ($row_map as $vid => $index) {
+            $vid = (int) $vid;
+            if ($vid <= 0) {
+                continue;
+            }
+            $persisted[$vid] = [
+                'tab' => $this->tab_name,
+                'row' => (int) $index + 2, // +2: 0-based index + header row
+            ];
+        }
+
+        update_option('wss_row_map', $persisted, false);
+    }
+
+    /**
      * Run a full bidirectional sync.
      *
      * Order: Sheet→Woo first (so sheet edits are applied), then Woo→Sheet.
@@ -227,6 +281,12 @@ class WSS_Sync_Engine
                 $row_map[(int) $vid] = $index;
             }
         }
+
+        // Persist variation_id → {tab,row} so the real-time push can locate a
+        // variation's sheet row without re-reading the whole tab. Merge so that
+        // entries from other tabs survive; later tabs win for shared variations
+        // (matching the orchestrator's last-tab-wins ordering).
+        $this->persist_row_map($row_map);
 
         // Phase 1: Sheet → Woo (sheet edits take priority).
         $stats_sheet = $this->sync_sheet_to_woo($sheet_data, $row_map);
@@ -298,6 +358,16 @@ class WSS_Sync_Engine
                 } else {
                     $stats['created']++;
                     $this->add_parent_to_scope((int) ($result['product_id'] ?? 0));
+
+                    // Seed snapshots for the freshly created variation so the
+                    // next run's change detection has an agreed baseline.
+                    $new_vid       = (int) ($result['variation_id'] ?? 0);
+                    $sheet_qty_raw = trim((string) ($row[self::COL_STOCK_QTY] ?? ''));
+                    if ($new_vid > 0 && $sheet_qty_raw !== '') {
+                        update_post_meta($new_vid, self::META_SNAP_WOO, (int) $sheet_qty_raw);
+                        update_post_meta($new_vid, self::META_SNAP_SHEET, (int) $sheet_qty_raw);
+                    }
+
                     // $result = ['product_id' => int, 'variation_id' => int]
                     $id_updates[] = [
                         'range'  => $this->a1_range(sprintf('A%d:B%d', $row_number, $row_number)),
@@ -324,38 +394,71 @@ class WSS_Sync_Engine
                 continue;
             }
 
-            // Compare sheet data vs WooCommerce data.
-            if (!$this->sheet_row_differs_from_woo($row, $variation)) {
+            // Resolve how stock (qty + status) should move, using snapshots so
+            // an order that reduced Woo isn't reverted by a stale sheet value.
+            $stock = $this->resolve_stock_direction($row, $variation);
+
+            // Price / sale price / manage_stock stay sheet-authoritative (the
+            // sheet always wins on those, as before).
+            $nonstock_differs = $this->sheet_nonstock_fields_differ($row, $variation);
+
+            $need_apply = $nonstock_differs || $stock['apply_stock'];
+
+            if ($need_apply) {
+                $parent_for_attrs = null;
+                if ($variation->is_type('variation')) {
+                    $parent_for_attrs = wc_get_product((int) $variation->get_parent_id());
+                }
+
+                // Guard the apply+save so the real-time push ignores our own write.
+                self::$applying = true;
+                try {
+                    $applied = $this->apply_sheet_data_to_variation($variation, $row, $parent_for_attrs, $stock['apply_stock']);
+                    if (is_wp_error($applied)) {
+                        $stats['errors']++;
+                        $this->logger->log('sheet_to_woo', $product_id, $variation_id, 'error', $applied->get_error_message());
+                        continue;
+                    }
+                    $variation->save();
+                } finally {
+                    self::$applying = false;
+                }
+
+                $stats['updated']++;
+                $this->logger->log('sheet_to_woo', $product_id, $variation_id, 'success', 'Variation updated from sheet.');
+
+                // Update last synced meta.
+                update_post_meta($variation_id, '_wss_last_synced', $now);
+
+                // Prepare timestamp update for this row.
+                $timestamp_updates[] = [
+                    'range'  => $this->a1_range(sprintf('K%d', $row_number)),
+                    'values' => [[$now]],
+                ];
+            } else {
                 $stats['skipped']++;
-                continue;
             }
 
-            // Sheet has different data — apply it to WooCommerce.
-            $parent_for_attrs = null;
-            if ($variation->is_type('variation')) {
-                $parent_for_attrs = wc_get_product((int) $variation->get_parent_id());
+            if ($stock['conflict']) {
+                $this->logger->log(
+                    'sheet_to_woo',
+                    $product_id,
+                    $variation_id,
+                    'skipped',
+                    sprintf(
+                        'Stock conflict: Sheet and Woo both changed since last sync; Woo wins (qty=%s). Sheet will be updated to match.',
+                        $stock['has_qty'] && $stock['final_qty'] !== null ? (string) $stock['final_qty'] : 'n/a'
+                    )
+                );
             }
 
-            $applied = $this->apply_sheet_data_to_variation($variation, $row, $parent_for_attrs);
-            if (is_wp_error($applied)) {
-                $stats['errors']++;
-                $this->logger->log('sheet_to_woo', $product_id, $variation_id, 'error', $applied->get_error_message());
-                continue;
+            // Record the agreed stock snapshot for next run's change detection.
+            // For "Woo wins" / "conflict", Phase 2 pushes Woo→Sheet, so both
+            // sides converge on the Woo qty captured here.
+            if ($stock['has_qty'] && $stock['final_qty'] !== null) {
+                update_post_meta($variation_id, self::META_SNAP_WOO, (int) $stock['final_qty']);
+                update_post_meta($variation_id, self::META_SNAP_SHEET, (int) $stock['final_qty']);
             }
-
-            $variation->save();
-            $stats['updated']++;
-            $this->logger->log('sheet_to_woo', $product_id, $variation_id, 'success', 'Variation updated from sheet.');
-
-            // Update last synced meta.
-            update_post_meta($variation_id, '_wss_last_synced', $now);
-
-            // Prepare timestamp update for this row.
-            $row_number = $index + 2; // +2: 0-based index + header row
-            $timestamp_updates[] = [
-                'range'  => $this->a1_range(sprintf('K%d', $row_number)),
-                'values' => [[$now]],
-            ];
         }
 
         $sheet_updates = array_merge($id_updates, $timestamp_updates);
@@ -371,15 +474,16 @@ class WSS_Sync_Engine
     }
 
     /**
-     * Check if a sheet row has different syncable data than the WooCommerce variation.
-     *
-     * Compares: regular_price, sale_price, stock_qty, stock_status, manage_stock.
+     * Check whether the sheet differs from Woo on the SHEET-AUTHORITATIVE
+     * fields only: regular price, sale price, manage_stock. Stock quantity and
+     * stock status are handled separately by resolve_stock_direction() so an
+     * order that reduced Woo isn't reverted by a stale sheet value.
      *
      * @param array      $row       Sheet row.
      * @param WC_Product $variation WooCommerce variation.
-     * @return bool True if sheet data differs from WooCommerce.
+     * @return bool True if a sheet-authoritative field differs.
      */
-    private function sheet_row_differs_from_woo(array $row, $variation): bool
+    private function sheet_nonstock_fields_differ(array $row, $variation): bool
     {
         // Regular price.
         $sheet_regular = trim($row[self::COL_REGULAR_PRICE] ?? '');
@@ -395,13 +499,6 @@ class WSS_Sync_Engine
             return true;
         }
 
-        // Stock status.
-        $sheet_status = strtolower(trim($row[self::COL_STOCK_STATUS] ?? ''));
-        $woo_status   = $variation->get_stock_status();
-        if ($sheet_status !== '' && in_array($sheet_status, self::VALID_STOCK_STATUSES, true) && $sheet_status !== $woo_status) {
-            return true;
-        }
-
         // Manage stock.
         $sheet_manage = strtoupper(trim($row[self::COL_MANAGE_STOCK] ?? ''));
         $woo_manage   = $variation->get_manage_stock() ? 'TRUE' : 'FALSE';
@@ -409,16 +506,122 @@ class WSS_Sync_Engine
             return true;
         }
 
-        // Stock quantity (only if manage_stock is on).
-        if ($variation->get_manage_stock()) {
-            $sheet_qty = trim($row[self::COL_STOCK_QTY] ?? '');
-            $woo_qty   = (string) $variation->get_stock_quantity();
-            if ($sheet_qty !== '' && (int) $sheet_qty !== (int) $woo_qty) {
-                return true;
-            }
+        return false;
+    }
+
+    /**
+     * Resolve which side wins for STOCK (qty + status), using the agreed
+     * snapshots so we can tell "human edited the sheet" from "an order changed
+     * Woo":
+     *
+     *  - Sheet moved, Woo didn't  → apply Sheet→Woo.
+     *  - Woo moved, Sheet didn't  → keep Woo; Phase 2 pushes Woo→Sheet.
+     *  - Both moved               → conflict: WOO WINS for qty (logged).
+     *  - Neither                  → skip.
+     *
+     * Missing snapshots (first run after deploy) fall back to LEGACY behavior
+     * (Sheet→Woo on diff) for that row and seed the snapshots, so a pending
+     * sheet edit is not lost on the migration run.
+     *
+     * @param array      $row       Sheet row.
+     * @param WC_Product $variation WooCommerce variation.
+     * @return array{apply_stock:bool,final_qty:?int,conflict:bool,has_qty:bool}
+     */
+    private function resolve_stock_direction(array $row, $variation): array
+    {
+        $out = ['apply_stock' => false, 'final_qty' => null, 'conflict' => false, 'has_qty' => false];
+
+        $sheet_status   = strtolower(trim($row[self::COL_STOCK_STATUS] ?? ''));
+        $status_valid   = $sheet_status !== '' && in_array($sheet_status, self::VALID_STOCK_STATUSES, true);
+        $status_differs = $status_valid && $sheet_status !== $variation->get_stock_status();
+
+        // Variations not managing their own stock have no qty to reconcile;
+        // fall back to legacy "sheet wins" for stock status only.
+        if (!$variation->get_manage_stock()) {
+            $out['apply_stock'] = $status_differs;
+            return $out;
         }
 
-        return false;
+        $out['has_qty'] = true;
+        $vid     = (int) $variation->get_id();
+        $woo_qty = (int) $variation->get_stock_quantity();
+
+        $sheet_qty_raw = trim((string) ($row[self::COL_STOCK_QTY] ?? ''));
+        $sheet_qty     = ($sheet_qty_raw !== '') ? (int) $sheet_qty_raw : null;
+
+        $snap_woo_raw   = get_post_meta($vid, self::META_SNAP_WOO, true);
+        $snap_sheet_raw = get_post_meta($vid, self::META_SNAP_SHEET, true);
+        $snap_woo       = ($snap_woo_raw !== '') ? (int) $snap_woo_raw : null;
+        $snap_sheet     = ($snap_sheet_raw !== '') ? (int) $snap_sheet_raw : null;
+
+        $decision = self::decide_stock_direction($woo_qty, $sheet_qty, $snap_woo, $snap_sheet, $status_differs);
+
+        $out['apply_stock'] = $decision['apply_stock'];
+        $out['final_qty']   = $decision['final_qty'];
+        $out['conflict']    = $decision['conflict'];
+
+        return $out;
+    }
+
+    /**
+     * Pure decision matrix for stock reconciliation (no WP/WC dependencies, so
+     * it is unit-testable). Decides which side wins for stock quantity given
+     * the live values and the last-agreed snapshots.
+     *
+     *  - No snapshots yet → LEGACY: Sheet wins on any diff (and the caller
+     *    seeds snapshots afterward).
+     *  - Sheet moved, Woo didn't → apply Sheet→Woo.
+     *  - Woo moved, Sheet didn't → keep Woo (Phase 2 pushes Woo→Sheet).
+     *  - Both moved              → conflict, Woo wins for qty.
+     *  - Neither                 → no-op.
+     *
+     * @param int      $woo_qty       Live Woo stock quantity (managed stock).
+     * @param int|null $sheet_qty     Sheet stock qty, or null when the cell is blank.
+     * @param int|null $snap_woo      Last-agreed Woo snapshot, or null if unseeded.
+     * @param int|null $snap_sheet    Last-agreed Sheet snapshot, or null if unseeded.
+     * @param bool     $status_differs Whether the sheet's stock_status differs from Woo.
+     * @return array{apply_stock:bool,final_qty:int,conflict:bool}
+     */
+    public static function decide_stock_direction(
+        int $woo_qty,
+        ?int $sheet_qty,
+        ?int $snap_woo,
+        ?int $snap_sheet,
+        bool $status_differs
+    ): array {
+        $has_snaps = ($snap_woo !== null && $snap_sheet !== null);
+
+        if (!$has_snaps) {
+            // Migration run for this row: legacy Sheet→Woo on diff, then seed.
+            $qty_differs = ($sheet_qty !== null && $sheet_qty !== $woo_qty);
+            if ($qty_differs || $status_differs) {
+                return [
+                    'apply_stock' => true,
+                    'final_qty'   => ($sheet_qty !== null) ? $sheet_qty : $woo_qty,
+                    'conflict'    => false,
+                ];
+            }
+            return ['apply_stock' => false, 'final_qty' => $woo_qty, 'conflict' => false];
+        }
+
+        $sheet_moved = ($sheet_qty !== null && $sheet_qty !== $snap_sheet);
+        $woo_moved   = ($woo_qty !== $snap_woo);
+
+        if ($sheet_moved && !$woo_moved) {
+            // Human edited the sheet — apply it to Woo.
+            return ['apply_stock' => true, 'final_qty' => $sheet_qty, 'conflict' => false];
+        }
+        if ($woo_moved && !$sheet_moved) {
+            // An order/refund changed Woo — keep it; Phase 2 pushes to the sheet.
+            return ['apply_stock' => false, 'final_qty' => $woo_qty, 'conflict' => false];
+        }
+        if ($sheet_moved && $woo_moved) {
+            // Both changed — Woo wins for qty; Phase 2 pushes to the sheet.
+            return ['apply_stock' => false, 'final_qty' => $woo_qty, 'conflict' => true];
+        }
+
+        // Neither moved.
+        return ['apply_stock' => false, 'final_qty' => $woo_qty, 'conflict' => false];
     }
 
     /**
@@ -668,11 +871,17 @@ class WSS_Sync_Engine
      * Only modifies fields that have non-empty values in the sheet.
      * Empty cells are treated as "no change" (not "clear the value").
      *
-     * @param WC_Product $variation The WC variation to update.
-     * @param array      $row       Sheet row data.
+     * @param WC_Product $variation          The WC variation to update.
+     * @param array      $row                Sheet row data.
+     * @param WC_Product $parent             Parent product (for attribute sync).
+     * @param bool       $apply_stock_levels When false, stock_quantity and
+     *                                       stock_status are NOT applied (the
+     *                                       sheet lost the stock reconciliation
+     *                                       for this row); prices/manage_stock/
+     *                                       attributes still apply as usual.
      * @return true|WP_Error
      */
-    private function apply_sheet_data_to_variation($variation, array $row, $parent = null)
+    private function apply_sheet_data_to_variation($variation, array $row, $parent = null, bool $apply_stock_levels = true)
     {
         // Regular price.
         $regular_price = trim($row[self::COL_REGULAR_PRICE] ?? '');
@@ -706,18 +915,22 @@ class WSS_Sync_Engine
             $variation->set_manage_stock($manage_stock === 'TRUE');
         }
 
-        // Stock quantity.
-        if ($variation->get_manage_stock()) {
-            $stock_qty = trim($row[self::COL_STOCK_QTY] ?? '');
-            if ($stock_qty !== '') {
-                $variation->set_stock_quantity((int) $stock_qty);
+        // Stock quantity + status — only when this row's stock reconciliation
+        // resolved in the sheet's favor (or on the legacy/creation path).
+        if ($apply_stock_levels) {
+            // Stock quantity.
+            if ($variation->get_manage_stock()) {
+                $stock_qty = trim($row[self::COL_STOCK_QTY] ?? '');
+                if ($stock_qty !== '') {
+                    $variation->set_stock_quantity((int) $stock_qty);
+                }
             }
-        }
 
-        // Stock status.
-        $stock_status = strtolower(trim($row[self::COL_STOCK_STATUS] ?? ''));
-        if (in_array($stock_status, self::VALID_STOCK_STATUSES, true)) {
-            $variation->set_stock_status($stock_status);
+            // Stock status.
+            $stock_status = strtolower(trim($row[self::COL_STOCK_STATUS] ?? ''));
+            if (in_array($stock_status, self::VALID_STOCK_STATUSES, true)) {
+                $variation->set_stock_status($stock_status);
+            }
         }
 
         // Attributes from Sheet (global pa_*), primarily for existing variations.

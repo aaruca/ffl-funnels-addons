@@ -44,6 +44,9 @@ class FFL_Checkout_Module extends FFLA_Module
     {
         $base = $this->get_path();
 
+        // Mapbox token resolver (own token, else borrow from g-FFL Checkout).
+        require_once $base . 'includes/class-ffl-checkout-mapbox.php';
+
         // Frontend asset loading (Mapbox autocomplete + vendor selector).
         require_once $base . 'includes/class-ffl-checkout-assets.php';
         FFL_Checkout_Assets::init();

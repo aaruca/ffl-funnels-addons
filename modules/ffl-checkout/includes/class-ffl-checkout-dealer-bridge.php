@@ -67,12 +67,73 @@ class FFL_Checkout_Dealer_Bridge
 
         // ── Build the widget output ──────────────────────────────────
         ob_start();
+        self::render_styles();
         self::render_ffl_map($api_key);
         self::render_document_upload();
         return ob_get_clean();
     }
 
+    /* ── Widget Styles ───────────────────────────────────────────────── */
+
+    /**
+     * Output the custom styling for the dealer finder widget.
+     *
+     * The g-FFL Checkout plugin's JS (ffl-widget.js) toggles the
+     * `selectedFFLDivButton` class on a dealer button when the customer
+     * picks an FFL. The base plugin gives it no distinct styling, so we
+     * highlight the selected dealer here using the theme's --success token.
+     *
+     * Guarded with a static flag so the <style> block is emitted at most
+     * once per request even if the widget renders more than once (e.g. the
+     * shortcode and the Bricks element both appear on a page).
+     */
+    private static function render_styles(): void
+    {
+        static $printed = false;
+        if ($printed) {
+            return;
+        }
+        $printed = true;
+        ?>
+        <style id="ffla-dealer-finder-styles">
+            div .selectedFFLDivButton {
+                border: solid var(--success) 1px !important;
+                background: #09fa003d !important;
+                color: white !important;
+            }
+        </style>
+        <?php
+    }
+
     /* ── FFL Requirement Check ───────────────────────────────────────── */
+
+    /**
+     * Check if the user has a verified Curio & Relic license on file.
+     *
+     * This is a server-side verification, NOT based on client cookies.
+     * Only check server-stored user meta or admin configuration.
+     *
+     * @return bool True if user has a verified C&R license.
+     */
+    private static function user_has_verified_cr_license(): bool
+    {
+        $user_id = get_current_user_id();
+
+        // Check if user has C&R license stored in user meta (verified by admin).
+        if ($user_id) {
+            $cr_license = get_user_meta($user_id, '_ffl_cr_license_verified', true);
+            if (!empty($cr_license) && is_array($cr_license)) {
+                // Verify it's within validity period if stored with expiration.
+                $expiry = $cr_license['expiry'] ?? 0;
+                if ($expiry && (int) $expiry > time()) {
+                    return true;
+                }
+            }
+        }
+
+        // If no verified C&R license, selector is required.
+        return false;
+    }
 
     /**
      * Check if the current cart/request requires the FFL dealer selector.
@@ -81,8 +142,9 @@ class FFL_Checkout_Dealer_Bridge
      */
     private static function requires_ffl_selector(): bool
     {
-        // C&R override cookie suppresses everything.
-        if (isset($_COOKIE['g_ffl_checkout_candr_override'])) {
+        // C&R override: only accept when server-verified (not from client cookie alone).
+        // Check for a valid C&R license stored in server-side verified state.
+        if (self::user_has_verified_cr_license()) {
             return false;
         }
 

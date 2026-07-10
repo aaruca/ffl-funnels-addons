@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.32.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.37.1-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -28,7 +28,7 @@ A lightweight wishlist implementation optimized for performance.
 
 ### 3. FFL Checkout Module
 A smart, compliance-focused checkout flow for firearms.
-*   **Mapbox Integration:** Replaces default address fields with ultra-fast Mapbox address autocomplete.
+*   **Mapbox Integration:** Replaces default address fields with ultra-fast Mapbox address autocomplete. Enter your own Mapbox public token, or leave it blank to **automatically borrow** the token from the g-FFL Checkout plugin (cached server-side); the settings page shows the active token source.
 *   **Dealer Selection:** Specialized FFL Dealer selection step injected into the standard WooCommerce checkout.
 *   **Conditional Logic:** Automatically shows or hides FFL-specific checkout steps based on what is in the user's cart.
 

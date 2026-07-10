@@ -44,6 +44,18 @@ class WSS_Google_OAuth implements WSS_Token_Provider
     }
 
     /**
+     * Whether the OAuth proxy is usable.
+     *
+     * OAuth "Connect with Google" only works when the shared proxy secret is
+     * configured. When it isn't, the connect flow is a dead end, so callers use
+     * this to hide the OAuth option entirely.
+     */
+    public static function proxy_enabled(): bool
+    {
+        return self::get_proxy_secret() !== '';
+    }
+
+    /**
      * Get the Client ID — stored in wss_settings after proxy callback.
      */
     public function get_client_id(): string
@@ -354,6 +366,8 @@ class WSS_Google_OAuth implements WSS_Token_Provider
 
     /**
      * Decrypt a payload from the proxy (uses PROXY_SECRET).
+     *
+     * Verifies HMAC-SHA256 before decrypting. Format: base64(iv.ciphertext.hmac)
      */
     private static function proxy_decrypt(string $encoded): string
     {
@@ -370,12 +384,24 @@ class WSS_Google_OAuth implements WSS_Token_Provider
         }
         $data    = base64_decode($encoded, true);
 
-        if ($data === false || strlen($data) < 17) {
+        if ($data === false || strlen($data) < 48) {
             return '';
         }
 
-        $iv     = substr($data, 0, 16);
-        $cipher = substr($data, 16);
+        $payload = substr($data, 0, -32);
+        $hmac    = substr($data, -32);
+
+        $expected_hmac = hash_hmac('sha256', $payload, $key, true);
+        if (!hash_equals($hmac, $expected_hmac)) {
+            return '';
+        }
+
+        if (strlen($payload) < 17) {
+            return '';
+        }
+
+        $iv     = substr($payload, 0, 16);
+        $cipher = substr($payload, 16);
         $plain  = openssl_decrypt($cipher, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
 
         return $plain !== false ? $plain : '';
@@ -383,6 +409,8 @@ class WSS_Google_OAuth implements WSS_Token_Provider
 
     /**
      * Encrypt a value for safe DB storage (uses WordPress AUTH_KEY).
+     *
+     * Uses AES-256-CBC with HMAC-SHA256 (encrypt-then-MAC pattern).
      */
     private static function encrypt(string $plain): string
     {
@@ -394,23 +422,40 @@ class WSS_Google_OAuth implements WSS_Token_Provider
             return '';
         }
 
-        return base64_encode($iv . $cipher);
+        $payload = $iv . $cipher;
+        $hmac = hash_hmac('sha256', $payload, $key, true);
+
+        return base64_encode($payload . $hmac);
     }
 
     /**
      * Decrypt a value from DB storage (uses WordPress AUTH_KEY).
+     *
+     * Verifies HMAC before decrypting. Returns empty string if HMAC is invalid.
      */
     private static function decrypt(string $encoded): string
     {
         $key  = self::storage_key();
         $data = base64_decode($encoded, true);
 
-        if ($data === false || strlen($data) < 17) {
+        if ($data === false || strlen($data) < 48) {
             return '';
         }
 
-        $iv     = substr($data, 0, 16);
-        $cipher = substr($data, 16);
+        $payload = substr($data, 0, -32);
+        $hmac    = substr($data, -32);
+
+        $expected_hmac = hash_hmac('sha256', $payload, $key, true);
+        if (!hash_equals($hmac, $expected_hmac)) {
+            return '';
+        }
+
+        if (strlen($payload) < 17) {
+            return '';
+        }
+
+        $iv     = substr($payload, 0, 16);
+        $cipher = substr($payload, 16);
         $plain  = openssl_decrypt($cipher, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
 
         return $plain !== false ? $plain : '';
@@ -419,8 +464,8 @@ class WSS_Google_OAuth implements WSS_Token_Provider
     /**
      * Backward-compatible decrypt for legacy plain-text stored values.
      *
-     * Older installs may already have unencrypted token/credential strings
-     * stored in options; if decryption fails we keep the original value.
+     * DEPRECATED: Only for emergency migration from plaintext-stored credentials.
+     * If decryption fails, returns the original value (assumed to be plaintext).
      */
     private static function decrypt_maybe_plain(string $value): string
     {

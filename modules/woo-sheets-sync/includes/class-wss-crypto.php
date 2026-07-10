@@ -14,8 +14,14 @@ if (!defined('ABSPATH')) {
 
 class WSS_Crypto
 {
+    /** Marker for encrypted values using HMAC (prevents fallback). */
+    const ENCRYPTED_PREFIX = 'WSS1:';
+
     /**
      * Encrypt a plaintext value for DB storage.
+     *
+     * Uses AES-256-CBC with HMAC-SHA256 (encrypt-then-MAC pattern) for
+     * authenticated encryption. Format: WSS1:base64(iv.ciphertext.hmac)
      */
     public static function encrypt(string $plain): string
     {
@@ -31,27 +37,40 @@ class WSS_Crypto
             return '';
         }
 
-        return base64_encode($iv . $cipher);
+        $payload = $iv . $cipher;
+        $hmac = hash_hmac('sha256', $payload, $key, true);
+
+        return self::ENCRYPTED_PREFIX . base64_encode($payload . $hmac);
     }
 
     /**
      * Decrypt a value previously written by encrypt(). Returns '' on failure.
+     *
+     * Verifies HMAC before decrypting. Fails if HMAC is invalid (tampering detected).
      */
     public static function decrypt(string $encoded): string
     {
-        if ($encoded === '') {
+        if ($encoded === '' || strpos($encoded, self::ENCRYPTED_PREFIX) !== 0) {
             return '';
         }
 
         $key  = self::storage_key();
-        $data = base64_decode($encoded, true);
+        $data = base64_decode(substr($encoded, strlen(self::ENCRYPTED_PREFIX)), true);
 
-        if ($data === false || strlen($data) < 17) {
+        if ($data === false || strlen($data) < 48) {
             return '';
         }
 
-        $iv     = substr($data, 0, 16);
-        $cipher = substr($data, 16);
+        $payload = substr($data, 0, -32);
+        $hmac    = substr($data, -32);
+
+        $expected_hmac = hash_hmac('sha256', $payload, $key, true);
+        if (!hash_equals($hmac, $expected_hmac)) {
+            return '';
+        }
+
+        $iv     = substr($payload, 0, 16);
+        $cipher = substr($payload, 16);
         $plain  = openssl_decrypt($cipher, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
 
         return $plain !== false ? $plain : '';
@@ -59,12 +78,16 @@ class WSS_Crypto
 
     /**
      * Decrypt, falling back to the original value when it was stored as plaintext.
+     *
+     * DEPRECATED: Only for emergency migration from plaintext-stored credentials.
+     * Once all credentials are encrypted with HMAC, this can be removed.
+     *
+     * Use decrypt() instead for all new code.
      */
     public static function decrypt_maybe_plain(string $value): string
     {
-        $decoded = self::decrypt($value);
-        if ($decoded !== '') {
-            return $decoded;
+        if (strpos($value, self::ENCRYPTED_PREFIX) === 0) {
+            return self::decrypt($value);
         }
 
         return $value;

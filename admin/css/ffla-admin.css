@@ -327,6 +327,16 @@ details[open] > .wb-sidebar__group-summary .wb-sidebar__chevron {
   overflow-x: auto;
 }
 
+.wb-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--wb-spacing-sm);
+  padding: var(--wb-spacing-lg) var(--wb-spacing-xl);
+  border-top: 1px solid var(--wb-color-neutral-stroke-2);
+  background: linear-gradient(to top, var(--wb-color-neutral-background-1), var(--wb-color-neutral-background-2));
+}
+
 .wb-card__actions {
   display: flex;
   gap: var(--wb-spacing-sm);
