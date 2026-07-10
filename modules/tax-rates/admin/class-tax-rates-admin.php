@@ -41,11 +41,11 @@ class Tax_Rates_Admin
             true
         );
 
+        // restUrl/restNonce were localized but never read by tax-rates-admin.js;
+        // the admin UI talks to admin-ajax only. The ffl-tax/v1 REST routes stay.
         wp_localize_script('ffla-tax-rates-admin', 'FflaTaxResolver', [
             'ajaxUrl'   => admin_url('admin-ajax.php'),
-            'restUrl'   => esc_url_raw(rest_url('ffl-tax/v1/')),
             'nonce'     => wp_create_nonce('ffla_tax_resolver_nonce'),
-            'restNonce' => wp_create_nonce('wp_rest'),
             'i18n'      => [
                 'enterStateCode'       => __('Please enter a state code.', 'ffl-funnels-addons'),
                 'lookingUp'            => __('Looking up…', 'ffl-funnels-addons'),

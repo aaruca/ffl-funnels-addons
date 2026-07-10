@@ -4,6 +4,11 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to (re)build the ZIP for, e.g. v1.38.0'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -12,28 +17,61 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # On workflow_dispatch there is no release payload, so github.event.release
+      # .tag_name is empty and the zip would be named "ffl-funnels-addons-.zip".
+      - name: Resolve tag
+        id: tag
+        run: echo "value=${{ github.event.release.tag_name || inputs.tag }}" >> "$GITHUB_OUTPUT"
 
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.value }}
+
+      # This ZIP is what the built-in updater installs on every store, so it must
+      # contain only runtime files. Everything below is developer tooling.
       - name: Build plugin ZIP
         run: |
           mkdir -p /tmp/ffl-funnels-addons
           rsync -a \
             --exclude='.git' \
+            --exclude='.gitignore' \
+            --exclude='.gitattributes' \
             --exclude='.github' \
             --exclude='.DS_Store' \
             --exclude='test_dir' \
+            --exclude='tests' \
             --exclude='generate_rules.py' \
             --exclude='woobooster-rules-import.json' \
             --exclude='*.log' \
+            --exclude='composer.json' \
+            --exclude='composer.lock' \
+            --exclude='package.json' \
+            --exclude='package-lock.json' \
+            --exclude='phpstan.neon.dist' \
+            --exclude='phpunit.xml.dist' \
+            --exclude='.phpcs.xml.dist' \
+            --exclude='.editorconfig' \
+            --exclude='.eslintrc.json' \
+            --exclude='AUDIT_*.md' \
             ./ /tmp/ffl-funnels-addons/
           cd /tmp
-          zip -r ffl-funnels-addons-${{ github.event.release.tag_name }}.zip ffl-funnels-addons/
+          zip -r "ffl-funnels-addons-${{ steps.tag.outputs.value }}.zip" ffl-funnels-addons/
+
+      - name: Verify ZIP contains no developer tooling
+        run: |
+          cd /tmp
+          if unzip -Z1 "ffl-funnels-addons-${{ steps.tag.outputs.value }}.zip" \
+              | grep -Ei '(^|/)(tests?/|composer\.(json|lock)|package(-lock)?\.json|phpstan|phpunit|\.phpcs|\.editorconfig|\.eslintrc|AUDIT_)'; then
+            echo "::error::Developer tooling leaked into the release ZIP"
+            exit 1
+          fi
+          echo "Clean. Entries: $(unzip -Z1 "ffl-funnels-addons-${{ steps.tag.outputs.value }}.zip" | wc -l)"
 
       - name: Upload ZIP to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload ${{ github.event.release.tag_name }} \
-            /tmp/ffl-funnels-addons-${{ github.event.release.tag_name }}.zip \
+          gh release upload "${{ steps.tag.outputs.value }}" \
+            "/tmp/ffl-funnels-addons-${{ steps.tag.outputs.value }}.zip" \
             --repo ${{ github.repository }} \
             --clobber

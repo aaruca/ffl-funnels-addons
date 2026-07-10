@@ -1,0 +1,16 @@
+# Canonicalise authorship.
+#
+# Alejandro Aruca has committed under several names/emails over the life of this
+# repo; assistant-generated commits were also recorded under a separate identity.
+# All work in this repository is attributed to the project owner.
+#
+# Note: .mailmap is a DISPLAY alias. It changes `git shortlog`, `git log`,
+# `git blame` and most local tooling. It does NOT rewrite commit objects, and
+# GitHub's contributor graph ignores it (that reads the raw author email).
+# Changing those requires rewriting history — see CONTRIBUTING notes / repo owner.
+
+Alejandro Aruca <alearuk2@gmail.com>
+Alejandro Aruca <alearuk2@gmail.com> <aaruca@users.noreply.github.com>
+Alejandro Aruca <alearuk2@gmail.com> <aruca.ale@gmail.com>
+Alejandro Aruca <alearuk2@gmail.com> <alearuca@users.noreply.github.com>
+Alejandro Aruca <alearuk2@gmail.com> Claude <noreply@anthropic.com>

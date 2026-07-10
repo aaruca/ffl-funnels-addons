@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.37.1-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.38.0-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -64,6 +64,13 @@ Advanced WooCommerce product reviews with native Bricks elements and post-purcha
 *   **Cloudflare Turnstile (optional):** Bot protection on the FFL review form is delegated to the [Simple Cloudflare Turnstile](https://wordpress.org/plugins/simple-cloudflare-turnstile/) plugin. Install it, configure your keys there, and the widget + server-side check are added automatically. Signed order-review links bypass the challenge.
 *   **Admin Moderation UX:** Extra review media/helpful columns in WordPress comments list.
 *   **Reviews Rating Badge:** Optional control to hide the badge when a product has no reviews yet.
+
+### 8. Loadout
+Build tiered, single-product "loadout" offers (a base product plus configurable tiers of add-ons and cross-sells).
+*   **Admin:** Manage loadouts, tiers, tier items, and cross-sells under **FFL Funnels → Loadouts**.
+*   **Bricks-only rendering:** Configured and rendered through Bricks elements; the WooCommerce product tab and per-product enable toggle were removed in v1.35.0.
+*   **Dynamic tag:** `{ffla_product_has_loadout}` for conditional rendering in Bricks.
+*   **Data:** Stores its configuration in four custom tables. Uninstalling **keeps** that data unless you explicitly enable delete-on-uninstall.
 
 ## Installation
 

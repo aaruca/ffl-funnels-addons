@@ -3,11 +3,17 @@
 Thumbs.db
 .idea/
 .vscode/
+.claude/
 *.log
+*.orig
+*.rej
 
 # WordPress / Build
 node_modules/
-vendor/
+# Root Composer dir only. A bare "vendor/" also matches nested paths such as
+# modules/*/assets/vendor/, which would silently exclude a legitimately vendored
+# runtime asset from both the repo and the release ZIP.
+/vendor/
 dist/
 build/
 *.zip

@@ -38,11 +38,14 @@ if (in_array('woobooster', $ffla_active_modules, true)) {
         $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}woobooster_bundle_conditions");
         $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}woobooster_bundle_index");
 
-        // Delete options.
+        // Delete options. (atc_counter / cache_version are referenced through
+        // class constants, so a grep for the literal name misses them.)
         delete_option('woobooster_settings');
         delete_option('woobooster_version');
         delete_option('woobooster_db_version');
         delete_option('woobooster_last_build');
+        delete_option('woobooster_atc_counter');   // WooBooster_Tracker::COUNTER_OPTION
+        delete_option('woobooster_cache_version'); // WooBooster_Matcher::CACHE_VERSION
 
         // Delete transients.
         delete_transient('woobooster_github_release');
@@ -51,6 +54,12 @@ if (in_array('woobooster', $ffla_active_modules, true)) {
         // Clear copurchase meta from all products.
         $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key = '_woobooster_copurchased'");
     }
+
+    // Cron events are cleared on deactivate(), but uninstall can run without a
+    // prior deactivation. Unscheduling is non-destructive, so it stays outside
+    // the delete-data opt-in.
+    wp_clear_scheduled_hook('woobooster_copurchase_event');
+    wp_clear_scheduled_hook('woobooster_trending_event');
 }
 
 // ── Wishlist cleanup (opt-in) ───────────────────────────────────────
@@ -125,6 +134,7 @@ if (in_array('woo-sheets-sync', $ffla_active_modules, true)) {
     delete_option('wss_settings');
     delete_option('wss_google_tokens');
     delete_option('wss_last_sync');
+    delete_option('wss_row_map');
     // Legacy option keys kept for backward-compat cleanup.
     delete_option('wss_oauth_tokens');
     delete_option('wss_field_map');
@@ -166,6 +176,26 @@ if (in_array('product-reviews', $ffla_active_modules, true)) {
     if (function_exists('as_unschedule_all_actions')) {
         as_unschedule_all_actions('ffla_send_product_review_request', null, 'ffla-product-reviews');
         as_unschedule_all_actions('ffla_send_order_review_bundle', null, 'ffla-product-reviews');
+    }
+}
+
+// ── Loadout cleanup (opt-in) ────────────────────────────────────────
+// Loadout's four tables hold merchant-authored configuration (loadouts, tiers,
+// tier items, cross-sells), not regenerable caches — so uninstalling never
+// destroys them unless the module's delete-data flag is explicitly set. This
+// branch previously did not exist at all, leaving the tables and the DB-version
+// option orphaned forever.
+if (in_array('loadout', $ffla_active_modules, true)) {
+    $lo_settings = get_option('ffla_loadout_settings', []);
+
+    if (is_array($lo_settings) && !empty($lo_settings['delete_data_uninstall'])) {
+        $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}ffla_loadout_cross_sells");
+        $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}ffla_loadout_tier_items");
+        $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}ffla_loadout_tiers");
+        $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}ffla_loadouts");
+
+        delete_option('ffla_loadout_settings');
+        delete_option('ffla_loadout_db_version');
     }
 }
 
