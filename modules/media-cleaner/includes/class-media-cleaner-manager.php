@@ -33,16 +33,16 @@ class Media_Cleaner_Manager
      * ================================================================== */
 
     /**
-     * @return array{items:array<int,object>,total:int}
+     * Build the WHERE clause shared by the list, count, and id queries so they
+     * can never drift out of sync.
+     *
+     * @param array<int,mixed> $params Collected placeholder values (by ref).
      */
-    public function get_issues(string $status = 'active', int $page = 1, int $per_page = 25, string $search = ''): array
+    private function build_where(string $status, string $search, array &$params): string
     {
         global $wpdb;
-        $table = Media_Cleaner_Database::scan_table();
 
-        $where  = [];
-        $params = [];
-
+        $where = [];
         switch ($status) {
             case 'trashed':
                 $where[] = 'deleted = 1';
@@ -61,7 +61,43 @@ class Media_Cleaner_Manager
             $params[] = '%' . $wpdb->esc_like($search) . '%';
         }
 
-        $where_sql = 'WHERE ' . implode(' AND ', $where);
+        return 'WHERE ' . implode(' AND ', $where);
+    }
+
+    /**
+     * Issue IDs matching a status (and optional search), capped at $limit.
+     * Used by the "trash all" / "ignore all" batched sweeps.
+     *
+     * @return array<int,int>
+     */
+    public function get_issue_ids(string $status, string $search, int $limit): array
+    {
+        global $wpdb;
+        $table = Media_Cleaner_Database::scan_table();
+
+        $params = [];
+        $where  = $this->build_where($status, $search, $params);
+
+        $limit    = max(1, min(500, $limit));
+        $params[] = $limit;
+
+        $sql = "SELECT id FROM {$table} {$where} ORDER BY id ASC LIMIT %d";
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $ids = $wpdb->get_col($wpdb->prepare($sql, $params));
+
+        return array_map('intval', $ids);
+    }
+
+    /**
+     * @return array{items:array<int,object>,total:int}
+     */
+    public function get_issues(string $status = 'active', int $page = 1, int $per_page = 25, string $search = ''): array
+    {
+        global $wpdb;
+        $table = Media_Cleaner_Database::scan_table();
+
+        $params    = [];
+        $where_sql = $this->build_where($status, $search, $params);
 
         $per_page = max(1, min(200, $per_page));
         $offset   = max(0, ($page - 1) * $per_page);

@@ -7,7 +7,7 @@
     }
 
     var i18n = cfg.i18n || {};
-    var state = { status: 'active', page: 1, search: '', scanning: false, searchTimer: null };
+    var state = { status: 'active', page: 1, search: '', scanning: false, searchTimer: null, total: 0 };
 
     function $(id) {
         return document.getElementById(id);
@@ -102,6 +102,7 @@
             .then(function (res) {
                 if (!res || !res.success) { return; }
                 var data = res.data || {};
+                state.total = typeof data.total === 'number' ? data.total : 0;
                 var rows = $('ffla-mclean-rows');
                 if (rows) { rows.innerHTML = data.html || ''; }
                 updateStats(data.stats_html);
@@ -147,7 +148,11 @@
     function syncToolbar() {
         var bulk = $('ffla-mclean-bulk-actions');
         var emptyBtn = $('ffla-mclean-empty-trash');
+        var trashAllBtn = $('ffla-mclean-trash-all');
         if (emptyBtn) { emptyBtn.hidden = state.status !== 'trashed'; }
+        // Trash-all only makes sense on the active Issues tab, and only when
+        // there is something to trash.
+        if (trashAllBtn) { trashAllBtn.hidden = !(state.status === 'active' && state.total > 0); }
         if (!bulk) { return; }
 
         var actions = [];
@@ -204,6 +209,65 @@
         runAction(op, selectedIds());
     }
 
+    /* ------------------------------------------------------- Trash all */
+
+    function setTrashAllBusy(on, label) {
+        var btn = $('ffla-mclean-trash-all');
+        if (!btn) { return; }
+        btn.disabled = on;
+        btn.textContent = on ? (label || (i18n.working || 'Working…')) : (i18n.trashAll || 'Trash all');
+    }
+
+    /**
+     * Trash every issue in the current tab, one server batch at a time, until
+     * none remain. Stops if a batch makes no forward progress (some items
+     * refuse to trash) so it can never loop forever.
+     */
+    function trashAll() {
+        var total = state.total || 0;
+        if (total < 1) {
+            window.alert(i18n.nothingSelected || 'Nothing to trash.');
+            return;
+        }
+
+        var msg = (i18n.confirmTrashAll || 'Move ALL %d items to the trash?').replace('%d', total);
+        if (!window.confirm(msg)) { return; }
+
+        var lastRemaining = Infinity;
+        var stall = 0;
+
+        function step() {
+            post('ffla_mclean_bulk_all', { op: 'trash', status: state.status, search: state.search })
+                .then(function (res) {
+                    if (!res || !res.success) { finish(); return; }
+                    var d = res.data || {};
+                    updateStats(d.stats_html);
+                    var remaining = typeof d.remaining === 'number' ? d.remaining : 0;
+                    setTrashAllBusy(true, (i18n.trashingLeft || 'Trashing… %d left').replace('%d', remaining));
+
+                    if (remaining <= 0 || d.batch === 0) { finish(); return; }
+                    if (remaining >= lastRemaining) {
+                        stall++;
+                        if (stall >= 2) { finish(); return; }
+                    } else {
+                        stall = 0;
+                    }
+                    lastRemaining = remaining;
+                    window.setTimeout(step, 60);
+                })
+                .catch(function () { finish(); });
+        }
+
+        function finish() {
+            setTrashAllBusy(false);
+            state.page = 1;
+            loadResults();
+        }
+
+        setTrashAllBusy(true, i18n.working || 'Working…');
+        step();
+    }
+
     /* ------------------------------------------------------------- Wiring */
 
     function onRowActionClick(e) {
@@ -255,6 +319,9 @@
 
         var rows = $('ffla-mclean-rows');
         if (rows) { rows.addEventListener('click', onRowActionClick); }
+
+        var trashAllBtn = $('ffla-mclean-trash-all');
+        if (trashAllBtn) { trashAllBtn.addEventListener('click', trashAll); }
 
         var emptyBtn = $('ffla-mclean-empty-trash');
         if (emptyBtn) {

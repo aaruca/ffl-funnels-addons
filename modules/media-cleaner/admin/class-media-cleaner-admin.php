@@ -46,7 +46,10 @@ class Media_Cleaner_Admin
             'i18n'    => [
                 'confirmTrash'      => __('Move the selected items to the media trash? This is reversible.', 'ffl-funnels-addons'),
                 'confirmDelete'     => __('Permanently delete the selected items? This cannot be undone.', 'ffl-funnels-addons'),
+                'confirmTrashAll'   => __("Move ALL %d items in this list to the media trash?\n\nThis is reversible — check your storefront afterwards and restore anything that was actually in use before you empty the trash.", 'ffl-funnels-addons'),
                 'confirmEmptyTrash' => __('Permanently delete everything in the trash? This cannot be undone.', 'ffl-funnels-addons'),
+                'trashAll'          => __('Trash all', 'ffl-funnels-addons'),
+                'trashingLeft'      => __('Trashing… %d left', 'ffl-funnels-addons'),
                 'scanning'          => __('Scanning…', 'ffl-funnels-addons'),
                 'scanComplete'      => __('Scan complete.', 'ffl-funnels-addons'),
                 'scanError'         => __('The scan hit an error. It has been stopped.', 'ffl-funnels-addons'),
@@ -133,6 +136,7 @@ class Media_Cleaner_Admin
         echo '<div class="ffla-mclean-toolbar">';
         echo '<input type="search" id="ffla-mclean-search" class="wb-input" placeholder="' . esc_attr__('Search by path…', 'ffl-funnels-addons') . '">';
         echo '<span class="ffla-mclean-toolbar__actions" id="ffla-mclean-bulk-actions"></span>';
+        echo '<button type="button" class="wb-btn wb-btn--warn ffla-mclean-trash-all" id="ffla-mclean-trash-all" hidden>' . esc_html__('Trash all', 'ffl-funnels-addons') . '</button>';
         echo '<button type="button" class="wb-btn wb-btn--danger" id="ffla-mclean-empty-trash" hidden>' . esc_html__('Empty trash', 'ffl-funnels-addons') . '</button>';
         echo '</div>';
 

@@ -2,6 +2,17 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.40.1] - 2026-07-10
+
+Media Cleaner fixes and a Trash-all action.
+
+### Fixed
+- **Media Cleaner:** the scan summary cards (Issues found / Reclaimable / In trash / Ignored) rendered dark-on-dark when the operating system was in dark mode. The WordPress admin stays light regardless of the OS, so the values were unreadable. Removed the OS-dark override; the cards now match the light admin.
+- **Media Cleaner — WS Form:** a document (such as a PDF) linked only from a WS Form "Redirect" action was reported as unused. Added a WS Form parser that reads its form-configuration tables and treats any uploads URL found there as in use. Re-run a scan after updating for it to take effect.
+
+### Added
+- **Media Cleaner — Trash all:** a "Trash all" button on the Issues tab moves every matching result to the trash, not just the selected page. It runs in bounded background batches with a live "N left" counter, so large result sets do not time out. Reversible, with a confirmation that reminds you to verify the storefront before emptying the trash.
+
 ## [1.40.0] - 2026-07-10
 
 New **Media Cleaner** module.

@@ -27,6 +27,7 @@ class Media_Cleaner_Ajax
             'ffla_mclean_scan_abort'  => 'scan_abort',
             'ffla_mclean_results'     => 'results',
             'ffla_mclean_action'      => 'action',
+            'ffla_mclean_bulk_all'    => 'bulk_all',
             'ffla_mclean_empty_trash' => 'empty_trash',
         ];
 
@@ -174,6 +175,52 @@ class Media_Cleaner_Ajax
         wp_send_json_success([
             'processed'  => $done,
             'requested'  => count($ids),
+            'stats'      => $manager->get_stats(),
+            'stats_html' => Media_Cleaner_Admin::render_stats($manager->get_stats()),
+        ]);
+    }
+
+    /**
+     * Trash (or ignore) every issue matching the current tab and search, one
+     * bounded batch per call. The JS driver loops until nothing remains, so a
+     * list of hundreds never lands in a single timing-out request.
+     */
+    public static function bulk_all(): void
+    {
+        self::guard();
+
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+
+        $op     = isset($_POST['op']) ? sanitize_key(wp_unslash($_POST['op'])) : '';
+        $status = isset($_POST['status']) ? sanitize_key(wp_unslash($_POST['status'])) : 'active';
+        $search = isset($_POST['search']) ? sanitize_text_field(wp_unslash($_POST['search'])) : '';
+
+        if (!in_array($op, ['trash', 'ignore'], true)) {
+            wp_send_json_error(['message' => __('Unknown action.', 'ffl-funnels-addons')]);
+        }
+
+        $manager = self::manager();
+
+        // One batch. 40 keeps each request well under any host time limit even
+        // when trashing moves several files per attachment.
+        $ids       = $manager->get_issue_ids($status, $search, 40);
+        $processed = 0;
+        foreach ($ids as $id) {
+            $ok = ('trash' === $op) ? $manager->trash($id) : $manager->ignore($id, true);
+            if ($ok) {
+                $processed++;
+            }
+        }
+
+        // How many still match — the JS stops when this hits zero (or stalls).
+        $remaining = $manager->get_issues($status, 1, 1, $search)['total'];
+
+        wp_send_json_success([
+            'processed'  => $processed,
+            'batch'      => count($ids),
+            'remaining'  => $remaining,
             'stats'      => $manager->get_stats(),
             'stats_html' => Media_Cleaner_Admin::render_stats($manager->get_stats()),
         ]);
