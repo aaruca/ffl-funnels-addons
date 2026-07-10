@@ -47,6 +47,21 @@ class FFLA_Reviews_List extends \Bricks\Element
             'default' => 'recent',
         ];
 
+        // A checkbox cannot express "off" here: Bricks omits the key entirely
+        // when it is unchecked, which is indistinguishable from "never set".
+        $this->controls['summaryMode'] = [
+            'tab'         => 'content',
+            'label'       => esc_html__('Rating summary', 'ffl-funnels-addons'),
+            'type'        => 'select',
+            'options'     => [
+                ''     => esc_html__('Use module setting', 'ffl-funnels-addons'),
+                'show' => esc_html__('Show', 'ffl-funnels-addons'),
+                'hide' => esc_html__('Hide', 'ffl-funnels-addons'),
+            ],
+            'default'     => '',
+            'description' => esc_html__('Average score and star-by-star breakdown above the list.', 'ffl-funnels-addons'),
+        ];
+
         $this->controls['starFilledColor'] = [
             'tab'     => 'content',
             'label'   => esc_html__('Filled stars color', 'ffl-funnels-addons'),
@@ -148,6 +163,15 @@ class FFLA_Reviews_List extends \Bricks\Element
             'perPage' => $per_page,
             'orderBy' => $settings['orderBy'] ?? 'recent',
         ];
+
+        // Only override when the element takes a side; otherwise leave the key
+        // absent so the renderer falls back to the module setting.
+        $summary_mode = $settings['summaryMode'] ?? '';
+        if ('show' === $summary_mode) {
+            $list_settings['showSummary'] = true;
+        } elseif ('hide' === $summary_mode) {
+            $list_settings['showSummary'] = false;
+        }
 
         $this->set_attribute('_root', 'class', 'ffla-reviews-list');
 

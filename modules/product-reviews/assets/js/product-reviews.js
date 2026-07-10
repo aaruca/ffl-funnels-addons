@@ -3,9 +3,44 @@
         return;
     }
 
+    /**
+     * Both buttons for one review live in the same group and settle together.
+     * Falls back to the button itself so markup cached before the group wrapper
+     * existed still updates its own count.
+     */
+    function scopeFor(button) {
+        var group = button.closest ? button.closest('.ffla-review-helpful-group') : null;
+        return group || button;
+    }
+
+    function paintCounts(scope, data) {
+        if (!scope || !data) {
+            return;
+        }
+        var yes = scope.querySelector('.ffla-review-helpful__count');
+        if (yes && typeof data.count !== 'undefined') {
+            yes.textContent = String(data.count);
+        }
+        var no = scope.querySelector('.ffla-review-helpful__count-no');
+        if (no && typeof data.countNo !== 'undefined') {
+            no.textContent = String(data.countNo);
+        }
+    }
+
+    function settle(scope, button) {
+        var buttons = scope === button ? [button] : scope.querySelectorAll('.ffla-review-helpful');
+        for (var i = 0; i < buttons.length; i++) {
+            buttons[i].setAttribute('aria-disabled', 'true');
+        }
+        button.classList.add('is-done');
+    }
+
     function onVoteClick(event) {
         var button = event.currentTarget;
-        if (button.classList.contains('is-done')) {
+        var scope = scopeFor(button);
+
+        // One vote per review: once either direction lands, both are spent.
+        if (button.getAttribute('aria-disabled') === 'true') {
             return;
         }
 
@@ -18,6 +53,7 @@
         formData.append('action', 'ffla_vote_review_helpful');
         formData.append('nonce', window.fflaProductReviews.nonce);
         formData.append('comment_id', commentId);
+        formData.append('vote', button.getAttribute('data-vote') || 'yes');
 
         fetch(window.fflaProductReviews.ajaxUrl, {
             method: 'POST',
@@ -32,12 +68,8 @@
                     return;
                 }
 
-                var countNode = button.querySelector('.ffla-review-helpful__count');
-                if (countNode && json.data && typeof json.data.count !== 'undefined') {
-                    countNode.textContent = String(json.data.count);
-                }
-                button.classList.add('is-done');
-                button.setAttribute('aria-disabled', 'true');
+                paintCounts(scope, json.data);
+                settle(scope, button);
             })
             .catch(function () {
                 // Intentionally silent to avoid disrupting checkout/product UI.

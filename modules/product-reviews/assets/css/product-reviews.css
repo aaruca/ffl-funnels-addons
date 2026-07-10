@@ -125,6 +125,12 @@
     height: auto;
 }
 
+.ffla-review-helpful-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
 .ffla-review-helpful {
     margin-top: 10px;
     background: transparent;
@@ -138,6 +144,144 @@
 .ffla-review-helpful.is-done {
     opacity: 0.75;
     cursor: default;
+}
+
+.ffla-review-helpful[aria-disabled="true"] {
+    opacity: 0.75;
+    cursor: default;
+}
+
+.ffla-review-card--pinned {
+    border-color: var(--ffla-star-filled, #d4a017);
+}
+
+.ffla-review-card__pinned {
+    display: inline-block;
+    margin: 6px 8px 6px 0;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #fdf6e3;
+    color: #8a6100;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+/* Store replies */
+
+.ffla-review-card__replies {
+    margin-top: 12px;
+    display: grid;
+    gap: 10px;
+}
+
+.ffla-review-reply {
+    padding: 10px 12px;
+    border-left: 3px solid #e8eaef;
+    background: #f8fafc;
+    border-radius: 0 8px 8px 0;
+}
+
+.ffla-review-reply--store {
+    border-left-color: #247a46;
+}
+
+.ffla-review-reply__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.ffla-review-reply__author {
+    font-weight: 600;
+}
+
+.ffla-review-reply__badge {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #eef7f2;
+    color: #247a46;
+    font-size: 0.78em;
+    font-weight: 600;
+}
+
+.ffla-review-reply__date {
+    font-size: 0.85em;
+    color: var(--ffla-ui-muted, #64748b);
+}
+
+.ffla-review-reply__content {
+    line-height: 1.6;
+    font-size: 0.95em;
+}
+
+/* Rating summary */
+
+.ffla-rating-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 24px;
+    margin-bottom: 20px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid #e8eaef;
+    --ffla-star-filled: #d4a017;
+    --ffla-star-empty: #d8dce5;
+}
+
+.ffla-rating-summary__score {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-width: 110px;
+}
+
+.ffla-rating-summary__average {
+    font-size: 2.4em;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.ffla-rating-summary__count {
+    font-size: 0.85em;
+    color: var(--ffla-ui-muted, #64748b);
+}
+
+.ffla-rating-summary__bars {
+    flex: 1 1 240px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 5px;
+}
+
+.ffla-rating-summary__row {
+    display: grid;
+    grid-template-columns: 4.5em 1fr 2.5em;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.85em;
+}
+
+.ffla-rating-summary__track {
+    height: 8px;
+    border-radius: 999px;
+    background: #eceff4;
+    overflow: hidden;
+}
+
+.ffla-rating-summary__fill {
+    display: block;
+    height: 100%;
+    background: var(--ffla-star-filled, #d4a017);
+}
+
+.ffla-rating-summary__n {
+    text-align: right;
+    color: var(--ffla-ui-muted, #64748b);
 }
 
 .ffla-review-form-wrap,

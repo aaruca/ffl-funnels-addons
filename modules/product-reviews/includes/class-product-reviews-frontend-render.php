@@ -133,9 +133,19 @@ class Product_Reviews_Frontend_Render
 
         self::render_star_radios('rating', $uid . '-r', __('Overall rating', 'ffl-funnels-addons'), true);
 
-        if ($show_criteria) {
-            self::render_star_radios('ffla_review_quality', $uid . '-q', __('Quality (optional)', 'ffl-funnels-addons'), false);
-            self::render_star_radios('ffla_review_value', $uid . '-v', __('Value for money (optional)', 'ffl-funnels-addons'), false);
+        if ($show_criteria && Product_Reviews_Criteria::is_enabled()) {
+            foreach (Product_Reviews_Criteria::get_criteria() as $index => $criterion) {
+                self::render_star_radios(
+                    Product_Reviews_Criteria::field_name($criterion['slug']),
+                    $uid . '-c' . $index,
+                    sprintf(
+                        /* translators: %s: name of a secondary rating criterion, e.g. "Quality" */
+                        __('%s (optional)', 'ffl-funnels-addons'),
+                        $criterion['label']
+                    ),
+                    false
+                );
+            }
         }
 
         echo '<p class="ffla-review-form__field">';
@@ -184,7 +194,90 @@ class Product_Reviews_Frontend_Render
     }
 
     /**
-     * @param array<string, mixed> $settings Optional: perPage, orderBy.
+     * Star histogram plus the headline average.
+     */
+    public static function render_rating_summary(int $product_id): void
+    {
+        $data = Product_Reviews_Core::get_rating_distribution($product_id);
+        if ($data['total'] < 1) {
+            return;
+        }
+
+        echo '<div class="ffla-rating-summary">';
+        echo '<div class="ffla-rating-summary__score">';
+        echo '<span class="ffla-rating-summary__average">' . esc_html(number_format_i18n($data['average'], 1)) . '</span>';
+        echo wp_kses_post(self::render_stars((float) $data['average']));
+        echo '<span class="ffla-rating-summary__count">' . esc_html(sprintf(
+            /* translators: %s: number of reviews */
+            _n('%s review', '%s reviews', $data['total'], 'ffl-funnels-addons'),
+            number_format_i18n($data['total'])
+        )) . '</span>';
+        echo '</div>';
+
+        echo '<ul class="ffla-rating-summary__bars">';
+        for ($stars = 5; $stars >= 1; $stars--) {
+            $count   = (int) $data['counts'][$stars];
+            $percent = $data['total'] > 0 ? ($count / $data['total']) * 100 : 0;
+
+            echo '<li class="ffla-rating-summary__row">';
+            echo '<span class="ffla-rating-summary__label">' . esc_html(sprintf(
+                /* translators: %d: star rating 1-5 */
+                _n('%d star', '%d stars', $stars, 'ffl-funnels-addons'),
+                $stars
+            )) . '</span>';
+            echo '<span class="ffla-rating-summary__track">';
+            echo '<span class="ffla-rating-summary__fill" style="width:' . esc_attr(number_format($percent, 2, '.', '')) . '%;"></span>';
+            echo '</span>';
+            echo '<span class="ffla-rating-summary__n">' . esc_html(number_format_i18n($count)) . '</span>';
+            echo '</li>';
+        }
+        echo '</ul>';
+        echo '</div>';
+    }
+
+    /**
+     * @param array<int, \WP_Comment> $replies
+     */
+    private static function render_replies(array $replies): void
+    {
+        if (empty($replies)) {
+            return;
+        }
+
+        $allowed_html = ['p' => [], 'br' => [], 'strong' => [], 'em' => []];
+
+        echo '<div class="ffla-review-card__replies">';
+        foreach ($replies as $reply) {
+            $reply_id  = (int) $reply->comment_ID;
+            $is_store  = (int) get_comment_meta($reply_id, Product_Reviews_Notifications::STORE_REPLY_META, true) === 1;
+            $classes   = 'ffla-review-reply' . ($is_store ? ' ffla-review-reply--store' : '');
+
+            echo '<div class="' . esc_attr($classes) . '" id="comment-' . esc_attr((string) $reply_id) . '">';
+            echo '<div class="ffla-review-reply__header">';
+            echo '<strong class="ffla-review-reply__author">' . esc_html($reply->comment_author) . '</strong>';
+            if ($is_store) {
+                echo '<span class="ffla-review-reply__badge">' . esc_html__('Store response', 'ffl-funnels-addons') . '</span>';
+            }
+            echo '<span class="ffla-review-reply__date">' . esc_html(wp_date(get_option('date_format'), strtotime($reply->comment_date_gmt . ' UTC'))) . '</span>';
+            echo '</div>';
+            echo '<div class="ffla-review-reply__content">' . wp_kses(wpautop(wp_strip_all_tags($reply->comment_content)), $allowed_html) . '</div>';
+            echo '</div>';
+        }
+        echo '</div>';
+    }
+
+    /**
+     * Net helpfulness. Sorting on `yes` alone lets a review with 40 up and 39
+     * down outrank one with 12 up and none.
+     */
+    private static function helpful_score(int $comment_id): int
+    {
+        return (int) get_comment_meta($comment_id, 'ffla_helpful_yes', true)
+            - (int) get_comment_meta($comment_id, 'ffla_helpful_no', true);
+    }
+
+    /**
+     * @param array<string, mixed> $settings Optional: perPage, orderBy, showSummary.
      * @param bool                 $wrap     When false, omit outer `.ffla-reviews-list` (Bricks supplies its own root).
      */
     public static function render_reviews_list(int $product_id, array $settings = [], bool $wrap = true): void
@@ -197,31 +290,53 @@ class Product_Reviews_Frontend_Render
         $per_page = max(1, min(50, $per_page));
         $order_by = $settings['orderBy'] ?? 'recent';
 
+        $show_summary = self::setting_bool(
+            $settings,
+            'showSummary',
+            '1' === Product_Reviews_Core::get_setting('show_rating_summary', '1')
+        );
+        $show_replies    = '1' === Product_Reviews_Core::get_setting('show_replies', '1');
+        $votes_enabled   = '1' === Product_Reviews_Core::get_setting('enable_helpful_votes', '1');
+        $no_vote_enabled = $votes_enabled && '1' === Product_Reviews_Core::get_setting('enable_not_helpful_votes', '0');
+
+        // Pinned reviews lead regardless of sort. Pin state lives in the native
+        // comment_karma column, so the ordering happens in SQL rather than by
+        // re-sorting a page the query has already truncated.
         $args = [
-            'post_id' => $product_id,
-            'status'  => 'approve',
-            'type'    => 'review',
-            'number'  => ($order_by === 'recent') ? $per_page : 100,
-            'orderby' => 'comment_date_gmt',
-            'order'   => 'DESC',
+            'post_id'        => $product_id,
+            'status'         => 'approve',
+            'type'           => 'review',
+            'parent'         => 0,
+            'number'         => ($order_by === 'recent') ? $per_page : 100,
+            'orderby'        => ['comment_karma' => 'DESC', 'comment_date_gmt' => 'DESC'],
         ];
         $reviews = get_comments($args);
 
         if ($order_by === 'helpful') {
             usort($reviews, static function ($a, $b): int {
-                $a_helpful = (int) get_comment_meta($a->comment_ID, 'ffla_helpful_yes', true);
-                $b_helpful = (int) get_comment_meta($b->comment_ID, 'ffla_helpful_yes', true);
-                if ($a_helpful === $b_helpful) {
+                $a_pinned = (int) $a->comment_karma === 1 ? 1 : 0;
+                $b_pinned = (int) $b->comment_karma === 1 ? 1 : 0;
+                if ($a_pinned !== $b_pinned) {
+                    return $b_pinned <=> $a_pinned;
+                }
+
+                $a_score = self::helpful_score((int) $a->comment_ID);
+                $b_score = self::helpful_score((int) $b->comment_ID);
+                if ($a_score === $b_score) {
                     return strcmp($b->comment_date_gmt, $a->comment_date_gmt);
                 }
 
-                return $b_helpful <=> $a_helpful;
+                return $b_score <=> $a_score;
             });
             $reviews = array_slice($reviews, 0, $per_page);
         }
 
         if ($wrap) {
             echo '<div class="ffla-reviews-list">';
+        }
+
+        if ($show_summary) {
+            self::render_rating_summary($product_id);
         }
 
         if (empty($reviews)) {
@@ -233,22 +348,35 @@ class Product_Reviews_Frontend_Render
             return;
         }
 
+        $replies_by_parent = $show_replies
+            ? Product_Reviews_Core::get_replies_for_reviews(wp_list_pluck($reviews, 'comment_ID'))
+            : [];
+
         foreach ($reviews as $review) {
-            $rating = (float) get_comment_meta($review->comment_ID, 'rating', true);
-            $quality = (int) get_comment_meta($review->comment_ID, 'ffla_review_quality', true);
-            $value = (int) get_comment_meta($review->comment_ID, 'ffla_review_value', true);
-            $helpful = (int) get_comment_meta($review->comment_ID, 'ffla_helpful_yes', true);
-            $verified = (int) get_comment_meta($review->comment_ID, 'ffla_verified_purchase', true) === 1;
-            $media_ids = get_comment_meta($review->comment_ID, 'ffla_review_media_ids', true);
+            $review_id = (int) $review->comment_ID;
+            $rating    = (float) get_comment_meta($review_id, 'rating', true);
+            $helpful   = (int) get_comment_meta($review_id, 'ffla_helpful_yes', true);
+            $unhelpful = (int) get_comment_meta($review_id, 'ffla_helpful_no', true);
+            $verified  = (int) get_comment_meta($review_id, 'ffla_verified_purchase', true) === 1;
+            $pinned    = (int) $review->comment_karma === 1;
+            $criteria  = Product_Reviews_Criteria::is_enabled()
+                ? Product_Reviews_Criteria::get_review_scores($review_id)
+                : [];
+
+            $media_ids = get_comment_meta($review_id, 'ffla_review_media_ids', true);
             if (!is_array($media_ids)) {
                 $media_ids = [];
             }
 
-            echo '<article class="ffla-review-card">';
+            echo '<article class="ffla-review-card' . ($pinned ? ' ffla-review-card--pinned' : '') . '">';
             echo '<header class="ffla-review-card__header">';
             echo '<strong class="ffla-review-card__author">' . esc_html($review->comment_author) . '</strong>';
             echo '<span class="ffla-review-card__date">' . esc_html(wp_date(get_option('date_format'), strtotime($review->comment_date_gmt . ' UTC'))) . '</span>';
             echo '</header>';
+
+            if ($pinned) {
+                echo '<span class="ffla-review-card__pinned">' . esc_html__('Featured review', 'ffl-funnels-addons') . '</span>';
+            }
 
             if ($rating > 0) {
                 echo '<div class="ffla-review-card__rating">' . wp_kses_post(self::render_stars($rating)) . '</div>';
@@ -258,13 +386,10 @@ class Product_Reviews_Frontend_Render
                 echo '<span class="ffla-review-card__verified">' . esc_html__('Verified buyer', 'ffl-funnels-addons') . '</span>';
             }
 
-            if ($quality > 0 || $value > 0) {
+            if (!empty($criteria)) {
                 echo '<div class="ffla-review-card__criteria">';
-                if ($quality > 0) {
-                    echo '<span>' . esc_html__('Quality:', 'ffl-funnels-addons') . ' ' . esc_html((string) $quality) . '/5</span>';
-                }
-                if ($value > 0) {
-                    echo '<span>' . esc_html__('Value:', 'ffl-funnels-addons') . ' ' . esc_html((string) $value) . '/5</span>';
+                foreach ($criteria as $criterion) {
+                    echo '<span>' . esc_html($criterion['label']) . ': ' . esc_html((string) $criterion['score']) . '/5</span>';
                 }
                 echo '</div>';
             }
@@ -303,11 +428,24 @@ class Product_Reviews_Frontend_Render
                 echo '</div>';
             }
 
-            if ('1' === Product_Reviews_Core::get_setting('enable_helpful_votes', '1')) {
-                echo '<button class="ffla-review-helpful" type="button" data-comment-id="' . esc_attr((string) $review->comment_ID) . '">';
+            if ($votes_enabled) {
+                echo '<div class="ffla-review-helpful-group">';
+                echo '<button class="ffla-review-helpful" type="button" data-vote="yes" data-comment-id="' . esc_attr((string) $review_id) . '">';
                 echo esc_html__('Helpful', 'ffl-funnels-addons') . ' ';
                 echo '<span class="ffla-review-helpful__count">' . esc_html((string) $helpful) . '</span>';
                 echo '</button>';
+
+                if ($no_vote_enabled) {
+                    echo '<button class="ffla-review-helpful ffla-review-helpful--no" type="button" data-vote="no" data-comment-id="' . esc_attr((string) $review_id) . '">';
+                    echo esc_html__('Not helpful', 'ffl-funnels-addons') . ' ';
+                    echo '<span class="ffla-review-helpful__count-no">' . esc_html((string) $unhelpful) . '</span>';
+                    echo '</button>';
+                }
+                echo '</div>';
+            }
+
+            if (!empty($replies_by_parent[$review_id])) {
+                self::render_replies($replies_by_parent[$review_id]);
             }
 
             echo '</article>';

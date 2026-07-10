@@ -11,6 +11,10 @@ if (!defined('ABSPATH')) {
 
 class Product_Reviews_Ajax
 {
+    const META_YES = 'ffla_helpful_yes';
+
+    const META_NO = 'ffla_helpful_no';
+
     public static function init(): void
     {
         add_action('wp_ajax_ffla_vote_review_helpful', [__CLASS__, 'vote_review_helpful']);
@@ -25,6 +29,17 @@ class Product_Reviews_Ajax
             wp_send_json_error(['message' => __('Helpful votes are disabled.', 'ffl-funnels-addons')]);
         }
 
+        // Absent `vote` means an older cached script; treat it as the only
+        // thing that script could ever have meant.
+        $vote = isset($_POST['vote']) ? sanitize_key(wp_unslash($_POST['vote'])) : 'yes';
+        if (!in_array($vote, ['yes', 'no'], true)) {
+            wp_send_json_error(['message' => __('Invalid vote.', 'ffl-funnels-addons')]);
+        }
+
+        if ('no' === $vote && '1' !== Product_Reviews_Core::get_setting('enable_not_helpful_votes', '0')) {
+            wp_send_json_error(['message' => __('That vote type is disabled.', 'ffl-funnels-addons')]);
+        }
+
         $comment_id = isset($_POST['comment_id']) ? absint($_POST['comment_id']) : 0;
         if ($comment_id <= 0) {
             wp_send_json_error(['message' => __('Invalid review.', 'ffl-funnels-addons')]);
@@ -36,49 +51,58 @@ class Product_Reviews_Ajax
         }
 
         $ip = isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : 'unknown';
-        $rate_key = 'ffla_helpful_' . md5($comment_id . '|' . $ip);
+
+        // Keyed on the review and the voter only, never on the direction, so a
+        // single visitor cannot vote a review both helpful and not helpful.
+        $rate_key  = 'ffla_helpful_' . md5($comment_id . '|' . $ip);
         $daily_key = 'ffla_helpful_daily_' . $comment_id;
 
         if (get_transient($rate_key)) {
-            $current = (int) get_comment_meta($comment_id, 'ffla_helpful_yes', true);
-            wp_send_json_success([
-                'count'      => $current,
-                'throttled'  => true,
-                'message'    => __('Vote already registered recently.', 'ffl-funnels-addons'),
-            ]);
+            self::respond($comment_id, true, __('Vote already registered recently.', 'ffl-funnels-addons'));
         }
 
-        $daily = (int) get_transient($daily_key);
+        $daily     = (int) get_transient($daily_key);
         $daily_cap = (int) apply_filters('ffla_helpful_daily_cap', 200);
         if ($daily >= $daily_cap) {
-            $current = (int) get_comment_meta($comment_id, 'ffla_helpful_yes', true);
-            wp_send_json_success([
-                'count'      => $current,
-                'throttled'  => true,
-                'message'    => __('Daily vote limit reached for this review.', 'ffl-funnels-addons'),
-            ]);
+            self::respond($comment_id, true, __('Daily vote limit reached for this review.', 'ffl-funnels-addons'));
         }
 
-        // Atomically increment the helpful count. The previous read-modify-write
-        // pattern lost votes under concurrent traffic: two requests would both
-        // read the same value and both write current+1, dropping one increment.
-        global $wpdb;
-        add_comment_meta($comment_id, 'ffla_helpful_yes', 0, true);
-        $wpdb->query($wpdb->prepare(
-            "UPDATE {$wpdb->commentmeta} SET meta_value = CAST(meta_value AS UNSIGNED) + 1 WHERE comment_id = %d AND meta_key = %s",
-            $comment_id,
-            'ffla_helpful_yes'
-        ));
-        wp_cache_delete($comment_id, 'comment_meta');
-        $new = (int) get_comment_meta($comment_id, 'ffla_helpful_yes', true);
+        self::increment_counter($comment_id, 'yes' === $vote ? self::META_YES : self::META_NO);
 
         set_transient($rate_key, 1, HOUR_IN_SECONDS * 12);
         set_transient($daily_key, $daily + 1, DAY_IN_SECONDS);
 
+        self::respond($comment_id, false, __('Vote saved.', 'ffl-funnels-addons'));
+    }
+
+    /**
+     * Atomic increment. The read-modify-write this replaced lost votes under
+     * concurrent traffic: two requests would read the same value and both write
+     * current+1, dropping one increment.
+     */
+    private static function increment_counter(int $comment_id, string $meta_key): void
+    {
+        global $wpdb;
+
+        add_comment_meta($comment_id, $meta_key, 0, true);
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+        $wpdb->query($wpdb->prepare(
+            "UPDATE {$wpdb->commentmeta} SET meta_value = CAST(meta_value AS UNSIGNED) + 1 WHERE comment_id = %d AND meta_key = %s",
+            $comment_id,
+            $meta_key
+        ));
+
+        wp_cache_delete($comment_id, 'comment_meta');
+    }
+
+    private static function respond(int $comment_id, bool $throttled, string $message): void
+    {
         wp_send_json_success([
-            'count'     => $new,
-            'throttled' => false,
-            'message'   => __('Vote saved.', 'ffl-funnels-addons'),
+            'count'     => (int) get_comment_meta($comment_id, self::META_YES, true),
+            'countNo'   => (int) get_comment_meta($comment_id, self::META_NO, true),
+            'throttled' => $throttled,
+            'message'   => $message,
         ]);
     }
 }

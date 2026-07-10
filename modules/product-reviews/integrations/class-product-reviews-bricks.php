@@ -14,6 +14,9 @@ class Product_Reviews_Bricks
     public static function init(): void
     {
         add_action('init', [__CLASS__, 'register_elements'], 11);
+
+        require_once __DIR__ . '/class-product-reviews-dynamic-tags.php';
+        Product_Reviews_Dynamic_Tags::init();
     }
 
     public static function register_elements(): void

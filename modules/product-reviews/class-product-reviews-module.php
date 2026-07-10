@@ -46,6 +46,14 @@ class Product_Reviews_Module extends FFLA_Module
         require_once $base . 'includes/class-product-reviews-core.php';
         Product_Reviews_Core::init();
 
+        require_once $base . 'includes/class-product-reviews-criteria.php';
+
+        require_once $base . 'includes/class-product-reviews-moderation.php';
+        Product_Reviews_Moderation::init();
+
+        require_once $base . 'includes/class-product-reviews-notifications.php';
+        Product_Reviews_Notifications::init();
+
         require_once $base . 'includes/class-product-reviews-assets.php';
         Product_Reviews_Assets::init();
 

@@ -213,9 +213,19 @@ class Product_Reviews_Order_Hub
 
         self::render_star_fieldset('rating', $uid . '-r', __('Overall rating', 'ffl-funnels-addons'), true);
 
-        if ($show_criteria) {
-            self::render_star_fieldset('ffla_review_quality', $uid . '-q', __('Quality (optional)', 'ffl-funnels-addons'), false);
-            self::render_star_fieldset('ffla_review_value', $uid . '-v', __('Value for money (optional)', 'ffl-funnels-addons'), false);
+        if ($show_criteria && \Product_Reviews_Criteria::is_enabled()) {
+            foreach (\Product_Reviews_Criteria::get_criteria() as $index => $criterion) {
+                self::render_star_fieldset(
+                    \Product_Reviews_Criteria::field_name($criterion['slug']),
+                    $uid . '-c' . $index,
+                    sprintf(
+                        /* translators: %s: name of a secondary rating criterion, e.g. "Quality" */
+                        __('%s (optional)', 'ffl-funnels-addons'),
+                        $criterion['label']
+                    ),
+                    false
+                );
+            }
         }
 
         $comment_id = $uid . '-c';

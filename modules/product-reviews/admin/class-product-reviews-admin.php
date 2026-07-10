@@ -66,6 +66,13 @@ class Product_Reviews_Admin
         );
 
         FFLA_Admin::render_toggle_field(
+            __('Also allow “Not helpful” votes', 'ffl-funnels-addons'),
+            'enable_not_helpful_votes',
+            $settings['enable_not_helpful_votes'] ?? '0',
+            __('Adds a downvote button next to “Helpful”. Each visitor still gets one vote per review, in one direction only. Off by default: a negative button invites brigading, and the sort order already accounts for net score.', 'ffl-funnels-addons')
+        );
+
+        FFLA_Admin::render_toggle_field(
             __('Replace WooCommerce reviews tab with FFL form', 'ffl-funnels-addons'),
             'replace_default_reviews_tab',
             $settings['replace_default_reviews_tab'] ?? '0',
@@ -101,6 +108,108 @@ class Product_Reviews_Admin
             ]
         );
         echo '</p>';
+
+        echo '</div></div>';
+
+        echo '<div class="wb-card">';
+        echo '<div class="wb-card__header"><h3>' . esc_html__('Rating criteria', 'ffl-funnels-addons') . '</h3></div>';
+        echo '<div class="wb-card__body">';
+
+        FFLA_Admin::render_toggle_field(
+            __('Enable secondary rating criteria', 'ffl-funnels-addons'),
+            'enable_criteria',
+            $settings['enable_criteria'] ?? '1',
+            __('Adds optional star groups below the overall rating, such as Quality or Value for money.', 'ffl-funnels-addons')
+        );
+
+        FFLA_Admin::render_textarea_field(
+            __('Criteria', 'ffl-funnels-addons'),
+            'review_criteria',
+            $settings['review_criteria'] ?? Product_Reviews_Core::DEFAULT_CRITERIA,
+            sprintf(
+                /* translators: %d: maximum number of criteria */
+                __('One per line, written as slug|Label — for example: fit|Fit and finish. The slug is what the score is stored under, so renaming a label keeps existing scores. Removing a criterion hides it without deleting anything; add it back and the old scores reappear. Maximum %d.', 'ffl-funnels-addons'),
+                Product_Reviews_Criteria::MAX_CRITERIA
+            )
+        );
+
+        echo '</div></div>';
+
+        echo '<div class="wb-card">';
+        echo '<div class="wb-card__header"><h3>' . esc_html__('Review display', 'ffl-funnels-addons') . '</h3></div>';
+        echo '<div class="wb-card__body">';
+
+        FFLA_Admin::render_toggle_field(
+            __('Show rating summary', 'ffl-funnels-addons'),
+            'show_rating_summary',
+            $settings['show_rating_summary'] ?? '1',
+            __('Displays the average score and a star-by-star breakdown above the review list.', 'ffl-funnels-addons')
+        );
+
+        FFLA_Admin::render_toggle_field(
+            __('Show replies under reviews', 'ffl-funnels-addons'),
+            'show_replies',
+            $settings['show_replies'] ?? '1',
+            __('Replies you leave from Comments → Reply are shown beneath the review, badged as a store response.', 'ffl-funnels-addons')
+        );
+
+        echo '<p class="wb-field__desc">' . esc_html__('To feature a review at the top of the list, open Comments and use the “Pin review” row action.', 'ffl-funnels-addons') . '</p>';
+
+        echo '</div></div>';
+
+        echo '<div class="wb-card">';
+        echo '<div class="wb-card__header"><h3>' . esc_html__('Content filter', 'ffl-funnels-addons') . '</h3></div>';
+        echo '<div class="wb-card__body">';
+
+        FFLA_Admin::render_textarea_field(
+            __('Forbidden words', 'ffl-funnels-addons'),
+            'forbidden_words',
+            $settings['forbidden_words'] ?? '',
+            __('One term per line, or comma separated. Matching is case-insensitive and matches inside longer words, exactly like WordPress\'s own disallowed comment keys. Leave empty to disable.', 'ffl-funnels-addons')
+        );
+
+        FFLA_Admin::render_select_field(
+            __('When a review matches', 'ffl-funnels-addons'),
+            'forbidden_action',
+            $settings['forbidden_action'] ?? 'moderate',
+            [
+                'moderate' => __('Hold it for moderation', 'ffl-funnels-addons'),
+                'reject'   => __('Refuse it and ask the customer to revise', 'ffl-funnels-addons'),
+            ],
+            __('Reviews submitted by users who can moderate comments are never filtered.', 'ffl-funnels-addons')
+        );
+
+        echo '</div></div>';
+
+        echo '<div class="wb-card">';
+        echo '<div class="wb-card__header"><h3>' . esc_html__('Reviewer notifications', 'ffl-funnels-addons') . '</h3></div>';
+        echo '<div class="wb-card__body">';
+
+        FFLA_Admin::render_toggle_field(
+            __('Email the reviewer when their review is approved', 'ffl-funnels-addons'),
+            'notify_on_approved',
+            $settings['notify_on_approved'] ?? '1',
+            __('Only fires when a held review is approved. Reviews published immediately do not trigger it.', 'ffl-funnels-addons')
+        );
+
+        FFLA_Admin::render_toggle_field(
+            __('Email the reviewer when someone replies', 'ffl-funnels-addons'),
+            'notify_on_reply',
+            $settings['notify_on_reply'] ?? '1',
+            __('WordPress never sends this on its own — it only notifies the post author. People do not reply to themselves, so no email is sent when the reply comes from the same address.', 'ffl-funnels-addons')
+        );
+
+        $optout_count = Product_Reviews_Notifications::optout_count();
+        echo '<p class="wb-field__desc">' . esc_html(sprintf(
+            /* translators: %s: number of unsubscribed addresses */
+            _n(
+                '%s address has unsubscribed from review request emails.',
+                '%s addresses have unsubscribed from review request emails.',
+                $optout_count,
+                'ffl-funnels-addons'
+            ),
+            number_format_i18n($optout_count)
+        )) . ' ' . esc_html__('Approval and reply notices are answers to something the customer did, so they ignore this list.', 'ffl-funnels-addons') . '</p>';
 
         echo '</div></div>';
 
@@ -190,7 +299,7 @@ class Product_Reviews_Admin
             __('Email body template', 'ffl-funnels-addons'),
             'email_template',
             $settings['email_template'] ?? '',
-            __('Placeholders: {customer_name}, {product_name}, {product_names_list}, {review_url}, {review_order_url}, {order_id}, {user_id}. Per-product mode uses {review_url}; bundle mode uses {review_order_url} and {product_names_list}.', 'ffl-funnels-addons')
+            __('Placeholders: {customer_name}, {product_name}, {product_names_list}, {review_url}, {review_order_url}, {order_id}, {user_id}, {unsubscribe_url}. Per-product mode uses {review_url}; bundle mode uses {review_order_url} and {product_names_list}. If you do not place {unsubscribe_url} yourself, an unsubscribe line is appended to the end of every request email.', 'ffl-funnels-addons')
         );
 
         echo '</div></div>';
@@ -222,12 +331,39 @@ class Product_Reviews_Admin
 
         $new['enable_requests'] = isset($_POST['enable_requests']) ? '1' : '0';
         $new['enable_helpful_votes'] = isset($_POST['enable_helpful_votes']) ? '1' : '0';
+        $new['enable_not_helpful_votes'] = isset($_POST['enable_not_helpful_votes']) ? '1' : '0';
         $new['replace_default_reviews_tab'] = isset($_POST['replace_default_reviews_tab']) ? '1' : '0';
         $new['hide_default_reviews_tab'] = isset($_POST['hide_default_reviews_tab']) ? '1' : '0';
         $new['moderate_all_reviews'] = isset($_POST['moderate_all_reviews']) ? '1' : '0';
         $new['request_delay_days'] = isset($_POST['request_delay_days'])
             ? (string) max(0, absint($_POST['request_delay_days']))
             : '7';
+
+        $new['enable_criteria'] = isset($_POST['enable_criteria']) ? '1' : '0';
+        $new['show_rating_summary'] = isset($_POST['show_rating_summary']) ? '1' : '0';
+        $new['show_replies'] = isset($_POST['show_replies']) ? '1' : '0';
+        $new['notify_on_approved'] = isset($_POST['notify_on_approved']) ? '1' : '0';
+        $new['notify_on_reply'] = isset($_POST['notify_on_reply']) ? '1' : '0';
+
+        // Re-serialise from the parsed form so a malformed line is dropped at
+        // save time rather than silently ignored on every page render.
+        $raw_criteria = isset($_POST['review_criteria'])
+            ? sanitize_textarea_field(wp_unslash($_POST['review_criteria']))
+            : '';
+        $parsed = Product_Reviews_Criteria::parse_definition($raw_criteria);
+        $new['review_criteria'] = implode("\n", array_map(
+            static function (array $c): string {
+                return $c['slug'] . '|' . $c['label'];
+            },
+            $parsed
+        ));
+
+        $new['forbidden_words'] = isset($_POST['forbidden_words'])
+            ? sanitize_textarea_field(wp_unslash($_POST['forbidden_words']))
+            : '';
+        $new['forbidden_action'] = (isset($_POST['forbidden_action']) && 'reject' === $_POST['forbidden_action'])
+            ? 'reject'
+            : 'moderate';
 
         $new['request_email_mode'] = (isset($_POST['request_email_mode']) && 'bundle' === $_POST['request_email_mode'])
             ? 'bundle'
@@ -260,6 +396,11 @@ class Product_Reviews_Admin
             || ($current['order_review_rewrite_slug'] ?? '') !== ($new['order_review_rewrite_slug'] ?? '');
 
         update_option('ffla_product_reviews_settings', $new);
+
+        // Both classes memoize their parsed settings per request, and this
+        // request still has a redirect to render.
+        Product_Reviews_Criteria::flush_memo();
+        Product_Reviews_Moderation::flush_memo();
 
         if ($rewrite_changed) {
             Product_Reviews_Core::register_order_review_rewrites();

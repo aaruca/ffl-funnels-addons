@@ -13,6 +13,15 @@ class Product_Reviews_Core
 {
     const MAX_MEDIA_FILES = 3;
 
+    /**
+     * Seed for the `review_criteria` setting. Lives here rather than in
+     * Product_Reviews_Criteria so get_default_settings() never depends on that
+     * class having been loaded first.
+     */
+    const DEFAULT_CRITERIA = "quality|Quality\nvalue|Value for money";
+
+    const RATING_DISTRIBUTION_TRANSIENT_PREFIX = 'ffla_rev_dist_';
+
     /** @var bool */
     private static $order_review_rewrite_tag_registered = false;
 
@@ -21,6 +30,10 @@ class Product_Reviews_Core
         add_filter('preprocess_comment', [__CLASS__, 'validate_review_submission']);
         add_action('comment_post', [__CLASS__, 'save_review_meta'], 10, 3);
         add_action('delete_comment', [__CLASS__, 'cleanup_review_media'], 10, 1);
+
+        // `delete_comment`, not `deleted_comment`: the row is already gone by
+        // the time the latter fires, so the product ID cannot be looked up.
+        add_action('delete_comment', [__CLASS__, 'flush_caches_for_comment'], 10, 1);
         add_action('admin_post_ffla_submit_product_review', [__CLASS__, 'handle_form_submission']);
         add_action('admin_post_nopriv_ffla_submit_product_review', [__CLASS__, 'handle_form_submission']);
         add_filter('woocommerce_product_tabs', [__CLASS__, 'maybe_replace_default_reviews_tab'], 98);
@@ -42,6 +55,15 @@ class Product_Reviews_Core
             'enable_requests'           => '1',
             'request_delay_days'        => '7',
             'enable_helpful_votes'      => '1',
+            'enable_not_helpful_votes'  => '0',
+            'enable_criteria'           => '1',
+            'review_criteria'           => self::DEFAULT_CRITERIA,
+            'show_rating_summary'       => '1',
+            'show_replies'              => '1',
+            'forbidden_words'           => '',
+            'forbidden_action'          => 'moderate',
+            'notify_on_approved'        => '1',
+            'notify_on_reply'           => '1',
             'hide_default_reviews_tab'   => '0',
             'replace_default_reviews_tab' => '0',
             'form_title'                => __('Write a review', 'ffl-funnels-addons'),
@@ -276,7 +298,8 @@ class Product_Reviews_Core
     }
 
     /**
-     * Hold reviews when admin enables moderation or when media is attached.
+     * Hold reviews when admin enables moderation, when media is attached, or
+     * when the text trips the forbidden-word list.
      */
     private static function apply_review_comment_approval(array $commentdata): array
     {
@@ -284,10 +307,35 @@ class Product_Reviews_Core
             $commentdata['comment_approved'] = 0;
         }
 
+        $content = (string) ($commentdata['comment_content'] ?? '');
+        $author  = (string) ($commentdata['comment_author'] ?? '');
+
+        if (class_exists('Product_Reviews_Moderation')) {
+            if (Product_Reviews_Moderation::should_reject($content, $author)) {
+                // The submit handler catches this earlier and shows a message.
+                // Anything arriving through another path (REST, imports) is
+                // filed as spam rather than killed with wp_die().
+                $commentdata['comment_approved'] = 'spam';
+
+                return $commentdata;
+            }
+
+            if (Product_Reviews_Moderation::should_hold($content, $author)) {
+                $commentdata['comment_approved'] = 0;
+            }
+        }
+
         return self::apply_media_moderation_flag($commentdata);
     }
 
     /**
+     * Final say on whether a review is published, held, or refused.
+     *
+     * `pre_comment_approved` is the last filter wp_allow_comment() applies, and
+     * wp_allow_comment() runs *after* `preprocess_comment` and overwrites
+     * comment_approved wholesale. Any hold decided earlier in the pipeline is
+     * therefore silently discarded, so every rule has to be re-applied here.
+     *
      * @param int|string $approved
      * @return int|string
      */
@@ -302,6 +350,11 @@ class Product_Reviews_Core
             return $approved;
         }
 
+        // Never soften a verdict WordPress already reached on its own.
+        if ('spam' === $approved || 'trash' === $approved) {
+            return $approved;
+        }
+
         if (is_user_logged_in()) {
             $uid = get_current_user_id();
             if ($uid && user_can($uid, 'moderate_comments')) {
@@ -309,11 +362,28 @@ class Product_Reviews_Core
             }
         }
 
-        if ('1' !== self::get_setting('moderate_all_reviews', '0')) {
-            return $approved;
+        $content = (string) ($commentdata['comment_content'] ?? '');
+        $author  = (string) ($commentdata['comment_author'] ?? '');
+
+        if (class_exists('Product_Reviews_Moderation')) {
+            if (Product_Reviews_Moderation::should_reject($content, $author)) {
+                return 'spam';
+            }
+
+            if (Product_Reviews_Moderation::should_hold($content, $author)) {
+                return 0;
+            }
         }
 
-        return 0;
+        if ('1' === self::get_setting('moderate_all_reviews', '0')) {
+            return 0;
+        }
+
+        if (self::has_review_media_upload()) {
+            return 0;
+        }
+
+        return $approved;
     }
 
     public static function register_order_review_rewrites(): void
@@ -494,6 +564,119 @@ class Product_Reviews_Core
         return !empty($found);
     }
 
+    /* ---------------------------------------------------------------------
+     * Aggregates
+     * ------------------------------------------------------------------- */
+
+    /**
+     * Drop derived data for a product. Cheap and idempotent; called from every
+     * comment write hook rather than trying to guess which ones matter.
+     */
+    public static function flush_product_review_caches(int $product_id): void
+    {
+        if ($product_id <= 0 || 'product' !== get_post_type($product_id)) {
+            return;
+        }
+
+        delete_transient(self::RATING_DISTRIBUTION_TRANSIENT_PREFIX . $product_id);
+    }
+
+    public static function flush_caches_for_comment(int $comment_id): void
+    {
+        $comment = get_comment($comment_id);
+        if ($comment) {
+            self::flush_product_review_caches((int) $comment->comment_post_ID);
+        }
+    }
+
+    /**
+     * Star counts for a product, e.g. [5 => 12, 4 => 3, 3 => 0, 2 => 0, 1 => 1].
+     *
+     * @return array{counts:array<int,int>,total:int,average:float}
+     */
+    public static function get_rating_distribution(int $product_id): array
+    {
+        $empty = ['counts' => [5 => 0, 4 => 0, 3 => 0, 2 => 0, 1 => 0], 'total' => 0, 'average' => 0.0];
+
+        if ($product_id <= 0) {
+            return $empty;
+        }
+
+        $key    = self::RATING_DISTRIBUTION_TRANSIENT_PREFIX . $product_id;
+        $cached = get_transient($key);
+        if (is_array($cached) && isset($cached['counts'], $cached['total'], $cached['average'])) {
+            return $cached;
+        }
+
+        global $wpdb;
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT cm.meta_value AS rating, COUNT(*) AS total
+             FROM {$wpdb->comments} c
+             INNER JOIN {$wpdb->commentmeta} cm
+                     ON cm.comment_id = c.comment_ID AND cm.meta_key = 'rating'
+             WHERE c.comment_post_ID = %d
+               AND c.comment_approved = '1'
+               AND c.comment_type = 'review'
+               AND c.comment_parent = 0
+             GROUP BY cm.meta_value",
+            $product_id
+        ));
+
+        $result = $empty;
+        $sum    = 0;
+
+        foreach ((array) $rows as $row) {
+            $stars = (int) $row->rating;
+            if ($stars < 1 || $stars > 5) {
+                continue;
+            }
+
+            $count = (int) $row->total;
+            $result['counts'][$stars] = $count;
+            $result['total'] += $count;
+            $sum += $stars * $count;
+        }
+
+        $result['average'] = $result['total'] > 0 ? round($sum / $result['total'], 2) : 0.0;
+
+        set_transient($key, $result, 12 * HOUR_IN_SECONDS);
+
+        return $result;
+    }
+
+    /**
+     * Approved replies for a set of reviews, grouped by parent, in one query.
+     *
+     * No `type` filter: a reply left from the WordPress comments screen is
+     * stored as a plain comment, not as a review.
+     *
+     * @param array<int, int> $review_ids
+     * @return array<int, array<int, \WP_Comment>>
+     */
+    public static function get_replies_for_reviews(array $review_ids): array
+    {
+        $review_ids = array_values(array_filter(array_map('absint', $review_ids)));
+        if (empty($review_ids)) {
+            return [];
+        }
+
+        $replies = get_comments([
+            'parent__in' => $review_ids,
+            'status'     => 'approve',
+            'orderby'    => 'comment_date_gmt',
+            'order'      => 'ASC',
+        ]);
+
+        $grouped = [];
+        foreach ($replies as $reply) {
+            $grouped[(int) $reply->comment_parent][] = $reply;
+        }
+
+        return $grouped;
+    }
+
     public static function order_review_return_base_url(): string
     {
         $page_id = absint(self::get_setting('order_review_page_id', '0'));
@@ -607,18 +790,16 @@ class Product_Reviews_Core
             update_comment_meta($comment_id, 'rating', min(5, $rating));
         }
 
-        $quality = isset($_POST['ffla_review_quality']) ? absint($_POST['ffla_review_quality']) : 0;
-        if ($quality > 0) {
-            update_comment_meta($comment_id, 'ffla_review_quality', min(5, $quality));
-        }
-
-        $value = isset($_POST['ffla_review_value']) ? absint($_POST['ffla_review_value']) : 0;
-        if ($value > 0) {
-            update_comment_meta($comment_id, 'ffla_review_value', min(5, $value));
+        if (class_exists('Product_Reviews_Criteria')) {
+            Product_Reviews_Criteria::save_review_scores($comment_id);
         }
 
         if (!metadata_exists('comment', $comment_id, 'ffla_helpful_yes')) {
             update_comment_meta($comment_id, 'ffla_helpful_yes', 0);
+        }
+
+        if (!metadata_exists('comment', $comment_id, 'ffla_helpful_no')) {
+            update_comment_meta($comment_id, 'ffla_helpful_no', 0);
         }
 
         $comment = get_comment($comment_id);
@@ -756,7 +937,15 @@ class Product_Reviews_Core
         }
 
         if ('ffla_review_helpful' === $column) {
-            echo esc_html((string) ((int) get_comment_meta($comment_id, 'ffla_helpful_yes', true)));
+            $yes = (int) get_comment_meta($comment_id, 'ffla_helpful_yes', true);
+            $no  = (int) get_comment_meta($comment_id, 'ffla_helpful_no', true);
+
+            echo esc_html($no > 0 ? $yes . ' / -' . $no : (string) $yes);
+
+            if ((int) $comment->comment_karma === 1) {
+                echo '<div class="ffla-comment-pinned">' . esc_html__('Pinned', 'ffl-funnels-addons') . '</div>';
+            }
+
             return;
         }
 
@@ -823,6 +1012,7 @@ class Product_Reviews_Core
             .ffla-comment-media-preview img { width:28px; height:28px; object-fit:cover; border-radius:4px; border:1px solid #dcdcde; }
             .ffla-comment-media-file { display:inline-block; padding:2px 6px; border:1px solid #dcdcde; border-radius:4px; text-decoration:none; font-size:11px; }
             .ffla-comment-media-more { font-size:11px; color:#646970; margin-top:2px; }
+            .ffla-comment-pinned { display:inline-block; margin-top:4px; padding:1px 6px; border-radius:3px; background:#fdf6e3; color:#8a6100; font-size:11px; font-weight:600; }
         </style>';
     }
 
@@ -973,6 +1163,22 @@ class Product_Reviews_Core
 
         if ($rating < 1 || $rating > 5) {
             self::redirect_with_status($redirect, 'error', __('Please select a rating between 1 and 5.', 'ffl-funnels-addons'), $fallback);
+        }
+
+        // Matches the exemption in filter_pre_comment_approved(): a user who can
+        // moderate comments is never filtered by their own word list.
+        $can_moderate = is_user_logged_in() && current_user_can('moderate_comments');
+
+        $submitted_author = isset($_POST['author']) ? sanitize_text_field(wp_unslash($_POST['author'])) : '';
+        if (!$can_moderate
+            && class_exists('Product_Reviews_Moderation')
+            && Product_Reviews_Moderation::should_reject($comment_content, $submitted_author)) {
+            self::redirect_with_status(
+                $redirect,
+                'error',
+                __('Your review contains wording we cannot publish. Please revise it and try again.', 'ffl-funnels-addons'),
+                $fallback
+            );
         }
 
         if (!$order_ctx && !is_user_logged_in() && get_option('comment_registration')) {
