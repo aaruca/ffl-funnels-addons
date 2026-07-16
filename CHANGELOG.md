@@ -2,7 +2,7 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
-## [1.41.0] - Unreleased
+## [1.41.0] - 2026-07-10
 
 ### Added
 - **Customer Notes module** (contributed by @adeelwebify, PR #5): per-customer internal notes that appear on the Edit Order screen and the user profile. Supports HPOS and legacy order storage, guest customers (notes keyed to the billing email), and visual note types (General, VIP, Fraud/Warning, High Returns, Requires Support) that colour the order-page widget. Gated behind `manage_woocommerce`; ships inactive like all modules.
