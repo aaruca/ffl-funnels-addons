@@ -237,6 +237,18 @@ if (in_array('media-cleaner', $ffla_active_modules, true)) {
     $wpdb->delete($wpdb->postmeta, ['meta_key' => '_ffla_mclean_ignored']);
 }
 
+// ── Customer Notes cleanup ─────────────────────────────────────────
+if (in_array('customer-notes', $ffla_active_modules, true)) {
+    // Per-customer notes live in user meta; guest notes in prefixed options.
+    $wpdb->delete($wpdb->usermeta, ['meta_key' => '_ffla_customer_note']);
+    $wpdb->delete($wpdb->usermeta, ['meta_key' => '_ffla_customer_note_type']);
+
+    // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+    $wpdb->query(
+        "DELETE FROM {$wpdb->options} WHERE option_name LIKE '\_ffla\_guest\_note\_%'"
+    );
+}
+
 // ── FFLA core cleanup ──────────────────────────────────────────────
 delete_option('ffla_active_modules');
 delete_transient('ffla_github_release');

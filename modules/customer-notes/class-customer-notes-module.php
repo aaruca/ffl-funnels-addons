@@ -83,7 +83,8 @@ class Customer_Notes_Module extends FFLA_Module {
             );
         }
 
-        $email = $order->get_billing_email();
+        // Normalise so Email@X.com and email@x.com resolve to the same note.
+        $email = strtolower( trim( (string) $order->get_billing_email() ) );
         if ($email) {
             $key  = '_ffla_guest_note_' . md5( $email );
             $data = get_option( $key, $default );
@@ -116,7 +117,8 @@ class Customer_Notes_Module extends FFLA_Module {
             return;
         }
 
-        $email = $order->get_billing_email();
+        // Same normalisation as the read path.
+        $email = strtolower( trim( (string) $order->get_billing_email() ) );
         if ($email) {
             $key = '_ffla_guest_note_' . md5( $email );
             update_option(
