@@ -2,7 +2,7 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
-## [1.42.0] - Unreleased
+## [1.41.1] - 2026-07-16
 
 ### Added
 - **GA4 Bridge module** — restores two GA4 ecommerce events for stores running "Google Analytics for WooCommerce" (v2.3.x) with the Bricks theme and the Merchant AJAX side-cart. Ported from the verified WPCodeBox snippet running on timberlakefirearms.com.
