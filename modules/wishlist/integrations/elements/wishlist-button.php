@@ -180,6 +180,12 @@ class FFLA_Wishlist_Button extends \Bricks\Element
      */
     private function get_default_icon_svg(): string
     {
+        // The merchant's global Custom Icon SVG (Settings → Wishlist) when set,
+        // otherwise the default heart.
+        if (class_exists('\Alg_Wishlist_Core')) {
+            return \Alg_Wishlist_Core::default_icon_svg('ffla-wishlist-icon');
+        }
+
         return '<svg class="ffla-wishlist-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>';
     }
 
@@ -220,10 +226,17 @@ class FFLA_Wishlist_Button extends \Bricks\Element
         // Build the icon markup — use Bricks native icon if set, otherwise default heart.
         $icon_data = $settings['customIcon'] ?? '';
         if (!empty($icon_data)) {
-            // Bricks icon control: render via Bricks' helper inside a wrapper span.
+            // Bricks' render_icon() RETURNS the markup; some builds echo it.
+            // The old code only read the output buffer, so a selected icon
+            // (font glyph or media-library SVG) captured as empty and nothing
+            // rendered. Capture both ways and prefer the returned string.
             ob_start();
-            self::render_icon($icon_data, ['ffla-wishlist-icon']);
-            $icon_html = ob_get_clean();
+            $returned = self::render_icon($icon_data, ['ffla-wishlist-icon']);
+            $buffered = ob_get_clean();
+            $icon_html = (is_string($returned) && $returned !== '') ? $returned : (string) $buffered;
+            if (trim($icon_html) === '') {
+                $icon_html = $this->get_default_icon_svg();
+            }
         } else {
             $icon_html = $this->get_default_icon_svg();
         }

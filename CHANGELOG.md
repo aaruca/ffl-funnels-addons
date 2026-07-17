@@ -2,6 +2,19 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.41.2] - 2026-07-17
+
+Wishlist custom-icon fixes. The default heart is unchanged — these only affect custom icons, which are entirely optional.
+
+### Fixed
+- **Wishlist — Bricks "Custom icon" control did nothing.** The Wishlist Button and Wishlist Count elements captured the icon via `ob_start()`, but Bricks' `render_icon()` *returns* the markup rather than echoing it, so any chosen icon (font glyph or media-library SVG) rendered as empty. It now reads the returned markup (with a buffer fallback), so selecting an SVG from the media library works. This is the "select media" path — it was already built into Bricks' icon control and just wasn't rendering.
+- **Wishlist — Settings → "Custom Icon SVG" was a dead setting.** The pasted SVG was saved but never read anywhere on the front end. It now applies as the global default icon across the wishlist button, count, and shortcode (a per-element Bricks icon still overrides it). Cascade: per-element icon → global Settings SVG → default heart.
+- **Wishlist — SVG sanitiser stripped `viewBox`.** The allowlist keyed `viewBox` in camelCase, but `wp_kses` lowercases attribute names before matching, so `viewBox` was removed and custom SVGs lost their scaling. Fixed and centralised so the save and render paths share one allowlist.
+
+### Notes
+- No change for sites using the default heart — it remains the zero-config default; nothing needs to be selected.
+- Migration edge: on a site where someone previously pasted SVG into the (formerly inert) Settings field, that SVG will now start rendering.
+
 ## [1.41.1] - 2026-07-16
 
 ### Added

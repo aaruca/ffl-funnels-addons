@@ -190,6 +190,10 @@ class FFLA_Wishlist_Count extends \Bricks\Element
      */
     private function get_default_icon_svg(): string
     {
+        if (class_exists('\Alg_Wishlist_Core')) {
+            return \Alg_Wishlist_Core::default_icon_svg('ffla-count-icon');
+        }
+
         return '<svg class="ffla-count-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>';
     }
 
@@ -235,9 +239,17 @@ class FFLA_Wishlist_Count extends \Bricks\Element
         if ($show_icon) {
             $icon_data = $settings['customIcon'] ?? '';
             if (!empty($icon_data)) {
+                // Bricks' render_icon() returns the markup (some builds echo
+                // it); the old code only read the buffer, so a selected icon
+                // rendered empty. Prefer the returned string, fall back to the
+                // buffer, then to the default icon.
                 ob_start();
-                self::render_icon($icon_data, ['ffla-count-icon']);
-                $icon_html = ob_get_clean();
+                $returned = self::render_icon($icon_data, ['ffla-count-icon']);
+                $buffered = ob_get_clean();
+                $icon_html = (is_string($returned) && $returned !== '') ? $returned : (string) $buffered;
+                if (trim($icon_html) === '') {
+                    $icon_html = $this->get_default_icon_svg();
+                }
             } else {
                 $icon_html = $this->get_default_icon_svg();
             }

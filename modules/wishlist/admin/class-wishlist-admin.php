@@ -203,15 +203,15 @@ class Wishlist_Admin
             'alg_wishlist_custom_css',
         ];
 
-        $svg_allowlist = array(
-            'svg'      => array('xmlns' => true, 'viewBox' => true, 'width' => true, 'height' => true, 'fill' => true, 'stroke' => true, 'stroke-width' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'class' => true),
-            'path'     => array('d' => true, 'fill' => true, 'stroke' => true),
-            'circle'   => array('cx' => true, 'cy' => true, 'r' => true, 'fill' => true, 'stroke' => true),
-            'rect'     => array('x' => true, 'y' => true, 'width' => true, 'height' => true, 'rx' => true, 'ry' => true, 'fill' => true, 'stroke' => true),
-            'line'     => array('x1' => true, 'y1' => true, 'x2' => true, 'y2' => true, 'stroke' => true),
-            'polyline' => array('points' => true, 'fill' => true, 'stroke' => true),
-            'polygon'  => array('points' => true, 'fill' => true, 'stroke' => true),
-        );
+        // Shared with the render path so save-time and output-time sanitisation
+        // never diverge. (The old inline list keyed 'viewBox' camelCase, which
+        // wp_kses lowercases and therefore stripped — breaking SVG scaling.)
+        $svg_allowlist = class_exists('Alg_Wishlist_Core')
+            ? Alg_Wishlist_Core::svg_allowlist()
+            : array(
+                'svg'  => array('xmlns' => true, 'viewbox' => true, 'fill' => true, 'stroke' => true, 'class' => true),
+                'path' => array('d' => true, 'fill' => true, 'stroke' => true),
+            );
 
         foreach ($fields as $field) {
             if (isset($_POST[$field])) {

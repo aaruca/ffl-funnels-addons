@@ -343,4 +343,66 @@ class Alg_Wishlist_Core
         return 0;
     }
 
+    /**
+     * Allowed tags/attributes for a merchant-supplied wishlist icon SVG.
+     *
+     * Attribute names are LOWERCASE on purpose: wp_kses lowercases attribute
+     * names before matching this list, so a camelCase 'viewBox' key never
+     * matches and the attribute gets silently stripped — which breaks SVG
+     * scaling. 'viewbox' is the form that survives.
+     *
+     * @return array<string,array<string,bool>>
+     */
+    public static function svg_allowlist(): array
+    {
+        return array(
+            'svg'      => array('xmlns' => true, 'viewbox' => true, 'width' => true, 'height' => true, 'fill' => true, 'stroke' => true, 'stroke-width' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'class' => true, 'style' => true, 'aria-hidden' => true, 'role' => true, 'focusable' => true),
+            'path'     => array('d' => true, 'fill' => true, 'fill-rule' => true, 'clip-rule' => true, 'stroke' => true, 'stroke-width' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true),
+            'g'        => array('fill' => true, 'stroke' => true, 'transform' => true),
+            'circle'   => array('cx' => true, 'cy' => true, 'r' => true, 'fill' => true, 'stroke' => true),
+            'ellipse'  => array('cx' => true, 'cy' => true, 'rx' => true, 'ry' => true, 'fill' => true, 'stroke' => true),
+            'rect'     => array('x' => true, 'y' => true, 'width' => true, 'height' => true, 'rx' => true, 'ry' => true, 'fill' => true, 'stroke' => true),
+            'line'     => array('x1' => true, 'y1' => true, 'x2' => true, 'y2' => true, 'stroke' => true),
+            'polyline' => array('points' => true, 'fill' => true, 'stroke' => true),
+            'polygon'  => array('points' => true, 'fill' => true, 'stroke' => true),
+        );
+    }
+
+    /**
+     * The merchant's custom wishlist icon SVG (from Settings → Custom Icon SVG),
+     * sanitised on output, or '' when none is set.
+     */
+    public static function custom_icon_svg(): string
+    {
+        $settings = get_option('alg_wishlist_settings', array());
+        $svg = is_array($settings) ? trim((string) ($settings['alg_wishlist_icon_svg'] ?? '')) : '';
+
+        if ($svg === '' || strpos($svg, '<svg') === false) {
+            return '';
+        }
+
+        return wp_kses($svg, self::svg_allowlist());
+    }
+
+    /**
+     * The icon a wishlist component shows when it sets no icon of its own:
+     * the merchant's custom SVG when configured, otherwise the default heart.
+     *
+     * @param string $css_class Styling/sizing hook class for the SVG.
+     */
+    public static function default_icon_svg(string $css_class = 'ffla-wishlist-icon'): string
+    {
+        $custom = self::custom_icon_svg();
+        if ($custom !== '') {
+            // Add the hook class only when the merchant did not set their own,
+            // so element sizing/colour rules still apply.
+            if (!preg_match('/<svg[^>]*\sclass=/i', $custom)) {
+                $custom = preg_replace('/<svg\b/i', '<svg class="' . esc_attr($css_class) . '"', $custom, 1);
+            }
+            return $custom;
+        }
+
+        return '<svg class="' . esc_attr($css_class) . '" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>';
+    }
+
 }
