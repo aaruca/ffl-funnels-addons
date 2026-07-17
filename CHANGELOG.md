@@ -2,6 +2,14 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.42.0] - Unreleased
+
+### Added
+- **GA4 Bridge module** — restores two GA4 ecommerce events for stores running "Google Analytics for WooCommerce" (v2.3.x) with the Bricks theme and the Merchant AJAX side-cart. Ported from the verified WPCodeBox snippet running on timberlakefirearms.com.
+  - **view_item:** Bricks replaces the single-product template and fires neither `woocommerce_before_single_product` (which sets the product data) nor `woocommerce_after_single_product` (which queues the event) — so the event either never queued or queued with an empty payload. Both hooks are now re-fired, `did_action()`-guarded against double-firing, from `woocommerce_after_add_to_cart_form` — the one standard hook Bricks emits inside product content, which runs with the correct global `$product` and before the tracker prints at `wp_footer:10`.
+  - **add_to_cart:** the GA plugin captures the AJAX payload but only persists it when the store redirects after add (`woocommerce_cart_redirect_after_add = yes`); with a side-cart it dies with the request. The payload — built with the plugin's own `get_formatted_product()`, so item data stays consistent — is now persisted into the WC session, and the plugin's own restore path emits it on the next pageview.
+  - Deliberately does **not** touch `purchase`, `begin_checkout`, or `view_item_list` (already working; re-emitting would double-count revenue). No-ops safely when the GA plugin is inactive. Known limits documented in the module header: out-of-stock products don't fire `view_item` (no add-to-cart form), `add_to_cart` lands on the next pageview, `view_cart` is unsupported upstream, and Site Kit's Analytics module must stay disconnected (one GA4 tag per site).
+
 ## [1.41.0] - 2026-07-10
 
 ### Added

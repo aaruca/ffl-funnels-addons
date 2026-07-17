@@ -84,6 +84,19 @@ Find and safely remove media that nothing references, plus broken, orphaned, and
 *   **Data:** Uses two custom tables (`ffla_mclean_scan`, `ffla_mclean_refs`). Uninstalling drops them but **keeps** the trash folder on disk, since it holds real files you could still restore.
 *   **Always back up** your database and uploads before deleting media in bulk.
 
+### 10. Customer Notes
+Per-customer internal notes for staff (contributed by @adeelwebify).
+*   **Order screen:** a "Customer Note" box on Edit Order (HPOS and legacy), colour-coded by note type (General, VIP, Fraud/Warning, High Returns, Requires Support).
+*   **Profile sync:** the same note is editable from the WordPress user profile; guest notes are keyed to the billing email and follow future orders.
+*   **Access:** requires `manage_woocommerce`; customers never see their own notes.
+
+### 11. GA4 Bridge
+Restores GA4 `view_item` and `add_to_cart` for **Google Analytics for WooCommerce** on stores using the Bricks theme and the Merchant AJAX side-cart.
+*   **view_item:** Bricks fires almost no standard product-page hooks; the bridge re-fires the two the tracker needs (`did_action()`-guarded, never double-fires) from the one hook Bricks does emit.
+*   **add_to_cart:** persisted into the WC session during the AJAX add (the GA plugin only does this itself when redirect-after-add is on); the plugin's own restore path emits it on the next pageview.
+*   **Untouched:** `purchase`, `begin_checkout`, `view_item_list` — they already work; duplicating them would double-count revenue.
+*   **Limits:** out-of-stock products don't fire `view_item`; `add_to_cart` lands on the next pageview; `view_cart` is unsupported by the GA plugin; keep Site Kit's Analytics module disconnected so the site has exactly one GA4 tag.
+
 ## Installation
 
 1.  Download the `ffl-funnels-addons.zip` file from the [Releases](https://github.com/aaruca/ffl-funnels-addons/releases) page.
