@@ -20,6 +20,22 @@ class Wishlist_Admin
     public function init(): void
     {
         add_action('admin_post_wishlist_save_settings', [$this, 'handle_settings_save']);
+        add_action('admin_enqueue_scripts', [$this, 'enqueue_media_library']);
+    }
+
+    /**
+     * The Custom Icon field opens the WordPress media frame, which needs the
+     * media scripts loaded. Only on this module's own settings screen.
+     */
+    public function enqueue_media_library(): void
+    {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $page = isset($_GET['page']) ? sanitize_key(wp_unslash($_GET['page'])) : '';
+        if ('ffla-wishlist' !== $page) {
+            return;
+        }
+
+        wp_enqueue_media();
     }
 
     /**
@@ -64,11 +80,19 @@ class Wishlist_Admin
             __('Color when the product is in the wishlist.', 'ffl-funnels-addons')
         );
 
+        FFLA_Admin::render_media_field(
+            __('Custom Icon', 'ffl-funnels-addons'),
+            'alg_wishlist_icon_id',
+            (int) ($options['alg_wishlist_icon_id'] ?? 0),
+            __('Choose an icon from the Media Library to replace the default heart. An SVG is inlined so the colors above still apply; other image types are shown as-is and cannot be recolored. Leave empty to keep the heart.', 'ffl-funnels-addons'),
+            __('Select icon', 'ffl-funnels-addons')
+        );
+
         FFLA_Admin::render_textarea_field(
-            __('Custom Icon SVG', 'ffl-funnels-addons'),
+            __('Custom Icon SVG (advanced)', 'ffl-funnels-addons'),
             'alg_wishlist_icon_svg',
             $options['alg_wishlist_icon_svg'] ?? '',
-            __('Paste raw SVG code to replace the default heart icon.', 'ffl-funnels-addons')
+            __('Optional fallback for pasting raw SVG code. Only used when no icon is selected above. The SVG must include a viewBox (e.g. viewBox="0 0 24 24") or it will not render.', 'ffl-funnels-addons')
         );
 
         echo '</div></div>'; // end card
@@ -212,6 +236,16 @@ class Wishlist_Admin
                 'svg'  => array('xmlns' => true, 'viewbox' => true, 'fill' => true, 'stroke' => true, 'class' => true),
                 'path' => array('d' => true, 'fill' => true, 'stroke' => true),
             );
+
+        // Media Library icon (attachment ID). Cheap to change, so drop the
+        // cached inline SVG whenever it does.
+        $new_icon_id = isset($_POST['alg_wishlist_icon_id']) ? absint($_POST['alg_wishlist_icon_id']) : 0;
+        $old_icon_id = (int) ($options['alg_wishlist_icon_id'] ?? 0);
+        $options['alg_wishlist_icon_id'] = $new_icon_id;
+        if ($new_icon_id !== $old_icon_id && class_exists('Alg_Wishlist_Core')) {
+            Alg_Wishlist_Core::flush_icon_cache($old_icon_id);
+            Alg_Wishlist_Core::flush_icon_cache($new_icon_id);
+        }
 
         foreach ($fields as $field) {
             if (isset($_POST[$field])) {

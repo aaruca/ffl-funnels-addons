@@ -385,21 +385,117 @@ class Alg_Wishlist_Core
     }
 
     /**
-     * The icon a wishlist component shows when it sets no icon of its own:
-     * the merchant's custom SVG when configured, otherwise the default heart.
+     * Inline the markup for an icon chosen from the Media Library.
+     *
+     * SVGs are inlined rather than linked so the wishlist colour settings
+     * (primary / hover / active) still apply — an <img> could not be recoloured.
+     * Anything else falls back to a plain image tag.
+     *
+     * @return string '' when the attachment is unusable.
+     */
+    public static function attachment_icon_html(int $attachment_id, string $css_class): string
+    {
+        if ($attachment_id <= 0) {
+            return '';
+        }
+
+        $mime = (string) get_post_mime_type($attachment_id);
+
+        if ('image/svg+xml' === $mime) {
+            $cache_key = 'alg_wl_icon_' . $attachment_id;
+            $cached    = get_transient($cache_key);
+            if (is_string($cached) && $cached !== '') {
+                return $cached;
+            }
+
+            $path = get_attached_file($attachment_id);
+            if (!$path || !is_readable($path)) {
+                return '';
+            }
+            // Guard against reading something huge off disk on every render.
+            $size = @filesize($path);
+            if ($size === false || $size > 256000) {
+                return '';
+            }
+
+            $raw = @file_get_contents($path);
+            if (!is_string($raw) || $raw === '') {
+                return '';
+            }
+
+            // Drop the XML prolog, doctype and comments before sanitising.
+            $raw = preg_replace('/<\?xml.*?\?>/is', '', $raw);
+            $raw = preg_replace('/<!DOCTYPE.*?>/is', '', $raw);
+            $raw = preg_replace('/<!--.*?-->/s', '', $raw);
+            $raw = trim((string) $raw);
+
+            if ($raw === '' || strpos($raw, '<svg') === false) {
+                return '';
+            }
+
+            $svg = wp_kses($raw, self::svg_allowlist());
+            if (trim($svg) === '') {
+                return '';
+            }
+
+            $svg = self::ensure_svg_class($svg, $css_class);
+            set_transient($cache_key, $svg, DAY_IN_SECONDS);
+
+            return $svg;
+        }
+
+        // Raster image: rendered as-is (cannot inherit the colour settings).
+        $img = wp_get_attachment_image($attachment_id, [48, 48], false, [
+            'class' => $css_class,
+            'alt'   => '',
+        ]);
+
+        return is_string($img) ? $img : '';
+    }
+
+    /**
+     * Drop a cached inline SVG for an attachment.
+     */
+    public static function flush_icon_cache(int $attachment_id): void
+    {
+        if ($attachment_id > 0) {
+            delete_transient('alg_wl_icon_' . $attachment_id);
+        }
+    }
+
+    /**
+     * Add the styling hook class to an <svg> that has none, leaving a class the
+     * merchant already set alone.
+     */
+    private static function ensure_svg_class(string $svg, string $css_class): string
+    {
+        if ($css_class === '' || preg_match('/<svg[^>]*\sclass=/i', $svg)) {
+            return $svg;
+        }
+
+        return (string) preg_replace('/<svg\b/i', '<svg class="' . esc_attr($css_class) . '"', $svg, 1);
+    }
+
+    /**
+     * The icon a wishlist component shows when it sets no icon of its own.
+     *
+     * Cascade: Media Library selection → pasted raw SVG → the default heart.
      *
      * @param string $css_class Styling/sizing hook class for the SVG.
      */
     public static function default_icon_svg(string $css_class = 'ffla-wishlist-icon'): string
     {
+        $settings = get_option('alg_wishlist_settings', array());
+        $icon_id  = is_array($settings) ? (int) ($settings['alg_wishlist_icon_id'] ?? 0) : 0;
+
+        $from_media = self::attachment_icon_html($icon_id, $css_class);
+        if ($from_media !== '') {
+            return $from_media;
+        }
+
         $custom = self::custom_icon_svg();
         if ($custom !== '') {
-            // Add the hook class only when the merchant did not set their own,
-            // so element sizing/colour rules still apply.
-            if (!preg_match('/<svg[^>]*\sclass=/i', $custom)) {
-                $custom = preg_replace('/<svg\b/i', '<svg class="' . esc_attr($css_class) . '"', $custom, 1);
-            }
-            return $custom;
+            return self::ensure_svg_class($custom, $css_class);
         }
 
         return '<svg class="' . esc_attr($css_class) . '" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>';

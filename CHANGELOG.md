@@ -2,6 +2,16 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.41.3] - 2026-07-18
+
+### Added
+- **Wishlist — pick the custom icon from the Media Library.** The Wishlist settings now have a **Custom Icon** field with a Select/Remove button and a preview, instead of requiring raw SVG to be pasted. A selected **SVG is inlined**, so the Primary / Hover / Active colour settings still apply to it; other image types are rendered as an `<img>` and cannot be recoloured. Inlined SVGs are sanitised on read and cached, and the cache is cleared when the selection changes.
+- New reusable `FFLA_Admin::render_media_field()` helper for module settings screens.
+
+### Changed
+- **Wishlist — icon cascade is now:** per-element Bricks icon → Media Library selection → pasted raw SVG → default heart. The raw-SVG textarea is kept as an "advanced" fallback so existing values stay editable, and its description now notes that a `viewBox` is required.
+- The default heart is unchanged and still applies with no configuration — nothing needs to be selected.
+
 ## [1.41.2] - 2026-07-17
 
 Wishlist custom-icon fixes. The default heart is unchanged — these only affect custom icons, which are entirely optional.

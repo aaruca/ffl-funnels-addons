@@ -467,6 +467,60 @@ class FFLA_Admin
     }
 
     /**
+     * Static helper to render a Media Library picker.
+     *
+     * Stores the chosen attachment ID in a hidden input; the preview and the
+     * Select/Remove buttons are driven by the module's admin JS via wp.media.
+     * The caller is responsible for calling wp_enqueue_media() on its screen.
+     *
+     * @param int    $attachment_id Currently selected attachment (0 for none).
+     * @param string $button_label  Label for the select button.
+     */
+    public static function render_media_field(string $label, string $name, int $attachment_id, string $desc, string $button_label = ''): void
+    {
+        $button_label = $button_label !== '' ? $button_label : __('Select image', 'ffl-funnels-addons');
+        $preview      = '';
+
+        if ($attachment_id > 0) {
+            $mime = (string) get_post_mime_type($attachment_id);
+            $url  = wp_get_attachment_url($attachment_id);
+            if ($url) {
+                // SVGs have no intermediate sizes, so use the file URL directly.
+                $preview = '<img src="' . esc_url($url) . '" alt="" />';
+                if ('image/svg+xml' !== $mime) {
+                    $thumb = wp_get_attachment_image_url($attachment_id, 'thumbnail');
+                    if ($thumb) {
+                        $preview = '<img src="' . esc_url($thumb) . '" alt="" />';
+                    }
+                }
+            }
+        }
+        ?>
+        <div class="wb-field">
+            <label class="wb-field__label"><?php echo esc_html($label); ?></label>
+            <div class="wb-field__control">
+                <div class="ffla-media-field" data-ffla-media data-target="<?php echo esc_attr($name); ?>">
+                    <input type="hidden" id="<?php echo esc_attr($name); ?>" name="<?php echo esc_attr($name); ?>"
+                        value="<?php echo esc_attr((string) $attachment_id); ?>">
+                    <div class="ffla-media-field__preview" data-ffla-media-preview<?php echo $preview === '' ? ' hidden' : ''; ?>>
+                        <?php echo wp_kses_post($preview); ?>
+                    </div>
+                    <div class="ffla-media-field__actions">
+                        <button type="button" class="wb-btn wb-btn--subtle" data-ffla-media-select>
+                            <?php echo esc_html($button_label); ?>
+                        </button>
+                        <button type="button" class="wb-btn wb-btn--subtle" data-ffla-media-remove<?php echo $attachment_id > 0 ? '' : ' hidden'; ?>>
+                            <?php esc_html_e('Remove', 'ffl-funnels-addons'); ?>
+                        </button>
+                    </div>
+                </div>
+                <p class="wb-field__desc"><?php echo esc_html($desc); ?></p>
+            </div>
+        </div>
+        <?php
+    }
+
+    /**
      * Static helper to render a notice.
      */
     public static function render_notice(string $type, string $message): void

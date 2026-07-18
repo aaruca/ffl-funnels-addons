@@ -21,3 +21,41 @@
   border-color: var(--wb-color-brand-background);
   box-shadow: 0 0 0 3px rgba(15, 108, 189, 0.15);
 }
+
+/* Media Library icon picker */
+
+.ffla-media-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ffla-media-field__preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  padding: 6px;
+  border: 1px solid var(--wb-color-neutral-stroke-1, #e2e4e9);
+  border-radius: var(--wb-radius-md, 8px);
+  background: var(--wb-color-neutral-background-1, #fff);
+  flex: 0 0 auto;
+}
+
+.ffla-media-field__preview img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.ffla-media-field__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ffla-media-field [hidden] {
+  display: none;
+}
