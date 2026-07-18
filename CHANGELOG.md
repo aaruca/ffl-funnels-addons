@@ -2,6 +2,17 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.41.4] - 2026-07-18
+
+### Fixed
+- **Wishlist — the custom icon now applies to every front-end surface.** The SnapFind search-results buttons, the `[alg_wishlist_button_aws]` shortcode, and the `[alg_wishlist_count]` shortcode each had their own hard-coded heart, so a configured Custom Icon had no effect there. They now all resolve through the same icon cascade (per-element Bricks icon → Media Library selection → pasted SVG → default heart).
+- **Wishlist / SnapFind — icon markup is now safely escaped into JavaScript.** The SnapFind button script embedded the icon in a single-quoted JS string escaped only for quotes. Any icon containing a newline — which a Media Library SVG virtually always does — would have produced a syntax error and disabled the SnapFind wishlist buttons entirely. It is now emitted with `wp_json_encode()`.
+- **Wishlist / SnapFind — icons are sized by CSS rather than relying on the icon's own attributes.** The previous heart only fitted its 34px button because of inline `width="18"`; an arbitrary icon could render oversized. The button now sizes any `svg`/`img` child to 18px.
+
+### Notes
+- The default heart is still the zero-config default everywhere; sites that set no custom icon are unaffected.
+- `[alg_wishlist_count]`'s `icon_color` attribute still works — when used, the icon is wrapped in a span carrying the colour (both `color` and `stroke` inherit into the SVG). Markup is unchanged when the attribute is not used.
+
 ## [1.41.3] - 2026-07-18
 
 ### Added

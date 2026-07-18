@@ -110,12 +110,21 @@ JS;
      */
     private function inject_button_script(): void
     {
-        $heart_svg = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
-        $svg_escaped = str_replace("'", "\\'", $heart_svg);
+        // Honour the configured wishlist icon (Media Library selection, pasted
+        // SVG, or the default heart) instead of hard-coding one here.
+        $icon_html = class_exists('Alg_Wishlist_Core')
+            ? Alg_Wishlist_Core::default_icon_svg('snaf-wishlist-icon')
+            : '<svg class="snaf-wishlist-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
+
+        // wp_json_encode emits a fully escaped JS string literal (quotes
+        // included). The previous escaping only handled single quotes, so an
+        // icon containing newlines — which any Media Library SVG will — would
+        // have produced a syntax error and killed this whole script.
+        $icon_js = wp_json_encode($icon_html);
 
         $js = <<<JS
 (function(){
-    var heartSvg = '{$svg_escaped}';
+    var heartSvg = {$icon_js};
 
     function getWishlistIds() {
         return (window.AlgWishlistSettings && Array.isArray(AlgWishlistSettings.initial_items))
@@ -198,6 +207,12 @@ JS;
     box-shadow: 0 1px 4px rgba(0,0,0,0.12);
     transition: transform 0.2s ease, color 0.2s ease, background 0.2s ease;
     line-height: 1;
+}
+.snaf-wishlist-btn svg,
+.snaf-wishlist-btn img {
+    display: block;
+    width: 18px;
+    height: 18px;
 }
 .snaf-wishlist-btn:hover {
     transform: scale(1.15);
