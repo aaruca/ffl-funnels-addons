@@ -60,6 +60,33 @@ class Tax_WooCommerce_Integration
         $city = (string) $city;
         $tax_class = (string) $tax_class;
 
+        // Local pickup is taxed at the store's own address, never the customer's.
+        // WooCommerce core only forces the base address for pickup conditionally
+        // (WC_Customer::get_taxable_address, and only when its filters + the
+        // chosen method line up), and even when it does it leaves the customer's
+        // street on the customer object — which build_address_input would then
+        // read and pair with the store ZIP (a "Frankenstein" address). So we
+        // detect pickup ourselves and pin the WHOLE address (country/state/zip/
+        // city + street) to the store base HERE, before the coverage gates
+        // evaluate $state.
+        //
+        // Single-location stores want exactly this. A multi-location Blocks
+        // store where WooCommerce already resolved the SPECIFIC pickup location
+        // can return false from ffla_tax_local_pickup_use_store_base to keep
+        // core's per-location address instead.
+        $pickup_street = null;
+        if (self::is_local_pickup_selected()
+            && apply_filters('ffla_tax_local_pickup_use_store_base', true)) {
+            $base = self::store_base_address();
+            if ('' !== $base['state'] && '' !== $base['country']) {
+                $country       = $base['country'];
+                $state         = $base['state'];
+                $postcode      = $base['zip'];
+                $city          = $base['city'];
+                $pickup_street = $base['street'];
+            }
+        }
+
         if ($country !== 'US') {
             return $matched_tax_rates;
         }
@@ -91,7 +118,7 @@ class Tax_WooCommerce_Integration
             return $matched_tax_rates;
         }
 
-        $input = self::build_address_input($state, $postcode, $city);
+        $input = self::build_address_input($state, $postcode, $city, $pickup_street);
         if (empty($input['street']) && empty($input['zip'])) {
             return $matched_tax_rates;
         }
@@ -209,7 +236,7 @@ class Tax_WooCommerce_Integration
      * shipping fields whenever ship-to-different is off, so the shipping getter
      * already returns the billing street in the same-address case.
      */
-    private static function build_address_input(string $state, string $postcode, string $city): array
+    private static function build_address_input(string $state, string $postcode, string $city, ?string $forced_street = null): array
     {
         $input = [
             'street' => '',
@@ -217,6 +244,15 @@ class Tax_WooCommerce_Integration
             'state'  => $state,
             'zip'    => $postcode,
         ];
+
+        // Local pickup: the whole address is already pinned to the store base
+        // by the caller. Use the store's own street (empty is fine — the caller
+        // only bails when street AND zip are both empty) and never read the
+        // customer's street.
+        if (null !== $forced_street) {
+            $input['street'] = $forced_street;
+            return $input;
+        }
 
         if (!function_exists('WC') || !WC()->customer) {
             return $input;
@@ -241,6 +277,65 @@ class Tax_WooCommerce_Integration
         }
 
         return $input;
+    }
+
+    /**
+     * Whether the customer has chosen a Local Pickup shipping method.
+     *
+     * Mirrors WooCommerce core's own test in WC_Customer::get_taxable_address():
+     * the woocommerce_apply_base_tax_for_local_pickup filter must be on, and a
+     * chosen shipping-method id must be in woocommerce_local_pickup_methods.
+     * Honouring the same filters means the Blocks "pickup_location" method is
+     * included whenever the Blocks Local Pickup feature registered it.
+     *
+     * Session-based (the cart/checkout flow). Admin order recalculation resolves
+     * pickup from the order's line items instead, which WooCommerce handles via
+     * its own get_tax_location() base override — see the note in filter.
+     */
+    private static function is_local_pickup_selected(): bool
+    {
+        if (!function_exists('wc_get_chosen_shipping_method_ids')) {
+            return false;
+        }
+
+        if (!apply_filters('woocommerce_apply_base_tax_for_local_pickup', true)) {
+            return false;
+        }
+
+        $chosen = wc_get_chosen_shipping_method_ids();
+        if (empty($chosen) || !is_array($chosen)) {
+            return false;
+        }
+
+        $pickup_methods = apply_filters('woocommerce_local_pickup_methods', ['legacy_local_pickup', 'local_pickup']);
+        if (!is_array($pickup_methods)) {
+            return false;
+        }
+
+        return count(array_intersect($chosen, $pickup_methods)) > 0;
+    }
+
+    /**
+     * The store's own base address, used to tax local-pickup orders.
+     *
+     * State / ZIP / city come from the WooCommerce base-location settings; the
+     * street from the store address (WooCommerce → Settings → General) so the
+     * geocoder resolves the store's exact rooftop instead of falling back to
+     * ZIP-level matching.
+     *
+     * @return array{country:string,state:string,zip:string,city:string,street:string}
+     */
+    private static function store_base_address(): array
+    {
+        $countries = (function_exists('WC') && WC()->countries) ? WC()->countries : null;
+
+        return [
+            'country' => $countries ? strtoupper((string) $countries->get_base_country()) : '',
+            'state'   => $countries ? strtoupper((string) $countries->get_base_state()) : '',
+            'zip'     => $countries ? (string) $countries->get_base_postcode() : '',
+            'city'    => $countries ? (string) $countries->get_base_city() : '',
+            'street'  => (string) get_option('woocommerce_store_address', ''),
+        ];
     }
 
     /**

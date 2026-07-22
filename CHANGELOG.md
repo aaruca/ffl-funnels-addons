@@ -2,6 +2,15 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.41.5] - 2026-07-22
+
+### Fixed
+- **Tax Resolver — Local Pickup now taxes at the store's address, not the customer's.** When a customer chose a Local Pickup shipping method, the resolver still built its geocoding address from the customer's billing/shipping **street**: it derived the street from the persisted `woocommerce_tax_based_on` option, which WooCommerce's *runtime* local-pickup override never changes. Combined with a store ZIP (when WooCommerce forced base) that produced a mismatched "Frankenstein" address — customer street + store ZIP — which on the USGeocoder path could fail to resolve (no tax quoted, negative-cached for an hour) or resolve to the wrong sub-jurisdiction; and when WooCommerce did *not* force base (custom/Blocks checkout timing, unrecognized pickup method) the whole address stayed the customer's. The module now **detects the chosen Local Pickup method itself** — mirroring WooCommerce core's own test, including the Blocks `pickup_location` method and the `woocommerce_apply_base_tax_for_local_pickup` opt-out — and pins the **entire** address (country / state / ZIP / city / street) to the store's base address, **before** the coverage checks evaluate the state. The street is taken from the store address (WooCommerce → Settings → General) so the geocoder resolves the store's exact rooftop.
+- Behaviour is filterable via `ffla_tax_local_pickup_use_store_base` (default `true`). Multi-location Blocks stores that want WooCommerce's per-pickup-location address instead can return `false`.
+
+### Notes
+- Detection is session-based, covering the normal cart/checkout flow. Manually recalculating tax on an existing pickup order in wp-admin is not covered by this change (WooCommerce resolves that from the order's line items).
+
 ## [1.41.4] - 2026-07-18
 
 ### Fixed
