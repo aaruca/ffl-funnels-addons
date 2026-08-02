@@ -360,7 +360,7 @@ class Tax_Report_Email
         $filters = (array) ($report['manifest']['filters'] ?? []);
         $prefix = $mode === 'test' ? '[TEST] ' : '';
         return sprintf(
-            '%s[%s] Sales Tax Filing Report â€” %s to %s',
+            '%s[%s] Sales Tax Filing Report — %s to %s',
             $prefix,
             wp_specialchars_decode((string) get_bloginfo('name'), ENT_QUOTES),
             (string) ($filters['date_from'] ?? ''),
@@ -381,7 +381,7 @@ class Tax_Report_Email
 
         $message = '<h2>' . esc_html__('Monthly sales tax filing report', 'ffl-funnels-addons') . '</h2>';
         $message .= '<p><strong>' . esc_html__('Period:', 'ffl-funnels-addons') . '</strong> '
-            . esc_html((string) ($filters['date_from'] ?? '') . ' â€” ' . (string) ($filters['date_to'] ?? '')) . '<br>';
+            . esc_html((string) ($filters['date_from'] ?? '') . ' — ' . (string) ($filters['date_to'] ?? '')) . '<br>';
         $message .= '<strong>' . esc_html__('Orders:', 'ffl-funnels-addons') . '</strong> ' . esc_html((string) ($stats['orders'] ?? 0)) . '<br>';
         $message .= '<strong>' . esc_html__('States:', 'ffl-funnels-addons') . '</strong> ' . esc_html((string) count($states)) . '<br>';
         $message .= '<strong>' . esc_html__('Tax jurisdictions:', 'ffl-funnels-addons') . '</strong> ' . esc_html((string) count($jurisdictions)) . '<br>';
@@ -489,4 +489,3 @@ class Tax_Report_Email
         }
     }
 }
-
