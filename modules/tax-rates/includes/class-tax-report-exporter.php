@@ -287,9 +287,9 @@ class Tax_Report_Exporter
         $html = '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>WooCommerce Tax Report</title>'
             . '<style>@page{margin:18mm}body{font:14px/1.45 Arial,sans-serif;color:#172033;margin:32px}h1{margin:0 0 4px}h2{margin-top:30px;border-bottom:2px solid #dbe3f0;padding-bottom:6px}.meta{color:#556176}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}.card{border:1px solid #dbe3f0;border-radius:8px;padding:12px}.card b{display:block;font-size:20px;margin-top:3px}table{width:100%;border-collapse:collapse;margin:12px 0 24px;font-size:12px}th,td{border:1px solid #dbe3f0;padding:6px 7px;text-align:left}th{background:#eff5ff}.money{text-align:right}.note{background:#fff8dc;border-left:4px solid #d89b00;padding:10px 14px}@media print{body{margin:0}.no-print{display:none}tr{break-inside:avoid}}</style></head><body>';
         $html .= '<button class="no-print" onclick="window.print()">Print / Save as PDF</button>';
-        $html .= '<h1>WooCommerce Tax Report</h1><div class="meta">' . esc_html((string) ($manifest['site_name'] ?? '')) . ' Â· '
+        $html .= '<h1>WooCommerce Tax Report</h1><div class="meta">' . esc_html((string) ($manifest['site_name'] ?? '')) . ' · '
             . esc_html((string) ($filters['date_from'] ?? '')) . ' through ' . esc_html((string) ($filters['date_to'] ?? ''))
-            . ' Â· Generated ' . esc_html((string) ($manifest['generated_at_utc'] ?? '')) . '</div>';
+            . ' · Generated ' . esc_html((string) ($manifest['generated_at_utc'] ?? '')) . '</div>';
         $html .= '<div class="cards"><div class="card">Orders<b>' . esc_html((string) ($stats['orders'] ?? 0)) . '</b></div>'
             . '<div class="card">Refunds<b>' . esc_html((string) ($stats['refunds'] ?? 0)) . '</b></div>'
             . '<div class="card">Exceptions<b>' . esc_html((string) ($stats['exceptions'] ?? 0)) . '</b></div>'
@@ -582,4 +582,3 @@ class Tax_Report_Exporter
         return explode("\n", wordwrap(self::ascii($value), $width, "\n", true));
     }
 }
-
