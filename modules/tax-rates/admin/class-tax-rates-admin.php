@@ -724,6 +724,7 @@ class Tax_Rates_Admin
 
         $tabs = [
             'lookup'    => __('Quote Lookup', 'ffl-funnels-addons'),
+            'reports'   => __('Tax Reports', 'ffl-funnels-addons'),
             'coverage'  => __('Coverage Matrix', 'ffl-funnels-addons'),
             'datasets'  => __('Datasets', 'ffl-funnels-addons'),
             'audit'     => __('Audit Log', 'ffl-funnels-addons'),
@@ -741,6 +742,9 @@ class Tax_Rates_Admin
         echo '</div>';
 
         switch ($tab) {
+            case 'reports':
+                Tax_Reports_Admin::render();
+                break;
             case 'coverage':
                 $this->render_coverage_tab();
                 break;
