@@ -25,26 +25,17 @@ class Tax_Report_Exporter
             $files[$dataset . '.csv'] = self::build_csv(Tax_Report_Service::get_columns($dataset), $rows);
         }
 
-        $files['tax-report.xlsx'] = self::build_xlsx($datasets);
-        $files['annual-summary.pdf'] = self::build_pdf_summary($report);
-        $files['annual-summary.html'] = self::build_html_summary($report);
-        $files['README.txt'] = self::build_readme($report);
+        $files['tax-filing-report.xlsx'] = self::build_xlsx($datasets);
+        $files['tax-filing-summary.pdf'] = self::build_pdf_summary($report);
 
         $manifest = isset($report['manifest']) && is_array($report['manifest']) ? $report['manifest'] : [];
-        $manifest['files'] = [];
-        foreach ($files as $filename => $contents) {
-            $manifest['files'][$filename] = [
-                'bytes'  => strlen($contents),
-                'sha256' => hash('sha256', $contents),
-            ];
-        }
-        $files['report-manifest.json'] = (string) wp_json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $manifest['files'] = array_keys($files);
 
         $from = sanitize_file_name((string) ($manifest['filters']['date_from'] ?? 'start'));
         $to = sanitize_file_name((string) ($manifest['filters']['date_to'] ?? 'end'));
         $report_id = sanitize_file_name(substr((string) ($manifest['report_id'] ?? 'report'), 0, 8));
-        $archive_name = sprintf('ffla-tax-report-%s-to-%s-%s.zip', $from, $to, $report_id);
-        $folder = sprintf('ffla-tax-report-%s-to-%s/', $from, $to);
+        $archive_name = sprintf('ffla-tax-filing-report-%s-to-%s-%s.zip', $from, $to, $report_id);
+        $folder = sprintf('ffla-tax-filing-report-%s-to-%s/', $from, $to);
 
         $tmp = function_exists('wp_tempnam') ? wp_tempnam($archive_name) : tempnam(sys_get_temp_dir(), 'ffla-tax-');
         if (!$tmp) {
@@ -78,7 +69,7 @@ class Tax_Report_Exporter
         $manifest = isset($report['manifest']) && is_array($report['manifest']) ? $report['manifest'] : [];
         $from = sanitize_file_name((string) ($manifest['filters']['date_from'] ?? 'start'));
         $to = sanitize_file_name((string) ($manifest['filters']['date_to'] ?? 'end'));
-        $filename = sprintf('ffla-tax-summary-%s-to-%s.pdf', $from, $to);
+        $filename = sprintf('ffla-tax-filing-summary-%s-to-%s.pdf', $from, $to);
         $tmp = function_exists('wp_tempnam') ? wp_tempnam($filename) : tempnam(sys_get_temp_dir(), 'ffla-tax-pdf-');
         if (!$tmp) {
             throw new RuntimeException(__('A temporary PDF file could not be created.', 'ffl-funnels-addons'));
@@ -128,17 +119,15 @@ class Tax_Report_Exporter
 
     private static function datasets(array $report): array
     {
-        return [
-            'orders'               => (array) ($report['orders'] ?? []),
-            'order-lines'          => (array) ($report['order_lines'] ?? []),
-            'tax-lines'            => (array) ($report['tax_lines'] ?? []),
-            'refunds'              => (array) ($report['refunds'] ?? []),
+        $datasets = [
+            'filing-totals'        => (array) ($report['summaries']['filing_totals'] ?? []),
             'state-summary'        => (array) ($report['summaries']['states'] ?? []),
             'jurisdiction-summary' => (array) ($report['summaries']['jurisdictions'] ?? []),
-            'product-summary'      => (array) ($report['summaries']['products'] ?? []),
-            'payment-summary'      => (array) ($report['summaries']['payments'] ?? []),
-            'exceptions'           => (array) ($report['exceptions'] ?? []),
         ];
+        if (!empty($report['manifest']['filters']['include_pii'])) {
+            $datasets['order-audit'] = (array) ($report['orders'] ?? []);
+        }
+        return $datasets;
     }
 
     private static function build_csv(array $columns, array $rows): string
@@ -188,15 +177,10 @@ class Tax_Report_Exporter
         $parts = [];
 
         $sheet_names = [
-            'orders' => 'Orders',
-            'order-lines' => 'Order Lines',
-            'tax-lines' => 'Tax Lines',
-            'refunds' => 'Refunds',
+            'filing-totals' => 'Filing Totals',
             'state-summary' => 'State Summary',
             'jurisdiction-summary' => 'Jurisdictions',
-            'product-summary' => 'Products',
-            'payment-summary' => 'Payments',
-            'exceptions' => 'Exceptions',
+            'order-audit' => 'Order Audit',
         ];
 
         $content_overrides = '';
@@ -303,9 +287,9 @@ class Tax_Report_Exporter
         $html = '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>WooCommerce Tax Report</title>'
             . '<style>@page{margin:18mm}body{font:14px/1.45 Arial,sans-serif;color:#172033;margin:32px}h1{margin:0 0 4px}h2{margin-top:30px;border-bottom:2px solid #dbe3f0;padding-bottom:6px}.meta{color:#556176}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}.card{border:1px solid #dbe3f0;border-radius:8px;padding:12px}.card b{display:block;font-size:20px;margin-top:3px}table{width:100%;border-collapse:collapse;margin:12px 0 24px;font-size:12px}th,td{border:1px solid #dbe3f0;padding:6px 7px;text-align:left}th{background:#eff5ff}.money{text-align:right}.note{background:#fff8dc;border-left:4px solid #d89b00;padding:10px 14px}@media print{body{margin:0}.no-print{display:none}tr{break-inside:avoid}}</style></head><body>';
         $html .= '<button class="no-print" onclick="window.print()">Print / Save as PDF</button>';
-        $html .= '<h1>WooCommerce Tax Report</h1><div class="meta">' . esc_html((string) ($manifest['site_name'] ?? '')) . ' · '
+        $html .= '<h1>WooCommerce Tax Report</h1><div class="meta">' . esc_html((string) ($manifest['site_name'] ?? '')) . ' Â· '
             . esc_html((string) ($filters['date_from'] ?? '')) . ' through ' . esc_html((string) ($filters['date_to'] ?? ''))
-            . ' · Generated ' . esc_html((string) ($manifest['generated_at_utc'] ?? '')) . '</div>';
+            . ' Â· Generated ' . esc_html((string) ($manifest['generated_at_utc'] ?? '')) . '</div>';
         $html .= '<div class="cards"><div class="card">Orders<b>' . esc_html((string) ($stats['orders'] ?? 0)) . '</b></div>'
             . '<div class="card">Refunds<b>' . esc_html((string) ($stats['refunds'] ?? 0)) . '</b></div>'
             . '<div class="card">Exceptions<b>' . esc_html((string) ($stats['exceptions'] ?? 0)) . '</b></div>'
@@ -355,57 +339,73 @@ class Tax_Report_Exporter
         $filters = (array) ($manifest['filters'] ?? []);
         $stats = (array) ($report['stats'] ?? []);
         $lines = [
-            'WOOCOMMERCE TAX REPORT',
+            'SALES TAX FILING REPORT',
             (string) ($manifest['site_name'] ?? ''),
             'Period: ' . ($filters['date_from'] ?? '') . ' through ' . ($filters['date_to'] ?? ''),
             'Generated UTC: ' . ($manifest['generated_at_utc'] ?? ''),
             'Report ID: ' . ($manifest['report_id'] ?? ''),
             '',
-            'Orders: ' . ($stats['orders'] ?? 0) . '   Refunds: ' . ($stats['refunds'] ?? 0) . '   Exceptions: ' . ($stats['exceptions'] ?? 0),
+            'Orders: ' . ($stats['orders'] ?? 0) . '   Refunds: ' . ($stats['refunds'] ?? 0),
             '',
-            'TOTALS BY CURRENCY',
+            'FILING TOTALS BY CURRENCY',
+            'Cur Orders  Taxable sales  Non-taxable  Review sales  Net tax collected  Calculated tax  Over/(under)',
         ];
 
-        foreach ((array) ($report['totals_by_currency'] ?? []) as $row) {
+        foreach ((array) ($report['summaries']['filing_totals'] ?? []) as $row) {
             $lines[] = sprintf(
-                '%-4s Orders %5s  Net sales %12s  Net tax %12s  Refunds %12s  Net collected %12s',
+                '%-3s %6s %14s %12s %12s %18s %15s %14s',
                 $row['currency'] ?? '',
                 $row['orders'] ?? 0,
-                $row['net_product_sales'] ?? '0.00',
+                $row['taxable_sales'] ?? '0.00',
+                $row['non_taxable_sales'] ?? '0.00',
+                $row['needs_review_sales'] ?? '0.00',
                 $row['net_tax'] ?? '0.00',
-                $row['refunds'] ?? '0.00',
-                $row['net_collected'] ?? '0.00'
+                $row['calculated_tax'] ?? '0.00',
+                $row['over_under'] ?? '0.00'
             );
         }
 
         $lines[] = '';
-        $lines[] = 'STATE SUMMARY';
-        $lines[] = 'State Cur  Orders     Net sales       Tax      Refunded tax    Net collected';
+        $lines[] = 'STATE FILING SUMMARY';
+        $lines[] = 'State Cur Orders  Taxable sales  Non-taxable  Review sales  Net collected  Tax due  Difference  Status';
         foreach ((array) ($report['summaries']['states'] ?? []) as $row) {
             $lines[] = sprintf(
-                '%-5s %-4s %6s %13s %11s %13s %16s',
+                '%-5s %-3s %5s %14s %12s %12s %14s %9s %11s  %s',
                 $row['state'] ?? '',
                 $row['currency'] ?? '',
                 $row['orders'] ?? 0,
-                $row['net_product_sales'] ?? '0.00',
-                $row['tax_collected'] ?? '0.00',
-                $row['tax_refunded'] ?? '0.00',
-                $row['net_collected'] ?? '0.00'
+                $row['taxable_sales'] ?? '0.00',
+                $row['non_taxable_sales'] ?? '0.00',
+                $row['needs_review_sales'] ?? '0.00',
+                $row['net_tax'] ?? '0.00',
+                $row['calculated_tax'] ?? '0.00',
+                $row['over_under'] ?? '0.00',
+                $row['filing_status'] ?? ''
             );
         }
 
         $lines[] = '';
-        $lines[] = 'EXCEPTION SUMMARY';
-        foreach ((array) ($report['summaries']['exceptions'] ?? []) as $row) {
-            $lines[] = sprintf('%-8s %-32s %6s', strtoupper((string) ($row['severity'] ?? '')), $row['code'] ?? '', $row['count'] ?? 0);
+        $lines[] = 'JURISDICTIONS WITH ACTIVITY';
+        $lines[] = 'State Type     Jurisdiction                 Rate   Taxable sales  Net collected  Tax due  Difference  Status';
+        foreach ((array) ($report['summaries']['jurisdictions'] ?? []) as $row) {
+            $lines[] = sprintf(
+                '%-5s %-8.8s %-28.28s %6s%% %14s %14s %9s %11s  %s',
+                $row['state'] ?? '',
+                $row['jurisdiction_type'] ?? '',
+                $row['jurisdiction_name'] ?? '',
+                $row['rate_percent'] ?? '0',
+                $row['taxable_sales'] ?? '0.00',
+                $row['net_tax'] ?? '0.00',
+                $row['calculated_tax'] ?? '0.00',
+                $row['over_under'] ?? '0.00',
+                $row['filing_status'] ?? ''
+            );
         }
+
         $lines[] = '';
-        $lines[] = 'SCOPE AND LIMITATIONS';
-        foreach ((array) ($manifest['limitations'] ?? []) as $limitation) {
-            foreach (self::wrap_ascii((string) $limitation, 95) as $wrapped) {
-                $lines[] = '- ' . $wrapped;
-            }
-        }
+        $lines[] = 'Calculated tax uses the effective rate stored with each WooCommerce order.';
+        $lines[] = 'Review any state or jurisdiction marked Needs review before filing.';
+        $lines[] = 'This report helps prepare returns; the filing portal and tax professional remain authoritative.';
 
         return self::pdf_from_lines($lines);
     }
@@ -539,7 +539,8 @@ class Tax_Report_Exporter
     {
         return [
             'gross_product_sales', 'gross_sales', 'discounts', 'net_product_sales', 'net_sales', 'shipping',
-            'fees', 'sales_with_tax', 'sales_without_tax', 'subtotal', 'subtotal_tax', 'total_ex_tax', 'tax',
+            'fees', 'sales_with_tax', 'sales_without_tax', 'taxable_sales', 'non_taxable_sales',
+            'needs_review_sales', 'calculated_tax', 'over_under', 'subtotal', 'subtotal_tax', 'total_ex_tax', 'tax',
             'total_inc_tax', 'product_tax', 'shipping_tax', 'tax_collected', 'tax_refunded', 'net_tax',
             'refunds', 'refund_amount', 'refunded_amount', 'amount', 'product_refund', 'shipping_refund',
             'fee_refund', 'order_total', 'net_collected', 'vendor_price', 'cogs_value',
@@ -581,3 +582,4 @@ class Tax_Report_Exporter
         return explode("\n", wordwrap(self::ascii($value), $width, "\n", true));
     }
 }
+
