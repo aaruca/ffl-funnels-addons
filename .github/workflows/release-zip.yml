@@ -3,33 +3,77 @@ name: Build Release ZIP
 on:
   release:
     types: [published]
+  push:
+    branches: [main]
+    paths:
+      - 'ffl-funnels-addons.php'
+      - '.github/workflows/release-zip.yml'
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing release tag to (re)build the ZIP for, e.g. v1.38.0'
+        description: 'Existing release tag to (re)build the ZIP for, e.g. v1.42.0'
         required: true
         type: string
 
 permissions:
   contents: write
+  statuses: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # On workflow_dispatch there is no release payload, so github.event.release
-      # .tag_name is empty and the zip would be named "ffl-funnels-addons-.zip".
-      - name: Resolve tag
-        id: tag
-        run: echo "value=${{ github.event.release.tag_name || inputs.tag }}" >> "$GITHUB_OUTPUT"
-
       - uses: actions/checkout@v4
         with:
-          ref: ${{ steps.tag.outputs.value }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.sha }}
+          fetch-depth: 0
+
+      - name: Resolve tag
+        id: tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            version="$(sed -nE 's/^[[:space:]]*\*[[:space:]]*Version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' ffl-funnels-addons.php | head -n 1)"
+            tag="v${version}"
+          else
+            tag="${RELEASE_TAG:-$INPUT_TAG}"
+          fi
+
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Could not resolve a valid release tag: $tag"
+            exit 1
+          fi
+
+          skip=false
+          if [[ "$EVENT_NAME" == "push" ]] && gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag already exists; nothing to publish."
+            skip=true
+          fi
+
+          echo "value=$tag" >> "$GITHUB_OUTPUT"
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+
+      - name: Mark release status as pending
+        if: ${{ steps.tag.outputs.skip != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.value }}
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state=pending \
+            -f context="release/$TAG" \
+            -f description="Building release ZIP"
 
       # This ZIP is what the built-in updater installs on every store, so it must
       # contain only runtime files. Everything below is developer tooling.
       - name: Build plugin ZIP
+        if: ${{ steps.tag.outputs.skip != 'true' }}
+        env:
+          TAG: ${{ steps.tag.outputs.value }}
         run: |
           mkdir -p /tmp/ffl-funnels-addons
           rsync -a \
@@ -57,23 +101,86 @@ jobs:
             --exclude='CHANGELOG.md' \
             ./ /tmp/ffl-funnels-addons/
           cd /tmp
-          zip -r "ffl-funnels-addons-${{ steps.tag.outputs.value }}.zip" ffl-funnels-addons/
+          zip -r "ffl-funnels-addons-$TAG.zip" ffl-funnels-addons/
 
       - name: Verify ZIP contains no developer tooling
+        if: ${{ steps.tag.outputs.skip != 'true' }}
+        env:
+          TAG: ${{ steps.tag.outputs.value }}
         run: |
           cd /tmp
-          if unzip -Z1 "ffl-funnels-addons-${{ steps.tag.outputs.value }}.zip" \
+          if unzip -Z1 "ffl-funnels-addons-$TAG.zip" \
               | grep -Ei '(^|/)(tests?/|composer\.(json|lock)|package(-lock)?\.json|phpstan|phpunit|\.phpcs|\.editorconfig|\.eslintrc|AUDIT_|CHANGELOG\.md|\.mailmap)'; then
             echo "::error::Developer tooling leaked into the release ZIP"
             exit 1
           fi
-          echo "Clean. Entries: $(unzip -Z1 "ffl-funnels-addons-${{ steps.tag.outputs.value }}.zip" | wc -l)"
+          echo "Clean. Entries: $(unzip -Z1 "ffl-funnels-addons-$TAG.zip" | wc -l)"
 
-      - name: Upload ZIP to release
+      - name: Calculate ZIP checksum
+        id: checksum
+        if: ${{ steps.tag.outputs.skip != 'true' }}
+        env:
+          TAG: ${{ steps.tag.outputs.value }}
+        run: |
+          checksum="$(sha256sum "/tmp/ffl-funnels-addons-$TAG.zip" | awk '{print $1}')"
+          echo "value=$checksum" >> "$GITHUB_OUTPUT"
+
+      - name: Create release when version reaches main
+        if: ${{ github.event_name == 'push' && steps.tag.outputs.skip != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.value }}
         run: |
-          gh release upload "${{ steps.tag.outputs.value }}" \
-            "/tmp/ffl-funnels-addons-${{ steps.tag.outputs.value }}.zip" \
-            --repo ${{ github.repository }} \
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
+            --generate-notes
+
+      - name: Add checksum to release notes
+        if: ${{ steps.tag.outputs.skip != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.value }}
+          CHECKSUM: ${{ steps.checksum.outputs.value }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq '.body // ""' \
+            | sed -E '/^SHA-256: [0-9a-fA-F]{64}$/d' > /tmp/release-notes.md
+          printf '\nSHA-256: %s\n' "$CHECKSUM" >> /tmp/release-notes.md
+          gh release edit "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --notes-file /tmp/release-notes.md
+
+      - name: Upload ZIP to release
+        if: ${{ steps.tag.outputs.skip != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.value }}
+        run: |
+          gh release upload "$TAG" \
+            "/tmp/ffl-funnels-addons-$TAG.zip" \
+            --repo "$GITHUB_REPOSITORY" \
             --clobber
+
+      - name: Mark release status as successful
+        if: ${{ steps.tag.outputs.skip != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.value }}
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state=success \
+            -f context="release/$TAG" \
+            -f description="Release and ZIP published" \
+            -f target_url="https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
+
+      - name: Mark release status as failed
+        if: ${{ failure() && steps.tag.outputs.value != '' && steps.tag.outputs.skip != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.value }}
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state=failure \
+            -f context="release/$TAG" \
+            -f description="Release publication failed"
