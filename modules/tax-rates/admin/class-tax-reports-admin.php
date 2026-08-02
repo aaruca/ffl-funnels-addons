@@ -228,7 +228,7 @@ class Tax_Reports_Admin
 
         echo '<div class="ffla-tax-report-email-grid">';
         echo '<label><span>' . esc_html__('Recipients', 'ffl-funnels-addons') . '</span><textarea name="recipients" rows="3" required>' . esc_textarea(implode("\n", (array) $settings['recipients'])) . '</textarea><small>' . esc_html__('One email per line, or separate addresses with commas.', 'ffl-funnels-addons') . '</small></label>';
-        echo '<label><span>' . esc_html__('Day of month', 'ffl-funnels-addons') . '</span><input type="number" name="send_day" min="1" max="28" required value="' . esc_attr((string) $settings['send_day']) . '"><small>' . esc_html__('Days 1â€“28 avoid invalid dates in shorter months.', 'ffl-funnels-addons') . '</small></label>';
+        echo '<label><span>' . esc_html__('Day of month', 'ffl-funnels-addons') . '</span><input type="number" name="send_day" min="1" max="28" required value="' . esc_attr((string) $settings['send_day']) . '"><small>' . esc_html__('Days 1–28 avoid invalid dates in shorter months.', 'ffl-funnels-addons') . '</small></label>';
         echo '<label><span>' . esc_html__('Send time', 'ffl-funnels-addons') . '</span><input type="time" name="send_time" required value="' . esc_attr((string) $settings['send_time']) . '"><small>' . esc_html(wp_timezone_string()) . '</small></label>';
         echo '<label><span>' . esc_html__('Maximum attachment size', 'ffl-funnels-addons') . '</span><input type="number" name="max_attachment_mb" min="1" max="50" required value="' . esc_attr((string) $settings['max_attachment_mb']) . '"><small>' . esc_html__('MB. Larger reports fall back to the PDF filing summary.', 'ffl-funnels-addons') . '</small></label>';
         echo '</div>';
@@ -283,7 +283,7 @@ class Tax_Reports_Admin
         }
         echo '</tr></thead><tbody>';
         foreach ($history as $entry) {
-            $period = trim((string) ($entry['date_from'] ?? '') . ' â€” ' . (string) ($entry['date_to'] ?? ''), ' â€”');
+            $period = trim((string) ($entry['date_from'] ?? '') . ' — ' . (string) ($entry['date_to'] ?? ''), ' —');
             echo '<tr><td>' . esc_html((string) ($entry['created_at_utc'] ?? '')) . '</td>';
             echo '<td><code>' . esc_html((string) ($entry['status'] ?? '')) . '</code></td>';
             echo '<td>' . esc_html((string) ($entry['mode'] ?? '') . ' #' . (string) ($entry['attempt'] ?? 0)) . '</td>';
@@ -401,4 +401,3 @@ class Tax_Reports_Admin
         echo '</tbody></table></div></div></div>';
     }
 }
-
