@@ -1,6 +1,6 @@
 <?php
 /**
- * Scheduled delivery of WooCommerce tax report packages.
+ * Scheduled delivery of sales tax filing report packages.
  *
  * @package FFL_Funnels_Addons
  */
@@ -317,8 +317,8 @@ class Tax_Report_Email
                 'attachment_name' => (string) ($package['filename'] ?? ''),
                 'attachment_bytes'=> (int) ($package['bytes'] ?? 0),
                 'message'         => $summary_only
-                    ? 'The complete ZIP exceeded the configured limit, so the PDF summary was sent.'
-                    : 'The complete tax report package was accepted by the mail transport.',
+                    ? 'The filing package exceeded the configured limit, so the PDF filing summary was sent.'
+                    : 'The sales tax filing report was accepted by the mail transport.',
             ]);
             return true;
         } catch (Throwable $e) {
@@ -360,7 +360,7 @@ class Tax_Report_Email
         $filters = (array) ($report['manifest']['filters'] ?? []);
         $prefix = $mode === 'test' ? '[TEST] ' : '';
         return sprintf(
-            '%s[%s] WooCommerce Tax Report — %s to %s',
+            '%s[%s] Sales Tax Filing Report â€” %s to %s',
             $prefix,
             wp_specialchars_decode((string) get_bloginfo('name'), ENT_QUOTES),
             (string) ($filters['date_from'] ?? ''),
@@ -373,19 +373,41 @@ class Tax_Report_Email
         $manifest = (array) ($report['manifest'] ?? []);
         $filters = (array) ($manifest['filters'] ?? []);
         $stats = (array) ($report['stats'] ?? []);
-        $message = '<h2>' . esc_html__('Monthly WooCommerce tax report', 'ffl-funnels-addons') . '</h2>';
+        $states = (array) ($report['summaries']['states'] ?? []);
+        $jurisdictions = (array) ($report['summaries']['jurisdictions'] ?? []);
+        $review_count = count(array_filter($states, function ($state) {
+            return ($state['filing_status'] ?? '') === __('Needs review', 'ffl-funnels-addons');
+        }));
+
+        $message = '<h2>' . esc_html__('Monthly sales tax filing report', 'ffl-funnels-addons') . '</h2>';
         $message .= '<p><strong>' . esc_html__('Period:', 'ffl-funnels-addons') . '</strong> '
-            . esc_html((string) ($filters['date_from'] ?? '') . ' — ' . (string) ($filters['date_to'] ?? '')) . '<br>';
+            . esc_html((string) ($filters['date_from'] ?? '') . ' â€” ' . (string) ($filters['date_to'] ?? '')) . '<br>';
         $message .= '<strong>' . esc_html__('Orders:', 'ffl-funnels-addons') . '</strong> ' . esc_html((string) ($stats['orders'] ?? 0)) . '<br>';
-        $message .= '<strong>' . esc_html__('Refunds:', 'ffl-funnels-addons') . '</strong> ' . esc_html((string) ($stats['refunds'] ?? 0)) . '<br>';
-        $message .= '<strong>' . esc_html__('Exceptions:', 'ffl-funnels-addons') . '</strong> ' . esc_html((string) ($stats['exceptions'] ?? 0)) . '<br>';
+        $message .= '<strong>' . esc_html__('States:', 'ffl-funnels-addons') . '</strong> ' . esc_html((string) count($states)) . '<br>';
+        $message .= '<strong>' . esc_html__('Tax jurisdictions:', 'ffl-funnels-addons') . '</strong> ' . esc_html((string) count($jurisdictions)) . '<br>';
+        $message .= '<strong>' . esc_html__('States needing review:', 'ffl-funnels-addons') . '</strong> ' . esc_html((string) $review_count) . '<br>';
         $message .= '<strong>' . esc_html__('Report ID:', 'ffl-funnels-addons') . '</strong> ' . esc_html((string) ($manifest['report_id'] ?? '')) . '</p>';
+
+        $message .= '<table cellpadding="6" cellspacing="0" border="1" style="border-collapse:collapse"><thead><tr>'
+            . '<th>' . esc_html__('Currency', 'ffl-funnels-addons') . '</th>'
+            . '<th>' . esc_html__('Taxable sales', 'ffl-funnels-addons') . '</th>'
+            . '<th>' . esc_html__('Net tax collected', 'ffl-funnels-addons') . '</th>'
+            . '<th>' . esc_html__('Tax calculated / owed', 'ffl-funnels-addons') . '</th>'
+            . '<th>' . esc_html__('Over / under collected', 'ffl-funnels-addons') . '</th></tr></thead><tbody>';
+        foreach ((array) ($report['summaries']['filing_totals'] ?? []) as $row) {
+            $message .= '<tr><td>' . esc_html((string) ($row['currency'] ?? '')) . '</td>'
+                . '<td>' . esc_html((string) ($row['taxable_sales'] ?? '0.00')) . '</td>'
+                . '<td>' . esc_html((string) ($row['net_tax'] ?? '0.00')) . '</td>'
+                . '<td>' . esc_html((string) ($row['calculated_tax'] ?? '0.00')) . '</td>'
+                . '<td>' . esc_html((string) ($row['over_under'] ?? '0.00')) . '</td></tr>';
+        }
+        $message .= '</tbody></table>';
 
         if ($summary_only) {
             $message .= '<p><strong>' . esc_html__('Attachment notice:', 'ffl-funnels-addons') . '</strong> '
-                . esc_html__('The complete ZIP exceeded the configured email size limit. A PDF summary is attached; generate the complete package from Tax Resolver → Tax Reports.', 'ffl-funnels-addons') . '</p>';
+                . esc_html__('The filing package exceeded the configured email size limit, so the PDF filing summary is attached.', 'ffl-funnels-addons') . '</p>';
         } else {
-            $message .= '<p>' . esc_html__('The complete ZIP workpaper is attached, including CSV files, XLSX, PDF, HTML, checksums and the report manifest.', 'ffl-funnels-addons') . '</p>';
+            $message .= '<p>' . esc_html__('The filing package is attached with state totals, jurisdiction detail, XLSX and PDF. An order audit is included only when enabled in the schedule.', 'ffl-funnels-addons') . '</p>';
         }
         if ($settings['include_pii'] === '1') {
             $message .= '<p><strong>' . esc_html__('Confidential:', 'ffl-funnels-addons') . '</strong> '
@@ -394,7 +416,7 @@ class Tax_Report_Email
         $size = function_exists('size_format') ? size_format((int) ($attachment['bytes'] ?? 0), 2) : (string) ($attachment['bytes'] ?? 0) . ' bytes';
         $message .= '<p><strong>' . esc_html__('Attachment:', 'ffl-funnels-addons') . '</strong> '
             . esc_html((string) ($attachment['filename'] ?? '')) . ' (' . esc_html($size) . ')</p>';
-        $message .= '<p><small>' . esc_html__('This report is an accounting workpaper generated from WooCommerce records; it is not a filed tax return.', 'ffl-funnels-addons') . '</small></p>';
+        $message .= '<p><small>' . esc_html__('This report helps prepare sales tax returns from WooCommerce records. It does not file a return or determine nexus; confirm final amounts in each filing portal.', 'ffl-funnels-addons') . '</small></p>';
         return $message;
     }
 
@@ -467,3 +489,4 @@ class Tax_Report_Email
         }
     }
 }
+
