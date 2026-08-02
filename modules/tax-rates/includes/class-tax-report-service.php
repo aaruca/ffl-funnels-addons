@@ -857,4 +857,3 @@ class Tax_Report_Service
         return number_format($minor / $this->scale, $this->precision, '.', '');
     }
 }
-
