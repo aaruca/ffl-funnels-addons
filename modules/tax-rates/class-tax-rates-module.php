@@ -59,6 +59,10 @@ class Tax_Rates_Module extends FFLA_Module
         require_once $base . 'includes/class-tax-dataset-pipeline.php';
         require_once $base . 'includes/class-tax-rest-api.php';
         require_once $base . 'includes/class-tax-woocommerce-integration.php';
+        require_once $base . 'includes/class-tax-report-service.php';
+        require_once $base . 'includes/class-tax-report-exporter.php';
+        require_once $base . 'includes/class-tax-report-snapshot.php';
+        require_once $base . 'includes/class-tax-report-email.php';
         require_once $base . 'includes/class-tax-usgeocoder-usage.php';
         require_once $base . 'includes/class-tax-role-gate.php';
 
@@ -76,6 +80,12 @@ class Tax_Rates_Module extends FFLA_Module
 
         // WooCommerce runtime tax calculation.
         Tax_WooCommerce_Integration::init();
+
+        // Permanent fiscal snapshots used by accountant-ready tax reports.
+        Tax_Report_Snapshot::init();
+
+        // Configurable monthly delivery of the previous month's report.
+        Tax_Report_Email::init();
 
         // Cron.
         require_once $base . 'includes/class-tax-rates-cron.php';
@@ -101,6 +111,8 @@ class Tax_Rates_Module extends FFLA_Module
         // Admin UI.
         if (is_admin()) {
             require_once $base . 'admin/class-tax-rates-admin.php';
+            require_once $base . 'admin/class-tax-reports-admin.php';
+            Tax_Reports_Admin::init();
             $this->admin = new Tax_Rates_Admin();
             $this->admin->init();
         }
@@ -175,6 +187,11 @@ class Tax_Rates_Module extends FFLA_Module
         wp_clear_scheduled_hook('ffla_tax_cache_cleanup');
         wp_clear_scheduled_hook('ffla_tax_audit_purge');
         wp_clear_scheduled_hook('ffla_tax_cache_flush');
+        wp_clear_scheduled_hook('ffla_tax_report_monthly_email');
+        wp_clear_scheduled_hook('ffla_tax_report_email_send');
+        if (class_exists('Tax_Report_Email')) {
+            Tax_Report_Email::clear_all_schedules();
+        }
     }
 
     /* ── Admin Pages ───────────────────────────────────────────────── */
