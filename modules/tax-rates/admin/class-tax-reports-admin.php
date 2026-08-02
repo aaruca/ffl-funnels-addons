@@ -1,6 +1,6 @@
 <?php
 /**
- * Accountant workpaper UI for WooCommerce tax reports.
+ * Concise multi-state sales tax filing report UI.
  *
  * @package FFL_Funnels_Addons
  */
@@ -128,10 +128,10 @@ class Tax_Reports_Admin
         }
 
         echo '<div class="ffla-tax-report-intro">';
-        echo '<h2>' . esc_html__('WooCommerce Tax Reports', 'ffl-funnels-addons') . '</h2>';
-        echo '<p>' . esc_html__('Generate an accountant-ready workpaper from the final values stored in WooCommerce. The package includes order, line, tax and refund detail; state, jurisdiction, product and payment summaries; exception checks; file checksums; XLSX; CSV; PDF; HTML; and JSON.', 'ffl-funnels-addons') . '</p>';
-        echo '<p class="ffla-tax-report-callout"><strong>' . esc_html__('Scope:', 'ffl-funnels-addons') . '</strong> ';
-        echo esc_html__('This is supporting evidence for your accountant. It does not file returns, decide nexus, or replace accounting and legal review.', 'ffl-funnels-addons') . '</p>';
+        echo '<h2>' . esc_html__('Sales Tax Filing Reports', 'ffl-funnels-addons') . '</h2>';
+        echo '<p>' . esc_html__('Prepare a concise multi-state filing summary from the final values stored in WooCommerce. Review statewide totals, the jurisdictions with activity, tax calculated from stored rates, and any over- or under-collection.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="ffla-tax-report-callout"><strong>' . esc_html__('Before filing:', 'ffl-funnels-addons') . '</strong> ';
+        echo esc_html__('Resolve rows marked Needs review and confirm the final amounts in each state filing portal. This report does not submit a return or determine nexus.', 'ffl-funnels-addons') . '</p>';
         echo '</div>';
 
         self::render_email_notices($input);
@@ -160,7 +160,7 @@ class Tax_Reports_Admin
         echo '<input type="hidden" name="run_report" value="1">';
         echo '<input type="hidden" name="action" value="ffla_tax_report_export">';
         wp_nonce_field('ffla_tax_report_export');
-        echo '<div class="wb-card__header"><h3>' . esc_html__('Report scope', 'ffl-funnels-addons') . '</h3></div>';
+        echo '<div class="wb-card__header"><h3>' . esc_html__('Filing period', 'ffl-funnels-addons') . '</h3></div>';
         echo '<div class="wb-card__body">';
         echo '<div class="ffla-tax-report-filter-grid">';
         echo '<label><span>' . esc_html__('Start date', 'ffl-funnels-addons') . '</span><input type="date" name="date_from" required value="' . esc_attr((string) $filters['date_from']) . '"></label>';
@@ -175,13 +175,13 @@ class Tax_Reports_Admin
         echo '</fieldset>';
 
         echo '<label class="ffla-tax-report-pii"><input type="checkbox" name="include_pii" value="1" ' . checked(!empty($filters['include_pii']), true, false) . '> <span><strong>';
-        echo esc_html__('Include customer-identifying details in the package', 'ffl-funnels-addons') . '</strong><small>';
-        echo esc_html__('Adds names, email, phone, billing and shipping addresses, a formatted full shipping address, transaction IDs and customer notes to orders.csv/XLSX. State and postal-code fields are always included because they support tax review.', 'ffl-funnels-addons');
+        echo esc_html__('Include optional order audit with shipping addresses', 'ffl-funnels-addons') . '</strong><small>';
+        echo esc_html__('Adds an Order Audit worksheet and CSV with order totals and the formatted shipping address. Leave this off when only the filing totals are needed.', 'ffl-funnels-addons');
         echo '</small></span></label>';
 
         echo '<div class="ffla-tax-report-actions">';
-        echo '<button type="submit" class="wb-btn wb-btn--secondary">' . esc_html__('Preview summary', 'ffl-funnels-addons') . '</button>';
-        echo '<button type="submit" class="wb-btn wb-btn--primary" formmethod="post" formaction="' . esc_url(admin_url('admin-post.php')) . '">' . esc_html__('Download complete package', 'ffl-funnels-addons') . '</button>';
+        echo '<button type="submit" class="wb-btn wb-btn--secondary">' . esc_html__('Preview filing report', 'ffl-funnels-addons') . '</button>';
+        echo '<button type="submit" class="wb-btn wb-btn--primary" formmethod="post" formaction="' . esc_url(admin_url('admin-post.php')) . '">' . esc_html__('Download filing report', 'ffl-funnels-addons') . '</button>';
         echo '</div>';
         echo '<p class="wb-field__desc">' . esc_html__('The download is generated on demand and is not retained on the server. Only a non-PII manifest and file checksums are kept in the generation history.', 'ffl-funnels-addons') . '</p>';
         echo '</div></form>';
@@ -216,7 +216,7 @@ class Tax_Reports_Admin
         echo '<section class="wb-card ffla-tax-report-email">';
         echo '<div class="wb-card__header"><h3>' . esc_html__('Monthly email delivery', 'ffl-funnels-addons') . '</h3></div>';
         echo '<div class="wb-card__body">';
-        echo '<p class="wb-field__desc">' . esc_html__('Automatically generates the complete previous-calendar-month workpaper and sends it to your accountant or bookkeeping team.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('Automatically generates the previous calendar month filing report and sends it to your accountant or bookkeeping team.', 'ffl-funnels-addons') . '</p>';
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
         echo '<input type="hidden" name="action" value="ffla_tax_report_email_save">';
         wp_nonce_field('ffla_tax_report_email_settings');
@@ -228,9 +228,9 @@ class Tax_Reports_Admin
 
         echo '<div class="ffla-tax-report-email-grid">';
         echo '<label><span>' . esc_html__('Recipients', 'ffl-funnels-addons') . '</span><textarea name="recipients" rows="3" required>' . esc_textarea(implode("\n", (array) $settings['recipients'])) . '</textarea><small>' . esc_html__('One email per line, or separate addresses with commas.', 'ffl-funnels-addons') . '</small></label>';
-        echo '<label><span>' . esc_html__('Day of month', 'ffl-funnels-addons') . '</span><input type="number" name="send_day" min="1" max="28" required value="' . esc_attr((string) $settings['send_day']) . '"><small>' . esc_html__('Days 1–28 avoid invalid dates in shorter months.', 'ffl-funnels-addons') . '</small></label>';
+        echo '<label><span>' . esc_html__('Day of month', 'ffl-funnels-addons') . '</span><input type="number" name="send_day" min="1" max="28" required value="' . esc_attr((string) $settings['send_day']) . '"><small>' . esc_html__('Days 1â€“28 avoid invalid dates in shorter months.', 'ffl-funnels-addons') . '</small></label>';
         echo '<label><span>' . esc_html__('Send time', 'ffl-funnels-addons') . '</span><input type="time" name="send_time" required value="' . esc_attr((string) $settings['send_time']) . '"><small>' . esc_html(wp_timezone_string()) . '</small></label>';
-        echo '<label><span>' . esc_html__('Maximum ZIP attachment', 'ffl-funnels-addons') . '</span><input type="number" name="max_attachment_mb" min="1" max="50" required value="' . esc_attr((string) $settings['max_attachment_mb']) . '"><small>' . esc_html__('MB. Larger packages fall back to the PDF summary.', 'ffl-funnels-addons') . '</small></label>';
+        echo '<label><span>' . esc_html__('Maximum attachment size', 'ffl-funnels-addons') . '</span><input type="number" name="max_attachment_mb" min="1" max="50" required value="' . esc_attr((string) $settings['max_attachment_mb']) . '"><small>' . esc_html__('MB. Larger reports fall back to the PDF filing summary.', 'ffl-funnels-addons') . '</small></label>';
         echo '</div>';
 
         echo '<fieldset class="ffla-tax-report-statuses"><legend>' . esc_html__('Included order statuses', 'ffl-funnels-addons') . '</legend>';
@@ -241,8 +241,8 @@ class Tax_Reports_Admin
         echo '</fieldset>';
 
         echo '<label class="ffla-tax-report-pii"><input type="checkbox" name="include_pii" value="1" ' . checked($settings['include_pii'], '1', false) . '> <span><strong>';
-        echo esc_html__('Include customer and shipping-address data in emailed packages', 'ffl-funnels-addons') . '</strong><small>';
-        echo esc_html__('Required if the accountant needs order-level shipping addresses. The ZIP will contain confidential personal information.', 'ffl-funnels-addons');
+        echo esc_html__('Include the order audit with shipping addresses', 'ffl-funnels-addons') . '</strong><small>';
+        echo esc_html__('Enable only when the recipient needs order-level support. The attachment will contain confidential customer information.', 'ffl-funnels-addons');
         echo '</small></span></label>';
 
         echo '<div class="ffla-tax-report-actions"><button type="submit" class="wb-btn wb-btn--primary">' . esc_html__('Save email schedule', 'ffl-funnels-addons') . '</button></div>';
@@ -283,7 +283,7 @@ class Tax_Reports_Admin
         }
         echo '</tr></thead><tbody>';
         foreach ($history as $entry) {
-            $period = trim((string) ($entry['date_from'] ?? '') . ' — ' . (string) ($entry['date_to'] ?? ''), ' —');
+            $period = trim((string) ($entry['date_from'] ?? '') . ' â€” ' . (string) ($entry['date_to'] ?? ''), ' â€”');
             echo '<tr><td>' . esc_html((string) ($entry['created_at_utc'] ?? '')) . '</td>';
             echo '<td><code>' . esc_html((string) ($entry['status'] ?? '')) . '</code></td>';
             echo '<td>' . esc_html((string) ($entry['mode'] ?? '') . ' #' . (string) ($entry['attempt'] ?? 0)) . '</td>';
@@ -298,43 +298,42 @@ class Tax_Reports_Admin
     private static function render_preview(array $report): void
     {
         $stats = (array) ($report['stats'] ?? []);
-        $quality = (array) ($report['manifest']['data_quality'] ?? []);
+        $states = (array) ($report['summaries']['states'] ?? []);
+        $jurisdictions = (array) ($report['summaries']['jurisdictions'] ?? []);
+        $states_to_review = count(array_filter($states, function ($state) {
+            return ($state['filing_status'] ?? '') === __('Needs review', 'ffl-funnels-addons');
+        }));
+        $review_items = array_values(array_filter((array) ($report['summaries']['exceptions'] ?? []), function ($item) {
+            return in_array($item['severity'] ?? '', ['warning', 'error'], true);
+        }));
 
         echo '<section class="ffla-tax-report-preview">';
         echo '<div class="ffla-tax-report-kpis">';
         self::render_kpi(__('Orders', 'ffl-funnels-addons'), (string) ($stats['orders'] ?? 0));
-        self::render_kpi(__('Refunds', 'ffl-funnels-addons'), (string) ($stats['refunds'] ?? 0));
-        self::render_kpi(__('Exceptions', 'ffl-funnels-addons'), (string) ($stats['exceptions'] ?? 0));
-        self::render_kpi(__('Snapshot coverage', 'ffl-funnels-addons'), (string) ($quality['snapshot_coverage_percent'] ?? 0) . '%');
+        self::render_kpi(__('States', 'ffl-funnels-addons'), (string) count($states));
+        self::render_kpi(__('Tax jurisdictions', 'ffl-funnels-addons'), (string) count($jurisdictions));
+        self::render_kpi(__('States to review', 'ffl-funnels-addons'), (string) $states_to_review);
         echo '</div>';
 
-        echo '<div class="wb-card"><div class="wb-card__header"><h3>' . esc_html__('Totals by currency', 'ffl-funnels-addons') . '</h3></div><div class="wb-card__body ffla-tax-report-table-wrap">';
-        self::render_table(
-            ['currency', 'orders', 'gross_product_sales', 'discounts', 'net_product_sales', 'shipping', 'fees', 'tax_collected', 'tax_refunded', 'net_tax', 'refunds', 'order_total', 'net_collected'],
-            (array) ($report['totals_by_currency'] ?? [])
-        );
+        echo '<div class="wb-card"><div class="wb-card__header"><h3>' . esc_html__('Filing totals', 'ffl-funnels-addons') . '</h3></div><div class="wb-card__body ffla-tax-report-table-wrap">';
+        self::render_table(Tax_Report_Service::get_columns('filing-totals'), (array) ($report['summaries']['filing_totals'] ?? []));
         echo '</div></div>';
 
-        echo '<div class="wb-card"><div class="wb-card__header"><h3>' . esc_html__('State workpaper', 'ffl-funnels-addons') . '</h3></div><div class="wb-card__body ffla-tax-report-table-wrap">';
-        self::render_table(Tax_Report_Service::get_columns('state-summary'), (array) ($report['summaries']['states'] ?? []));
+        echo '<div class="wb-card"><div class="wb-card__header"><h3>' . esc_html__('State filing summary', 'ffl-funnels-addons') . '</h3></div><div class="wb-card__body ffla-tax-report-table-wrap">';
+        self::render_table(Tax_Report_Service::get_columns('state-summary'), $states);
         echo '</div></div>';
 
-        echo '<div class="wb-card"><div class="wb-card__header"><h3>' . esc_html__('Exception summary', 'ffl-funnels-addons') . '</h3></div><div class="wb-card__body ffla-tax-report-table-wrap">';
-        self::render_table(['severity', 'code', 'count', 'message'], (array) ($report['summaries']['exceptions'] ?? []));
-        if (($stats['exceptions'] ?? 0) > count((array) ($report['exceptions'] ?? []))) {
-            echo '<p class="wb-field__desc">' . esc_html__('The preview shows the first 100 order-level exceptions. The downloaded exceptions.csv contains every exception.', 'ffl-funnels-addons') . '</p>';
+        echo '<div class="wb-card"><div class="wb-card__header"><h3>' . esc_html__('Jurisdictions with activity', 'ffl-funnels-addons') . '</h3></div><div class="wb-card__body ffla-tax-report-table-wrap">';
+        self::render_table(Tax_Report_Service::get_columns('jurisdiction-summary'), $jurisdictions);
+        echo '</div></div>';
+
+        if (!empty($review_items)) {
+            echo '<div class="wb-card"><div class="wb-card__header"><h3>' . esc_html__('Items to review', 'ffl-funnels-addons') . '</h3></div><div class="wb-card__body ffla-tax-report-table-wrap">';
+            self::render_table(['severity', 'code', 'count', 'message'], $review_items);
+            echo '</div></div>';
         }
-        echo '</div></div>';
 
-        echo '<div class="wb-card"><div class="wb-card__header"><h3>' . esc_html__('Detailed checks to review', 'ffl-funnels-addons') . '</h3></div><div class="wb-card__body ffla-tax-report-table-wrap">';
-        self::render_table(Tax_Report_Service::get_columns('exceptions'), (array) ($report['exceptions'] ?? []));
-        echo '</div></div>';
-
-        echo '<div class="wb-card"><div class="wb-card__header"><h3>' . esc_html__('Known data gaps', 'ffl-funnels-addons') . '</h3></div><div class="wb-card__body"><ul class="ffla-tax-report-limitations">';
-        foreach ((array) ($report['manifest']['limitations'] ?? []) as $limitation) {
-            echo '<li>' . esc_html((string) $limitation) . '</li>';
-        }
-        echo '</ul></div></div>';
+        echo '<p class="ffla-tax-report-callout">' . esc_html__('Calculated tax is taxable sales multiplied by the effective rate stored with each order. The filing portal remains the final authority for the amount due.', 'ffl-funnels-addons') . '</p>';
         echo '</section>';
     }
 
@@ -345,9 +344,20 @@ class Tax_Reports_Admin
 
     private static function render_table(array $columns, array $rows): void
     {
+        $labels = [
+            'gross_sales' => __('Gross sales (net of refunds)', 'ffl-funnels-addons'),
+            'taxable_sales' => __('Taxable sales to report', 'ffl-funnels-addons'),
+            'non_taxable_sales' => __('Exempt / non-taxable sales', 'ffl-funnels-addons'),
+            'needs_review_sales' => __('Sales needing review', 'ffl-funnels-addons'),
+            'net_tax' => __('Net tax collected', 'ffl-funnels-addons'),
+            'calculated_tax' => __('Tax calculated / owed', 'ffl-funnels-addons'),
+            'over_under' => __('Over / under collected', 'ffl-funnels-addons'),
+            'jurisdictions' => __('Jurisdictions with activity', 'ffl-funnels-addons'),
+        ];
         echo '<table class="widefat striped ffla-tax-report-table"><thead><tr>';
         foreach ($columns as $column) {
-            echo '<th>' . esc_html(ucwords(str_replace('_', ' ', $column))) . '</th>';
+            $label = $labels[$column] ?? ucwords(str_replace('_', ' ', $column));
+            echo '<th>' . esc_html($label) . '</th>';
         }
         echo '</tr></thead><tbody>';
         if (empty($rows)) {
@@ -391,3 +401,4 @@ class Tax_Reports_Admin
         echo '</tbody></table></div></div></div>';
     }
 }
+
