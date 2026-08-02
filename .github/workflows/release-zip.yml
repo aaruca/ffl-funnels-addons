@@ -49,13 +49,15 @@ jobs:
           fi
 
           skip=false
-          if [[ "$EVENT_NAME" == "push" ]] && gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $tag already exists; nothing to publish."
-            skip=true
+          existing=false
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag already exists; rebuilding it in place."
+            existing=true
           fi
 
           echo "value=$tag" >> "$GITHUB_OUTPUT"
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
+          echo "existing=$existing" >> "$GITHUB_OUTPUT"
 
       - name: Mark release status as pending
         if: ${{ steps.tag.outputs.skip != 'true' }}
@@ -126,7 +128,7 @@ jobs:
           echo "value=$checksum" >> "$GITHUB_OUTPUT"
 
       - name: Create release when version reaches main
-        if: ${{ github.event_name == 'push' && steps.tag.outputs.skip != 'true' }}
+        if: ${{ github.event_name == 'push' && steps.tag.outputs.existing != 'true' && steps.tag.outputs.skip != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.tag.outputs.value }}
@@ -136,6 +138,16 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "$TAG" \
             --generate-notes
+
+      - name: Point existing release tag at rebuilt commit
+        if: ${{ github.event_name == 'push' && steps.tag.outputs.existing == 'true' && steps.tag.outputs.skip != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.value }}
+        run: |
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" \
+            -f sha="$GITHUB_SHA" \
+            -F force=true
 
       - name: Add checksum to release notes
         if: ${{ steps.tag.outputs.skip != 'true' }}
