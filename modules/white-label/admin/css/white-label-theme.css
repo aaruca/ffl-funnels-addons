@@ -1,0 +1,433 @@
+/**
+ * White Label — wp-admin theme.
+ *
+ * Maps WordPress admin selectors onto the --ffla-wl-* variables that PHP injects
+ * from the saved Styles settings. This file is only loaded when at least one
+ * colour is configured.
+ *
+ * Fallbacks encode the model:
+ *   - neutral field:  var(--ffla-wl-x, <WordPress default>)
+ *   - accent field:   var(--ffla-wl-x, var(--ffla-wl-primaryColor, <default>))
+ * so a blank field keeps the WordPress look, and blank accent fields inherit
+ * the primary colour.
+ */
+
+body.wp-admin.wp-core-ui {
+    --wp-admin-theme-color: var(--ffla-wl-primaryColor);
+}
+
+a,
+.plugins .plugin-update a {
+    color: var(--ffla-wl-primaryColor, #2271b1);
+    &:hover {
+        color: var(--ffla-wl-primaryColor, #2271b1);
+    }
+}
+
+/* ── Count badges in the sidebar ──────────────────────────────────── */
+#adminmenu .menu-counter,
+#adminmenu .awaiting-mod,
+#adminmenu .update-plugins {
+    background: var(--ffla-wl-primaryColor, #2271b1) !important;
+    color: var(--ffla-wl-primaryContrast, #ffffff) !important;
+}
+
+/* ── General accent: buttons, links ──────────────────────────────────── */
+
+.wp-core-ui .button,
+.wp-core-ui .button-secondary {
+    color: var(--ffla-wl-primaryColor, #2271b1) !important;
+    border-color: var(--ffla-wl-primaryColor, #2271b1) !important;
+    border-color: var(--ffla-wl-primaryColor, #2271b1) !important;
+}
+
+.wp-core-ui .button-primary,
+.wp-core-ui .button-primary:hover,
+.wp-core-ui .button-primary:focus,
+.wp-core-ui .button-primary:active {
+    background: var(--ffla-wl-primaryColor, #2271b1) !important;
+    border-color: var(--ffla-wl-primaryColor, #2271b1) !important;
+    color: var(--ffla-wl-primaryContrast, #ffffff) !important;
+}
+
+/* "Add New / Add Plugin" title button is a `.page-title-action`, not a
+   `.button`, and WordPress themes its border/text separately — including a
+   darker :hover border. Theme all its states to our primary. */
+.wrap .page-title-action,
+.wrap .page-title-action:hover,
+.wrap .page-title-action:focus,
+.wrap .page-title-action:active {
+    color: var(--ffla-wl-primaryColor, #2271b1) !important;
+    border-color: var(--ffla-wl-primaryColor, #2271b1) !important;
+}
+
+.wrap .page-title-action:focus {
+    box-shadow: 0 0 0 1px var(--ffla-wl-primaryColor, #3582c4) !important;
+}
+
+/* #wpbody-content a:not(.button):not(.button-primary):not(.button-secondary) {
+    color: var(--ffla-wl-primaryColor, #2271b1) !important;
+    border-color: var(--ffla-wl-primaryColor, #2271b1) !important;
+} */
+
+/* ── Sidebar (#adminmenu) ────────────────────────────────────────────── */
+
+/* WordPress puts a 0.05s transition on every admin <a> (border/background/
+   color). On hover that animates the default colour toward ours, so the stock
+   colour flashes first. Turn it off on the elements we theme so ours apply
+   instantly. */
+#adminmenu a,
+#adminmenu li.menu-top,
+#adminmenu .wp-menu-image,
+#adminmenu .wp-menu-image:before,
+#adminmenu .wp-submenu,
+#adminmenu .wp-submenu a,
+#wpadminbar .ab-item,
+#wpadminbar a.ab-item {
+    transition: none !important;
+    &:hover {
+        transition: none !important;
+    }
+}
+
+#adminmenu,
+#adminmenuback,
+#adminmenuwrap {
+    background: var(--ffla-wl-sidebarBg, #1d2327) !important;
+    border-right: 1px solid var(--ffla-wl-borderColor, #00000029) !important;
+}
+
+/* Menu group separators follow the border/divider colour. Transparent
+   fallback, so none appear until a colour is chosen. */
+#adminmenu .wp-menu-separator {
+    margin-bottom: 0 !important;
+}
+
+#adminmenu div.separator {
+    background: var(--ffla-wl-borderColor, transparent) !important;
+}
+
+ul#adminmenu a.wp-has-current-submenu:after,
+ul#adminmenu > li.current > a.current:after,
+#adminmenu li.wp-has-submenu.wp-not-current-submenu.opensub:hover:after,
+#adminmenu li.wp-has-submenu.wp-not-current-submenu:focus-within:after,
+#adminmenu .wp-has-current-submenu::after {
+    border-right-color: transparent;
+}
+
+#adminmenu a.menu-top,
+#adminmenu .wp-menu-name {
+    color: var(--ffla-wl-sidebarText, #f0f0f1) !important;
+}
+
+#adminmenu .wp-menu-image:before {
+    color: var(--ffla-wl-sidebarIcon, #a7aaad) !important;
+}
+
+/* Plugin SVG icons (background-image data URIs) are recoloured by rewriting
+   their fill in white-label-theme.js — not CSS `mask`, which caused a paint
+   bug. So there is no CSS rule for them here. */
+
+/* Paint the hover on the <a> itself (WordPress does too, via `#adminmenu
+   a:hover`). Targeting the <li> alone leaves the <a>'s own hover background on
+   top, so items without a submenu never showed our colour, and items with a
+   submenu flashed WordPress's colour until the JS-added `.opensub` kicked in.
+   `a.menu-top` keeps this to top-level links, so submenus are untouched. */
+#adminmenu li.menu-top:hover,
+#adminmenu li.menu-top:hover > a.menu-top,
+#adminmenu li.opensub > a.menu-top,
+#adminmenu li.menu-top > a.menu-top:focus {
+    background: var(
+        --ffla-wl-sidebarHoverBg,
+        var(--ffla-wl-primaryColor, #2271b1)
+    ) !important;
+}
+
+#adminmenu li.menu-top:hover > a.menu-top,
+#adminmenu li.menu-top:hover > a.menu-top .wp-menu-name,
+#adminmenu li.opensub > a.menu-top .wp-menu-name,
+#adminmenu li.menu-top > a.menu-top:focus .wp-menu-name {
+    color: var(--ffla-wl-sidebarHoverText, #ffffff) !important;
+}
+
+#adminmenu li.menu-top:hover .wp-menu-image:before,
+#adminmenu li > a.menu-top:focus .wp-menu-image:before {
+    color: var(--ffla-wl-sidebarHoverIcon, #ffffff) !important;
+}
+
+#adminmenu li.current a.menu-top,
+#adminmenu li.wp-has-current-submenu a.wp-has-current-submenu,
+#adminmenu li.wp-menu-open > a.menu-top {
+    background: var(
+        --ffla-wl-sidebarCurrentBg,
+        var(--ffla-wl-primaryColor, #2271b1)
+    ) !important;
+}
+
+#adminmenu li.current a.menu-top,
+#adminmenu li.wp-has-current-submenu a.wp-has-current-submenu,
+#adminmenu .current div.wp-menu-name {
+    color: var(--ffla-wl-sidebarCurrentText, #ffffff) !important;
+}
+
+#adminmenu li.current .wp-menu-image:before,
+#adminmenu li.wp-has-current-submenu .wp-menu-image:before {
+    color: var(--ffla-wl-sidebarCurrentIcon, #ffffff) !important;
+}
+
+/* "Collapse menu" button — a <button>, not a menu link. Its label and its
+   dashicon arrow both follow the button's `color`, so theme that for the normal
+   and hover/focus states. */
+#adminmenu #collapse-button {
+    color: var(--ffla-wl-sidebarText, #f0f0f1) !important;
+}
+
+#adminmenu #collapse-button:hover,
+#adminmenu #collapse-button:focus {
+    color: var(--ffla-wl-sidebarHoverText, #ffffff) !important;
+}
+
+/* ── Submenu ─────────────────────────────────────────────────────────── */
+
+#adminmenu .wp-submenu,
+#adminmenu .wp-has-current-submenu .wp-submenu {
+    background: var(--ffla-wl-submenuBg, #2c3338) !important;
+}
+
+#adminmenu .wp-submenu a {
+    color: var(--ffla-wl-submenuText, #c3c4c7) !important;
+}
+
+#adminmenu .wp-submenu a:hover,
+#adminmenu .wp-submenu a:focus {
+    color: var(
+        --ffla-wl-submenuHoverText,
+        var(--ffla-wl-primaryColor, #72aee6)
+    ) !important;
+}
+
+#adminmenu .wp-submenu li.current a,
+#adminmenu .wp-submenu a.current {
+    color: var(
+        --ffla-wl-submenuCurrentText,
+        var(--ffla-wl-primaryColor, #ffffff)
+    ) !important;
+}
+
+/* ── Admin bar (#wpadminbar) ─────────────────────────────────────────── */
+
+#wpadminbar {
+    background: var(--ffla-wl-adminbarBg, #1d2327) !important;
+    border-bottom: 1px solid var(--ffla-wl-borderColor, #00000029) !important;
+}
+
+#wpadminbar .ab-item,
+#wpadminbar a.ab-item,
+#wpadminbar > #wp-toolbar span.ab-label {
+    color: var(--ffla-wl-adminbarText, #f0f0f1) !important;
+}
+
+#wpadminbar .ab-icon:before,
+#wpadminbar .ab-item:before {
+    color: var(--ffla-wl-adminbarIcon, #a7aaad) !important;
+}
+
+/* Plugin inline-SVG admin-bar icons (e.g. Rank Math): recolour via `fill`. */
+#wpadminbar .ab-item svg,
+#wpadminbar .ab-item svg * {
+    fill: var(--ffla-wl-adminbarIcon, #a7aaad) !important;
+}
+
+#wpadminbar:not(.mobile) .ab-top-menu > li:hover > .ab-item svg,
+#wpadminbar:not(.mobile) .ab-top-menu > li:hover > .ab-item svg *,
+#wpadminbar .ab-top-menu > li.hover > .ab-item svg,
+#wpadminbar .ab-top-menu > li.hover > .ab-item svg * {
+    fill: var(--ffla-wl-adminbarHoverText, #ffffff) !important;
+}
+
+/* Items with a dropdown also carry a JS-toggled `.hover` class that lingers
+   briefly after the mouse leaves. Match it too, or WordPress's dark open-state
+   background flashes for a moment on unhover. */
+#wpadminbar:not(.mobile) .ab-top-menu > li:hover > .ab-item,
+#wpadminbar .ab-top-menu > li.hover > .ab-item,
+#wpadminbar .ab-top-menu > li > .ab-item:focus {
+    background: var(
+        --ffla-wl-adminbarHoverBg,
+        var(--ffla-wl-primaryColor, #2c3338)
+    ) !important;
+}
+
+#wpadminbar:not(.mobile) .ab-top-menu > li:hover > .ab-item,
+#wpadminbar:not(.mobile) .ab-top-menu > li:hover > .ab-item .ab-icon:before,
+#wpadminbar .ab-top-menu > li.hover > .ab-item,
+#wpadminbar .ab-top-menu > li.hover > .ab-item .ab-icon:before {
+    color: var(--ffla-wl-adminbarHoverText, #ffffff) !important;
+}
+
+/* ── Admin bar dropdown ──────────────────────────────────────────────── */
+
+#wpadminbar .ab-sub-wrapper,
+#wpadminbar .ab-submenu {
+    background: var(--ffla-wl-adminbarSubBg, #2c3338) !important;
+}
+
+#wpadminbar .ab-submenu .ab-item,
+#wpadminbar .quicklinks .menupop ul li a {
+    color: var(--ffla-wl-adminbarSubText, #c3c4c7) !important;
+}
+
+/* The "My Account" dropdown shows the display name in a span that WordPress
+   colours near-white (#f0f0f1), so it escapes the rule above (which colours the
+   link). Theme it to match the rest of the dropdown. */
+#wpadminbar #wp-admin-bar-user-info .display-name {
+    color: var(--ffla-wl-adminbarSubText, #c3c4c7) !important;
+}
+
+#wpadminbar .ab-submenu .ab-item:hover,
+#wpadminbar .quicklinks .menupop ul li a:hover,
+#wpadminbar .quicklinks .menupop ul li .ab-item:focus {
+    background: var(
+        --ffla-wl-adminbarSubHoverBg,
+        var(--ffla-wl-primaryColor, #2271b1)
+    ) !important;
+}
+
+#wpadminbar .ab-submenu .ab-item:hover,
+#wpadminbar .quicklinks .menupop ul li a:hover {
+    color: var(--ffla-wl-adminbarSubHoverText, #ffffff) !important;
+}
+
+/* Form Fields */
+.wp-core-ui select:focus {
+    border-color: var(--ffla-wl-primaryColor) !important;
+    box-shadow: 0 0 0 var(--wp-admin-border-width-focus, 1.5px)
+        var(--ffla-wl-primaryColor) !important;
+}
+
+/* ── Corner radius ───────────────────────────────────────────────────────
+   WordPress rounds its UI at 2px. Soften that to a rounder radius. Change the
+   value in one place below. Checkboxes/radios are intentionally left alone. */
+:root {
+    --ffla-wl-radius: 5px;
+}
+
+.wp-core-ui .button,
+.wp-core-ui .button-primary,
+.wp-core-ui .button-secondary,
+.wrap .page-title-action,
+input[type="text"],
+input[type="search"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="tel"],
+input[type="url"],
+input[type="date"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="week"],
+input[type="time"],
+textarea,
+select,
+.wp-core-ui select,
+.postbox,
+.stuffbox,
+.card,
+.welcome-panel,
+.wp-editor-container,
+.notice,
+div.updated,
+div.error,
+code,
+kbd {
+    border-radius: var(--ffla-wl-radius, 5px) !important;
+}
+
+/* ── List tables (posts, products, plugins, users, …) ────────────────────
+   Colour-only styling: header fill, row separators, hover highlight, and link
+   colours. Deliberately NO border-radius / box-shadow / border / overflow on
+   the table — those are the only properties that could trigger the "blank until
+   reflow" paint bug on large tables, so they are left off entirely. */
+
+.wp-list-table thead th,
+.wp-list-table thead td,
+.wp-list-table tfoot th,
+.wp-list-table tfoot td {
+    background: #f6f7f7 !important;
+    color: #1d2327 !important;
+}
+
+.striped > tbody > :nth-child(odd),
+ul.striped > :nth-child(odd),
+.alternate {
+    background-color: transparent;
+}
+
+/* A separator between every row. */
+.wp-list-table tbody td,
+.wp-list-table tbody th {
+    border-bottom: 1px solid var(--ffla-wl-borderColor, #f0f0f1);
+}
+
+/* Row hover highlight. */
+.wp-list-table tbody tr:hover td,
+.wp-list-table tbody tr:hover th {
+    background-color: #f6f7f7 !important;
+}
+
+/* Cell links and sort-column links use the text colour, not the primary
+   accent; primary is kept as the hover affordance. */
+.wp-list-table tbody td a,
+.wp-list-table thead th.sortable a,
+.wp-list-table thead th.sorted a,
+.wp-list-table tfoot th.sortable a,
+.wp-list-table tfoot th.sorted a {
+    color: #1d2327 !important;
+}
+
+.wp-list-table tbody td a:hover,
+.wp-list-table thead th.sortable a:hover,
+.wp-list-table thead th.sorted a:hover {
+    color: var(--ffla-wl-primaryColor, #2271b1) !important;
+}
+
+/* Keep the hover-revealed row actions subtle, with Trash in red. */
+.wp-list-table .row-actions a {
+    color: #646970 !important;
+}
+
+.wp-list-table .row-actions .trash a,
+.wp-list-table .row-actions span.delete a {
+    color: #b32d2e !important;
+}
+
+/* ── Wider sidebar ───────────────────────────────────────────────────────
+   Widen the admin menu and shift the content over by the same amount, so
+   nothing (including third-party plugin pages) hides behind it. Scoped to the
+   expanded desktop layout only; the specificity is kept low so WordPress's own
+   `.folded` / auto-fold / mobile rules still win in those states. Change the
+   width in one place. */
+:root {
+    --ffla-wl-sidebar-width: 200px;
+}
+
+@media only screen and (min-width: 961px) {
+    #adminmenuback,
+    #adminmenuwrap,
+    #adminmenu,
+    #adminmenu .wp-submenu {
+        width: var(--ffla-wl-sidebar-width, 200px);
+    }
+
+    /* Fly-out submenus open to the right of the menu, so pin them to the new
+       width. (Their own auto-width rule keeps them fit-to-content.) */
+    #adminmenu .wp-submenu {
+        left: var(--ffla-wl-sidebar-width, 200px);
+    }
+
+    /* Push the content and footer over by the same amount. */
+    #wpcontent,
+    #wpfooter {
+        margin-left: var(--ffla-wl-sidebar-width, 200px);
+    }
+}

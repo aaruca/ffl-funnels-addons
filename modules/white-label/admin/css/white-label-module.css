@@ -1,0 +1,241 @@
+/**
+ * White Label module — admin styles.
+ * Scoped under .ffla-wl / .ffla-wl-* so nothing leaks into the rest of wp-admin.
+ */
+
+.ffla-wl-header {
+    margin: 4px 0 16px;
+}
+
+.ffla-wl-header__title {
+    margin: 0 0 4px;
+    font-size: 18px;
+    line-height: 1.3;
+}
+
+.ffla-wl-header__desc {
+    margin: 0;
+    max-width: 70ch;
+    color: var(--wb-text-muted, #646970);
+}
+
+/* Tabs ------------------------------------------------------------------ */
+
+.ffla-wl-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 0 0 16px;
+    border-bottom: 1px solid var(--wb-border, #e2e4e9);
+}
+
+.ffla-wl-tab {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--wb-text-muted, #646970);
+    cursor: pointer;
+}
+
+.ffla-wl-tab:hover {
+    color: var(--wb-text, #1d2327);
+}
+
+.ffla-wl-tab.is-active {
+    color: var(--wb-primary, #2271b1);
+    border-bottom-color: var(--wb-primary, #2271b1);
+}
+
+/* Panels ---------------------------------------------------------------- */
+
+.ffla-wl-panel[hidden] {
+    display: none;
+}
+
+/* Colour fields (Light + Dark pair) ------------------------------------- */
+
+.ffla-wl-color-pair__modes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px 28px;
+}
+
+.ffla-wl-color-pair__mode {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ffla-wl-color-pair__tag {
+    min-width: 40px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--wb-text-muted, #646970);
+}
+
+.ffla-wl-color {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ffla-wl-color__swatch {
+    width: 40px;
+    height: 34px;
+    padding: 2px;
+    border: 1px solid var(--wb-border, #e2e4e9);
+    border-radius: 6px;
+    background: none;
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+
+.ffla-wl-color__text {
+    max-width: 130px;
+    font-family: Menlo, Consolas, monospace;
+}
+
+.ffla-wl-color__clear {
+    flex: 0 0 auto;
+}
+
+/* Restrictions — menu visibility tree ----------------------------------- */
+
+.ffla-wl-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    line-height: 1.4;
+}
+
+.ffla-wl-check input[type="checkbox"] {
+    flex: 0 0 auto;
+    margin: 0;
+}
+
+.ffla-wl-menutree,
+.ffla-wl-menutree__children {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.ffla-wl-menutree__item {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--wb-border, #e2e4e9);
+}
+
+.ffla-wl-menutree__item:first-child {
+    padding-top: 4px;
+}
+
+.ffla-wl-menutree__item:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+}
+
+.ffla-wl-menutree__top {
+    font-size: 14px;
+}
+
+.ffla-wl-menutree__top strong {
+    font-weight: 600;
+}
+
+/* Children: indented, with a rail so the hierarchy reads at a glance. */
+.ffla-wl-menutree__children {
+    margin: 10px 0 0 27px;
+    padding-left: 16px;
+    border-left: 2px solid var(--wb-border, #e2e4e9);
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 9px 24px;
+}
+
+.ffla-wl-menutree__children .ffla-wl-check {
+    font-size: 13px;
+    color: var(--wb-text-muted, #646970);
+}
+
+/* Admin-bar node checklist. */
+.ffla-wl-checklist {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 9px 24px;
+    margin-top: 8px;
+}
+
+.ffla-wl-checklist .ffla-wl-check code {
+    font-size: 11px;
+    opacity: 0.7;
+}
+
+/* Menu tab — drag-to-reorder list ---------------------------------------- */
+
+.ffla-wl-sortable {
+    margin: 10px 0 0;
+    padding: 0;
+    list-style: none;
+    max-width: 520px;
+}
+
+.ffla-wl-sortable__item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    background: var(--wb-surface, #fff);
+    border: 1px solid var(--wb-border, #e2e4e9);
+    border-radius: 6px;
+    cursor: grab;
+}
+
+.ffla-wl-sortable__item.is-dragging {
+    opacity: 0.5;
+    border-style: dashed;
+}
+
+.ffla-wl-sortable__handle {
+    color: var(--wb-text-muted, #646970);
+    font-size: 16px;
+    line-height: 1;
+    user-select: none;
+}
+
+.ffla-wl-sortable__label {
+    font-weight: 600;
+    font-size: 13px;
+}
+
+/* ── Import / Export ─────────────────────────────────────────────────── */
+.ffla-wl-io__json {
+    width: 100%;
+    font-family: Menlo, Consolas, Monaco, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre;
+    overflow: auto;
+}
+
+.ffla-wl-io__label {
+    display: block;
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 6px;
+}
+
+.ffla-wl-io__actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-top: 12px;
+}

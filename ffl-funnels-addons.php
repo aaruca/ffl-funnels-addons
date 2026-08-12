@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       FFL Funnels Addons
  * Plugin URI:        https://github.com/aaruca/ffl-funnels-addons
- * Description:       Modular WooCommerce toolkit with WooBooster, Wishlist, Checkout, Sheets Sync, Tax Resolver, Product Reviews, Loadout, Media Cleaner, Customer Notes, and GA4 Bridge.
- * Version:           1.42.0
+ * Description:       Modular WooCommerce toolkit for sales, checkout, tax, reviews, inventory sync, analytics, and white-label admin tools.
+ * Version:           1.43.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants.
-define('FFLA_VERSION', '1.42.0');
+define('FFLA_VERSION', '1.43.0');
 define('FFLA_FILE', __FILE__);
 define('FFLA_PATH', plugin_dir_path(__FILE__));
 define('FFLA_URL', plugin_dir_url(__FILE__));
@@ -88,6 +88,7 @@ if (!class_exists('FFL_Funnels_Addons')):
             require_once FFLA_PATH . 'modules/media-cleaner/class-media-cleaner-module.php';
             require_once FFLA_PATH . 'modules/customer-notes/class-customer-notes-module.php';
             require_once FFLA_PATH . 'modules/ga4-bridge/class-ga4-bridge-module.php';
+            require_once FFLA_PATH . 'modules/white-label/class-white-label-module.php';
         }
 
         /**
@@ -106,6 +107,7 @@ if (!class_exists('FFL_Funnels_Addons')):
             $this->registry->register(new Media_Cleaner_Module());
             $this->registry->register(new Customer_Notes_Module());
             $this->registry->register(new Ga4_Bridge_Module());
+            $this->registry->register(new White_Label_Module());
         }
 
         /**

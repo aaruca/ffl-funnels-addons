@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.38.1-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.43.0-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -97,9 +97,18 @@ Restores GA4 `view_item` and `add_to_cart` for **Google Analytics for WooCommerc
 *   **Untouched:** `purchase`, `begin_checkout`, `view_item_list` — they already work; duplicating them would double-count revenue.
 *   **Limits:** out-of-stock products don't fire `view_item`; `add_to_cart` lands on the next pageview; `view_cart` is unsupported by the GA plugin; keep Site Kit's Analytics module disconnected so the site has exactly one GA4 tag.
 
+### 12. White Label
+Brand and simplify wp-admin for store clients without changing WordPress core.
+*   **Light/dark branding:** Configure independent admin palettes and let each user switch modes from the admin bar.
+*   **Menu and access control:** Reorder top-level menus, hide or block admin/menu-bar items for client users, and exempt staff with email patterns.
+*   **Client dashboard:** Optional branded replacement for the standard WordPress dashboard, with configurable support/resource links and cached WooCommerce business metrics.
+*   **Analytics tabs:** Switch between **Google Analytics** (through the existing Rank Math PRO connection) and **SnapFind**. Includes shared 7/30/90-day ranges, per-user preferences, lazy loading, trends, landing pages, search funnel, and top terms.
+*   **No additional Google authorization:** Rank Math PRO remains responsible for Google authentication and daily data synchronization; FFL Funnels Addons reads the locally synced data.
+*   **Portable settings:** Export and replace the complete White Label configuration with sanitized JSON.
+
 ## Installation
 
-1.  Download the `ffl-funnels-addons.zip` file from the [Releases](https://github.com/aaruca/ffl-funnels-addons/releases) page.
+1.  Download the versioned `ffl-funnels-addons-vX.Y.Z.zip` file from the [Releases](https://github.com/aaruca/ffl-funnels-addons/releases) page.
 2.  Go to **WordPress Admin > Plugins > Add New**.
 3.  Click **Upload Plugin** and select the zip file.
 4.  Activate the plugin.
@@ -222,6 +231,18 @@ define('WSS_OAUTH_DEBUG_FILE', true);  // also write wp-content/uploads/wss-logs
 ```
 
 ## Changelog
+
+### v1.43.0
+
+*   **White Label:** Per-mode wp-admin branding, menu ordering, client restrictions, staff exemptions, branded dashboard, and sanitized settings import/export.
+*   **Dashboard Analytics:** Lazy Google Analytics/Google Search Console reporting through Rank Math PRO alongside SnapFind search analytics, with shared 7/30/90-day ranges and per-user source/range preferences.
+*   **Performance:** WooCommerce dashboard metrics process paid orders in bounded pages instead of loading every order object at once.
+*   **Import correctness:** Imported White Label settings now replace the destination configuration rather than retaining omitted sections.
+
+### v1.42.0
+
+*   **Tax Reports:** Workpapers, monthly email delivery, and shipping-address reporting.
+*   **Releases:** Automated clean updater ZIPs, package verification, checksums, GitHub assets, and release commit statuses.
 
 ### v1.22.0
 
