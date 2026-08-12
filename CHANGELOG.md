@@ -2,6 +2,24 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.43.0] - 2026-08-12
+
+### Added
+- **White Label module.** Adds per-mode light/dark wp-admin branding, a user-facing theme toggle, drag-and-drop menu ordering, admin-menu/admin-bar restrictions, staff exemptions by email pattern, and sanitized JSON import/export. The module ships inactive and preserves its settings when disabled.
+- **Branded client dashboard.** Replaces the standard WordPress dashboard when enabled, with configurable support, knowledge-base, Cockpit, and Command Center links plus cached WooCommerce sales, paid-order, average-order-value, and trend metrics.
+- **Google Analytics and SnapFind tabs.** The dashboard now lazy-loads the selected provider over a nonce-protected AJAX endpoint. Google reuses Rank Math PRO's existing Google connection and locally synced Analytics/Search Console data; SnapFind shows on-site searches, clicks, CTR, conversion, funnel, and top terms. Both providers share 7/30/90-day ranges, remember the last source/range per user, and degrade cleanly when a dependency is unavailable.
+- **Google organic-performance detail.** Includes search-traffic and click trends, top organic landing pages, and winning/losing pages without introducing another Google OAuth flow.
+
+### Fixed
+- **Dashboard order queries are bounded.** Paid orders are processed in pages of 200 instead of loading every matching `WC_Order` object into memory, preventing dashboard timeouts and memory exhaustion on high-volume stores.
+- **White Label imports now replace settings.** Partial or empty imports start from clean defaults, so settings omitted from the imported file no longer survive from the destination site.
+
+## [1.42.0] - 2026-08-02
+
+### Added
+- **Tax Reports.** Adds report workpapers, monthly email delivery, and shipping-address support to the Tax Resolver module.
+- **Automated release packaging.** Publishing a version now creates a clean updater ZIP, verifies that developer tooling is excluded, uploads the asset to GitHub Releases, records its SHA-256 checksum, and exposes a release commit status.
+
 ## [1.41.5] - 2026-07-22
 
 ### Fixed

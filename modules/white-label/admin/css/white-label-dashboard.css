@@ -421,3 +421,281 @@ body.ffla-theme-dark .ffla-wl-dash {
     color: var(--ffla-dash-muted);
     padding: 20px 0;
 }
+
+/* ── Provider analytics ─────────────────────────────────────────────────── */
+.ffla-dash-tiles--business {
+    grid-template-columns: repeat(3, 1fr);
+}
+.ffla-dash-sales-panel {
+    margin-bottom: 44px;
+}
+.ffla-dash-chart-wrap--sales {
+    height: 220px;
+}
+.ffla-dash-analytics {
+    margin: 0 0 40px;
+}
+.ffla-dash-analytics__heading {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 20px;
+    margin-bottom: 18px;
+}
+.ffla-dash-period select {
+    min-width: 130px;
+    height: 36px;
+    padding: 0 32px 0 12px;
+    color: var(--ffla-dash-text);
+    background-color: var(--ffla-dash-card);
+    border: 1px solid var(--ffla-dash-border);
+    border-radius: 8px;
+    box-shadow: none;
+}
+.ffla-dash-period select:focus {
+    border-color: var(--ffla-dash-accent);
+    box-shadow: 0 0 0 1px var(--ffla-dash-accent);
+}
+.ffla-dash-tabs {
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px;
+    margin-bottom: 14px;
+    background: var(--ffla-dash-card);
+    border: 1px solid var(--ffla-dash-border);
+    border-radius: 10px;
+}
+.ffla-dash-tab {
+    appearance: none;
+    padding: 8px 16px;
+    color: var(--ffla-dash-muted);
+    background: transparent;
+    border: 0;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.4;
+    cursor: pointer;
+}
+.ffla-dash-tab:hover {
+    color: var(--ffla-dash-text);
+}
+.ffla-dash-tab[aria-selected="true"] {
+    color: #fff;
+    background: var(--ffla-dash-accent);
+    box-shadow: 0 3px 10px rgba(2, 8, 23, 0.12);
+}
+.ffla-dash-tab:focus-visible {
+    outline: 2px solid var(--ffla-dash-accent);
+    outline-offset: 2px;
+}
+.ffla-dash-analytics__panel {
+    min-height: 190px;
+}
+.ffla-dash-loading,
+.ffla-dash-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 180px;
+    color: var(--ffla-dash-muted);
+    background: var(--ffla-dash-card);
+    border: 1px solid var(--ffla-dash-border);
+    border-radius: 14px;
+}
+.ffla-dash-loading .spinner {
+    float: none;
+    margin: 0;
+    visibility: visible;
+}
+.ffla-dash-state {
+    flex-direction: column;
+    padding: 30px;
+    text-align: center;
+}
+.ffla-dash-state__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    color: var(--ffla-dash-accent);
+    background: var(--ffla-dash-accent-soft);
+    border-radius: 50%;
+    font-size: 20px;
+}
+.ffla-dash-state p {
+    max-width: 480px;
+    margin: 0 0 6px;
+}
+.ffla-dash-analytics-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 18px;
+}
+.ffla-dash-analytics-metric {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 17px 18px;
+    background: var(--ffla-dash-card);
+    border: 1px solid var(--ffla-dash-border);
+    border-radius: 12px;
+}
+.ffla-dash-analytics-metric__top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 24px;
+}
+.ffla-dash-analytics-metric__label {
+    overflow: hidden;
+    color: var(--ffla-dash-muted);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ffla-dash-analytics-metric__value {
+    margin: 8px 0 4px;
+    color: var(--ffla-dash-text);
+    font-size: 25px;
+    line-height: 1.1;
+}
+.ffla-dash-analytics-metric__sub {
+    color: var(--ffla-dash-muted);
+    font-size: 11px;
+}
+.ffla-dash-analytics-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
+    gap: 18px;
+    margin-bottom: 18px;
+}
+.ffla-dash-chart-wrap--analytics {
+    height: 260px;
+}
+.ffla-dash-analytics-copy {
+    color: var(--ffla-dash-muted);
+    font-size: 14px;
+    line-height: 1.65;
+}
+.ffla-dash-report-link {
+    display: inline-block;
+    margin-top: auto;
+    color: var(--ffla-dash-accent);
+    font-weight: 700;
+}
+.ffla-dash-analytics-summary {
+    display: flex;
+    flex-direction: column;
+}
+.ffla-dash-table__link {
+    display: inline-block;
+    max-width: 420px;
+    overflow: hidden;
+    color: var(--ffla-dash-text);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+.ffla-dash-table__link:hover {
+    color: var(--ffla-dash-accent);
+}
+.ffla-dash-movers {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+}
+.ffla-dash-movers__group h5 {
+    margin: 0 0 8px;
+    color: var(--ffla-dash-text);
+    font-size: 14px;
+}
+.ffla-dash-movers__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.ffla-dash-movers__list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--ffla-dash-border);
+}
+.ffla-dash-movers__list li:last-child {
+    border-bottom: 0;
+}
+.ffla-dash-movers__list a {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--ffla-dash-text);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ffla-dash-mover {
+    flex: 0 0 auto;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+}
+.ffla-dash-mover.is-up {
+    color: #15803d;
+    background: rgba(34, 197, 94, 0.12);
+}
+.ffla-dash-mover.is-down {
+    color: #b91c1c;
+    background: rgba(239, 68, 68, 0.12);
+}
+
+@media (max-width: 1100px) {
+    .ffla-dash-tiles--business,
+    .ffla-dash-analytics-metrics {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .ffla-dash-analytics-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 782px) {
+    .ffla-dash-hero {
+        padding-top: 20px;
+    }
+    .ffla-dash-hello {
+        font-size: 27px;
+    }
+    .ffla-dash-rangebar {
+        position: static;
+        margin-top: 14px;
+    }
+    .ffla-dash-cards,
+    .ffla-dash-tiles--business,
+    .ffla-dash-analytics-metrics,
+    .ffla-dash-movers {
+        grid-template-columns: 1fr;
+    }
+    .ffla-dash-analytics__heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+    .ffla-dash-tabs {
+        display: flex;
+    }
+    .ffla-dash-tab {
+        flex: 1;
+    }
+    .ffla-dash-table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+}

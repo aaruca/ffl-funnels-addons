@@ -679,27 +679,25 @@ class White_Label_Admin
      */
     private function sanitize_import_settings(array $incoming): array
     {
-        $settings = White_Label_Settings::all();
+        // Import is a replacement operation, as stated in the UI. Start from
+        // clean defaults so omitted or empty sections cannot retain settings
+        // from the site that receives the import.
+        $styles       = isset($incoming['styles']) && is_array($incoming['styles']) ? $incoming['styles'] : [];
+        $restrictions = isset($incoming['restrictions']) && is_array($incoming['restrictions']) ? $incoming['restrictions'] : [];
+        $menu         = isset($incoming['menu']) && is_array($incoming['menu']) ? $incoming['menu'] : [];
+        $dashboard    = isset($incoming['dashboard']) && is_array($incoming['dashboard']) ? $incoming['dashboard'] : [];
 
-        if (isset($incoming['styles']) && is_array($incoming['styles'])) {
-            $settings['styles'] = $this->sanitize_styles($incoming['styles']);
-        }
-        if (isset($incoming['restrictions']) && is_array($incoming['restrictions'])) {
-            // sanitize_restrictions expects the form shape (exempt_emails as text).
-            $r = $incoming['restrictions'];
-            if (isset($r['exempt_emails']) && is_array($r['exempt_emails'])) {
-                $r['exempt_emails'] = implode("\n", $r['exempt_emails']);
-            }
-            $settings['restrictions'] = $this->sanitize_restrictions($r);
-        }
-        if (isset($incoming['menu']) && is_array($incoming['menu'])) {
-            $settings['menu'] = $this->sanitize_menu($incoming['menu']);
-        }
-        if (isset($incoming['dashboard']) && is_array($incoming['dashboard'])) {
-            $settings['dashboard'] = $this->sanitize_dashboard($incoming['dashboard']);
+        // sanitize_restrictions expects the form shape (exempt_emails as text).
+        if (isset($restrictions['exempt_emails']) && is_array($restrictions['exempt_emails'])) {
+            $restrictions['exempt_emails'] = implode("\n", $restrictions['exempt_emails']);
         }
 
-        return $settings;
+        return [
+            'styles'       => $this->sanitize_styles($styles),
+            'restrictions' => $this->sanitize_restrictions($restrictions),
+            'menu'         => $this->sanitize_menu($menu),
+            'dashboard'    => $this->sanitize_dashboard($dashboard),
+        ];
     }
 
     /**

@@ -16,6 +16,11 @@ if (!defined('ABSPATH')) {
 
 class White_Label_Dashboard
 {
+    const AJAX_ACTION = 'ffla_wl_dashboard_analytics';
+    const AJAX_NONCE  = 'ffla_wl_dashboard_analytics';
+    const SOURCE_META = 'ffla_wl_dashboard_analytics_source';
+    const RANGE_META  = 'ffla_wl_dashboard_analytics_range';
+
     /** @var array<string, mixed> The 'dashboard' settings sub-array. */
     private $settings;
 
@@ -45,6 +50,7 @@ class White_Label_Dashboard
         add_action('current_screen', [$this, 'clean_screen']);
 
         add_action('admin_enqueue_scripts', [$this, 'enqueue']);
+        add_action('wp_ajax_' . self::AJAX_ACTION, [$this, 'ajax_analytics']);
     }
 
     /**
@@ -112,6 +118,73 @@ class White_Label_Dashboard
             FFLA_VERSION,
             true
         );
+
+        wp_localize_script('ffla-wl-dashboard', 'fflaWhiteLabelDashboard', [
+            'ajaxUrl'       => admin_url('admin-ajax.php'),
+            'action'        => self::AJAX_ACTION,
+            'nonce'         => wp_create_nonce(self::AJAX_NONCE),
+            'initialSource' => $this->analytics_source(),
+            'initialRange'  => $this->analytics_range(),
+            'forceRefresh'  => $this->should_force_refresh(),
+            'strings'       => [
+                'loading'          => __('Loading analytics…', 'ffl-funnels-addons'),
+                'loadError'        => __('Analytics could not be loaded. Please try again.', 'ffl-funnels-addons'),
+                'previousPeriod'   => __('vs. previous period', 'ffl-funnels-addons'),
+                'openReport'       => __('Open full report', 'ffl-funnels-addons'),
+                'openSettings'     => __('Open Rank Math settings', 'ffl-funnels-addons'),
+                'trend'            => __('Traffic trend', 'ffl-funnels-addons'),
+                'searchTraffic'    => __('Organic search traffic', 'ffl-funnels-addons'),
+                'organicClicks'    => __('Organic clicks', 'ffl-funnels-addons'),
+                'topLandingPages'  => __('Top organic landing pages', 'ffl-funnels-addons'),
+                'landingPage'      => __('Landing page', 'ffl-funnels-addons'),
+                'pageviews'        => __('Traffic', 'ffl-funnels-addons'),
+                'clicks'           => __('Clicks', 'ffl-funnels-addons'),
+                'impressions'      => __('Impressions', 'ffl-funnels-addons'),
+                'ctr'              => __('CTR', 'ffl-funnels-addons'),
+                'movement'         => __('Organic movement', 'ffl-funnels-addons'),
+                'winners'          => __('Winning pages', 'ffl-funnels-addons'),
+                'losers'           => __('Losing pages', 'ffl-funnels-addons'),
+                'clickChange'      => __('clicks', 'ffl-funnels-addons'),
+                'noMovement'       => __('No meaningful page movement in this period.', 'ffl-funnels-addons'),
+                'searchFunnel'     => __('On-site search funnel', 'ffl-funnels-addons'),
+                'topSearchTerms'   => __('Top search terms', 'ffl-funnels-addons'),
+                'searchTerm'       => __('Search term', 'ffl-funnels-addons'),
+                'searches'         => __('Searches', 'ffl-funnels-addons'),
+                'productClicks'    => __('Product clicks', 'ffl-funnels-addons'),
+                'noSearchTerms'    => __('No search terms to show for this period.', 'ffl-funnels-addons'),
+            ],
+        ]);
+    }
+
+    /**
+     * Lazy-load one analytics provider and remember the user's selection.
+     */
+    public function ajax_analytics(): void
+    {
+        if (!check_ajax_referer(self::AJAX_NONCE, 'nonce', false) || !current_user_can('read')) {
+            wp_send_json_error(['message' => __('You do not have permission to view analytics.', 'ffl-funnels-addons')], 403);
+        }
+
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- verified above.
+        $source = isset($_POST['source']) ? sanitize_key(wp_unslash($_POST['source'])) : 'google';
+        if (!in_array($source, ['google', 'snapfind'], true)) {
+            $source = 'google';
+        }
+
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- verified above.
+        $range = isset($_POST['range']) ? absint(wp_unslash($_POST['range'])) : 30;
+        if (!in_array($range, [7, 30, 90], true)) {
+            $range = 30;
+        }
+
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- verified above.
+        $force = isset($_POST['force']) && '1' === sanitize_text_field(wp_unslash($_POST['force']));
+
+        update_user_meta(get_current_user_id(), self::SOURCE_META, $source);
+        update_user_meta(get_current_user_id(), self::RANGE_META, $range);
+
+        require_once __DIR__ . '/class-white-label-dashboard-data.php';
+        wp_send_json_success(White_Label_Dashboard_Data::analytics($source, $range, $force));
     }
 
     /**
@@ -126,17 +199,17 @@ class White_Label_Dashboard
 
         // A nonce-guarded ?ffla_refresh=1 request bypasses the cache, pulls fresh
         // numbers from the database, and updates the stored cache.
-        $force = isset($_GET['ffla_refresh'])
-            && isset($_GET['_wpnonce'])
-            && wp_verify_nonce(sanitize_key(wp_unslash($_GET['_wpnonce'])), 'ffla_wl_refresh');
+        $force = $this->should_force_refresh();
 
         $view_data = [
-            'data'        => White_Label_Dashboard_Data::get($from, $to, $force),
-            'links'       => $this->links(),
-            'user'        => wp_get_current_user(),
-            'from'        => $from,
-            'to'          => $to,
-            'refresh_url' => wp_nonce_url(
+            'data'             => White_Label_Dashboard_Data::get($from, $to, $force),
+            'links'            => $this->links(),
+            'user'             => wp_get_current_user(),
+            'from'             => $from,
+            'to'               => $to,
+            'analytics_source' => $this->analytics_source(),
+            'analytics_range'  => $this->analytics_range(),
+            'refresh_url'      => wp_nonce_url(
                 add_query_arg('ffla_refresh', '1', admin_url('index.php')),
                 'ffla_wl_refresh'
             ),
@@ -152,6 +225,30 @@ class White_Label_Dashboard
             extract($view_data);
             include $view;
         })();
+    }
+
+    /**
+     * Whether the current dashboard request carries a valid refresh nonce.
+     */
+    private function should_force_refresh(): bool
+    {
+        return isset($_GET['ffla_refresh'], $_GET['_wpnonce'])
+            && '1' === sanitize_text_field(wp_unslash($_GET['ffla_refresh']))
+            && (bool) wp_verify_nonce(sanitize_key(wp_unslash($_GET['_wpnonce'])), 'ffla_wl_refresh');
+    }
+
+    private function analytics_source(): string
+    {
+        $source = (string) get_user_meta(get_current_user_id(), self::SOURCE_META, true);
+
+        return in_array($source, ['google', 'snapfind'], true) ? $source : 'google';
+    }
+
+    private function analytics_range(): int
+    {
+        $range = (int) get_user_meta(get_current_user_id(), self::RANGE_META, true);
+
+        return in_array($range, [7, 30, 90], true) ? $range : 30;
     }
 
     /**

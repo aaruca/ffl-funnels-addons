@@ -2,12 +2,14 @@
 /**
  * White Label — custom dashboard (view).
  *
- * @var array{woo: ?array, search: ?array} $data
- * @var array<string, string>              $links
- * @var WP_User                            $user
- * @var string                             $from
- * @var string                             $to
- * @var string                             $refresh_url
+ * @var array{woo: ?array}       $data
+ * @var array<string, string>    $links
+ * @var WP_User                  $user
+ * @var string                   $from
+ * @var string                   $to
+ * @var string                   $analytics_source
+ * @var int                      $analytics_range
+ * @var string                   $refresh_url
  *
  * @package FFL_Funnels_Addons
  */
@@ -16,34 +18,23 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-$woo    = is_array($data['woo'] ?? null) ? $data['woo'] : null;
-$search = is_array($data['search'] ?? null) ? $data['search'] : null;
+$woo = is_array($data['woo'] ?? null) ? $data['woo'] : null;
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-$abbrev = static function ($n): string {
-    $n = (float) $n;
-    if ($n >= 1000000) {
-        return round($n / 1000000, 1) . 'M';
-    }
-    if ($n >= 1000) {
-        return round($n / 1000, 1) . 'K';
-    }
-    return number_format_i18n((int) $n);
-};
-
-$money = static function ($n): string {
+$money = static function ($number): string {
     $symbol = function_exists('get_woocommerce_currency_symbol') ? get_woocommerce_currency_symbol() : '$';
-    return $symbol . number_format((float) $n, 0);
+    return $symbol . number_format_i18n((float) $number, 0);
 };
 
 $delta_badge = static function ($delta): string {
     if (null === $delta) {
         return '';
     }
-    $up  = (float) $delta >= 0;
-    $cls = $up ? 'is-up' : 'is-down';
+
+    $up    = (float) $delta >= 0;
+    $class = $up ? 'is-up' : 'is-down';
     $arrow = $up ? '&#8599;' : '&#8600;';
-    return '<span class="ffla-dash-delta ' . $cls . '">' . $arrow . ' ' . esc_html(($up ? '+' : '') . $delta . '%') . '</span>';
+
+    return '<span class="ffla-dash-delta ' . $class . '">' . $arrow . ' ' . esc_html(($up ? '+' : '') . $delta . '%') . '</span>';
 };
 
 $greeting = static function (): string {
@@ -59,8 +50,6 @@ $greeting = static function (): string {
 
 $display_name = $user->display_name ?: ($user->first_name ?: __('there', 'ffl-funnels-addons'));
 
-// Quick-link card definitions; rendered only when a URL is set. External links
-// (support, knowledge base, command center) open in a new tab.
 $icons = [
     'support' => '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 1 1 4.5 2.6c-.9.6-1.6 1-1.6 2.1" stroke-linecap="round"/><circle cx="12" cy="17" r=".6" fill="currentColor"/></svg>',
     'kb'      => '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5a2 2 0 0 1 2-2h5v18H6a2 2 0 0 1-2-2z"/><path d="M20 5a2 2 0 0 0-2-2h-5v18h5a2 2 0 0 0 2-2z"/></svg>',
@@ -75,12 +64,10 @@ $cards = [
     ['url' => $links['command_center'], 'target' => '_blank', 'icon' => $icons['command'], 'eyebrow' => __('Command Center', 'ffl-funnels-addons'), 'title' => __('Email marketing', 'ffl-funnels-addons'), 'desc' => __('Build campaigns, manage contacts, and review performance.', 'ffl-funnels-addons'), 'cta' => __('Launch Command Center', 'ffl-funnels-addons')],
 ];
 
-// Stat-tile icons.
 $tile_icons = [
-    'sales'   => '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2v20M17 6.5A4 4 0 0 0 13 4h-2a3.5 3.5 0 0 0 0 7h2a3.5 3.5 0 0 1 0 7h-2a4 4 0 0 1-4-2.5" stroke-linecap="round"/></svg>',
-    'orders'  => '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6h15l-1.5 9h-12z"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/><path d="M6 6L5 3H2" stroke-linecap="round"/></svg>',
-    'traffic' => '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 17l6-6 4 4 7-8" stroke-linecap="round" stroke-linejoin="round"/><path d="M17 7h4v4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    'search'  => '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3" stroke-linecap="round"/></svg>',
+    'sales'  => '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2v20M17 6.5A4 4 0 0 0 13 4h-2a3.5 3.5 0 0 0 0 7h2a3.5 3.5 0 0 1 0 7h-2a4 4 0 0 1-4-2.5" stroke-linecap="round"/></svg>',
+    'orders' => '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6h15l-1.5 9h-12z"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/><path d="M6 6L5 3H2" stroke-linecap="round"/></svg>',
+    'aov'    => '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V9m6 10V5m6 14v-7m4 7H2" stroke-linecap="round"/><path d="M4 6l6-3 6 6 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 ];
 ?>
 
@@ -98,7 +85,6 @@ $tile_icons = [
         </span>
     </div>
 
-    <?php // ── Quick-link cards ────────────────────────────────────────── ?>
     <div class="ffla-dash-cards">
         <?php foreach ($cards as $card) : ?>
             <?php if (empty($card['url'])) { continue; } ?>
@@ -112,11 +98,10 @@ $tile_icons = [
         <?php endforeach; ?>
     </div>
 
-    <?php // ── Stat tiles ──────────────────────────────────────────────── ?>
     <span class="ffla-dash-section"><?php esc_html_e('Performance', 'ffl-funnels-addons'); ?></span>
     <h3 class="ffla-dash-h3"><?php esc_html_e('Business at a glance', 'ffl-funnels-addons'); ?></h3>
 
-    <div class="ffla-dash-tiles">
+    <div class="ffla-dash-tiles ffla-dash-tiles--business">
         <div class="ffla-dash-tile">
             <span class="ffla-dash-tile__top">
                 <span class="ffla-dash-tile__icon"><?php echo $tile_icons['sales']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
@@ -137,95 +122,62 @@ $tile_icons = [
         </div>
         <div class="ffla-dash-tile">
             <span class="ffla-dash-tile__top">
-                <span class="ffla-dash-tile__icon"><?php echo $tile_icons['traffic']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
+                <span class="ffla-dash-tile__icon"><?php echo $tile_icons['aov']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
             </span>
-            <span class="ffla-dash-tile__label"><?php esc_html_e('Website traffic', 'ffl-funnels-addons'); ?></span>
-            <span class="ffla-dash-tile__value"><?php echo $search ? esc_html($abbrev($search['traffic'])) : '&mdash;'; ?></span>
-            <span class="ffla-dash-tile__sub"><?php esc_html_e('sessions this period', 'ffl-funnels-addons'); ?></span>
-        </div>
-        <div class="ffla-dash-tile">
-            <span class="ffla-dash-tile__top">
-                <span class="ffla-dash-tile__icon"><?php echo $tile_icons['search']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
-                <?php echo $delta_badge($search['conversion_delta'] ?? null); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
-            </span>
-            <span class="ffla-dash-tile__label"><?php esc_html_e('Search conversion', 'ffl-funnels-addons'); ?></span>
-            <span class="ffla-dash-tile__value"><?php echo $search ? esc_html($search['conversion'] . '%') : '&mdash;'; ?></span>
-            <span class="ffla-dash-tile__sub"><?php esc_html_e('searches resulting in sale', 'ffl-funnels-addons'); ?></span>
+            <span class="ffla-dash-tile__label"><?php esc_html_e('Average order value', 'ffl-funnels-addons'); ?></span>
+            <span class="ffla-dash-tile__value"><?php echo $woo ? esc_html($money($woo['average_order_value'])) : '&mdash;'; ?></span>
+            <span class="ffla-dash-tile__sub"><?php esc_html_e('sales divided by paid orders', 'ffl-funnels-addons'); ?></span>
         </div>
     </div>
 
-    <?php // ── Sales chart + search funnel ─────────────────────────────── ?>
-    <div class="ffla-dash-split">
-        <div class="ffla-dash-panel">
-            <span class="ffla-dash-panel__label"><?php esc_html_e('Sales overview', 'ffl-funnels-addons'); ?></span>
-            <?php if ($woo && !empty($woo['series'])) : ?>
-                <div class="ffla-dash-panel__value"><?php echo esc_html($money($woo['sales'])); ?></div>
-                <?php
-                $chart = array_map(static function ($p) {
-                    return ['l' => date_i18n('M j', strtotime($p['date'])), 'v' => (float) $p['value']];
-                }, $woo['series']);
-                ?>
-                <div class="ffla-dash-chart-wrap">
-                    <canvas class="ffla-dash-chart" data-series="<?php echo esc_attr(wp_json_encode($chart)); ?>" data-currency="<?php echo esc_attr(function_exists('get_woocommerce_currency_symbol') ? get_woocommerce_currency_symbol() : '$'); ?>"></canvas>
-                </div>
-            <?php else : ?>
-                <p class="ffla-dash-empty"><?php esc_html_e('Sales data is unavailable.', 'ffl-funnels-addons'); ?></p>
-            <?php endif; ?>
-        </div>
-
-        <div class="ffla-dash-panel">
-            <span class="ffla-dash-panel__label"><?php esc_html_e('On-site search funnel', 'ffl-funnels-addons'); ?></span>
-            <?php if ($search && !empty($search['funnel'])) : ?>
-                <?php $funnel_max = max(1, (int) $search['funnel'][0]['value']); ?>
-                <ul class="ffla-dash-funnel">
-                    <?php foreach ($search['funnel'] as $stage) : ?>
-                        <?php $pct = round(((int) $stage['value'] / $funnel_max) * 100); ?>
-                        <li class="ffla-dash-funnel__row">
-                            <span class="ffla-dash-funnel__bar" style="width:<?php echo esc_attr(max(6, $pct)); ?>%">
-                                <strong><?php echo esc_html(number_format_i18n((int) $stage['value'])); ?></strong>
-                            </span>
-                            <span class="ffla-dash-funnel__label"><?php echo esc_html($stage['label']); ?></span>
-                        </li>
-                    <?php endforeach; ?>
-                </ul>
-                <div class="ffla-dash-funnel__foot">
-                    <span><strong><?php echo esc_html($search['ctr'] . '%'); ?></strong><?php esc_html_e('Click-through rate', 'ffl-funnels-addons'); ?></span>
-                    <span><strong><?php echo esc_html($search['conversion'] . '%'); ?></strong><?php esc_html_e('Search conversion', 'ffl-funnels-addons'); ?></span>
-                </div>
-            <?php else : ?>
-                <p class="ffla-dash-empty"><?php esc_html_e('Search analytics are unavailable.', 'ffl-funnels-addons'); ?></p>
-            <?php endif; ?>
-        </div>
-    </div>
-
-    <?php // ── Top search terms ────────────────────────────────────────── ?>
-    <div class="ffla-dash-panel ffla-dash-panel--full">
-        <span class="ffla-dash-panel__label"><?php esc_html_e('Customer intent', 'ffl-funnels-addons'); ?></span>
-        <h4 class="ffla-dash-panel__title"><?php esc_html_e('Top search terms', 'ffl-funnels-addons'); ?></h4>
-        <?php if ($search && !empty($search['top_terms'])) : ?>
-            <table class="ffla-dash-table" data-ffla-sortable>
-                <thead>
-                    <tr>
-                        <th data-type="text"><?php esc_html_e('Search term', 'ffl-funnels-addons'); ?><span class="ffla-dash-sort"></span></th>
-                        <th data-type="num"><?php esc_html_e('Searches', 'ffl-funnels-addons'); ?><span class="ffla-dash-sort"></span></th>
-                        <th data-type="num"><?php esc_html_e('Product clicks', 'ffl-funnels-addons'); ?><span class="ffla-dash-sort"></span></th>
-                        <th data-type="num"><?php esc_html_e('CTR', 'ffl-funnels-addons'); ?><span class="ffla-dash-sort"></span></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($search['top_terms'] as $term) : ?>
-                        <tr>
-                            <td><?php echo esc_html($term['term']); ?></td>
-                            <td data-v="<?php echo esc_attr((string) (int) $term['searches']); ?>"><?php echo esc_html(number_format_i18n((int) $term['searches'])); ?></td>
-                            <td data-v="<?php echo esc_attr((string) (int) $term['clicks']); ?>"><?php echo esc_html(number_format_i18n((int) $term['clicks'])); ?></td>
-                            <td data-v="<?php echo esc_attr((string) (float) $term['ctr']); ?>"><span class="ffla-dash-pill"><?php echo esc_html($term['ctr'] . '%'); ?></span></td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
+    <div class="ffla-dash-panel ffla-dash-panel--full ffla-dash-sales-panel">
+        <span class="ffla-dash-panel__label"><?php esc_html_e('Sales overview', 'ffl-funnels-addons'); ?></span>
+        <?php if ($woo && !empty($woo['series'])) : ?>
+            <div class="ffla-dash-panel__value"><?php echo esc_html($money($woo['sales'])); ?></div>
+            <?php
+            $chart = array_map(static function ($point) {
+                return ['l' => date_i18n('M j', strtotime($point['date'])), 'v' => (float) $point['value']];
+            }, $woo['series']);
+            ?>
+            <div class="ffla-dash-chart-wrap ffla-dash-chart-wrap--sales">
+                <canvas class="ffla-dash-chart" data-series="<?php echo esc_attr(wp_json_encode($chart)); ?>" data-currency="<?php echo esc_attr(function_exists('get_woocommerce_currency_symbol') ? get_woocommerce_currency_symbol() : '$'); ?>"></canvas>
+            </div>
         <?php else : ?>
-            <p class="ffla-dash-empty"><?php esc_html_e('No search terms to show yet.', 'ffl-funnels-addons'); ?></p>
+            <p class="ffla-dash-empty"><?php esc_html_e('Sales data is unavailable.', 'ffl-funnels-addons'); ?></p>
         <?php endif; ?>
     </div>
+
+    <section class="ffla-dash-analytics" data-ffla-analytics>
+        <div class="ffla-dash-analytics__heading">
+            <div>
+                <span class="ffla-dash-section"><?php esc_html_e('Analytics', 'ffl-funnels-addons'); ?></span>
+                <h3 class="ffla-dash-h3"><?php esc_html_e('Understand how customers find and use your store', 'ffl-funnels-addons'); ?></h3>
+            </div>
+            <label class="ffla-dash-period">
+                <span class="screen-reader-text"><?php esc_html_e('Analytics date range', 'ffl-funnels-addons'); ?></span>
+                <select data-ffla-analytics-range>
+                    <?php foreach ([7, 30, 90] as $days) : ?>
+                        <option value="<?php echo esc_attr((string) $days); ?>" <?php selected($analytics_range, $days); ?>>
+                            <?php echo esc_html(sprintf(_n('Last %d day', 'Last %d days', $days, 'ffl-funnels-addons'), $days)); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+        </div>
+
+        <div class="ffla-dash-tabs" role="tablist" aria-label="<?php esc_attr_e('Analytics source', 'ffl-funnels-addons'); ?>">
+            <button id="ffla-dashboard-tab-google" type="button" class="ffla-dash-tab" role="tab" data-ffla-source="google" aria-controls="ffla-dashboard-analytics-panel" aria-selected="<?php echo 'google' === $analytics_source ? 'true' : 'false'; ?>" tabindex="<?php echo 'google' === $analytics_source ? '0' : '-1'; ?>">
+                <?php esc_html_e('Google Analytics', 'ffl-funnels-addons'); ?>
+            </button>
+            <button id="ffla-dashboard-tab-snapfind" type="button" class="ffla-dash-tab" role="tab" data-ffla-source="snapfind" aria-controls="ffla-dashboard-analytics-panel" aria-selected="<?php echo 'snapfind' === $analytics_source ? 'true' : 'false'; ?>" tabindex="<?php echo 'snapfind' === $analytics_source ? '0' : '-1'; ?>">
+                <?php esc_html_e('SnapFind', 'ffl-funnels-addons'); ?>
+            </button>
+        </div>
+
+        <div id="ffla-dashboard-analytics-panel" class="ffla-dash-analytics__panel" role="tabpanel" aria-labelledby="ffla-dashboard-tab-<?php echo esc_attr($analytics_source); ?>" aria-live="polite" aria-busy="true" data-ffla-analytics-panel>
+            <div class="ffla-dash-loading"><span class="spinner is-active"></span><?php esc_html_e('Loading analytics…', 'ffl-funnels-addons'); ?></div>
+        </div>
+        <noscript><p class="ffla-dash-empty"><?php esc_html_e('JavaScript is required to load analytics.', 'ffl-funnels-addons'); ?></p></noscript>
+    </section>
 
 </div>
