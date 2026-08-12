@@ -88,6 +88,7 @@ if (!class_exists('FFL_Funnels_Addons')):
             require_once FFLA_PATH . 'modules/media-cleaner/class-media-cleaner-module.php';
             require_once FFLA_PATH . 'modules/customer-notes/class-customer-notes-module.php';
             require_once FFLA_PATH . 'modules/ga4-bridge/class-ga4-bridge-module.php';
+            require_once FFLA_PATH . 'modules/white-label/class-white-label-module.php';
         }
 
         /**
@@ -106,6 +107,7 @@ if (!class_exists('FFL_Funnels_Addons')):
             $this->registry->register(new Media_Cleaner_Module());
             $this->registry->register(new Customer_Notes_Module());
             $this->registry->register(new Ga4_Bridge_Module());
+            $this->registry->register(new White_Label_Module());
         }
 
         /**
