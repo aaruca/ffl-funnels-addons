@@ -1,5 +1,5 @@
 name: Build Release ZIP
-# Rebuilds an existing version in place for validated emergency hotfixes.
+# Rebuilds an existing version in place for validated hotfixes and release refreshes.
 
 on:
   release:
