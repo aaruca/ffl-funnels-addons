@@ -1,7 +1,6 @@
 /* Sales Tax Filing Reports */
 .ffla-tax-reports-page.ffla-admin {
     width: auto;
-    max-width: 1440px;
     min-height: 0;
     margin: 10px 20px 0 2px;
     background: transparent;
@@ -356,7 +355,7 @@
     --ffla-report-border: var(--wb-color-border-subtle, #d8dee8);
     --ffla-report-muted: var(--wb-color-neutral-foreground-2, #57606a);
     --ffla-report-surface: var(--wb-color-surface-subtle, #f7f9fc);
-    max-width: 1440px;
+    width: 100%;
 }
 
 .ffla-tax-report-tabs {
