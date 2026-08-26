@@ -248,7 +248,15 @@
 }
 
 .ffla-tax-report-table-wrap {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     overflow-x: auto;
+    box-sizing: border-box;
+    overscroll-behavior-inline: contain;
+    scrollbar-gutter: stable;
+    -webkit-overflow-scrolling: touch;
 }
 
 .ffla-tax-report-table-wrap:focus-visible {
@@ -257,7 +265,20 @@
 }
 
 .ffla-tax-report-table {
-    min-width: 900px;
+    width: max-content;
+    min-width: 100%;
+    max-width: none;
+    table-layout: auto;
+}
+
+.ffla-tax-report-dataset,
+.ffla-tax-report-dataset .wb-card__body,
+.ffla-tax-report-tab-panel,
+[data-tax-report-panel] {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
 }
 
 .ffla-tax-report-table th,
@@ -1043,6 +1064,8 @@ progress[data-nexus-progress]::-moz-progress-bar {
 
     .ffla-tax-report-table,
     .ffla-tax-report-nexus-table {
+        width: 100%;
+        max-width: 100%;
         min-width: 0;
     }
 }
