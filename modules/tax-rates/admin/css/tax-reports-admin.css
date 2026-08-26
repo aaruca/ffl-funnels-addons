@@ -71,6 +71,7 @@
 .wc-wp-version-gte-70 .ffla-tax-reports-page .select2-container .select2-selection--multiple .select2-selection__rendered .select2-search--inline {
     width: 100% !important;
 }
+
 .ffla-tax-report-state-field .select2-container .select2-selection--multiple {
     min-height: 40px;
     border-color: #8c8f94;
