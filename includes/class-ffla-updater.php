@@ -343,7 +343,7 @@ class FFLA_Updater
                 $plugin_data->icons = [];
                 $plugin_data->banners = [];
                 $plugin_data->tested = '';
-                $plugin_data->requires = '6.0';
+                $plugin_data->requires = '6.2';
                 $plugin_data->requires_php = '7.4';
 
                 $transient->response[$this->plugin_basename] = $plugin_data;
