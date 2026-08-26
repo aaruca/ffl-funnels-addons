@@ -41,7 +41,7 @@ class Tax_Reports_Admin
 
     public static function render_page(): void
     {
-        echo '<div class="wrap ffla-tax-reports-page">';
+        echo '<div class="wrap ffla-admin ffla-tax-reports-page">';
         echo '<h1>' . esc_html__('Sales Tax Reports', 'ffl-funnels-addons') . '</h1>';
         self::render();
         echo '</div>';
@@ -59,7 +59,8 @@ class Tax_Reports_Admin
             return;
         }
 
-        wp_enqueue_style('ffla-tax-reports-admin', FFLA_URL . 'modules/tax-rates/admin/css/tax-reports-admin.css', [], FFLA_VERSION);
+        wp_enqueue_style('ffla-admin', FFLA_URL . 'admin/css/ffla-admin.css', [], FFLA_VERSION);
+        wp_enqueue_style('ffla-tax-reports-admin', FFLA_URL . 'modules/tax-rates/admin/css/tax-reports-admin.css', ['ffla-admin'], FFLA_VERSION);
         wp_enqueue_script('ffla-tax-reports-admin', FFLA_URL . 'modules/tax-rates/admin/js/tax-reports-admin.js', [], FFLA_VERSION, true);
         wp_localize_script('ffla-tax-reports-admin', 'fflaTaxReportsAdmin', [
             'i18n' => [
@@ -586,7 +587,7 @@ class Tax_Reports_Admin
         echo '</small></span></label>';
 
         echo '<div class="ffla-tax-report-actions">';
-        echo '<button type="submit" class="wb-btn wb-btn--secondary">' . esc_html__('Preview filing report', 'ffl-funnels-addons') . '</button>';
+        echo '<button type="submit" class="wb-btn wb-btn--subtle">' . esc_html__('Preview filing report', 'ffl-funnels-addons') . '</button>';
         echo '<button type="submit" class="wb-btn wb-btn--primary" formmethod="post" formaction="' . esc_url(admin_url('admin-post.php')) . '">' . esc_html__('Download filing report', 'ffl-funnels-addons') . '</button>';
         echo '</div>';
         echo '<p class="wb-field__desc">' . esc_html__('The download is generated on demand and is not retained on the server. Only a non-PII manifest and file checksums are kept in the generation history.', 'ffl-funnels-addons') . '</p>';
@@ -781,8 +782,8 @@ class Tax_Reports_Admin
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" class="ffla-tax-report-actions">';
         echo '<input type="hidden" name="action" value="ffla_tax_report_email_send">';
         wp_nonce_field('ffla_tax_report_email_send');
-        echo '<button type="submit" name="mode" value="test" class="wb-btn wb-btn--secondary">' . esc_html__('Send test report', 'ffl-funnels-addons') . '</button>';
-        echo '<button type="submit" name="mode" value="manual" class="wb-btn wb-btn--secondary">' . esc_html__('Send previous month now', 'ffl-funnels-addons') . '</button>';
+        echo '<button type="submit" name="mode" value="test" class="wb-btn wb-btn--subtle">' . esc_html__('Send test report', 'ffl-funnels-addons') . '</button>';
+        echo '<button type="submit" name="mode" value="manual" class="wb-btn wb-btn--subtle">' . esc_html__('Send previous month now', 'ffl-funnels-addons') . '</button>';
         echo '</form>';
         echo '<p class="wb-field__desc">' . esc_html__('Failed scheduled sends retry after 15 minutes, 1 hour and 6 hours. Temporary report files are deleted after each attempt. Configure a transactional SMTP provider and verify its delivery logs; a successful WordPress handoff does not prove inbox delivery.', 'ffl-funnels-addons') . '</p>';
 
