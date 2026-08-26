@@ -144,6 +144,11 @@
     overflow-x: auto;
 }
 
+.ffla-tax-report-table-wrap:focus-visible {
+    outline: 2px solid var(--ffla-report-accent, #2271b1);
+    outline-offset: 2px;
+}
+
 .ffla-tax-report-table {
     min-width: 900px;
 }
@@ -155,6 +160,14 @@
 }
 
 .ffla-tax-report-table td:last-child {
+    max-width: 520px;
+    white-space: normal;
+}
+
+.ffla-tax-report-table td[data-column="shipping_address_formatted"],
+.ffla-tax-report-table td[data-column="message"],
+.ffla-tax-report-table td[data-column="advisory"] {
+    min-width: 260px;
     max-width: 520px;
     white-space: normal;
 }
@@ -173,5 +186,721 @@
     .ffla-tax-report-email-grid,
     .ffla-tax-report-kpis {
         grid-template-columns: 1fr;
+    }
+}
+
+/* Expanded report shell and sub-tabs. */
+.ffla-tax-report-shell,
+.ffla-tax-report-tab-layout {
+    --ffla-report-accent: var(--wb-color-brand-primary, #2271b1);
+    --ffla-report-accent-dark: #135e96;
+    --ffla-report-border: var(--wb-color-border-subtle, #d8dee8);
+    --ffla-report-muted: var(--wb-color-neutral-foreground-2, #57606a);
+    --ffla-report-surface: var(--wb-color-surface-subtle, #f7f9fc);
+    max-width: 1440px;
+}
+
+.ffla-tax-report-tabs {
+    display: flex;
+    gap: 2px;
+    margin: 20px 0 0;
+    padding: 0 2px;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--ffla-report-border, #d8dee8);
+    scrollbar-width: thin;
+}
+
+.ffla-tax-report-tabs [role="tab"],
+.ffla-tax-report-tabs [data-tax-report-tab] {
+    position: relative;
+    flex: 0 0 auto;
+    min-height: 44px;
+    margin: 0 0 -1px;
+    padding: 10px 14px;
+    border: 1px solid transparent;
+    border-bottom-color: var(--ffla-report-border, #d8dee8);
+    border-radius: 6px 6px 0 0;
+    color: #1d2327;
+    background: transparent;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.5;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.ffla-tax-report-tabs [role="tab"]:hover,
+.ffla-tax-report-tabs [data-tax-report-tab]:hover {
+    color: var(--ffla-report-accent-dark, #135e96);
+    background: #f0f6fc;
+}
+
+.ffla-tax-report-tabs [role="tab"][aria-selected="true"],
+.ffla-tax-report-tabs [data-tax-report-tab].is-active {
+    z-index: 1;
+    border-color: var(--ffla-report-border, #d8dee8);
+    border-bottom-color: #fff;
+    color: var(--ffla-report-accent-dark, #135e96);
+    background: #fff;
+}
+
+.ffla-tax-report-tabs [role="tab"][aria-selected="true"]::after,
+.ffla-tax-report-tabs [data-tax-report-tab].is-active::after {
+    position: absolute;
+    right: 10px;
+    bottom: -1px;
+    left: 10px;
+    height: 3px;
+    border-radius: 3px 3px 0 0;
+    background: var(--ffla-report-accent, #2271b1);
+    content: "";
+}
+
+.ffla-tax-report-tab-panel,
+[data-tax-report-panel] {
+    padding-top: var(--wb-spacing-lg, 20px);
+}
+
+.ffla-tax-report-tab-panel:focus,
+[data-tax-report-panel]:focus {
+    outline: 0;
+}
+
+.ffla-tax-reports-enhanced [data-tax-report-panel][hidden],
+.ffla-tax-reports-enhanced [role="tabpanel"][hidden] {
+    display: none;
+}
+
+/* Filing-period presets and advanced filters. */
+.ffla-tax-report-period-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: var(--wb-spacing-md, 16px);
+}
+
+.ffla-tax-report-period-button,
+.ffla-tax-report-disclosure {
+    min-height: 36px;
+    padding: 6px 12px;
+    border: 1px solid #8c8f94;
+    border-radius: var(--wb-radius-sm, 6px);
+    color: #2c3338;
+    background: #fff;
+    font-weight: 600;
+    line-height: 1.4;
+    cursor: pointer;
+}
+
+.ffla-tax-report-period-button:hover,
+.ffla-tax-report-disclosure:hover {
+    border-color: var(--ffla-report-accent, #2271b1);
+    color: var(--ffla-report-accent-dark, #135e96);
+}
+
+.ffla-tax-report-period-button.is-active,
+.ffla-tax-report-period-button[aria-pressed="true"] {
+    border-color: var(--ffla-report-accent, #2271b1);
+    color: #fff;
+    background: var(--ffla-report-accent, #2271b1);
+}
+
+.ffla-tax-report-disclosure {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: var(--wb-spacing-md, 16px) 0 0;
+}
+
+.ffla-tax-report-disclosure::after {
+    width: 7px;
+    height: 7px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    content: "";
+    transform: rotate(45deg) translateY(-2px);
+    transition: transform 160ms ease;
+}
+
+.ffla-tax-report-disclosure[aria-expanded="true"]::after {
+    transform: rotate(225deg) translate(-2px, -1px);
+}
+
+.ffla-tax-report-advanced-panel {
+    margin-top: 12px;
+    padding: 16px;
+    border: 1px solid var(--ffla-report-border, #d8dee8);
+    border-radius: var(--wb-radius-md, 8px);
+    background: var(--ffla-report-surface, #f7f9fc);
+}
+
+.ffla-tax-report-advanced-panel[hidden] {
+    display: none;
+}
+
+.ffla-tax-report-advanced-panel .ffla-tax-report-statuses:first-child {
+    margin-top: 0;
+}
+
+.ffla-tax-report-advanced-panel .ffla-tax-report-pii:last-child {
+    margin-bottom: 0;
+}
+
+/* Copyable KPI cards. */
+.ffla-tax-report-kpi[role="button"],
+[data-copy-kpi] {
+    position: relative;
+    min-height: 92px;
+    padding-right: 72px;
+    cursor: copy;
+    transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.ffla-tax-report-kpi[role="button"]::after,
+[data-copy-kpi]::after {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 20px;
+    height: 20px;
+    border: 2px solid #8c8f94;
+    border-radius: 3px;
+    box-sizing: border-box;
+    content: "";
+}
+
+.ffla-tax-report-kpi[role="button"]::before,
+[data-copy-kpi]::before {
+    position: absolute;
+    z-index: 1;
+    top: 10px;
+    right: 10px;
+    width: 14px;
+    height: 14px;
+    border: 2px solid #8c8f94;
+    border-radius: 3px;
+    background: #fff;
+    box-sizing: border-box;
+    content: "";
+}
+
+.ffla-tax-report-kpi[role="button"]:hover,
+.ffla-tax-report-kpi[role="button"]:focus-visible,
+[data-copy-kpi]:hover,
+[data-copy-kpi]:focus-visible {
+    border-color: var(--ffla-report-accent, #2271b1);
+    box-shadow: 0 2px 8px rgba(34, 113, 177, 0.14);
+    transform: translateY(-1px);
+}
+
+.ffla-tax-report-kpi.is-copied {
+    border-color: #00a32a;
+    box-shadow: 0 0 0 1px #00a32a;
+}
+
+.ffla-tax-report-kpi.has-copy-error {
+    border-color: #d63638;
+}
+
+.ffla-tax-report-copy-status {
+    position: absolute;
+    right: 12px;
+    bottom: 10px;
+    color: #008a20;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.has-copy-error .ffla-tax-report-copy-status {
+    color: #b32d2e;
+}
+
+/* Searchable and sortable report tables. */
+.ffla-tax-report-table-tools {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+    margin-bottom: 10px;
+}
+
+.ffla-tax-report-search {
+    position: relative;
+    display: inline-flex;
+    flex: 1 1 280px;
+    max-width: 420px;
+}
+
+.ffla-tax-report-search::before {
+    position: absolute;
+    top: 50%;
+    left: 11px;
+    width: 9px;
+    height: 9px;
+    border: 2px solid #646970;
+    border-radius: 50%;
+    content: "";
+    pointer-events: none;
+    transform: translateY(-60%);
+}
+
+.ffla-tax-report-search::after {
+    position: absolute;
+    top: calc(50% + 4px);
+    left: 21px;
+    width: 6px;
+    height: 2px;
+    background: #646970;
+    content: "";
+    pointer-events: none;
+    transform: rotate(45deg);
+}
+
+.ffla-tax-report-search input[type="search"] {
+    width: 100%;
+    min-height: 36px;
+    padding-left: 34px;
+}
+
+.ffla-tax-report-row-count {
+    flex: 0 0 auto;
+    color: var(--ffla-report-muted, #57606a);
+    font-size: 12px;
+}
+
+.ffla-tax-report-sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    min-height: 30px;
+    margin: -4px -6px;
+    padding: 4px 6px;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.ffla-tax-report-sort::after {
+    display: inline-block;
+    width: 0;
+    height: 0;
+    border-right: 4px solid transparent;
+    border-bottom: 5px solid #8c8f94;
+    border-left: 4px solid transparent;
+    content: "";
+    opacity: 0.55;
+}
+
+.ffla-tax-report-table th[aria-sort="ascending"] .ffla-tax-report-sort::after {
+    border-top: 0;
+    border-bottom: 6px solid currentColor;
+    opacity: 1;
+}
+
+.ffla-tax-report-table th[aria-sort="descending"] .ffla-tax-report-sort::after {
+    border-top: 6px solid currentColor;
+    border-bottom: 0;
+    opacity: 1;
+}
+
+.ffla-tax-report-table tr[hidden],
+.ffla-tax-report-empty-row[hidden] {
+    display: none;
+}
+
+.ffla-tax-report-empty-row td {
+    padding: 28px 12px;
+    color: var(--ffla-report-muted, #57606a);
+    text-align: center;
+}
+
+/* Status badges and filing health. */
+.ffla-tax-report-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 2px 9px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+
+.ffla-tax-report-badge--success {
+    border-color: #6cc887;
+    color: #006b1b;
+    background: #edfaef;
+}
+
+.ffla-tax-report-badge--warning {
+    border-color: #dba617;
+    color: #6e4c00;
+    background: #fff8d6;
+}
+
+.ffla-tax-report-badge--danger {
+    border-color: #e59496;
+    color: #8a2424;
+    background: #fcf0f1;
+}
+
+.ffla-tax-report-badge--info {
+    border-color: #72aee6;
+    color: #0a4b78;
+    background: #f0f6fc;
+}
+
+.ffla-tax-report-badge--neutral {
+    border-color: #c3c4c7;
+    color: #50575e;
+    background: #f6f7f7;
+}
+
+.ffla-tax-report-health-grid,
+.ffla-tax-report-reconciliation-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(220px, 1fr));
+    gap: var(--wb-spacing-md, 16px);
+    margin: var(--wb-spacing-lg, 20px) 0;
+}
+
+.ffla-tax-report-health-card,
+.ffla-tax-report-reconciliation-card {
+    position: relative;
+    min-width: 0;
+    padding: 18px;
+    overflow: hidden;
+    border: 1px solid var(--ffla-report-border, #d8dee8);
+    border-radius: var(--wb-radius-md, 8px);
+    background: #fff;
+}
+
+.ffla-tax-report-health-card::before,
+.ffla-tax-report-reconciliation-card::before {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 4px;
+    background: #8c8f94;
+    content: "";
+}
+
+.ffla-tax-report-health-card--success::before,
+.ffla-tax-report-reconciliation-card[data-status-tone="success"]::before {
+    background: #00a32a;
+}
+
+.ffla-tax-report-health-card--warning::before,
+.ffla-tax-report-reconciliation-card[data-status-tone="warning"]::before {
+    background: #dba617;
+}
+
+.ffla-tax-report-health-card--danger::before,
+.ffla-tax-report-reconciliation-card[data-status-tone="danger"]::before {
+    background: #d63638;
+}
+
+.ffla-tax-report-health-card--info::before,
+.ffla-tax-report-reconciliation-card[data-status-tone="info"]::before {
+    background: #2271b1;
+}
+
+.ffla-tax-report-health-card h3,
+.ffla-tax-report-health-card h4,
+.ffla-tax-report-reconciliation-card h3,
+.ffla-tax-report-reconciliation-card h4 {
+    margin: 0 0 8px;
+}
+
+.ffla-tax-report-health-card__value,
+.ffla-tax-report-reconciliation-card__value {
+    display: block;
+    margin: 5px 0;
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.ffla-tax-report-health-card__detail,
+.ffla-tax-report-reconciliation-card__detail {
+    margin: 0;
+    color: var(--ffla-report-muted, #57606a);
+}
+
+/* Economic nexus monitor. */
+.ffla-tax-report-nexus-table {
+    min-width: 980px;
+}
+
+.ffla-tax-report-nexus-table td {
+    vertical-align: middle;
+}
+
+.ffla-tax-report-nexus-progress,
+[data-nexus-progress]:not(progress) {
+    position: relative;
+    width: min(220px, 100%);
+    height: 10px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e8eaed;
+}
+
+.ffla-tax-report-progress__bar {
+    display: block;
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--ffla-report-accent, #2271b1);
+    transition: width 240ms ease;
+}
+
+progress.ffla-tax-report-nexus-progress,
+progress[data-nexus-progress] {
+    width: min(220px, 100%);
+    height: 10px;
+    overflow: hidden;
+    border: 0;
+    border-radius: 999px;
+    background: #e8eaed;
+    appearance: none;
+}
+
+progress.ffla-tax-report-nexus-progress::-webkit-progress-bar,
+progress[data-nexus-progress]::-webkit-progress-bar {
+    border-radius: 999px;
+    background: #e8eaed;
+}
+
+progress.ffla-tax-report-nexus-progress::-webkit-progress-value,
+progress[data-nexus-progress]::-webkit-progress-value {
+    border-radius: 999px;
+    background: var(--ffla-report-accent, #2271b1);
+}
+
+progress.ffla-tax-report-nexus-progress::-moz-progress-bar,
+progress[data-nexus-progress]::-moz-progress-bar {
+    border-radius: 999px;
+    background: var(--ffla-report-accent, #2271b1);
+}
+
+.ffla-tax-report-nexus-threshold {
+    display: grid;
+    grid-template-columns: minmax(70px, 1fr) minmax(120px, 2fr);
+    gap: 8px 12px;
+    align-items: center;
+}
+
+.ffla-tax-report-nexus-threshold small {
+    color: var(--ffla-report-muted, #57606a);
+}
+
+/* Multi-site report combiner. */
+.ffla-tax-report-combiner-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
+    gap: var(--wb-spacing-md, 16px);
+}
+
+.ffla-tax-report-dropzone,
+[data-tax-report-dropzone] {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 180px;
+    padding: 24px;
+    border: 2px dashed #8c8f94;
+    border-radius: var(--wb-radius-md, 8px);
+    color: #2c3338;
+    background: var(--ffla-report-surface, #f7f9fc);
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.ffla-tax-report-dropzone:hover,
+.ffla-tax-report-dropzone.is-dragover,
+[data-tax-report-dropzone]:hover,
+[data-tax-report-dropzone].is-dragover {
+    border-color: var(--ffla-report-accent, #2271b1);
+    background: #f0f6fc;
+    box-shadow: inset 0 0 0 1px var(--ffla-report-accent, #2271b1);
+}
+
+.ffla-tax-report-dropzone.has-files,
+[data-tax-report-dropzone].has-files {
+    border-style: solid;
+    border-color: #00a32a;
+    background: #edfaef;
+}
+
+.ffla-tax-report-dropzone input[type="file"],
+[data-tax-report-dropzone] input[type="file"] {
+    max-width: 100%;
+    margin: 12px 0;
+}
+
+.ffla-tax-report-dropzone__title {
+    margin: 0 0 6px;
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.ffla-tax-report-dropzone__help,
+.ffla-tax-report-file-status {
+    display: block;
+    max-width: 560px;
+    color: var(--ffla-report-muted, #57606a);
+    overflow-wrap: anywhere;
+}
+
+.ffla-tax-report-file-status:not(:empty) {
+    margin-top: 8px;
+    font-weight: 600;
+}
+
+/* Shared interaction and responsive states. */
+.ffla-tax-report-tabs [role="tab"]:focus-visible,
+.ffla-tax-report-period-button:focus-visible,
+.ffla-tax-report-disclosure:focus-visible,
+.ffla-tax-report-kpi[role="button"]:focus-visible,
+.ffla-tax-report-sort:focus-visible,
+.ffla-tax-report-dropzone:focus-visible,
+[data-tax-report-dropzone]:focus-visible {
+    outline: 2px solid var(--ffla-report-accent, #2271b1);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 1px #fff;
+}
+
+@media (max-width: 1100px) {
+    .ffla-tax-report-health-grid,
+    .ffla-tax-report-reconciliation-grid {
+        grid-template-columns: repeat(2, minmax(220px, 1fr));
+    }
+}
+
+@media (max-width: 782px) {
+    .ffla-tax-report-tabs {
+        margin-right: -10px;
+        margin-left: -10px;
+        padding: 0 10px;
+    }
+
+    .ffla-tax-report-tabs [role="tab"],
+    .ffla-tax-report-tabs [data-tax-report-tab] {
+        min-height: 46px;
+        padding-right: 12px;
+        padding-left: 12px;
+    }
+
+    .ffla-tax-report-period-presets {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .ffla-tax-report-period-button {
+        width: 100%;
+    }
+
+    .ffla-tax-report-table-tools {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .ffla-tax-report-search {
+        flex-basis: auto;
+        max-width: none;
+    }
+
+    .ffla-tax-report-row-count {
+        align-self: flex-end;
+    }
+
+    .ffla-tax-report-health-grid,
+    .ffla-tax-report-reconciliation-grid,
+    .ffla-tax-report-combiner-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ffla-tax-report-dropzone,
+    [data-tax-report-dropzone] {
+        min-height: 150px;
+        padding: 18px;
+    }
+}
+
+@media (max-width: 480px) {
+    .ffla-tax-report-period-presets {
+        grid-template-columns: 1fr;
+    }
+
+    .ffla-tax-report-kpi[role="button"],
+    [data-copy-kpi] {
+        padding-right: 54px;
+    }
+
+    .ffla-tax-report-advanced-panel {
+        padding: 12px;
+    }
+
+    .ffla-tax-report-statuses {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ffla-tax-report-disclosure::after,
+    .ffla-tax-report-kpi[role="button"],
+    [data-copy-kpi],
+    .ffla-tax-report-progress__bar,
+    .ffla-tax-report-dropzone,
+    [data-tax-report-dropzone] {
+        transition: none;
+    }
+}
+
+@media (forced-colors: active) {
+    .ffla-tax-report-badge,
+    .ffla-tax-report-period-button.is-active,
+    .ffla-tax-report-dropzone.is-dragover,
+    [data-tax-report-dropzone].is-dragover {
+        border-color: ButtonText;
+    }
+}
+
+@media print {
+    .ffla-tax-report-tabs,
+    .ffla-tax-report-period-presets,
+    .ffla-tax-report-disclosure,
+    .ffla-tax-report-table-tools,
+    .ffla-tax-report-copy-status,
+    .ffla-tax-report-combiner-grid {
+        display: none !important;
+    }
+
+    .ffla-tax-reports-enhanced [data-tax-report-panel][hidden],
+    .ffla-tax-reports-enhanced [role="tabpanel"][hidden],
+    .ffla-tax-report-advanced-panel[hidden] {
+        display: block !important;
+    }
+
+    .ffla-tax-report-table-wrap {
+        overflow: visible;
+    }
+
+    .ffla-tax-report-table,
+    .ffla-tax-report-nexus-table {
+        min-width: 0;
     }
 }
