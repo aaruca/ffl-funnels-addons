@@ -52,6 +52,9 @@ US sales tax resolution for WooCommerce using live USGeocoder API lookups (JSON)
 *   **WooCommerce runtime taxes:** Applies resolved taxes directly in cart and checkout.
 *   **State controls:** Limit the resolver to only the states your store uses, and purge local datasets when a state is removed from selection.
 *   **Admin tooling:** Includes Quote Lookup, Coverage Matrix, Datasets, Audit Log, and Settings screens.
+*   **Sales Tax Reports:** A dedicated **WooCommerce → Sales Tax Reports** workspace provides filing totals, state/county/jurisdiction breakdowns, taxable shipping, over/under collection, shipping-address order audits, refunds, line-item detail, and accountant-ready CSV/XLSX/PDF packages.
+*   **Reconciliation and monitoring:** Compares report totals with WooCommerce Analytics, surfaces data-quality checks, and provides an advisory multi-state economic-nexus monitor with replaceable threshold data.
+*   **Delivery and multi-site tools:** Schedules monthly email packages, keeps non-PII generation/delivery history, combines reports from multiple stores, and maps combined jurisdiction totals into a state/accountant CSV template.
 *   **Cleanup tool:** Includes a one-click button to delete old legacy local tax database rows after migrating to USGeocoder.
 
 ### 7. Product Reviews
@@ -138,6 +141,8 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 4.  Save settings.
 5.  Use **Quote Lookup** to verify results before testing in WooCommerce checkout.
 6.  (Optional) If you are fully migrated, use **Delete Old Tax Database** in Settings to purge old legacy local tax data.
+7.  Open **WooCommerce → Sales Tax Reports** to preview or download filing and advanced audit packages. Taxed shipping is already included in taxable sales and is also shown separately for verification.
+8.  Use **Delivery & History** to configure the previous-month email schedule, and enable customer shipping addresses only for recipients authorized to receive PII.
 
 Notes:
 *   If no USGeocoder key is configured, the legacy local-sheet flow remains available.
