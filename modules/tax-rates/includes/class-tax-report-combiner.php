@@ -100,7 +100,7 @@ class Tax_Report_Combiner
         $seen_report_ids = [];
         $seen_content_hashes = [];
 
-        foreach ($files as $file) {
+        foreach ($files as $file_index => $file) {
             $validated = $this->validate_input_file($file, ['csv', 'zip'], $limits, $require_uploaded, $diagnostics);
             if (!$validated) {
                 continue;
@@ -138,6 +138,14 @@ class Tax_Report_Combiner
             }
 
             if ($diagnostics['rows_read'] >= $limits['max_rows']) {
+                if ($file_index < count($files) - 1) {
+                    $diagnostics['truncated'] = true;
+                    $this->add_issue($diagnostics, 'errors', 'row_limit_exceeded', 'The combined report row limit was reached before all uploaded files were processed.', $validated['name'] ?? '', 0, [
+                        'limit'           => $limits['max_rows'],
+                        'files_received'  => count($files),
+                        'files_processed' => $diagnostics['files_processed'],
+                    ]);
+                }
                 break;
             }
         }
@@ -209,25 +217,124 @@ class Tax_Report_Combiner
             return $this->empty_mapping_result($diagnostics, $options);
         }
 
-        $content = $this->read_file_limited($validated['path'], (int) $limits['max_file_bytes']);
-        if ($content === false) {
-            $this->add_mapping_issue($diagnostics, 'errors', ['code' => 'template_read_failed', 'message' => 'The state template could not be read within the configured size limit.']);
-            return $this->empty_mapping_result($diagnostics, $options);
-        }
-
-        $table = $this->parse_template_csv($content, $validated['name'], $diagnostics, $limits);
+        $table = $this->parse_template_csv($validated['path'], $validated['name'], $diagnostics, $limits);
         if (!$table) {
             return $this->empty_mapping_result($diagnostics, $options);
         }
 
         $column_maps = $this->resolve_template_mapping($table['headers'], $mapping, $diagnostics);
         if (!empty($diagnostics['errors'])) {
+            fclose($table['stream']);
             return $this->empty_mapping_result($diagnostics, $options);
         }
 
-        $rows = $table['rows'];
-        $generated_from_header_only = empty($rows);
-        if ($generated_from_header_only) {
+        $output = $this->open_csv_output_stream($table['headers']);
+        if (!is_resource($output)) {
+            fclose($table['stream']);
+            $this->add_mapping_issue($diagnostics, 'errors', ['code' => 'mapped_csv_stream_failed', 'message' => 'The mapped CSV output stream could not be created.']);
+            return $this->empty_mapping_result($diagnostics, $options);
+        }
+
+        $index = null;
+        $comparison_count = 0;
+        $comparison_limit_exceeded = false;
+        $template_rows = 0;
+        $row_number = 1;
+        while (true) {
+            $line_too_long = false;
+            $line = $this->read_csv_line_limited($table['stream'], (int) $limits['max_row_bytes'], $line_too_long);
+            if ($line === null) {
+                break;
+            }
+            $row_number++;
+            if ($line_too_long || strpos($line, "\0") !== false) {
+                $this->add_mapping_issue($diagnostics, 'errors', ['code' => 'template_row_too_large', 'message' => 'A template row is binary or exceeds the configured size limit.', 'row' => $row_number]);
+                continue;
+            }
+
+            $row_error = '';
+            $values = $this->parse_csv_line_with_limits($line, $table['delimiter'], $limits, $row_error);
+            if (!is_array($values)) {
+                $this->add_mapping_issue($diagnostics, 'errors', [
+                    'code'    => $row_error === 'columns' ? 'template_column_overflow' : 'template_row_too_large',
+                    'message' => $row_error === 'columns' ? 'A template row exceeds the configured column limit.' : 'A template row is malformed or exceeds the configured size limit.',
+                    'row'     => $row_number,
+                ]);
+                continue;
+            }
+            if ($this->is_empty_csv_row($values)) {
+                continue;
+            }
+            if ($template_rows >= $limits['max_template_rows']) {
+                $diagnostics['truncated'] = true;
+                $this->add_mapping_issue($diagnostics, 'errors', ['code' => 'template_row_limit_exceeded', 'message' => 'The template row limit was reached.', 'row' => $row_number]);
+                break;
+            }
+            if (count($values) > count($table['headers'])) {
+                $this->add_mapping_issue($diagnostics, 'errors', ['code' => 'template_column_overflow', 'message' => 'A template row contains more values than its header.', 'row' => $row_number]);
+                continue;
+            }
+
+            $template_row = [];
+            foreach ($table['headers'] as $index_number => $header) {
+                $template_row[$header] = isset($values[$index_number]) ? (string) $values[$index_number] : '';
+            }
+            $template_rows++;
+            if ($index === null) {
+                $index = $this->build_template_match_index($combined_rows, $column_maps['keys']);
+            }
+            $matches = $this->find_template_matches(
+                $template_row,
+                $combined_rows,
+                (array) $index,
+                $column_maps['keys'],
+                $comparison_count,
+                (int) $limits['max_template_comparisons'],
+                $comparison_limit_exceeded
+            );
+            if ($comparison_limit_exceeded) {
+                $diagnostics['truncated'] = true;
+                $this->add_mapping_issue($diagnostics, 'errors', [
+                    'code'    => 'template_comparison_limit_exceeded',
+                    'message' => 'Template matching exceeded its bounded comparison limit.',
+                    'row'     => $row_number,
+                    'limit'   => $limits['max_template_comparisons'],
+                ]);
+                break;
+            }
+            if (count($matches) === 1) {
+                $template_row = $this->apply_output_values($template_row, (array) $combined_rows[$matches[0]], $column_maps);
+                $diagnostics['matched']++;
+            } elseif (empty($matches)) {
+                if (count($diagnostics['unmatched']) < $limits['max_diagnostics']) {
+                    $this->add_mapping_issue($diagnostics, 'unmatched', [
+                        'row'         => $row_number,
+                        'identifiers' => $this->template_identifiers($template_row, $column_maps['keys']),
+                    ]);
+                } else {
+                    $diagnostics['truncated'] = true;
+                }
+            } else {
+                if (count($diagnostics['ambiguous']) < $limits['max_diagnostics']) {
+                    $this->add_mapping_issue($diagnostics, 'ambiguous', [
+                        'row'             => $row_number,
+                        'identifiers'     => $this->template_identifiers($template_row, $column_maps['keys']),
+                        'candidate_count' => count($matches),
+                    ]);
+                } else {
+                    $diagnostics['truncated'] = true;
+                }
+            }
+            if (!$this->write_csv_output_row($output, $table['headers'], $template_row)) {
+                $this->add_mapping_issue($diagnostics, 'errors', ['code' => 'mapped_csv_write_failed', 'message' => 'The mapped CSV could not be written completely.', 'row' => $row_number]);
+                break;
+            }
+        }
+        fclose($table['stream']);
+        unset($index);
+
+        $generated_from_header_only = $template_rows === 0;
+        if ($generated_from_header_only && empty($diagnostics['errors'])) {
             if (count($combined_rows) > $limits['max_template_rows']) {
                 $diagnostics['truncated'] = true;
                 $this->add_mapping_issue($diagnostics, 'errors', [
@@ -235,60 +342,15 @@ class Tax_Report_Combiner
                     'message' => 'The combined report exceeds the template generation row limit.',
                     'limit'   => $limits['max_template_rows'],
                 ]);
-                return $this->empty_mapping_result($diagnostics, $options);
-            }
-            foreach ($combined_rows as $combined_row) {
-                $blank = array_fill_keys($table['headers'], '');
-                $rows[] = $this->apply_output_values($blank, (array) $combined_row, $column_maps);
-                $diagnostics['matched']++;
-            }
-        } else {
-            $index = $this->build_template_match_index($combined_rows);
-            $comparison_count = 0;
-            $comparison_limit_exceeded = false;
-            foreach ($rows as $row_offset => $template_row) {
-                $matches = $this->find_template_matches(
-                    $template_row,
-                    $combined_rows,
-                    $index,
-                    $column_maps['keys'],
-                    $comparison_count,
-                    (int) $limits['max_template_comparisons'],
-                    $comparison_limit_exceeded
-                );
-                $csv_row_number = $row_offset + 2;
-                if ($comparison_limit_exceeded) {
-                    $diagnostics['truncated'] = true;
-                    $this->add_mapping_issue($diagnostics, 'errors', [
-                        'code'    => 'template_comparison_limit_exceeded',
-                        'message' => 'Template matching exceeded its bounded comparison limit.',
-                        'row'     => $csv_row_number,
-                        'limit'   => $limits['max_template_comparisons'],
-                    ]);
-                    break;
-                }
-                if (count($matches) === 1) {
-                    $rows[$row_offset] = $this->apply_output_values($template_row, (array) $combined_rows[$matches[0]], $column_maps);
+            } else {
+                foreach ($combined_rows as $combined_row) {
+                    $blank = array_fill_keys($table['headers'], '');
+                    $mapped_row = $this->apply_output_values($blank, (array) $combined_row, $column_maps);
+                    if (!$this->write_csv_output_row($output, $table['headers'], $mapped_row)) {
+                        $this->add_mapping_issue($diagnostics, 'errors', ['code' => 'mapped_csv_write_failed', 'message' => 'The mapped CSV could not be written completely.']);
+                        break;
+                    }
                     $diagnostics['matched']++;
-                } elseif (empty($matches)) {
-                    if (count($diagnostics['unmatched']) < $limits['max_diagnostics']) {
-                        $this->add_mapping_issue($diagnostics, 'unmatched', [
-                            'row'         => $csv_row_number,
-                            'identifiers' => $this->template_identifiers($template_row, $column_maps['keys']),
-                        ]);
-                    } else {
-                        $diagnostics['truncated'] = true;
-                    }
-                } else {
-                    if (count($diagnostics['ambiguous']) < $limits['max_diagnostics']) {
-                        $this->add_mapping_issue($diagnostics, 'ambiguous', [
-                            'row'             => $csv_row_number,
-                            'identifiers'     => $this->template_identifiers($template_row, $column_maps['keys']),
-                            'candidate_count' => count($matches),
-                        ]);
-                    } else {
-                        $diagnostics['truncated'] = true;
-                    }
                 }
             }
         }
@@ -297,8 +359,30 @@ class Tax_Report_Combiner
             $this->add_mapping_issue($diagnostics, 'warnings', ['code' => 'no_combined_rows', 'message' => 'The template and combined report contain no data rows.']);
         }
 
+        if (!empty($diagnostics['errors']) || !empty($diagnostics['unmatched']) || !empty($diagnostics['ambiguous']) || !empty($diagnostics['truncated'])) {
+            fclose($output);
+            return $this->empty_mapping_result($diagnostics, $options);
+        }
+        rewind($output);
+
+        if (empty($options['stream_output'])) {
+            $csv = stream_get_contents($output);
+            fclose($output);
+            if (!is_string($csv)) {
+                $this->add_mapping_issue($diagnostics, 'errors', ['code' => 'mapped_csv_read_failed', 'message' => 'The mapped CSV could not be read from its temporary stream.']);
+                return $this->empty_mapping_result($diagnostics, $options);
+            }
+            return [
+                'csv'         => $csv,
+                'stream'      => null,
+                'filename'    => $this->safe_filename(isset($options['filename']) ? (string) $options['filename'] : 'mapped-state-tax-report.csv'),
+                'diagnostics' => $diagnostics,
+            ];
+        }
+
         return [
-            'csv'         => $this->build_csv($table['headers'], $rows),
+            'csv'         => '',
+            'stream'      => $output,
             'filename'    => $this->safe_filename(isset($options['filename']) ? (string) $options['filename'] : 'mapped-state-tax-report.csv'),
             'diagnostics' => $diagnostics,
         ];
@@ -318,6 +402,23 @@ class Tax_Report_Combiner
         return $this->map_state_template($template, $combined_rows, $mapping, $options);
     }
 
+    /**
+     * Streaming variant for admin downloads and other memory-bounded callers.
+     * The successful result contains a readable `stream` resource that the
+     * caller must close after use.
+     *
+     * @param mixed                 $template
+     * @param array<int,array>      $combined_rows
+     * @param array<string,mixed>   $mapping
+     * @param array<string,mixed>   $options
+     * @return array<string,mixed>
+     */
+    public function map_state_template_stream($template, array $combined_rows, array $mapping = [], array $options = []): array
+    {
+        $options['stream_output'] = true;
+        return $this->map_state_template($template, $combined_rows, $mapping, $options);
+    }
+
     /** @return array<string,mixed> */
     private function new_diagnostics(): array
     {
@@ -331,6 +432,7 @@ class Tax_Report_Combiner
             'duplicate_report_ids'=> [],
             'warnings'            => [],
             'errors'              => [],
+            'truncated'           => false,
         ];
     }
 
@@ -857,6 +959,7 @@ class Tax_Report_Combiner
                 continue;
             }
             if ($diagnostics['rows_read'] >= $limits['max_rows']) {
+                $diagnostics['truncated'] = true;
                 $this->add_issue($diagnostics, 'errors', 'row_limit_exceeded', 'The combined report row limit was reached; remaining rows were not processed.', $meta['source'], $row_number, ['limit' => $limits['max_rows']]);
                 break;
             }
@@ -1499,24 +1602,18 @@ class Tax_Report_Combiner
      * @param array<string,int|float> $limits
      * @return array<string,mixed>|false
      */
-    private function parse_template_csv(string $content, string $source, array &$diagnostics, array $limits)
+    private function parse_template_csv(string $path, string $source, array &$diagnostics, array $limits)
     {
-        if (strpos($content, "\0") !== false) {
-            $this->add_mapping_issue($diagnostics, 'errors', ['code' => 'binary_template_rejected', 'message' => 'The template contains binary data.']);
-            return false;
-        }
-        $stream = fopen('php://temp', 'w+b');
+        $stream = fopen($path, 'rb');
         if (!$stream) {
-            $this->add_mapping_issue($diagnostics, 'errors', ['code' => 'template_stream_failed', 'message' => 'A temporary template stream could not be created.']);
+            $this->add_mapping_issue($diagnostics, 'errors', ['code' => 'template_stream_failed', 'message' => 'The template stream could not be opened.']);
             return false;
         }
-        fwrite($stream, $content);
-        rewind($stream);
         $header_too_long = false;
         $header_line = $this->read_csv_line_limited($stream, (int) $limits['max_row_bytes'], $header_too_long);
-        if ($header_too_long) {
+        if ($header_too_long || (is_string($header_line) && strpos($header_line, "\0") !== false)) {
             fclose($stream);
-            $this->add_mapping_issue($diagnostics, 'errors', ['code' => 'template_header_too_large', 'message' => 'The template header exceeds the configured row-size limit.']);
+            $this->add_mapping_issue($diagnostics, 'errors', ['code' => 'template_header_too_large', 'message' => 'The template header is binary or exceeds the configured row-size limit.']);
             return false;
         }
         $delimiter = $this->detect_delimiter(is_string($header_line) ? $header_line : '', (int) $limits['max_columns']);
@@ -1544,49 +1641,7 @@ class Tax_Report_Combiner
             $seen[$lookup] = true;
             $headers[] = $header;
         }
-
-        $rows = [];
-        $row_number = 1;
-        while (true) {
-            $line_too_long = false;
-            $line = $this->read_csv_line_limited($stream, (int) $limits['max_row_bytes'], $line_too_long);
-            if ($line === null) {
-                break;
-            }
-            $row_number++;
-            if ($line_too_long) {
-                $this->add_mapping_issue($diagnostics, 'errors', ['code' => 'template_row_too_large', 'message' => 'A template row exceeds the configured size limit.', 'row' => $row_number]);
-                continue;
-            }
-            $row_error = '';
-            $values = $this->parse_csv_line_with_limits($line, $delimiter, $limits, $row_error);
-            if (!is_array($values)) {
-                $this->add_mapping_issue($diagnostics, 'errors', [
-                    'code'    => $row_error === 'columns' ? 'template_column_overflow' : 'template_row_too_large',
-                    'message' => $row_error === 'columns' ? 'A template row exceeds the configured column limit.' : 'A template row is malformed or exceeds the configured size limit.',
-                    'row'     => $row_number,
-                ]);
-                continue;
-            }
-            if ($this->is_empty_csv_row($values)) {
-                continue;
-            }
-            if (count($rows) >= $limits['max_template_rows']) {
-                $this->add_mapping_issue($diagnostics, 'errors', ['code' => 'template_row_limit_exceeded', 'message' => 'The template row limit was reached.', 'row' => $row_number]);
-                break;
-            }
-            if (count($values) > count($headers)) {
-                $this->add_mapping_issue($diagnostics, 'errors', ['code' => 'template_column_overflow', 'message' => 'A template row contains more values than its header.', 'row' => $row_number]);
-                continue;
-            }
-            $row = [];
-            foreach ($headers as $index => $header) {
-                $row[$header] = isset($values[$index]) ? (string) $values[$index] : '';
-            }
-            $rows[] = $row;
-        }
-        fclose($stream);
-        return ['headers' => $headers, 'rows' => $rows, 'source' => $source];
+        return ['headers' => $headers, 'stream' => $stream, 'delimiter' => $delimiter, 'source' => $source];
     }
 
     /**
@@ -1664,13 +1719,18 @@ class Tax_Report_Combiner
 
     /**
      * @param array<int,array> $combined_rows
+     * @param array<string,string> $key_map
      * @return array<string,array<int,int>>
      */
-    private function build_template_match_index(array $combined_rows): array
+    private function build_template_match_index(array $combined_rows, array $key_map): array
     {
         $index = [];
+        $fields = array_values(array_intersect(
+            ['jurisdiction_code', 'county', 'city', 'jurisdiction_name'],
+            array_keys($key_map)
+        ));
         foreach ($combined_rows as $row_index => $row) {
-            foreach (['state', 'currency', 'jurisdiction_code', 'county', 'city', 'jurisdiction_name', 'jurisdiction_type'] as $field) {
+            foreach ($fields as $field) {
                 $value = $this->combined_match_value((array) $row, $field);
                 if ($value !== '') {
                     $index[$field . '|' . $value][] = $row_index;
@@ -1779,26 +1839,29 @@ class Tax_Report_Combiner
         return $template_row;
     }
 
-    /** @param string[] $headers @param array<int,array> $rows */
-    private function build_csv(array $headers, array $rows): string
+    /** @param string[] $headers @return resource|false */
+    private function open_csv_output_stream(array $headers)
     {
-        $stream = fopen('php://temp', 'w+b');
+        $stream = fopen('php://temp/maxmemory:1048576', 'w+b');
         if (!$stream) {
-            return '';
+            return false;
         }
-        fwrite($stream, "\xEF\xBB\xBF");
-        fputcsv($stream, array_map([$this, 'safe_spreadsheet_value'], $headers), ',', '"', '');
-        foreach ($rows as $row) {
-            $values = [];
-            foreach ($headers as $header) {
-                $values[] = $this->safe_spreadsheet_value($row[$header] ?? '');
-            }
-            fputcsv($stream, $values, ',', '"', '');
+        if (fwrite($stream, "\xEF\xBB\xBF") !== 3
+            || fputcsv($stream, array_map([$this, 'safe_spreadsheet_value'], $headers), ',', '"', '') === false) {
+            fclose($stream);
+            return false;
         }
-        rewind($stream);
-        $contents = stream_get_contents($stream);
-        fclose($stream);
-        return is_string($contents) ? $contents : '';
+        return $stream;
+    }
+
+    /** @param resource $stream @param string[] $headers @param array<string,mixed> $row */
+    private function write_csv_output_row($stream, array $headers, array $row): bool
+    {
+        $values = [];
+        foreach ($headers as $header) {
+            $values[] = $this->safe_spreadsheet_value($row[$header] ?? '');
+        }
+        return fputcsv($stream, $values, ',', '"', '') !== false;
     }
 
     /** @param mixed $value */
@@ -1823,6 +1886,7 @@ class Tax_Report_Combiner
     {
         return [
             'csv'         => '',
+            'stream'      => null,
             'filename'    => $this->safe_filename(isset($options['filename']) ? (string) $options['filename'] : 'mapped-state-tax-report.csv'),
             'diagnostics' => $diagnostics,
         ];
