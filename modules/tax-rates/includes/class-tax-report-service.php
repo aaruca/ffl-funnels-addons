@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
 
 class Tax_Report_Service
 {
-    const SCHEMA_VERSION = '2.0.0';
+    const SCHEMA_VERSION = '2.2.0';
     const HISTORY_OPTION = 'ffla_tax_report_runs';
 
     /** @var int */
@@ -37,10 +37,13 @@ class Tax_Report_Service
         $today = current_datetime();
 
         return [
-            'date_from'   => $today->format('Y-01-01'),
-            'date_to'     => $today->format('Y-m-d'),
-            'statuses'    => ['processing', 'completed', 'on-hold', 'refunded'],
-            'include_pii' => false,
+            'date_from'               => $today->format('Y-01-01'),
+            'date_to'                 => $today->format('Y-m-d'),
+            'statuses'                => ['processing', 'completed', 'on-hold', 'refunded'],
+            'states'                  => [],
+            'include_negative_orders' => false,
+            'report_detail'           => 'filing',
+            'include_pii'             => false,
         ];
     }
 
@@ -86,11 +89,43 @@ class Tax_Report_Service
             throw new InvalidArgumentException(__('Select at least one valid WooCommerce order status.', 'ffl-funnels-addons'));
         }
 
+        $requested_states = $input['states'] ?? ($input['state'] ?? $defaults['states']);
+        if (is_string($requested_states)) {
+            $requested_states = preg_split('/[\s,]+/', $requested_states, -1, PREG_SPLIT_NO_EMPTY);
+        }
+        $requested_states = is_array($requested_states) ? $requested_states : [];
+        $requested_states = array_values(array_filter($requested_states, function ($state) {
+            return trim((string) $state) !== '';
+        }));
+        $states = [];
+        foreach ($requested_states as $state) {
+            $state = strtoupper(sanitize_text_field((string) $state));
+            if (preg_match('/^[A-Z]{2}$/', $state)) {
+                $states[] = $state;
+            }
+        }
+        $states = array_values(array_unique($states));
+        if (!empty($requested_states) && empty($states)) {
+            throw new InvalidArgumentException(__('Select at least one valid two-letter state code.', 'ffl-funnels-addons'));
+        }
+
+        $report_detail = isset($input['report_detail'])
+            ? sanitize_key((string) $input['report_detail'])
+            : $defaults['report_detail'];
+        if (!in_array($report_detail, ['filing', 'advanced'], true)) {
+            throw new InvalidArgumentException(__('Select either filing or advanced report detail.', 'ffl-funnels-addons'));
+        }
+
         return [
-            'date_from'   => $from,
-            'date_to'     => $to,
-            'statuses'    => $statuses,
-            'include_pii' => !empty($input['include_pii']),
+            'date_from'               => $from,
+            'date_to'                 => $to,
+            'statuses'                => $statuses,
+            'states'                  => $states,
+            'include_negative_orders' => isset($input['include_negative_orders'])
+                ? filter_var($input['include_negative_orders'], FILTER_VALIDATE_BOOLEAN)
+                : $defaults['include_negative_orders'],
+            'report_detail'           => $report_detail,
+            'include_pii'             => !empty($input['include_pii']),
         ];
     }
 
@@ -108,7 +143,14 @@ class Tax_Report_Service
 
         $filters = self::normalize_filters($filters);
         $summary_only = !empty($options['summary_only']);
+        $collect_advanced = !$summary_only && $filters['report_detail'] === 'advanced';
+        $collect_order_rows = !$summary_only && ($collect_advanced || $filters['include_pii']);
         $exception_limit = isset($options['exception_limit']) ? max(1, (int) $options['exception_limit']) : 250;
+        $default_max_orders = $collect_advanced ? 10000 : ($collect_order_rows ? 25000 : 50000);
+        $max_orders = isset($options['max_orders']) ? max(1, (int) $options['max_orders']) : $default_max_orders;
+        $max_detail_rows = isset($options['max_detail_rows']) ? max(100, (int) $options['max_detail_rows']) : 100000;
+        $max_orders = max(1, (int) apply_filters('ffla_tax_report_max_orders', $max_orders, $filters, $options));
+        $max_detail_rows = max(100, (int) apply_filters('ffla_tax_report_max_detail_rows', $max_detail_rows, $filters, $options));
         $generated_at = gmdate('c');
         $report_id = function_exists('wp_generate_uuid4') ? wp_generate_uuid4() : uniqid('ffla-', true);
 
@@ -137,6 +179,10 @@ class Tax_Report_Service
                 'orders_without_snapshot'   => 0,
                 'orders_with_stored_quote'  => 0,
                 'orders_with_cogs'          => 0,
+                'orders_excluded_by_state'  => 0,
+                'orders_excluded_negative'  => 0,
+                'refunds_excluded_by_state' => 0,
+                'refunds_excluded_negative' => 0,
             ],
             'totals_by_currency' => [],
             'orders'              => [],
@@ -192,6 +238,17 @@ class Tax_Report_Service
 
                 $quote = $this->get_stored_quote($order);
                 $tax_location = $this->get_tax_location($order, $quote);
+                if (!$this->matches_state_filter($filters, $tax_location)) {
+                    $report['stats']['orders_excluded_by_state']++;
+                    continue;
+                }
+                if (!$filters['include_negative_orders'] && $this->is_negative_order($order)) {
+                    $report['stats']['orders_excluded_negative']++;
+                    continue;
+                }
+                if ($report['stats']['orders'] >= $max_orders) {
+                    throw new RuntimeException(__('The report reached its order safety cap. Narrow the date range and run it again.', 'ffl-funnels-addons'));
+                }
                 $period_refunds = $this->get_refunds_in_period($order, $from->getTimestamp(), $to->getTimestamp());
                 foreach ($period_refunds as $period_refund) {
                     $period_refund_ids[(int) $period_refund->get_id()] = true;
@@ -201,13 +258,22 @@ class Tax_Report_Service
                 $line_rows = $this->build_line_rows($order, $refund_map);
                 $tax_rows = $this->build_tax_rows($order, $period_refunds);
                 $refund_rows = $this->build_refund_rows($order, $period_refunds);
+                $filing_line_rows = $this->append_unallocated_refund_lines($line_rows, $period_refunds, $order, $quote, $tax_rows);
                 $exceptions = $this->detect_exceptions($order, $order_row, $line_rows, $tax_rows, $refund_rows, $quote, $tax_location);
+                if ($collect_advanced) {
+                    $projected_detail_rows = count($report['orders']) + count($report['order_lines'])
+                        + count($report['tax_lines']) + count($report['refunds']) + count($report['exceptions'])
+                        + 1 + count($filing_line_rows) + count($tax_rows) + count($refund_rows) + count($exceptions);
+                    if ($projected_detail_rows > $max_detail_rows) {
+                        throw new RuntimeException(__('The advanced report reached its detail-row safety cap. Narrow the date range and run it again.', 'ffl-funnels-addons'));
+                    }
+                }
 
                 $currency = $order_row['currency'] !== '' ? $order_row['currency'] : '(none)';
                 $currencies[$currency] = true;
                 $report['stats']['orders']++;
                 $report['stats']['refunds'] += count($refund_rows);
-                $report['stats']['order_lines'] += count($line_rows);
+                $report['stats']['order_lines'] += count($filing_line_rows);
                 $report['stats']['tax_lines'] += count($tax_rows);
                 $report['stats']['exceptions'] += count($exceptions);
 
@@ -223,20 +289,22 @@ class Tax_Report_Service
                     $report['stats']['orders_with_cogs']++;
                 }
 
-                if (!$summary_only) {
+                if ($collect_order_rows) {
                     $report['orders'][] = $order_row;
-                    $report['order_lines'] = array_merge($report['order_lines'], $line_rows);
+                }
+                if ($collect_advanced) {
+                    $report['order_lines'] = array_merge($report['order_lines'], $filing_line_rows);
                     $report['tax_lines'] = array_merge($report['tax_lines'], $tax_rows);
                     $report['refunds'] = array_merge($report['refunds'], $refund_rows);
                 }
-                if (!$summary_only || count($report['exceptions']) < $exception_limit) {
-                    $room = $summary_only ? max(0, $exception_limit - count($report['exceptions'])) : count($exceptions);
+                if ($collect_advanced || count($report['exceptions']) < $exception_limit) {
+                    $room = $collect_advanced ? count($exceptions) : max(0, $exception_limit - count($report['exceptions']));
                     $report['exceptions'] = array_merge($report['exceptions'], array_slice($exceptions, 0, $room));
                 }
 
                 $this->aggregate_currency($currency_totals, $currency, $order_row);
-                $this->aggregate_state($state_totals, $currency, $tax_location, $order_row, $line_rows, $quote);
-                $this->aggregate_jurisdictions($jurisdiction_totals, $currency, $tax_location, $order_row, $quote, $tax_rows, $line_rows);
+                $this->aggregate_state($state_totals, $currency, $tax_location, $order_row, $filing_line_rows, $quote);
+                $this->aggregate_jurisdictions($jurisdiction_totals, $currency, $tax_location, $order_row, $quote, $tax_rows, $filing_line_rows);
                 $this->aggregate_products($product_totals, $currency, $line_rows);
                 $this->aggregate_payment($payment_totals, $currency, $order_row);
                 $this->aggregate_exceptions($exception_totals, $exceptions);
@@ -252,8 +320,10 @@ class Tax_Report_Service
             $from,
             $to,
             $period_refund_ids,
-            $summary_only,
+            $filters,
+            $collect_advanced,
             $exception_limit,
+            $max_detail_rows,
             $report,
             $currency_totals,
             $state_totals,
@@ -280,6 +350,7 @@ class Tax_Report_Service
         });
 
         $report['manifest']['stats'] = $report['stats'];
+        $report['manifest']['report_detail'] = $filters['report_detail'];
         $report['manifest']['currencies'] = array_keys($currencies);
         $report['manifest']['totals_by_currency'] = $report['totals_by_currency'];
         $report['manifest']['data_quality'] = [
@@ -351,6 +422,12 @@ class Tax_Report_Service
      */
     public static function get_columns(string $dataset): array
     {
+        $requested_dataset = $dataset;
+        $dataset = [
+            'order-lines' => 'order_lines',
+            'tax-lines'   => 'tax_lines',
+        ][$dataset] ?? $dataset;
+
         $columns = [
             'orders' => [
                 'order_id', 'order_number', 'date_created_local', 'date_created_utc', 'date_paid_local',
@@ -383,16 +460,16 @@ class Tax_Report_Service
                 'line_items_json',
             ],
             'filing-totals' => [
-                'currency', 'orders', 'taxable_sales', 'non_taxable_sales', 'needs_review_sales',
-                'net_tax', 'calculated_tax', 'over_under',
+                'currency', 'orders', 'taxable_sales', 'taxable_shipping', 'non_taxable_sales', 'needs_review_sales',
+                'tax_collected', 'tax_refunded', 'net_tax', 'calculated_tax', 'over_under',
             ],
             'state-summary' => [
-                'state', 'currency', 'orders', 'taxable_sales', 'non_taxable_sales', 'needs_review_sales',
-                'net_tax', 'calculated_tax', 'over_under', 'filing_status',
+                'state', 'currency', 'orders', 'taxable_sales', 'taxable_shipping', 'non_taxable_sales', 'needs_review_sales',
+                'tax_collected', 'tax_refunded', 'net_tax', 'calculated_tax', 'over_under', 'filing_status',
             ],
             'jurisdiction-summary' => [
                 'state', 'jurisdiction_type', 'jurisdiction_name', 'rate_percent',
-                'currency', 'orders', 'taxable_sales', 'net_tax',
+                'currency', 'orders', 'taxable_sales', 'taxable_shipping', 'tax_collected', 'tax_refunded', 'net_tax',
                 'calculated_tax', 'over_under', 'filing_status',
             ],
             'order-audit' => [
@@ -414,7 +491,11 @@ class Tax_Report_Service
             ],
         ];
 
-        return apply_filters('ffla_tax_report_columns', isset($columns[$dataset]) ? $columns[$dataset] : [], $dataset);
+        return apply_filters(
+            'ffla_tax_report_columns',
+            isset($columns[$dataset]) ? $columns[$dataset] : [],
+            $requested_dataset
+        );
     }
 
     /**
@@ -452,6 +533,31 @@ class Tax_Report_Service
         }
 
         return checkdate((int) $matches[2], (int) $matches[3], (int) $matches[1]);
+    }
+
+    /**
+     * State filters follow the resolved tax location, including stored quotes,
+     * billing fallback, and store-base/local-pickup sourcing.
+     */
+    private function matches_state_filter(array $filters, array $location): bool
+    {
+        $states = isset($filters['states']) && is_array($filters['states']) ? $filters['states'] : [];
+        if (empty($states)) {
+            return true;
+        }
+
+        return in_array(strtoupper((string) ($location['state'] ?? '')), $states, true);
+    }
+
+    /**
+     * A negative order is an order whose stored final total is below zero.
+     * Refund records remain governed by their parent order and refund date.
+     */
+    private function is_negative_order($order): bool
+    {
+        return is_object($order)
+            && method_exists($order, 'get_total')
+            && $this->minor($order->get_total()) < 0;
     }
 
     private function build_order_row($order, array $quote, array $location, bool $include_pii, ?array $refunds = null): array
@@ -835,10 +941,89 @@ class Tax_Report_Service
         return $map;
     }
 
-    private function get_refund_sales_breakdown($order, $refund, array $quote): array
+    /**
+     * Add filing-only negative base rows for manual refunds that contain no
+     * refundable line items. WooCommerce still records their total/refunded
+     * tax, so leaving the base untouched would overstate taxable revenue.
+     */
+    private function append_unallocated_refund_lines(array $lines, array $refunds, $order, array $quote, array $tax_rows): array
+    {
+        $single_rate_id = count($tax_rows) === 1 ? (int) ($tax_rows[0]['rate_id'] ?? 0) : 0;
+        foreach ($refunds as $refund) {
+            $has_items = false;
+            foreach (['line_item', 'shipping', 'fee'] as $item_type) {
+                if (!empty($refund->get_items($item_type))) {
+                    $has_items = true;
+                    break;
+                }
+            }
+            if ($has_items) {
+                continue;
+            }
+
+            $sales = $this->get_refund_sales_breakdown($order, $refund, $quote, !empty($lines) ? $lines : null);
+            $base = array_merge($this->empty_line_fields(), [
+                'order_id'           => (int) $order->get_id(),
+                'order_number'       => (string) $order->get_order_number(),
+                'date_created_local' => $this->date_value($refund->get_date_created(), false),
+                'status'             => (string) $order->get_status(),
+                'currency'           => (string) $order->get_currency(),
+                'tax_state'          => strtoupper((string) ($order->get_shipping_state() ?: $order->get_billing_state())),
+                'item_id'            => -(int) $refund->get_id(),
+                'quantity'           => '0',
+                'total_ex_tax'       => '0',
+                'tax'                => '0',
+                'unallocated_refund' => 'yes',
+            ]);
+
+            foreach (['taxable_sales', 'non_taxable_sales', 'needs_review_sales'] as $classification) {
+                $amount = (int) ($sales[$classification] ?? 0);
+                if ($amount <= 0) {
+                    continue;
+                }
+                $classification_tax = $classification === 'taxable_sales'
+                    ? $this->minor(abs((float) $refund->get_total_tax()))
+                    : 0;
+                $shipping = $classification === 'taxable_sales'
+                    ? min($amount, max(0, (int) ($sales['taxable_shipping'] ?? 0)))
+                    : 0;
+                $parts = [];
+                if ($shipping > 0) {
+                    $parts[] = ['type' => 'shipping', 'amount' => $shipping, 'name' => 'Unallocated manual refund — shipping estimate'];
+                }
+                if ($amount - $shipping > 0) {
+                    $parts[] = ['type' => 'fee', 'amount' => $amount - $shipping, 'name' => 'Unallocated manual refund — filing-base estimate'];
+                }
+
+                $allocated_tax = 0;
+                $last = count($parts) - 1;
+                foreach ($parts as $index => $part) {
+                    $part_tax = $index === $last
+                        ? $classification_tax - $allocated_tax
+                        : (int) round($classification_tax * ($part['amount'] / $amount));
+                    $allocated_tax += $part_tax;
+                    $taxes = $single_rate_id > 0 && $classification === 'taxable_sales'
+                        ? ['total' => [$single_rate_id => $this->decimal($part_tax)]]
+                        : [];
+                    $lines[] = array_merge($base, [
+                        'item_type'             => $part['type'],
+                        'name'                  => $part['name'],
+                        'refunded_amount'       => $this->decimal($part['amount']),
+                        'refunded_tax'          => $this->decimal($part_tax),
+                        'taxes_json'            => wp_json_encode($taxes),
+                        'refund_classification' => $classification,
+                    ]);
+                }
+            }
+        }
+        return $lines;
+    }
+
+    private function get_refund_sales_breakdown($order, $refund, array $quote, ?array $source_lines = null): array
     {
         $sales = [
             'taxable_sales' => 0,
+            'taxable_shipping' => 0,
             'non_taxable_sales' => 0,
             'needs_review_sales' => 0,
         ];
@@ -855,6 +1040,9 @@ class Tax_Report_Service
 
                 if ($was_taxed) {
                     $sales['taxable_sales'] += $amount;
+                    if ($item_type === 'shipping') {
+                        $sales['taxable_shipping'] += $amount;
+                    }
                 } elseif ($known_non_taxable) {
                     $sales['non_taxable_sales'] += $amount;
                 } else {
@@ -863,18 +1051,66 @@ class Tax_Report_Service
             }
         }
 
-        if (array_sum($sales) === 0) {
+        $classified_total = $sales['taxable_sales'] + $sales['non_taxable_sales'] + $sales['needs_review_sales'];
+        if ($classified_total === 0) {
             $amount = method_exists($refund, 'get_amount')
                 ? $this->minor(abs((float) $refund->get_amount()))
                 : $this->minor(abs((float) $refund->get_total()));
             $tax = $this->minor(abs((float) $refund->get_total_tax()));
-            $total_rate = isset($quote['totalRate']) ? (float) $quote['totalRate'] : 0;
-            if ($tax > 0 && $total_rate > 0) {
-                $sales['taxable_sales'] = (int) round($tax / $total_rate);
+            $refund_base = max(0, $amount - $tax);
+            $source_lines = $source_lines === null ? $this->build_line_rows($order, []) : $source_lines;
+            $original = [
+                'taxable_sales'       => 0,
+                'taxable_shipping'    => 0,
+                'non_taxable_sales'   => 0,
+                'needs_review_sales'  => 0,
+            ];
+            foreach ($source_lines as $line) {
+                if (!in_array($line['item_type'] ?? '', ['product', 'shipping', 'fee'], true)) {
+                    continue;
+                }
+                $line_amount = max(0, $this->minor($line['total_ex_tax'] ?? 0));
+                if ($this->minor($line['tax'] ?? 0) !== 0) {
+                    $original['taxable_sales'] += $line_amount;
+                    if (($line['item_type'] ?? '') === 'shipping') {
+                        $original['taxable_shipping'] += $line_amount;
+                    }
+                } elseif ($known_non_taxable) {
+                    $original['non_taxable_sales'] += $line_amount;
+                } else {
+                    $original['needs_review_sales'] += $line_amount;
+                }
+            }
+
+            $basis_fields = ['taxable_sales', 'non_taxable_sales', 'needs_review_sales'];
+            $original_total = array_sum(array_map(function ($field) use ($original) {
+                return (int) $original[$field];
+            }, $basis_fields));
+            if ($refund_base > 0 && $original_total > 0) {
+                $allocatable = min($refund_base, $original_total);
+                $allocated = 0;
+                $last = count($basis_fields) - 1;
+                foreach ($basis_fields as $index => $field) {
+                    $share = $index === $last
+                        ? $allocatable - $allocated
+                        : (int) round($allocatable * ($original[$field] / $original_total));
+                    $share = max(0, min($allocatable - $allocated, $share));
+                    $allocated += $share;
+                    $sales[$field] = $share;
+                }
+                $sales['needs_review_sales'] += max(0, $refund_base - $allocatable);
+                if ($original['taxable_sales'] > 0 && $sales['taxable_sales'] > 0) {
+                    $sales['taxable_shipping'] = min(
+                        $original['taxable_shipping'],
+                        (int) round($sales['taxable_sales'] * ($original['taxable_shipping'] / $original['taxable_sales']))
+                    );
+                }
+            } elseif ($refund_base > 0 && ($tax > 0 || $this->minor($order->get_total_tax()) > 0)) {
+                $sales['taxable_sales'] = $refund_base;
             } elseif ($known_non_taxable) {
-                $sales['non_taxable_sales'] = $amount;
+                $sales['non_taxable_sales'] = $refund_base;
             } else {
-                $sales['needs_review_sales'] = $amount;
+                $sales['needs_review_sales'] = $refund_base;
             }
         }
 
@@ -1120,6 +1356,15 @@ class Tax_Report_Service
         $refund_tax = 0;
         foreach ($refund_rows as $refund) {
             $refund_tax += $this->minor($refund['tax_refunded']);
+            $refund_details = json_decode((string) ($refund['line_items_json'] ?? ''), true);
+            if ($this->minor($refund['amount'] ?? 0) > 0 && empty($refund_details)) {
+                $add(
+                    'warning',
+                    'unallocated_manual_refund',
+                    'A refund has no item-level allocation. Its filing base and shipping component were estimated from the original order composition and must be reviewed.',
+                    (string) ($refund['amount'] ?? '')
+                );
+            }
         }
         if (abs($refund_tax - $this->minor($order_row['tax_refunded'])) > 1) {
             $add('error', 'refund_tax_mismatch', 'Order refunded tax does not match the refund records.', $this->decimal($this->minor($order_row['tax_refunded']) - $refund_tax));
@@ -1171,6 +1416,7 @@ class Tax_Report_Service
             $totals[$key]['sales_with_tax'] = 0;
             $totals[$key]['sales_without_tax'] = 0;
             $totals[$key]['taxable_sales'] = 0;
+            $totals[$key]['taxable_shipping'] = 0;
             $totals[$key]['non_taxable_sales'] = 0;
             $totals[$key]['needs_review_sales'] = 0;
         }
@@ -1184,10 +1430,15 @@ class Tax_Report_Service
                 continue;
             }
             $net_sales = $this->minor($line['total_ex_tax']) - $this->minor($line['refunded_amount']);
-            $was_taxed = $this->minor($line['tax']) !== 0 || $this->minor($line['refunded_tax']) !== 0;
+            $was_taxed = ($line['refund_classification'] ?? '') === 'taxable_sales'
+                || $this->minor($line['tax']) !== 0
+                || $this->minor($line['refunded_tax']) !== 0;
             if ($was_taxed) {
                 $totals[$key]['sales_with_tax'] += $net_sales;
                 $totals[$key]['taxable_sales'] += $net_sales;
+                if ($line['item_type'] === 'shipping') {
+                    $totals[$key]['taxable_shipping'] += $net_sales;
+                }
             } elseif ($known_non_taxable) {
                 $totals[$key]['sales_without_tax'] += $net_sales;
                 $totals[$key]['non_taxable_sales'] += $net_sales;
@@ -1203,6 +1454,7 @@ class Tax_Report_Service
         $collected = $this->minor($order['tax_collected']);
         $refunded = $this->minor($order['tax_refunded']);
         $taxable_sales = $this->calculate_taxable_sales($line_rows);
+        $taxable_shipping = $this->calculate_taxable_shipping($line_rows);
         $breakdown = isset($quote['breakdown']) && is_array($quote['breakdown']) ? $quote['breakdown'] : [];
         $valid = [];
         foreach ($breakdown as $item) {
@@ -1216,22 +1468,56 @@ class Tax_Report_Service
         if (!empty($valid)) {
             $rate_total = array_sum(array_column($valid, '_rate'));
             $jurisdiction = $this->get_filing_jurisdiction($location, $valid);
+            $calculated_tax = (int) round($taxable_sales * $rate_total);
+            $effective_rate = $rate_total * 100;
+            $allocation_method = 'combined_stored_quote';
+            $filing_status = (string) $jurisdiction['status'];
+
+            if (!empty($tax_rows)) {
+                $calculated_tax = 0;
+                $all_rates_mapped = !$this->has_unallocated_refund_base($line_rows) || count($tax_rows) === 1;
+                foreach ($tax_rows as $tax) {
+                    $rate_id = (int) ($tax['rate_id'] ?? 0);
+                    $rate_percent = (float) ($tax['rate_percent'] ?? 0);
+                    $matched = false;
+                    $rate_taxable_sales = $this->calculate_taxable_sales_for_rate($line_rows, $rate_id, $matched);
+                    if (!$matched || $rate_percent <= 0) {
+                        $all_rates_mapped = false;
+                        break;
+                    }
+                    $calculated_tax += (int) round($rate_taxable_sales * ($rate_percent / 100));
+                }
+                if ($all_rates_mapped) {
+                    $effective_rate = $taxable_sales !== 0 ? ($calculated_tax / $taxable_sales) * 100 : 0;
+                    $allocation_method = 'stored_quote_with_line_rate_bases';
+                } else {
+                    // A manual refund or legacy order may not identify which
+                    // rate owns the base. Avoid a false over/under amount and
+                    // force accountant review instead of applying every rate
+                    // to every line.
+                    $calculated_tax = $collected - $refunded;
+                    $effective_rate = $taxable_sales !== 0 ? ($calculated_tax / $taxable_sales) * 100 : 0;
+                    $allocation_method = 'net_tax_fallback_unmapped_rate_base';
+                    $filing_status = 'needs_review';
+                }
+            }
             $this->add_jurisdiction_bucket(
                 $totals,
                 $location,
                 $currency,
                 (string) $jurisdiction['type'],
                 (string) $jurisdiction['name'],
-                $rate_total * 100,
+                $effective_rate,
                 (string) ($quote['source'] ?? ''),
                 $collected,
                 $refunded,
-                'combined_stored_quote',
+                $allocation_method,
                 (int) $order['order_id'],
                 $taxable_sales,
-                (int) round($taxable_sales * $rate_total),
+                $calculated_tax,
                 (string) $jurisdiction['code'],
-                (string) $jurisdiction['status']
+                $filing_status,
+                $taxable_shipping
             );
             return;
         }
@@ -1239,11 +1525,16 @@ class Tax_Report_Service
         if (!empty($tax_rows)) {
             $rate_percent = 0;
             $calculated_tax = 0;
+            $all_rates_mapped = !$this->has_unallocated_refund_base($line_rows) || count($tax_rows) === 1;
             $labels = [];
             $source = '';
             foreach ($tax_rows as $tax) {
                 $rate_percent += (float) ($tax['rate_percent'] ?? 0);
-                $rate_taxable_sales = $this->calculate_taxable_sales_for_rate($line_rows, (int) ($tax['rate_id'] ?? 0));
+                $matched = false;
+                $rate_taxable_sales = $this->calculate_taxable_sales_for_rate($line_rows, (int) ($tax['rate_id'] ?? 0), $matched);
+                if (!$matched) {
+                    $all_rates_mapped = false;
+                }
                 $calculated_tax += (int) round($rate_taxable_sales * ((float) ($tax['rate_percent'] ?? 0) / 100));
                 $label = trim((string) ($tax['label'] ?: $tax['rate_code']));
                 if ($label !== '') {
@@ -1252,6 +1543,9 @@ class Tax_Report_Service
                 if ($source === '') {
                     $source = (string) ($tax['tax_quote_source'] ?? '');
                 }
+            }
+            if (!$all_rates_mapped) {
+                $calculated_tax = $collected - $refunded;
             }
             if ($taxable_sales !== 0) {
                 $rate_percent = ($calculated_tax / $taxable_sales) * 100;
@@ -1271,7 +1565,8 @@ class Tax_Report_Service
                 $taxable_sales,
                 $calculated_tax,
                 '',
-                'needs_review'
+                'needs_review',
+                $taxable_shipping
             );
         }
     }
@@ -1283,7 +1578,9 @@ class Tax_Report_Service
             if (!in_array($line['item_type'] ?? '', ['product', 'shipping', 'fee'], true)) {
                 continue;
             }
-            if ($this->minor($line['tax'] ?? 0) === 0 && $this->minor($line['refunded_tax'] ?? 0) === 0) {
+            if (($line['refund_classification'] ?? '') !== 'taxable_sales'
+                && $this->minor($line['tax'] ?? 0) === 0
+                && $this->minor($line['refunded_tax'] ?? 0) === 0) {
                 continue;
             }
             $taxable += $this->minor($line['total_ex_tax'] ?? 0) - $this->minor($line['refunded_amount'] ?? 0);
@@ -1291,9 +1588,31 @@ class Tax_Report_Service
         return $taxable;
     }
 
-    private function calculate_taxable_sales_for_rate(array $lines, int $rate_id): int
+    /**
+     * Return the net shipping amount already included in taxable sales.
+     * This is a component for reporting and must not be added to taxable_sales again.
+     */
+    private function calculate_taxable_shipping(array $lines): int
+    {
+        $taxable = 0;
+        foreach ($lines as $line) {
+            if (($line['item_type'] ?? '') !== 'shipping') {
+                continue;
+            }
+            if (($line['refund_classification'] ?? '') !== 'taxable_sales'
+                && $this->minor($line['tax'] ?? 0) === 0
+                && $this->minor($line['refunded_tax'] ?? 0) === 0) {
+                continue;
+            }
+            $taxable += $this->minor($line['total_ex_tax'] ?? 0) - $this->minor($line['refunded_amount'] ?? 0);
+        }
+        return $taxable;
+    }
+
+    private function calculate_taxable_sales_for_rate(array $lines, int $rate_id, ?bool &$matched_rate = null): int
     {
         if ($rate_id <= 0) {
+            $matched_rate = false;
             return $this->calculate_taxable_sales($lines);
         }
 
@@ -1316,7 +1635,18 @@ class Tax_Report_Service
             $taxable += $this->minor($line['total_ex_tax'] ?? 0) - $this->minor($line['refunded_amount'] ?? 0);
         }
 
+        $matched_rate = $matched;
         return $matched ? $taxable : $this->calculate_taxable_sales($lines);
+    }
+
+    private function has_unallocated_refund_base(array $lines): bool
+    {
+        foreach ($lines as $line) {
+            if (($line['unallocated_refund'] ?? '') === 'yes') {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function get_filing_jurisdiction(array $location, array $breakdown): array
@@ -1387,7 +1717,8 @@ class Tax_Report_Service
         int $taxable_sales = 0,
         int $calculated_tax = 0,
         string $jurisdiction_code = '',
-        string $filing_status = 'ready'
+        string $filing_status = 'ready',
+        int $taxable_shipping = 0
     ): void
     {
         $country = $location['country'] !== '' ? $location['country'] : '(none)';
@@ -1409,6 +1740,7 @@ class Tax_Report_Service
                 'tax_refunded' => 0,
                 'net_tax' => 0,
                 'taxable_sales' => 0,
+                'taxable_shipping' => 0,
                 'calculated_tax' => 0,
                 'allocation_method' => $method,
                 'filing_status' => $filing_status,
@@ -1419,6 +1751,7 @@ class Tax_Report_Service
         $totals[$key]['tax_refunded'] += $refunded;
         $totals[$key]['net_tax'] += $collected - $refunded;
         $totals[$key]['taxable_sales'] += $taxable_sales;
+        $totals[$key]['taxable_shipping'] += $taxable_shipping;
         $totals[$key]['calculated_tax'] += $calculated_tax;
         if ($filing_status === 'needs_review') {
             $totals[$key]['filing_status'] = 'needs_review';
@@ -1508,8 +1841,10 @@ class Tax_Report_Service
         DateTimeImmutable $from,
         DateTimeImmutable $to,
         array $seen,
-        bool $summary_only,
+        array $filters,
+        bool $collect_advanced,
         int $exception_limit,
+        int $max_detail_rows,
         array &$report,
         array &$currency_totals,
         array &$state_totals,
@@ -1545,21 +1880,46 @@ class Tax_Report_Service
                     continue;
                 }
 
+                $quote = $this->get_stored_quote($order);
+                $location = $this->get_tax_location($order, $quote);
+                if (!$this->matches_state_filter($filters, $location)) {
+                    $report['stats']['refunds_excluded_by_state']++;
+                    continue;
+                }
+                if (!$filters['include_negative_orders'] && $this->is_negative_order($order)) {
+                    $report['stats']['refunds_excluded_negative']++;
+                    continue;
+                }
+
                 $rows = $this->build_refund_rows($order, [$refund]);
                 if (empty($rows)) {
                     continue;
                 }
                 $refund_row = $rows[0];
-                $quote = $this->get_stored_quote($order);
-                $location = $this->get_tax_location($order, $quote);
                 $currency = (string) ($refund_row['currency'] ?: '(none)');
                 $amount = $this->minor($refund_row['amount']);
                 $tax = $this->minor($refund_row['tax_refunded']);
                 $refund_sales = $this->get_refund_sales_breakdown($order, $refund, $quote);
+                $source_lines = $this->build_line_rows($order, []);
+                $with_adjustment = $this->append_unallocated_refund_lines(
+                    $source_lines,
+                    [$refund],
+                    $order,
+                    $quote,
+                    $this->build_tax_rows($order, [$refund])
+                );
+                $synthetic_lines = array_slice($with_adjustment, count($source_lines));
                 $currencies[$currency] = true;
                 $report['stats']['refunds']++;
+                $report['stats']['order_lines'] += count($synthetic_lines);
 
-                if (!$summary_only) {
+                if ($collect_advanced) {
+                    $detail_rows = count($report['orders']) + count($report['order_lines'])
+                        + count($report['tax_lines']) + count($report['refunds']) + count($report['exceptions']);
+                    if ($detail_rows + count($synthetic_lines) + 2 > $max_detail_rows) {
+                        throw new RuntimeException(__('The advanced report reached its detail-row safety cap. Narrow the date range and run it again.', 'ffl-funnels-addons'));
+                    }
+                    $report['order_lines'] = array_merge($report['order_lines'], $synthetic_lines);
                     $report['refunds'][] = $refund_row;
                 }
 
@@ -1573,7 +1933,8 @@ class Tax_Report_Service
                     $order,
                     $quote,
                     $tax,
-                    (int) $refund_sales['taxable_sales']
+                    (int) $refund_sales['taxable_sales'],
+                    (int) ($refund_sales['taxable_shipping'] ?? 0)
                 );
                 $this->add_refund_adjustment_to_products($product_totals, $currency, $order, $refund);
 
@@ -1591,7 +1952,7 @@ class Tax_Report_Service
                     'evidence'          => 'refund_id=' . $refund_id,
                 ];
                 $report['stats']['exceptions']++;
-                if (!$summary_only || count($report['exceptions']) < $exception_limit) {
+                if ($collect_advanced || count($report['exceptions']) < $exception_limit) {
                     $report['exceptions'][] = $exception;
                 }
                 $this->aggregate_exceptions($exception_totals, [$exception]);
@@ -1625,6 +1986,7 @@ class Tax_Report_Service
             $totals[$key]['sales_with_tax'] = 0;
             $totals[$key]['sales_without_tax'] = 0;
             $totals[$key]['taxable_sales'] = 0;
+            $totals[$key]['taxable_shipping'] = 0;
             $totals[$key]['non_taxable_sales'] = 0;
             $totals[$key]['needs_review_sales'] = 0;
         }
@@ -1635,6 +1997,7 @@ class Tax_Report_Service
         $totals[$key]['sales_with_tax'] -= (int) $sales['taxable_sales'];
         $totals[$key]['sales_without_tax'] -= (int) $sales['non_taxable_sales'] + (int) $sales['needs_review_sales'];
         $totals[$key]['taxable_sales'] -= (int) $sales['taxable_sales'];
+        $totals[$key]['taxable_shipping'] -= (int) ($sales['taxable_shipping'] ?? 0);
         $totals[$key]['non_taxable_sales'] -= (int) $sales['non_taxable_sales'];
         $totals[$key]['needs_review_sales'] -= (int) $sales['needs_review_sales'];
     }
@@ -1663,7 +2026,7 @@ class Tax_Report_Service
         $totals[$key]['net_tax'] -= $tax;
     }
 
-    private function add_refund_adjustment_to_jurisdiction(array &$totals, string $currency, array $location, $order, array $quote, int $tax, int $taxable_sales): void
+    private function add_refund_adjustment_to_jurisdiction(array &$totals, string $currency, array $location, $order, array $quote, int $tax, int $taxable_sales, int $taxable_shipping): void
     {
         if ($tax <= 0) {
             return;
@@ -1676,22 +2039,24 @@ class Tax_Report_Service
                 return (float) $item['rate'];
             }, $breakdown));
             $jurisdiction = $this->get_filing_jurisdiction($location, $breakdown);
+            $effective_rate = $taxable_sales > 0 ? ($tax / $taxable_sales) * 100 : $rate_total * 100;
             $this->add_jurisdiction_bucket(
                 $totals,
                 $location,
                 $currency,
                 (string) $jurisdiction['type'],
                 (string) $jurisdiction['name'],
-                $rate_total * 100,
+                $effective_rate,
                 (string) ($quote['source'] ?? ''),
                 0,
                 $tax,
-                'combined_stored_quote',
+                'refund_net_tax_fallback_unallocated_rate_base',
                 (int) $order->get_id(),
                 -$taxable_sales,
-                -(int) round($taxable_sales * $rate_total),
+                -$tax,
                 (string) $jurisdiction['code'],
-                (string) $jurisdiction['status']
+                'needs_review',
+                -$taxable_shipping
             );
             return;
         }
@@ -1711,7 +2076,8 @@ class Tax_Report_Service
             -$taxable_sales,
             -$tax,
             '',
-            'needs_review'
+            'needs_review',
+            -$taxable_shipping
         );
     }
 
@@ -1797,7 +2163,7 @@ class Tax_Report_Service
             $row['gross_sales'] = (int) ($row['taxable_sales'] ?? 0)
                 + (int) ($row['non_taxable_sales'] ?? 0)
                 + (int) ($row['needs_review_sales'] ?? 0);
-            foreach (['gross_product_sales', 'discounts', 'net_product_sales', 'shipping', 'fees', 'gross_sales', 'sales_with_tax', 'sales_without_tax', 'taxable_sales', 'non_taxable_sales', 'needs_review_sales', 'tax_collected', 'tax_refunded', 'net_tax', 'refunds', 'order_total', 'net_collected'] as $field) {
+            foreach (['gross_product_sales', 'discounts', 'net_product_sales', 'shipping', 'fees', 'gross_sales', 'sales_with_tax', 'sales_without_tax', 'taxable_sales', 'taxable_shipping', 'non_taxable_sales', 'needs_review_sales', 'tax_collected', 'tax_refunded', 'net_tax', 'refunds', 'order_total', 'net_collected'] as $field) {
                 $row[$field] = $this->decimal($row[$field]);
             }
             $rows[] = $row;
@@ -1818,7 +2184,7 @@ class Tax_Report_Service
             $row['filing_status'] = $row['filing_status'] === 'needs_review'
                 ? __('Needs review', 'ffl-funnels-addons')
                 : __('Ready', 'ffl-funnels-addons');
-            foreach (['taxable_sales', 'tax_collected', 'tax_refunded', 'net_tax', 'calculated_tax', 'over_under'] as $field) {
+            foreach (['taxable_sales', 'taxable_shipping', 'tax_collected', 'tax_refunded', 'net_tax', 'calculated_tax', 'over_under'] as $field) {
                 $row[$field] = $this->decimal($row[$field]);
             }
             $rows[] = $row;
@@ -1894,6 +2260,7 @@ class Tax_Report_Service
                     'orders' => 0,
                     'gross_sales' => 0,
                     'taxable_sales' => 0,
+                    'taxable_shipping' => 0,
                     'non_taxable_sales' => 0,
                     'needs_review_sales' => 0,
                     'tax_collected' => 0,
@@ -1905,13 +2272,13 @@ class Tax_Report_Service
             }
             $totals[$currency]['states']++;
             $totals[$currency]['orders'] += (int) ($state['orders'] ?? 0);
-            foreach (['gross_sales', 'taxable_sales', 'non_taxable_sales', 'needs_review_sales', 'tax_collected', 'tax_refunded', 'net_tax', 'calculated_tax', 'over_under'] as $field) {
+            foreach (['gross_sales', 'taxable_sales', 'taxable_shipping', 'non_taxable_sales', 'needs_review_sales', 'tax_collected', 'tax_refunded', 'net_tax', 'calculated_tax', 'over_under'] as $field) {
                 $totals[$currency][$field] += $this->minor($state[$field] ?? 0);
             }
         }
 
         foreach ($totals as &$row) {
-            foreach (['gross_sales', 'taxable_sales', 'non_taxable_sales', 'needs_review_sales', 'tax_collected', 'tax_refunded', 'net_tax', 'calculated_tax', 'over_under'] as $field) {
+            foreach (['gross_sales', 'taxable_sales', 'taxable_shipping', 'non_taxable_sales', 'needs_review_sales', 'tax_collected', 'tax_refunded', 'net_tax', 'calculated_tax', 'over_under'] as $field) {
                 $row[$field] = $this->decimal($row[$field]);
             }
         }
