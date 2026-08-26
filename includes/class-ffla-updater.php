@@ -343,7 +343,7 @@ class FFLA_Updater
                 $plugin_data->icons = [];
                 $plugin_data->banners = [];
                 $plugin_data->tested = '';
-                $plugin_data->requires = '6.0';
+                $plugin_data->requires = '6.2';
                 $plugin_data->requires_php = '7.4';
 
                 $transient->response[$this->plugin_basename] = $plugin_data;
@@ -380,7 +380,7 @@ class FFLA_Updater
         $info->version = $latest_version;
         $info->author = '<a href="https://github.com/' . esc_attr($this->github_user) . '">Alejandro Aruca</a>';
         $info->homepage = 'https://github.com/' . $this->github_user . '/' . $this->github_repo;
-        $info->requires = '6.0';
+        $info->requires = '6.2';
         $info->tested = '';
         $info->requires_php = '7.4';
         $info->downloaded = 0;

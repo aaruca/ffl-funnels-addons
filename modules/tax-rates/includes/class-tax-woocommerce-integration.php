@@ -100,9 +100,9 @@ class Tax_WooCommerce_Integration
             return $matched_tax_rates;
         }
 
-        // Role-based tax gate: exempt roles return an empty rate set and we
-        // wipe the runtime tax meta so stale synthetic rates from an earlier
-        // request can't leak through.
+        // Customer/role tax gate: an explicit customer ID or exempt role
+        // returns an empty rate set. Wipe runtime tax meta so stale synthetic
+        // rates from an earlier request cannot leak through.
         if (class_exists('Tax_Role_Gate') && Tax_Role_Gate::is_active()
             && !Tax_Role_Gate::should_charge_for_current_customer()) {
             self::store_runtime_tax_meta([]);

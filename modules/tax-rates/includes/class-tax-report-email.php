@@ -34,6 +34,9 @@ class Tax_Report_Email
             'send_day'          => 2,
             'send_time'         => '06:00',
             'statuses'          => ['processing', 'completed', 'on-hold', 'refunded'],
+            'states'            => [],
+            'include_negative_orders' => '0',
+            'report_detail'     => 'filing',
             'include_pii'       => '0',
             'max_attachment_mb' => 15,
         ];
@@ -48,6 +51,7 @@ class Tax_Report_Email
     public static function sanitize_settings(array $input): array
     {
         $defaults = self::default_settings();
+        $enabled = !empty($input['enabled']);
         $raw_recipients = $input['recipients'] ?? $defaults['recipients'];
         if (is_array($raw_recipients)) {
             $recipient_parts = $raw_recipients;
@@ -63,7 +67,7 @@ class Tax_Report_Email
             }
         }
         $recipients = array_values(array_unique($recipients));
-        if (empty($recipients) && !empty($defaults['recipients'][0])) {
+        if ($enabled && empty($recipients) && !empty($defaults['recipients'][0])) {
             $recipients[] = $defaults['recipients'][0];
         }
 
@@ -87,17 +91,37 @@ class Tax_Report_Email
             $statuses = $defaults['statuses'];
         }
 
+        $raw_states = $input['states'] ?? $defaults['states'];
+        if (is_string($raw_states)) {
+            $raw_states = preg_split('/[\s,]+/', $raw_states, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        }
+        $states = [];
+        foreach ((array) $raw_states as $state) {
+            $state = strtoupper(sanitize_text_field((string) $state));
+            if (preg_match('/^[A-Z]{2}$/', $state)) {
+                $states[] = $state;
+            }
+        }
+
+        $report_detail = sanitize_key((string) ($input['report_detail'] ?? $defaults['report_detail']));
+        if (!in_array($report_detail, ['filing', 'advanced'], true)) {
+            $report_detail = $defaults['report_detail'];
+        }
+
         $time = sanitize_text_field((string) ($input['send_time'] ?? $defaults['send_time']));
         if (!preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time)) {
             $time = $defaults['send_time'];
         }
 
         return [
-            'enabled'           => !empty($input['enabled']) ? '1' : '0',
+            'enabled'           => $enabled ? '1' : '0',
             'recipients'        => $recipients,
             'send_day'          => min(28, max(1, (int) ($input['send_day'] ?? $defaults['send_day']))),
             'send_time'         => $time,
             'statuses'          => array_values(array_unique($statuses)),
+            'states'            => array_values(array_unique($states)),
+            'include_negative_orders' => !empty($input['include_negative_orders']) ? '1' : '0',
+            'report_detail'     => $report_detail,
             'include_pii'       => !empty($input['include_pii']) ? '1' : '0',
             'max_attachment_mb' => min(50, max(1, (int) ($input['max_attachment_mb'] ?? $defaults['max_attachment_mb']))),
         ];
@@ -171,7 +195,9 @@ class Tax_Report_Email
     public static function clear_schedule(): void
     {
         if (self::action_scheduler_ready() && function_exists('as_unschedule_all_actions')) {
-            as_unschedule_all_actions(self::SCHEDULE_HOOK, [], self::ACTION_GROUP);
+            // These hooks are unique to FFLA. Omitting the group lets both old
+            // and current Action Scheduler versions cancel every argument set.
+            as_unschedule_all_actions(self::SCHEDULE_HOOK, [], '');
         }
         wp_clear_scheduled_hook(self::SCHEDULE_HOOK);
     }
@@ -179,8 +205,8 @@ class Tax_Report_Email
     public static function clear_all_schedules(): void
     {
         if (self::action_scheduler_ready() && function_exists('as_unschedule_all_actions')) {
-            as_unschedule_all_actions(self::SCHEDULE_HOOK, [], self::ACTION_GROUP);
-            as_unschedule_all_actions(self::SEND_HOOK, [], self::ACTION_GROUP);
+            as_unschedule_all_actions(self::SCHEDULE_HOOK, [], '');
+            as_unschedule_all_actions(self::SEND_HOOK, [], '');
         }
         wp_clear_scheduled_hook(self::SCHEDULE_HOOK);
         wp_clear_scheduled_hook(self::SEND_HOOK);
@@ -281,10 +307,13 @@ class Tax_Report_Email
             }
 
             $filters = [
-                'date_from'   => $date_from,
-                'date_to'     => $date_to,
-                'statuses'    => $settings['statuses'],
-                'include_pii' => $settings['include_pii'] === '1',
+                'date_from'               => $date_from,
+                'date_to'                 => $date_to,
+                'statuses'                => $settings['statuses'],
+                'states'                  => $settings['states'],
+                'include_negative_orders' => $settings['include_negative_orders'] === '1',
+                'report_detail'           => $settings['report_detail'],
+                'include_pii'             => $settings['include_pii'] === '1',
             ];
             $service = new Tax_Report_Service();
             $report = $service->generate($filters);
@@ -391,17 +420,20 @@ class Tax_Report_Email
         $message .= '<table cellpadding="6" cellspacing="0" border="1" style="border-collapse:collapse"><thead><tr>'
             . '<th>' . esc_html__('Currency', 'ffl-funnels-addons') . '</th>'
             . '<th>' . esc_html__('Taxable sales', 'ffl-funnels-addons') . '</th>'
+            . '<th>' . esc_html__('Taxed shipping included', 'ffl-funnels-addons') . '</th>'
             . '<th>' . esc_html__('Net tax collected', 'ffl-funnels-addons') . '</th>'
             . '<th>' . esc_html__('Tax calculated / owed', 'ffl-funnels-addons') . '</th>'
             . '<th>' . esc_html__('Over / under collected', 'ffl-funnels-addons') . '</th></tr></thead><tbody>';
         foreach ((array) ($report['summaries']['filing_totals'] ?? []) as $row) {
             $message .= '<tr><td>' . esc_html((string) ($row['currency'] ?? '')) . '</td>'
                 . '<td>' . esc_html((string) ($row['taxable_sales'] ?? '0.00')) . '</td>'
+                . '<td>' . esc_html((string) ($row['taxable_shipping'] ?? '0.00')) . '</td>'
                 . '<td>' . esc_html((string) ($row['net_tax'] ?? '0.00')) . '</td>'
                 . '<td>' . esc_html((string) ($row['calculated_tax'] ?? '0.00')) . '</td>'
                 . '<td>' . esc_html((string) ($row['over_under'] ?? '0.00')) . '</td></tr>';
         }
         $message .= '</tbody></table>';
+        $message .= '<p><small>' . esc_html__('Taxed shipping is already included in taxable sales and is shown separately only for verification; do not add it again.', 'ffl-funnels-addons') . '</small></p>';
 
         if ($summary_only) {
             $message .= '<p><strong>' . esc_html__('Attachment notice:', 'ffl-funnels-addons') . '</strong> '
@@ -464,7 +496,7 @@ class Tax_Report_Email
         if (!function_exists('as_schedule_single_action')) {
             return false;
         }
-        return !class_exists('Action_Scheduler') || Action_Scheduler::is_initialized();
+        return !class_exists('ActionScheduler') || ActionScheduler::is_initialized();
     }
 
     private static function record_history(array $entry): void

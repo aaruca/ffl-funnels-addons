@@ -27,15 +27,30 @@ class Tax_Report_Exporter
 
         $files['tax-filing-report.xlsx'] = self::build_xlsx($datasets);
         $files['tax-filing-summary.pdf'] = self::build_pdf_summary($report);
+        $files['tax-filing-summary.html'] = self::build_html_summary($report);
+        $files['README.txt'] = self::build_readme($report);
 
         $manifest = isset($report['manifest']) && is_array($report['manifest']) ? $report['manifest'] : [];
-        $manifest['files'] = array_keys($files);
+        $report_detail = (string) ($manifest['filters']['report_detail'] ?? 'filing');
+        $report_detail = $report_detail === 'advanced' ? 'advanced' : 'filing';
+        $manifest['report_detail'] = $report_detail;
+        $manifest['dataset_rows'] = [];
+        foreach ($datasets as $dataset => $rows) {
+            $manifest['dataset_rows'][$dataset] = count($rows);
+        }
+        $manifest['files'] = array_merge(array_keys($files), ['report-manifest.json']);
+        $manifest['file_checksums_sha256'] = [];
+        foreach ($files as $filename => $contents) {
+            $manifest['file_checksums_sha256'][$filename] = hash('sha256', (string) $contents);
+        }
+        $manifest_json = wp_json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $files['report-manifest.json'] = is_string($manifest_json) ? $manifest_json : '{}';
 
         $from = sanitize_file_name((string) ($manifest['filters']['date_from'] ?? 'start'));
         $to = sanitize_file_name((string) ($manifest['filters']['date_to'] ?? 'end'));
         $report_id = sanitize_file_name(substr((string) ($manifest['report_id'] ?? 'report'), 0, 8));
-        $archive_name = sprintf('ffla-tax-filing-report-%s-to-%s-%s.zip', $from, $to, $report_id);
-        $folder = sprintf('ffla-tax-filing-report-%s-to-%s/', $from, $to);
+        $archive_name = sprintf('ffla-tax-%s-report-%s-to-%s-%s.zip', $report_detail, $from, $to, $report_id);
+        $folder = sprintf('ffla-tax-%s-report-%s-to-%s/', $report_detail, $from, $to);
 
         $tmp = function_exists('wp_tempnam') ? wp_tempnam($archive_name) : tempnam(sys_get_temp_dir(), 'ffla-tax-');
         if (!$tmp) {
@@ -104,16 +119,24 @@ class Tax_Report_Exporter
         $package = self::create_package($report);
         $tmp = (string) $package['path'];
 
-        while (ob_get_level()) {
-            ob_end_clean();
+        try {
+            if (headers_sent()) {
+                throw new RuntimeException(__('The ZIP response could not start because output was already sent.', 'ffl-funnels-addons'));
+            }
+            while (ob_get_level()) {
+                ob_end_clean();
+            }
+            nocache_headers();
+            header('Content-Type: application/zip');
+            header('Content-Disposition: attachment; filename="' . (string) $package['filename'] . '"');
+            header('Content-Length: ' . (int) $package['bytes']);
+            header('X-Content-Type-Options: nosniff');
+            if (readfile($tmp) === false) {
+                throw new RuntimeException(__('The ZIP report could not be streamed.', 'ffl-funnels-addons'));
+            }
+        } finally {
+            self::cleanup_file($tmp);
         }
-        nocache_headers();
-        header('Content-Type: application/zip');
-        header('Content-Disposition: attachment; filename="' . (string) $package['filename'] . '"');
-        header('Content-Length: ' . (int) $package['bytes']);
-        header('X-Content-Type-Options: nosniff');
-        readfile($tmp);
-        self::cleanup_file($tmp);
         exit;
     }
 
@@ -126,6 +149,15 @@ class Tax_Report_Exporter
         ];
         if (!empty($report['manifest']['filters']['include_pii'])) {
             $datasets['order-audit'] = (array) ($report['orders'] ?? []);
+        }
+        if (($report['manifest']['filters']['report_detail'] ?? 'filing') === 'advanced') {
+            $datasets['orders'] = (array) ($report['orders'] ?? []);
+            $datasets['order-lines'] = (array) ($report['order_lines'] ?? []);
+            $datasets['tax-lines'] = (array) ($report['tax_lines'] ?? []);
+            $datasets['refunds'] = (array) ($report['refunds'] ?? []);
+            $datasets['product-summary'] = (array) ($report['summaries']['products'] ?? []);
+            $datasets['payment-summary'] = (array) ($report['summaries']['payments'] ?? []);
+            $datasets['exceptions'] = (array) ($report['exceptions'] ?? []);
         }
         return $datasets;
     }
@@ -181,6 +213,13 @@ class Tax_Report_Exporter
             'state-summary' => 'State Summary',
             'jurisdiction-summary' => 'Jurisdictions',
             'order-audit' => 'Order Audit',
+            'orders' => 'Orders',
+            'order-lines' => 'Order Lines',
+            'tax-lines' => 'Tax Lines',
+            'refunds' => 'Refunds',
+            'product-summary' => 'Products',
+            'payment-summary' => 'Payments',
+            'exceptions' => 'Exceptions',
         ];
 
         $content_overrides = '';
@@ -403,6 +442,7 @@ class Tax_Report_Exporter
         }
 
         $lines[] = '';
+        $lines[] = 'Taxable sales includes taxed product, fee, and shipping lines; CSV/XLSX show taxed shipping separately.';
         $lines[] = 'Calculated tax uses the effective rate stored with each WooCommerce order.';
         $lines[] = 'Review any state or jurisdiction marked Needs review before filing.';
         $lines[] = 'This report helps prepare returns; the filing portal and tax professional remain authoritative.';
@@ -456,16 +496,33 @@ class Tax_Report_Exporter
     private static function build_readme(array $report): string
     {
         $manifest = (array) ($report['manifest'] ?? []);
+        $filters = (array) ($manifest['filters'] ?? []);
+        $advanced = ($filters['report_detail'] ?? 'filing') === 'advanced';
+        $states = !empty($filters['states']) && is_array($filters['states'])
+            ? implode(', ', $filters['states'])
+            : 'All states';
+        $detail_files = $advanced
+            ? "4. orders.csv, order-lines.csv, tax-lines.csv and refunds.csv\r\n"
+                . "5. product-summary.csv, payment-summary.csv and exceptions.csv\r\n"
+                . "6. report-manifest.json for filters, data-quality metrics, row counts and file checksums\r\n"
+            : "4. report-manifest.json for filters, data-quality metrics, row counts and file checksums\r\n";
+
         return "FFL Funnels Addons - WooCommerce Tax Report\r\n"
             . "================================================\r\n\r\n"
             . "This package is designed to give your accountant the most complete tax workpaper available from this WooCommerce site. It does not file a return and does not replace professional accounting or legal review.\r\n\r\n"
+            . "Report detail: " . ($advanced ? 'Advanced audit' : 'Filing') . "\r\n"
+            . "State scope: " . $states . "\r\n"
+            . "Negative orders: " . (!empty($filters['include_negative_orders']) ? 'Included' : 'Excluded') . "\r\n\r\n"
             . "Recommended review order:\r\n"
-            . "1. annual-summary.pdf or annual-summary.html\r\n"
-            . "2. exceptions.csv\r\n"
+            . "1. tax-filing-summary.pdf or tax-filing-summary.html\r\n"
+            . "2. filing-totals.csv\r\n"
             . "3. state-summary.csv and jurisdiction-summary.csv\r\n"
-            . "4. orders.csv, tax-lines.csv, refunds.csv and order-lines.csv\r\n"
-            . "5. report-manifest.json for filters, data-quality metrics and file checksums\r\n\r\n"
+            . $detail_files . "\r\n"
             . "The XLSX workbook contains the same tabular datasets in one file. The HTML summary can be opened in a browser and printed or saved as PDF.\r\n\r\n"
+            . ($advanced
+                ? "Advanced mode includes order, line, tax, refund, product, payment and exception audit datasets. Filing mode intentionally omits these detailed datasets except for the optional PII-controlled order audit.\r\n\r\n"
+                : "Filing mode intentionally keeps the package concise. Choose advanced detail when order, line, tax, refund, product, payment and exception audit datasets are required.\r\n\r\n")
+            . "Taxable sales already includes every taxed shipping line. The taxable_shipping column shows that net shipping component separately for verification and must not be added to taxable_sales again.\r\n\r\n"
             . "Report ID: " . ($manifest['report_id'] ?? '') . "\r\n"
             . "Generated UTC: " . ($manifest['generated_at_utc'] ?? '') . "\r\n";
     }
@@ -507,7 +564,10 @@ class Tax_Report_Exporter
                 require_once $pclzip;
             }
         }
-        if (!class_exists('PclZip') || !defined('PCLZIP_ATT_FILE_NAME') || !defined('PCLZIP_ATT_FILE_CONTENT')) {
+        if (!function_exists('gzopen')
+            || !class_exists('PclZip')
+            || !defined('PCLZIP_ATT_FILE_NAME')
+            || !defined('PCLZIP_ATT_FILE_CONTENT')) {
             return false;
         }
 
@@ -539,7 +599,7 @@ class Tax_Report_Exporter
     {
         return [
             'gross_product_sales', 'gross_sales', 'discounts', 'net_product_sales', 'net_sales', 'shipping',
-            'fees', 'sales_with_tax', 'sales_without_tax', 'taxable_sales', 'non_taxable_sales',
+            'fees', 'sales_with_tax', 'sales_without_tax', 'taxable_sales', 'taxable_shipping', 'non_taxable_sales',
             'needs_review_sales', 'calculated_tax', 'over_under', 'subtotal', 'subtotal_tax', 'total_ex_tax', 'tax',
             'total_inc_tax', 'product_tax', 'shipping_tax', 'tax_collected', 'tax_refunded', 'net_tax',
             'refunds', 'refund_amount', 'refunded_amount', 'amount', 'product_refund', 'shipping_refund',

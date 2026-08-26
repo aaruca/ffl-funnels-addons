@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.43.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.43.1-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -52,6 +52,9 @@ US sales tax resolution for WooCommerce using live USGeocoder API lookups (JSON)
 *   **WooCommerce runtime taxes:** Applies resolved taxes directly in cart and checkout.
 *   **State controls:** Limit the resolver to only the states your store uses, and purge local datasets when a state is removed from selection.
 *   **Admin tooling:** Includes Quote Lookup, Coverage Matrix, Datasets, Audit Log, and Settings screens.
+*   **Sales Tax Reports:** A dedicated **WooCommerce → Sales Tax Reports** workspace provides filing totals, state/county/jurisdiction breakdowns, taxable shipping, over/under collection, shipping-address order audits, refunds, line-item detail, and accountant-ready CSV/XLSX/PDF packages.
+*   **Reconciliation and monitoring:** Compares report totals with WooCommerce Analytics, surfaces data-quality checks, and provides an advisory multi-state economic-nexus monitor with replaceable threshold data.
+*   **Delivery and multi-site tools:** Schedules monthly email packages, keeps non-PII generation/delivery history, combines reports from multiple stores, and maps combined jurisdiction totals into a state/accountant CSV template.
 *   **Cleanup tool:** Includes a one-click button to delete old legacy local tax database rows after migrating to USGeocoder.
 
 ### 7. Product Reviews
@@ -138,6 +141,8 @@ The plugin is modular. You can enable or disable features to keep your site ligh
 4.  Save settings.
 5.  Use **Quote Lookup** to verify results before testing in WooCommerce checkout.
 6.  (Optional) If you are fully migrated, use **Delete Old Tax Database** in Settings to purge old legacy local tax data.
+7.  Open **WooCommerce → Sales Tax Reports** to preview or download filing and advanced audit packages. Taxed shipping is already included in taxable sales and is also shown separately for verification.
+8.  Use **Delivery & History** to configure the previous-month email schedule, and enable customer shipping addresses only for recipients authorized to receive PII.
 
 Notes:
 *   If no USGeocoder key is configured, the legacy local-sheet flow remains available.
@@ -231,6 +236,16 @@ define('WSS_OAUTH_DEBUG_FILE', true);  // also write wp-content/uploads/wss-logs
 ```
 
 ## Changelog
+
+### v1.43.1
+
+*   **Sales Tax Reports — complete release:** Dedicated WooCommerce workspace with Overview, States, Jurisdictions, Orders, Reconciliation, Nexus Monitor, Delivery & History, and Tools.
+*   **Filing assistance:** State and local taxable sales, tax collected, calculated tax, and over/under collection totals, with taxed shipping included in the filing base.
+*   **Order audit:** Optional order-level workpapers include customer and shipping-address details for accountant review.
+*   **Reconciliation and nexus:** WooCommerce Analytics comparisons plus advisory state nexus monitoring with thresholds explicitly marked for state-authority verification.
+*   **Delivery and consolidation:** Monthly scheduled email delivery, generation history, secure multi-site report combining, and state-template mapping.
+*   **Tax exclusions:** Individual WooCommerce customer exclusions in addition to role-based exclusions, using request-level caching.
+*   **Hardening:** Bounded order/CSV processing, streamed downloads, ZIP validation, spreadsheet-formula neutralization, atomic tool locks, refund allocation, and taxed-shipping reversal coverage.
 
 ### v1.43.0
 
