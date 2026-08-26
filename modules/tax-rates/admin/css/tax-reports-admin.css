@@ -7,6 +7,10 @@
     background: transparent;
 }
 
+.ffla-tax-reports-page .wb-field {
+    max-width: none;
+}
+
 .ffla-tax-report-intro {
     margin-bottom: var(--wb-spacing-lg, 20px);
 }
