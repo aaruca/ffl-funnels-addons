@@ -664,9 +664,13 @@
     }
 
     function createAdvancedFilterDisclosure(form) {
-        var elements = Array.from(form.querySelectorAll(':scope > .wb-card__body > .ffla-tax-report-statuses'));
+        var elements = Array.from(form.querySelectorAll(
+            ':scope > .wb-card__body > .ffla-tax-report-statuses, ' +
+            ':scope > .wb-card__body > .ffla-tax-report-options'
+        ));
         var panel;
         var button;
+        var shouldExpand;
 
         if (!elements.length || form.querySelector('[data-tax-report-advanced]')) {
             return;
@@ -686,10 +690,15 @@
         button.className = 'ffla-tax-report-disclosure';
         button.setAttribute('data-tax-report-disclosure', '');
         button.setAttribute('aria-controls', panel.id);
-        button.setAttribute('aria-expanded', 'false');
+        shouldExpand = Boolean(
+            panel.querySelector('select[name="report_detail"] option[value="advanced"]:checked') ||
+            panel.querySelector('input[name="include_negative_orders"]:checked')
+        );
+        button.setAttribute('aria-expanded', shouldExpand ? 'true' : 'false');
         button.textContent = strings.advancedFilters;
         panel.parentNode.insertBefore(button, panel);
-        panel.hidden = true;
+        panel.hidden = !shouldExpand;
+        panel.classList.toggle('is-open', shouldExpand);
     }
 
     function initDisclosures(scope) {
