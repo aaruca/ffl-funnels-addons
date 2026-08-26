@@ -32,11 +32,23 @@ class Tax_Rates_Admin
         }
 
         $base_url = FFLA_URL . 'modules/tax-rates/admin/';
+        $script_dependencies = ['jquery'];
+
+        // WooCommerce's AJAX customer selector searches on demand, so this
+        // page never loads the site's entire user table into the DOM. Load its
+        // assets only on Settings; the other tax tabs keep their old payload.
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'lookup';
+        if ($tab === 'settings') {
+            wp_enqueue_script('wc-enhanced-select');
+            wp_enqueue_style('woocommerce_admin_styles');
+            $script_dependencies[] = 'wc-enhanced-select';
+        }
 
         wp_enqueue_script(
             'ffla-tax-rates-admin',
             $base_url . 'js/tax-rates-admin.js',
-            ['jquery'],
+            $script_dependencies,
             FFLA_VERSION,
             true
         );
@@ -161,6 +173,25 @@ class Tax_Rates_Admin
         $tax_exempt_roles = array_values(array_unique($tax_exempt_roles));
         sort($tax_exempt_roles);
 
+        $tax_exempt_user_ids = [];
+        if (!empty($_POST['tax_exempt_user_ids']) && is_array($_POST['tax_exempt_user_ids'])) {
+            // Cap the option size defensively. The remote customer selector is
+            // intended for exceptions, not as a replacement for role rules.
+            $posted_user_ids = array_slice(wp_unslash($_POST['tax_exempt_user_ids']), 0, 500);
+            foreach ($posted_user_ids as $user_id) {
+                if (!is_scalar($user_id)) {
+                    continue;
+                }
+
+                $user_id = (int) $user_id;
+                if ($user_id > 0) {
+                    $tax_exempt_user_ids[$user_id] = $user_id;
+                }
+            }
+        }
+        $tax_exempt_user_ids = array_values($tax_exempt_user_ids);
+        sort($tax_exempt_user_ids, SORT_NUMERIC);
+
         $rate_source = sanitize_key(wp_unslash($_POST['rate_source'] ?? 'auto'));
         if (!in_array($rate_source, ['auto', 'sheet_zip_dataset', 'usgeocoder_api'], true)) {
             $rate_source = 'auto';
@@ -184,6 +215,7 @@ class Tax_Rates_Admin
             'usgeocoder_auth_key' => sanitize_text_field(wp_unslash($_POST['usgeocoder_auth_key'] ?? '')),
             'tax_role_restrict'   => isset($_POST['tax_role_restrict']) ? '1' : '0',
             'tax_exempt_roles'    => $tax_exempt_roles,
+            'tax_exempt_user_ids' => $tax_exempt_user_ids,
         ];
 
         $removed_states = array_values(array_diff($previous_enabled_states, $enabled_states));
@@ -612,9 +644,8 @@ class Tax_Rates_Admin
     }
 
     /**
-     * Render the "Tax exemptions by user role" card so admins can opt into
-     * role-based tax exemptions (e.g. wholesale stores that tax retail
-     * customers by default but exempt B2B accounts).
+     * Render customer and role tax exemptions. Individual customers use
+     * WooCommerce's remote AJAX search instead of preloading all site users.
      *
      * Semantics: checked roles are EXEMPT from tax. Everyone else is taxed
      * exactly like before. When the feature is off, the whole gate is
@@ -628,12 +659,16 @@ class Tax_Rates_Admin
 
         $is_active     = (string) ($settings['tax_role_restrict'] ?? '0') === '1';
         $exempt_roles  = is_array($settings['tax_exempt_roles'] ?? null) ? $settings['tax_exempt_roles'] : [];
+        $exempt_users  = is_array($settings['tax_exempt_user_ids'] ?? null) ? $settings['tax_exempt_user_ids'] : [];
+        $exempt_users  = array_values(array_unique(array_filter(array_map('intval', $exempt_users), function ($user_id) {
+            return $user_id > 0;
+        })));
         $checked_set   = array_flip(array_map('sanitize_key', array_map('strval', $exempt_roles)));
         $role_choices  = Tax_Role_Gate::get_role_choices();
 
         echo '<div class="wb-card" style="margin-top:var(--wb-spacing-xl)">';
         echo '<div class="wb-card__header" style="display:flex;align-items:center;justify-content:space-between;gap:var(--wb-spacing-md);">';
-        echo '<h3>' . esc_html__('Tax exemptions by user role', 'ffl-funnels-addons') . '</h3>';
+        echo '<h3>' . esc_html__('Tax exemptions by customer or role', 'ffl-funnels-addons') . '</h3>';
         $badge_label = $is_active
             ? __('Exemptions ON', 'ffl-funnels-addons')
             : __('Exemptions OFF', 'ffl-funnels-addons');
@@ -643,14 +678,50 @@ class Tax_Rates_Admin
         echo '<div class="wb-card__body">';
 
         FFLA_Admin::render_toggle_field(
-            __('Exempt certain user roles from tax', 'ffl-funnels-addons'),
+            __('Enable customer and role tax exemptions', 'ffl-funnels-addons'),
             'tax_role_restrict',
             $is_active ? '1' : '0',
-            __('Turn this on to skip tax charges for the user roles checked below. When off, every customer is taxed exactly like before — this is the safe default.', 'ffl-funnels-addons')
+            __('Turn this on to skip tax charges for the individual customers or roles selected below. When off, every customer is taxed exactly like before — this is the safe default.', 'ffl-funnels-addons')
         );
 
+        echo '<div class="wb-field" style="margin-top:var(--wb-spacing-lg);">';
+        echo '<label for="ffla-tax-exempt-users"><strong>'
+            . esc_html__('Individual customers who are tax exempt', 'ffl-funnels-addons')
+            . '</strong></label>';
+        echo '<select id="ffla-tax-exempt-users" class="wc-customer-search" name="tax_exempt_user_ids[]" multiple="multiple" style="width:100%;" data-placeholder="'
+            . esc_attr__('Search by customer name, email, or ID…', 'ffl-funnels-addons')
+            . '" data-action="woocommerce_json_search_customers">';
+
+        if (!empty($exempt_users)) {
+            $selected_users = get_users([
+                'include' => $exempt_users,
+                'orderby' => 'include',
+            ]);
+
+            foreach ($selected_users as $user) {
+                $display_name = trim((string) $user->display_name);
+                if ($display_name === '') {
+                    $display_name = (string) $user->user_login;
+                }
+                $label = sprintf(
+                    /* translators: 1: customer name, 2: WordPress user ID, 3: customer email. */
+                    __('%1$s (#%2$d — %3$s)', 'ffl-funnels-addons'),
+                    $display_name,
+                    (int) $user->ID,
+                    (string) $user->user_email
+                );
+                echo '<option value="' . esc_attr((string) $user->ID) . '" selected>' . esc_html($label) . '</option>';
+            }
+        }
+
+        echo '</select>';
+        echo '<p class="wb-field__desc">'
+            . esc_html__('Only selected IDs are stored. Customer search runs through WooCommerce AJAX and does not preload the user database.', 'ffl-funnels-addons')
+            . '</p>';
+        echo '</div>';
+
         echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-sm);">'
-            . esc_html__('Checked roles will NOT be charged tax. Unchecked roles (and guests, unless you check "Guest") will be taxed normally. Users with multiple roles are exempt as long as any of their roles is checked.', 'ffl-funnels-addons')
+            . esc_html__('Selected customers and checked roles will NOT be charged tax. An individual customer selection takes priority over roles. Unchecked roles and guests are taxed normally unless Guest is checked.', 'ffl-funnels-addons')
             . '</p>';
 
         echo '<div class="ffla-tax-role-picker" id="ffla-tax-role-picker">';
@@ -664,9 +735,9 @@ class Tax_Rates_Admin
         }
         echo '</div>';
 
-        if ($is_active && empty($exempt_roles)) {
+        if ($is_active && empty($exempt_roles) && empty($exempt_users)) {
             echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-sm);">'
-                . esc_html__('No roles are exempt yet — every customer is taxed normally. Check a role above to exempt it from tax collection.', 'ffl-funnels-addons')
+                . esc_html__('No customers or roles are exempt yet — every customer is taxed normally. Select at least one customer or role to create an exemption.', 'ffl-funnels-addons')
                 . '</p>';
         }
 
@@ -734,7 +805,9 @@ class Tax_Rates_Admin
         echo '<div class="ffla-tax-tabs">';
         foreach ($tabs as $key => $label) {
             $active = ($key === $tab) ? ' ffla-tax-tabs__tab--active' : '';
-            $url    = add_query_arg(['page' => 'ffla-tax-rates', 'tab' => $key], admin_url('admin.php'));
+            $url = $key === 'reports'
+                ? add_query_arg(['page' => 'ffla-sales-tax-reports'], admin_url('admin.php'))
+                : add_query_arg(['page' => 'ffla-tax-rates', 'tab' => $key], admin_url('admin.php'));
             echo '<a href="' . esc_url($url) . '" class="ffla-tax-tabs__tab' . esc_attr($active) . '">';
             echo esc_html($label);
             echo '</a>';
