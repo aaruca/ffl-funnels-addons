@@ -181,19 +181,27 @@ class Tax_Reports_Admin
 
             if ($has_template) {
                 $mapping = self::normalize_template_mapping($input);
-                $mapped = $combiner->map_state_template($template, $rows, $mapping);
+                $mapped = $combiner->map_state_template_stream($template, $rows, $mapping);
                 $diagnostics['mapping'] = (array) ($mapped['diagnostics'] ?? []);
+                $mapped_stream = $mapped['stream'] ?? null;
                 self::store_tool_diagnostics('mapped', $diagnostics);
-                if (empty($mapped['csv'])
+                if ((!is_resource($mapped_stream) && empty($mapped['csv']))
                     || !empty($diagnostics['mapping']['errors'])
                     || !empty($diagnostics['mapping']['unmatched'])
                     || !empty($diagnostics['mapping']['ambiguous'])
                     || !empty($diagnostics['mapping']['truncated'])) {
+                    if (is_resource($mapped_stream)) {
+                        fclose($mapped_stream);
+                    }
                     self::release_tool_lock();
                     self::redirect_to_reports(['report_tab' => 'tools', 'tool_error' => 'mapping']);
                 }
-                $mapped_csv = (string) $mapped['csv'];
                 $mapped_filename = (string) ($mapped['filename'] ?? 'mapped-state-tax-report.csv');
+                if (is_resource($mapped_stream)) {
+                    unset($mapped, $rows, $combined);
+                    self::download_csv_stream($mapped_stream, $mapped_filename, $diagnostics);
+                }
+                $mapped_csv = (string) $mapped['csv'];
                 unset($mapped, $rows, $combined);
                 self::download_csv($mapped_csv, $mapped_filename, $diagnostics);
             }
@@ -267,13 +275,19 @@ class Tax_Reports_Admin
         if (!$stream) {
             throw new RuntimeException(__('The combined CSV could not be created.', 'ffl-funnels-addons'));
         }
-        fputcsv($stream, $headers);
+        if (fputcsv($stream, $headers) === false) {
+            fclose($stream);
+            throw new RuntimeException(__('The combined CSV header could not be written.', 'ffl-funnels-addons'));
+        }
         foreach ($rows as $row) {
             $values = [];
             foreach ($headers as $header) {
                 $values[] = self::safe_spreadsheet_cell($row[$header] ?? '');
             }
-            fputcsv($stream, $values);
+            if (fputcsv($stream, $values) === false) {
+                fclose($stream);
+                throw new RuntimeException(__('The combined CSV could not be written completely.', 'ffl-funnels-addons'));
+            }
         }
         rewind($stream);
         return $stream;
@@ -297,7 +311,8 @@ class Tax_Reports_Admin
     private static function download_csv(string $csv, string $filename, array $diagnostics): void
     {
         $stream = fopen('php://temp/maxmemory:1048576', 'w+b');
-        if (!$stream || fwrite($stream, $csv) === false) {
+        $written = is_resource($stream) ? fwrite($stream, $csv) : false;
+        if (!$stream || $written === false || $written !== strlen($csv)) {
             if (is_resource($stream)) {
                 fclose($stream);
             }
