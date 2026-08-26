@@ -61,6 +61,9 @@ class Tax_Rates_Module extends FFLA_Module
         require_once $base . 'includes/class-tax-woocommerce-integration.php';
         require_once $base . 'includes/class-tax-report-service.php';
         require_once $base . 'includes/class-tax-report-exporter.php';
+        require_once $base . 'includes/class-tax-report-reconciliation.php';
+        require_once $base . 'includes/class-tax-nexus-monitor.php';
+        require_once $base . 'includes/class-tax-report-combiner.php';
         require_once $base . 'includes/class-tax-report-snapshot.php';
         require_once $base . 'includes/class-tax-report-email.php';
         require_once $base . 'includes/class-tax-usgeocoder-usage.php';
