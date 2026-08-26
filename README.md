@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.43.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.43.1-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -236,6 +236,16 @@ define('WSS_OAUTH_DEBUG_FILE', true);  // also write wp-content/uploads/wss-logs
 ```
 
 ## Changelog
+
+### v1.43.1
+
+*   **Sales Tax Reports — complete release:** Dedicated WooCommerce workspace with Overview, States, Jurisdictions, Orders, Reconciliation, Nexus Monitor, Delivery & History, and Tools.
+*   **Filing assistance:** State and local taxable sales, tax collected, calculated tax, and over/under collection totals, with taxed shipping included in the filing base.
+*   **Order audit:** Optional order-level workpapers include customer and shipping-address details for accountant review.
+*   **Reconciliation and nexus:** WooCommerce Analytics comparisons plus advisory state nexus monitoring with thresholds explicitly marked for state-authority verification.
+*   **Delivery and consolidation:** Monthly scheduled email delivery, generation history, secure multi-site report combining, and state-template mapping.
+*   **Tax exclusions:** Individual WooCommerce customer exclusions in addition to role-based exclusions, using request-level caching.
+*   **Hardening:** Bounded order/CSV processing, streamed downloads, ZIP validation, spreadsheet-formula neutralization, atomic tool locks, refund allocation, and taxed-shipping reversal coverage.
 
 ### v1.43.0
 
