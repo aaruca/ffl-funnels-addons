@@ -59,9 +59,12 @@ class Tax_Reports_Admin
             return;
         }
 
+        $report_css = 'modules/tax-rates/admin/css/tax-reports-admin.css';
+        $report_js = 'modules/tax-rates/admin/js/tax-reports-admin.js';
+
         wp_enqueue_style('ffla-admin', FFLA_URL . 'admin/css/ffla-admin.css', [], FFLA_VERSION);
-        wp_enqueue_style('ffla-tax-reports-admin', FFLA_URL . 'modules/tax-rates/admin/css/tax-reports-admin.css', ['ffla-admin'], FFLA_VERSION);
-        wp_enqueue_script('ffla-tax-reports-admin', FFLA_URL . 'modules/tax-rates/admin/js/tax-reports-admin.js', [], FFLA_VERSION, true);
+        wp_enqueue_style('ffla-tax-reports-admin', FFLA_URL . $report_css, ['ffla-admin'], self::asset_version($report_css));
+        wp_enqueue_script('ffla-tax-reports-admin', FFLA_URL . $report_js, [], self::asset_version($report_js), true);
         wp_localize_script('ffla-tax-reports-admin', 'fflaTaxReportsAdmin', [
             'i18n' => [
                 'advancedFilters' => __('Advanced filters', 'ffl-funnels-addons'),
@@ -71,6 +74,24 @@ class Tax_Reports_Admin
                 'noMatchingRows'  => __('No matching rows.', 'ffl-funnels-addons'),
             ],
         ]);
+    }
+
+    /**
+     * Give report assets a content-based cache key, including same-version hotfixes.
+     */
+    private static function asset_version(string $relative_path): string
+    {
+        $path = FFLA_PATH . ltrim($relative_path, '/\\');
+        if (!is_readable($path)) {
+            return FFLA_VERSION;
+        }
+
+        $hash = hash_file('sha256', $path);
+        if (!is_string($hash) || $hash === '') {
+            return FFLA_VERSION;
+        }
+
+        return FFLA_VERSION . '-' . substr($hash, 0, 12);
     }
 
     public static function export(): void
