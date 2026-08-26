@@ -174,6 +174,9 @@
             var startInput = form.querySelector('input[type="date"][name="date_from"], [data-tax-date-from]');
             var endInput = form.querySelector('input[type="date"][name="date_to"], [data-tax-date-to]');
             var presetSelect = form.querySelector('[data-ffla-period-preset], select[name="period_preset"]');
+            var stateFilter = form.querySelector('[data-ffla-state-filter], select[name="states[]"]');
+            var presetField;
+            var stateField;
 
             if (!startInput || !endInput || form.dataset.periodPresetsReady === 'true') {
                 return;
@@ -181,6 +184,15 @@
 
             var container = createPeriodPresets(form, startInput, endInput);
             var buttons = Array.from(container.querySelectorAll('[data-tax-period]'));
+
+            presetField = presetSelect ? presetSelect.closest('label') : null;
+            stateField = stateFilter ? stateFilter.closest('label') : null;
+            if (presetField) {
+                presetField.classList.add('ffla-tax-report-preset-field--fallback');
+            }
+            if (stateField) {
+                stateField.classList.add('ffla-tax-report-state-field');
+            }
 
             container.addEventListener('click', function (event) {
                 var button = event.target.closest('[data-tax-period]');
