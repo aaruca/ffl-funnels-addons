@@ -42,8 +42,8 @@ class Tax_Reports_Admin
     public static function render_page(): void
     {
         echo '<div class="wrap ffla-admin ffla-tax-reports-page">';
-        echo '<h1>' . esc_html__('Sales Tax Reports', 'ffl-funnels-addons') . '</h1>';
-        self::render();
+        echo '<h1>' . esc_html__('Sales Tax Filing Reports', 'ffl-funnels-addons') . '</h1>';
+        self::render(false);
         echo '</div>';
     }
 
@@ -462,7 +462,7 @@ class Tax_Reports_Admin
         return $diagnostics;
     }
 
-    public static function render(): void
+    public static function render(bool $show_heading = true): void
     {
         if (!current_user_can('manage_woocommerce')) {
             echo '<p>' . esc_html__('You do not have permission to view tax reports.', 'ffl-funnels-addons') . '</p>';
@@ -504,7 +504,9 @@ class Tax_Reports_Admin
         }
 
         echo '<div class="ffla-tax-report-intro">';
-        echo '<h2>' . esc_html__('Sales Tax Filing Reports', 'ffl-funnels-addons') . '</h2>';
+        if ($show_heading) {
+            echo '<h2>' . esc_html__('Sales Tax Filing Reports', 'ffl-funnels-addons') . '</h2>';
+        }
         echo '<p>' . esc_html__('Prepare a concise multi-state filing summary from the final values stored in WooCommerce. Review statewide totals, the jurisdictions with activity, tax calculated from stored rates, and any over- or under-collection.', 'ffl-funnels-addons') . '</p>';
         echo '<p class="ffla-tax-report-callout"><strong>' . esc_html__('Before filing:', 'ffl-funnels-addons') . '</strong> ';
         echo esc_html__('Resolve rows marked Needs review and confirm the final amounts in each state filing portal. This report does not submit a return or determine nexus.', 'ffl-funnels-addons') . '</p>';
