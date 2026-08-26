@@ -1,4 +1,16 @@
 /* Sales Tax Filing Reports */
+.ffla-tax-reports-page.ffla-admin {
+    width: auto;
+    max-width: 1440px;
+    min-height: 0;
+    margin: 10px 20px 0 2px;
+    background: transparent;
+}
+
+.ffla-tax-reports-page .wb-field {
+    max-width: none;
+}
+
 .ffla-tax-report-intro {
     margin-bottom: var(--wb-spacing-lg, 20px);
 }
@@ -8,10 +20,11 @@
 }
 
 .ffla-tax-report-callout {
-    max-width: 980px;
+    width: 100%;
     padding: 12px 14px;
     border-left: 4px solid #dba617;
     background: #fff9df;
+    box-sizing: border-box;
 }
 
 .ffla-tax-report-filters,
@@ -23,8 +36,17 @@
 
 .ffla-tax-report-filter-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(220px, 320px));
+    grid-template-columns: minmax(190px, 0.85fr) repeat(2, minmax(180px, 0.8fr)) minmax(260px, 1.25fr);
     gap: var(--wb-spacing-md, 16px);
+    align-items: start;
+}
+
+.ffla-tax-reports-enhanced .ffla-tax-report-preset-field--fallback {
+    display: none;
+}
+
+.ffla-tax-reports-enhanced .ffla-tax-report-filter-grid {
+    grid-template-columns: repeat(2, minmax(180px, 0.8fr)) minmax(260px, 1.25fr);
 }
 
 .ffla-tax-report-filter-grid label,
@@ -39,8 +61,44 @@
     font-weight: 600;
 }
 
-.ffla-tax-report-filter-grid input[type="date"] {
+.ffla-tax-report-filter-grid input[type="date"],
+.ffla-tax-report-filter-grid select {
     width: 100%;
+    min-width: 0;
+}
+
+.ffla-tax-reports-page .select2-container,
+.wc-wp-version-gte-70 .ffla-tax-reports-page .select2-container .select2-selection--multiple .select2-selection__rendered .select2-search--inline {
+    width: 100% !important;
+}
+
+.ffla-tax-report-filter-grid small,
+.ffla-tax-report-options small {
+    color: var(--wb-color-neutral-foreground-2, #57606a);
+    font-weight: 400;
+}
+
+.ffla-tax-report-options {
+    display: grid;
+    grid-template-columns: minmax(220px, 0.8fr) minmax(340px, 1.2fr);
+    gap: var(--wb-spacing-md, 16px);
+    align-items: stretch;
+}
+
+.ffla-tax-report-options > label:not(.ffla-tax-report-pii) {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.ffla-tax-report-options > label:not(.ffla-tax-report-pii) > span {
+    font-weight: 600;
+}
+
+.ffla-tax-report-options select {
+    width: 100%;
+    min-width: 0;
 }
 
 .ffla-tax-report-email-grid {
@@ -93,11 +151,22 @@
 .ffla-tax-report-pii {
     flex-direction: row;
     align-items: flex-start;
-    max-width: 900px;
+    width: 100%;
+    max-width: none;
     padding: 12px 14px;
     border: 1px solid var(--wb-color-border-subtle, #d8dee8);
     border-radius: var(--wb-radius-sm, 6px);
     background: var(--wb-color-surface-subtle, #f7f9fc);
+    box-sizing: border-box;
+}
+
+.ffla-tax-report-pii > input[type="checkbox"] {
+    flex: 0 0 auto;
+    margin-top: 2px;
+}
+
+.ffla-tax-report-filters > .wb-card__body > .ffla-tax-report-pii {
+    margin-top: var(--wb-spacing-md, 16px);
 }
 
 .ffla-tax-report-pii small {
@@ -112,6 +181,10 @@
     flex-wrap: wrap;
     gap: 10px;
     margin-top: var(--wb-spacing-lg, 20px);
+}
+
+.ffla-tax-report-actions .wb-btn {
+    min-height: 40px;
 }
 
 .ffla-tax-report-kpis {
@@ -181,11 +254,33 @@
     margin-top: 8px;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1180px) {
     .ffla-tax-report-filter-grid,
+    .ffla-tax-reports-enhanced .ffla-tax-report-filter-grid {
+        grid-template-columns: repeat(2, minmax(220px, 1fr));
+    }
+
+    .ffla-tax-reports-enhanced .ffla-tax-report-state-field {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 900px) {
     .ffla-tax-report-email-grid,
-    .ffla-tax-report-kpis {
+    .ffla-tax-report-kpis,
+    .ffla-tax-report-options {
         grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 600px) {
+    .ffla-tax-report-filter-grid,
+    .ffla-tax-reports-enhanced .ffla-tax-report-filter-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ffla-tax-reports-enhanced .ffla-tax-report-state-field {
+        grid-column: auto;
     }
 }
 
@@ -340,6 +435,10 @@
 
 .ffla-tax-report-advanced-panel .ffla-tax-report-statuses:first-child {
     margin-top: 0;
+}
+
+.ffla-tax-report-advanced-panel .ffla-tax-report-statuses {
+    margin-bottom: var(--wb-spacing-lg, 16px);
 }
 
 .ffla-tax-report-advanced-panel .ffla-tax-report-pii:last-child {
@@ -840,8 +939,8 @@ progress[data-nexus-progress]::-moz-progress-bar {
 }
 
 @media (max-width: 480px) {
-    .ffla-tax-report-period-presets {
-        grid-template-columns: 1fr;
+    .ffla-tax-report-period-button:last-child {
+        grid-column: 1 / -1;
     }
 
     .ffla-tax-report-kpi[role="button"],
@@ -851,6 +950,15 @@ progress[data-nexus-progress]::-moz-progress-bar {
 
     .ffla-tax-report-advanced-panel {
         padding: 12px;
+    }
+
+    .ffla-tax-report-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .ffla-tax-report-actions .wb-btn {
+        width: 100%;
     }
 
     .ffla-tax-report-statuses {

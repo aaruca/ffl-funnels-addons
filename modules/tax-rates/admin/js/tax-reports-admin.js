@@ -174,6 +174,9 @@
             var startInput = form.querySelector('input[type="date"][name="date_from"], [data-tax-date-from]');
             var endInput = form.querySelector('input[type="date"][name="date_to"], [data-tax-date-to]');
             var presetSelect = form.querySelector('[data-ffla-period-preset], select[name="period_preset"]');
+            var stateFilter = form.querySelector('[data-ffla-state-filter], select[name="states[]"]');
+            var presetField;
+            var stateField;
 
             if (!startInput || !endInput || form.dataset.periodPresetsReady === 'true') {
                 return;
@@ -181,6 +184,15 @@
 
             var container = createPeriodPresets(form, startInput, endInput);
             var buttons = Array.from(container.querySelectorAll('[data-tax-period]'));
+
+            presetField = presetSelect ? presetSelect.closest('label') : null;
+            stateField = stateFilter ? stateFilter.closest('label') : null;
+            if (presetField) {
+                presetField.classList.add('ffla-tax-report-preset-field--fallback');
+            }
+            if (stateField) {
+                stateField.classList.add('ffla-tax-report-state-field');
+            }
 
             container.addEventListener('click', function (event) {
                 var button = event.target.closest('[data-tax-period]');
@@ -664,9 +676,13 @@
     }
 
     function createAdvancedFilterDisclosure(form) {
-        var elements = Array.from(form.querySelectorAll(':scope > .wb-card__body > .ffla-tax-report-statuses'));
+        var elements = Array.from(form.querySelectorAll(
+            ':scope > .wb-card__body > .ffla-tax-report-statuses, ' +
+            ':scope > .wb-card__body > .ffla-tax-report-options'
+        ));
         var panel;
         var button;
+        var shouldExpand;
 
         if (!elements.length || form.querySelector('[data-tax-report-advanced]')) {
             return;
@@ -686,10 +702,15 @@
         button.className = 'ffla-tax-report-disclosure';
         button.setAttribute('data-tax-report-disclosure', '');
         button.setAttribute('aria-controls', panel.id);
-        button.setAttribute('aria-expanded', 'false');
+        shouldExpand = Boolean(
+            panel.querySelector('select[name="report_detail"] option[value="advanced"]:checked') ||
+            panel.querySelector('input[name="include_negative_orders"]:checked')
+        );
+        button.setAttribute('aria-expanded', shouldExpand ? 'true' : 'false');
         button.textContent = strings.advancedFilters;
         panel.parentNode.insertBefore(button, panel);
-        panel.hidden = true;
+        panel.hidden = !shouldExpand;
+        panel.classList.toggle('is-open', shouldExpand);
     }
 
     function initDisclosures(scope) {
