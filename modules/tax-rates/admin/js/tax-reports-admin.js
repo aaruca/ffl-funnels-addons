@@ -25,6 +25,7 @@
         priorYear: 'Prior year',
         reportPeriod: 'Report period',
         rowsShown: '{shown} of {total} rows shown',
+        searchStates: 'Search states…',
         searchTable: 'Search this table',
         sortAscending: 'Sort ascending',
         sortDescending: 'Sort descending',
@@ -274,6 +275,41 @@
             setPressedButton(buttons, matchingButton || container.querySelector('[data-tax-period="custom"]'));
 
             form.dataset.periodPresetsReady = 'true';
+        });
+    }
+
+    function initStateSearch(scope) {
+        var $ = window.jQuery;
+
+        if (!$ || !$.fn) {
+            return;
+        }
+
+        scope.querySelectorAll('[data-ffla-state-filter]').forEach(function (select) {
+            var $select = $(select);
+            var method;
+
+            if (select.dataset.stateSearchReady === 'true') {
+                return;
+            }
+
+            method = typeof $.fn.selectWoo === 'function' ? 'selectWoo' :
+                (typeof $.fn.select2 === 'function' ? 'select2' : '');
+
+            if (!method) {
+                return;
+            }
+
+            if (!$select.hasClass('select2-hidden-accessible')) {
+                $select[method]({
+                    allowClear: true,
+                    closeOnSelect: false,
+                    placeholder: select.getAttribute('data-placeholder') || strings.searchStates,
+                    width: '100%'
+                });
+            }
+
+            select.dataset.stateSearchReady = 'true';
         });
     }
 
@@ -979,6 +1015,7 @@
 
     function init(scope) {
         initTabs(scope);
+        initStateSearch(scope);
         initPeriodPresets(scope);
         initDisclosures(scope);
         initCopyableKpis(scope);

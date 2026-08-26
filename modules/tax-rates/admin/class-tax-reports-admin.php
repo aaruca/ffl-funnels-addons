@@ -62,15 +62,18 @@ class Tax_Reports_Admin
         $report_css = 'modules/tax-rates/admin/css/tax-reports-admin.css';
         $report_js = 'modules/tax-rates/admin/js/tax-reports-admin.js';
 
+        wp_enqueue_script('wc-enhanced-select');
+        wp_enqueue_style('woocommerce_admin_styles');
         wp_enqueue_style('ffla-admin', FFLA_URL . 'admin/css/ffla-admin.css', [], FFLA_VERSION);
         wp_enqueue_style('ffla-tax-reports-admin', FFLA_URL . $report_css, ['ffla-admin'], self::asset_version($report_css));
-        wp_enqueue_script('ffla-tax-reports-admin', FFLA_URL . $report_js, [], self::asset_version($report_js), true);
+        wp_enqueue_script('ffla-tax-reports-admin', FFLA_URL . $report_js, ['jquery', 'wc-enhanced-select'], self::asset_version($report_js), true);
         wp_localize_script('ffla-tax-reports-admin', 'fflaTaxReportsAdmin', [
             'i18n' => [
                 'advancedFilters' => __('Advanced filters', 'ffl-funnels-addons'),
                 'copied'          => __('Copied', 'ffl-funnels-addons'),
                 'copyFailed'      => __('Could not copy', 'ffl-funnels-addons'),
                 'searchTable'     => __('Search this table', 'ffl-funnels-addons'),
+                'searchStates'    => __('Search states…', 'ffl-funnels-addons'),
                 'noMatchingRows'  => __('No matching rows.', 'ffl-funnels-addons'),
             ],
         ]);
@@ -579,11 +582,11 @@ class Tax_Reports_Admin
         echo '</select></label>';
         echo '<label><span>' . esc_html__('Start date', 'ffl-funnels-addons') . '</span><input type="date" name="date_from" required value="' . esc_attr((string) $filters['date_from']) . '"></label>';
         echo '<label><span>' . esc_html__('End date', 'ffl-funnels-addons') . '</span><input type="date" name="date_to" required value="' . esc_attr((string) $filters['date_to']) . '"></label>';
-        echo '<label><span>' . esc_html__('States', 'ffl-funnels-addons') . '</span><select name="states[]" multiple size="4" data-ffla-state-filter>';
+        echo '<label class="ffla-tax-report-state-field"><span>' . esc_html__('States', 'ffl-funnels-addons') . '</span><select name="states[]" multiple data-ffla-state-filter data-placeholder="' . esc_attr__('Search states…', 'ffl-funnels-addons') . '">';
         foreach ($states as $code => $name) {
             echo '<option value="' . esc_attr($code) . '" ' . selected(in_array($code, (array) ($filters['states'] ?? []), true), true, false) . '>' . esc_html($code . ' — ' . $name) . '</option>';
         }
-        echo '</select><small>' . esc_html__('Leave empty for every destination state. Hold Ctrl/Cmd to select several.', 'ffl-funnels-addons') . '</small></label>';
+        echo '</select><small>' . esc_html__('Search and select one or more states. Leave empty for every destination state.', 'ffl-funnels-addons') . '</small></label>';
         echo '</div>';
 
         echo '<fieldset class="ffla-tax-report-statuses"><legend>' . esc_html__('Included order statuses', 'ffl-funnels-addons') . '</legend>';
