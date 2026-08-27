@@ -2,7 +2,8 @@
 /**
  * WSS Attribute Upsert Service.
  *
- * Handles global WooCommerce attributes (pa_*) and terms creation/reuse.
+ * Handles global WooCommerce attributes (pa_*), existing custom product
+ * attributes, and terms/options creation or reuse.
  *
  * @package FFL_Funnels_Addons
  */
@@ -53,7 +54,7 @@ class WSS_Attribute_Upsert_Service
                 continue;
             }
             [$label, $value] = array_map('trim', explode(':', $pair, 2));
-            if ($label === '' || $value === '') {
+            if ($label === '') {
                 continue;
             }
             $pairs[] = ['label' => $label, 'value' => $value];
@@ -219,6 +220,9 @@ class WSS_Attribute_Upsert_Service
         }
 
         foreach ($this->parse_pairs($attr_string) as $pair) {
+            if (trim((string) $pair['value']) === '') {
+                continue;
+            }
             $taxonomy = $this->resolve_global_taxonomy_by_label($pair['label']);
             if ($taxonomy === '') {
                 continue;
@@ -237,7 +241,8 @@ class WSS_Attribute_Upsert_Service
     }
 
     /**
-     * Build variation meta attributes and ensure parent has compatible taxonomy attributes/options.
+     * Build variation meta attributes and ensure the parent has compatible
+     * global taxonomy terms or custom attribute options.
      *
      * @return array<string,string> e.g. ['attribute_pa_color' => 'red']
      */
@@ -252,8 +257,68 @@ class WSS_Attribute_Upsert_Service
         $parent_changed = false;
 
         foreach ($this->parse_pairs($attr_string) as $pair) {
+            // Prefer an existing custom attribute on this parent. Converting a
+            // custom attribute such as "Caliber" into pa_caliber would create a
+            // second, incompatible attribute and leave the child value blank.
+            $custom_match = $this->find_custom_parent_attribute($parent_attrs, $pair['label']);
+            if ($custom_match !== []) {
+                $attribute_key = (string) $custom_match['key'];
+                /** @var WC_Product_Attribute $attr */
+                $attr          = $custom_match['attribute'];
+                $value         = trim((string) $pair['value']);
+                $options       = array_map('strval', $attr->get_options());
+                $stored_value  = '';
+
+                if ($value === '') {
+                    if (!$attr->get_variation()) {
+                        $attr->set_variation(true);
+                        $parent_changed = true;
+                    }
+                    $parent_attrs[$attribute_key] = $attr;
+                    $result['attribute_' . sanitize_title($attribute_key)] = '';
+                    continue;
+                }
+
+                foreach ($options as $option) {
+                    if (strcasecmp(trim($option), $value) === 0) {
+                        $stored_value = $option;
+                        break;
+                    }
+                }
+
+                if ($stored_value === '') {
+                    $stored_value = $value;
+                    $options[]    = $value;
+                    $attr->set_options($options);
+                    $parent_changed = true;
+                }
+
+                if (!$attr->get_variation()) {
+                    $attr->set_variation(true);
+                    $parent_changed = true;
+                }
+
+                $parent_attrs[$attribute_key] = $attr;
+                $result['attribute_' . sanitize_title($attribute_key)] = $stored_value;
+                continue;
+            }
+
             $taxonomy = $this->resolve_global_taxonomy_by_label($pair['label']);
             if ($taxonomy === '') {
+                continue;
+            }
+
+            if (trim((string) $pair['value']) === '') {
+                if (isset($parent_attrs[$taxonomy]) && $parent_attrs[$taxonomy] instanceof WC_Product_Attribute) {
+                    /** @var WC_Product_Attribute $attr */
+                    $attr = $parent_attrs[$taxonomy];
+                    if (!$attr->get_variation()) {
+                        $attr->set_variation(true);
+                        $parent_changed = true;
+                    }
+                    $parent_attrs[$taxonomy] = $attr;
+                    $result['attribute_' . $taxonomy] = '';
+                }
                 continue;
             }
 
@@ -300,5 +365,37 @@ class WSS_Attribute_Upsert_Service
 
         return $result;
     }
-}
 
+    /**
+     * Find an existing non-taxonomy attribute on the variable parent by its
+     * array key or display name.
+     *
+     * @param array<string|int,mixed> $parent_attrs
+     * @return array{key:string,attribute:WC_Product_Attribute}|array{}
+     */
+    private function find_custom_parent_attribute(array $parent_attrs, string $label): array
+    {
+        $needle = $this->normalize_key($label);
+        if ($needle === '') {
+            return [];
+        }
+
+        foreach ($parent_attrs as $key => $attribute) {
+            if (!($attribute instanceof WC_Product_Attribute) || $attribute->is_taxonomy()) {
+                continue;
+            }
+
+            $candidates = [(string) $key, (string) $attribute->get_name()];
+            foreach ($candidates as $candidate) {
+                if ($this->normalize_key($candidate) === $needle) {
+                    return [
+                        'key'       => (string) $key,
+                        'attribute' => $attribute,
+                    ];
+                }
+            }
+        }
+
+        return [];
+    }
+}

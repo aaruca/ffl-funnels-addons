@@ -11,6 +11,7 @@ on:
       - 'modules/tax-rates/admin/class-tax-reports-admin.php'
       - 'modules/tax-rates/admin/css/tax-reports-admin.css'
       - 'modules/tax-rates/admin/js/tax-reports-admin.js'
+      - 'modules/woo-sheets-sync/**'
       - '.github/workflows/release-zip.yml'
   workflow_dispatch:
     inputs:

@@ -36,6 +36,25 @@ class WSS_Product_Upsert_Service
             if ($existing_id) {
                 $existing = wc_get_product($existing_id);
                 if ($existing) {
+                    if (!$existing->is_type('simple')) {
+                        return new WP_Error(
+                            'wss_product',
+                            sprintf(__('SKU "%1$s" belongs to WooCommerce object #%2$d, which is not a simple product.', 'ffl-funnels-addons'), $sku, (int) $existing_id)
+                        );
+                    }
+                    $existing->set_name($name);
+                    $apply = $this->apply_pricing_and_stock($existing, $payload);
+                    if (is_wp_error($apply)) {
+                        return $apply;
+                    }
+                    $existing->save();
+                    update_post_meta((int) $existing_id, '_wss_sync_enabled', '1');
+
+                    $attr_string = trim((string) ($payload['attributes'] ?? ''));
+                    if ($attr_string !== '') {
+                        $this->attribute_service->apply_terms_to_simple_product((int) $existing_id, $attr_string);
+                    }
+
                     return [
                         'product_id'   => (int) ($existing->get_parent_id() ?: $existing_id),
                         'variation_id' => (int) $existing_id,
@@ -122,4 +141,3 @@ class WSS_Product_Upsert_Service
         return true;
     }
 }
-
