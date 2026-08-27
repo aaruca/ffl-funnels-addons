@@ -143,8 +143,8 @@ class USGeocoder_API_Resolver extends Tax_Resolver_Base
                 $normalized,
                 $state_code,
                 Tax_Coverage::DEGRADED,
-                Tax_Quote_Result::OUTCOME_VALIDATION_ERROR,
-                'USGeocoder did not match the address (request_status_code=NoMatch).'
+                Tax_Quote_Result::OUTCOME_RATE_NOT_DETERMINABLE,
+                'USGeocoder did not match the address; the Sheet ZIP dataset fallback will be attempted.'
             );
         }
 
