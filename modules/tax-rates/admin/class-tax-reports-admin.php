@@ -869,7 +869,7 @@ class Tax_Reports_Admin
             if (!empty($review_items)) {
                 self::render_dataset_card(__('Items to review', 'ffl-funnels-addons'), ['severity', 'code', 'count', 'message'], $review_items);
             }
-            echo '<p class="ffla-tax-report-callout">' . esc_html__('Taxable sales includes every product, fee, and shipping line that WooCommerce taxed. Taxed shipping is shown separately as a component for verification and must not be added again. Calculated tax uses the effective rate stored with each order; the filing portal remains the final authority.', 'ffl-funnels-addons') . '</p>';
+            echo '<p class="ffla-tax-report-callout">' . esc_html__('Total taxable sales is the single filing base and already includes every product, fee, and shipping line that WooCommerce taxed. Calculated tax uses the effective rate stored with each order; the filing portal remains the final authority.', 'ffl-funnels-addons') . '</p>';
         } elseif ($active_tab === 'states') {
             self::render_dataset_card(__('State filing summary', 'ffl-funnels-addons'), 'state-summary', $states);
         } elseif ($active_tab === 'jurisdictions') {
@@ -938,8 +938,7 @@ class Tax_Reports_Admin
     {
         $labels = [
             'gross_sales' => __('Gross sales (net of refunds)', 'ffl-funnels-addons'),
-            'taxable_sales' => __('Taxable sales to report', 'ffl-funnels-addons'),
-            'taxable_shipping' => __('Taxed shipping included', 'ffl-funnels-addons'),
+            'taxable_sales' => __('Total taxable sales (including shipping)', 'ffl-funnels-addons'),
             'non_taxable_sales' => __('Exempt / non-taxable sales', 'ffl-funnels-addons'),
             'needs_review_sales' => __('Sales needing review', 'ffl-funnels-addons'),
             'net_tax' => __('Net tax collected', 'ffl-funnels-addons'),
@@ -1163,8 +1162,7 @@ class Tax_Reports_Admin
         }
         $output_fields = [
             'orders'             => __('Orders output', 'ffl-funnels-addons'),
-            'taxable_sales'      => __('Taxable sales output', 'ffl-funnels-addons'),
-            'taxable_shipping'   => __('Taxed shipping output', 'ffl-funnels-addons'),
+            'taxable_sales'      => __('Total taxable sales output (including shipping)', 'ffl-funnels-addons'),
             'net_tax'            => __('Net tax output', 'ffl-funnels-addons'),
             'calculated_tax'     => __('Calculated tax output', 'ffl-funnels-addons'),
             'over_under'         => __('Over / under output', 'ffl-funnels-addons'),
