@@ -352,7 +352,10 @@ class Tax_Report_Exporter
     {
         $html = '<table><thead><tr>';
         foreach ($columns as $column) {
-            $html .= '<th>' . esc_html(str_replace('_', ' ', $column)) . '</th>';
+            $label = $column === 'taxable_sales'
+                ? 'total taxable sales (including shipping)'
+                : str_replace('_', ' ', $column);
+            $html .= '<th>' . esc_html($label) . '</th>';
         }
         $html .= '</tr></thead><tbody>';
         if (empty($rows)) {
@@ -387,12 +390,12 @@ class Tax_Report_Exporter
             'Orders: ' . ($stats['orders'] ?? 0) . '   Refunds: ' . ($stats['refunds'] ?? 0),
             '',
             'FILING TOTALS BY CURRENCY',
-            'Cur Orders  Taxable sales  Non-taxable  Review sales  Net tax collected  Calculated tax  Over/(under)',
+            'Cur Orders  Taxable incl. shipping  Non-taxable  Review sales  Net tax collected  Calculated tax  Over/(under)',
         ];
 
         foreach ((array) ($report['summaries']['filing_totals'] ?? []) as $row) {
             $lines[] = sprintf(
-                '%-3s %6s %14s %12s %12s %18s %15s %14s',
+                '%-3s %6s %22s %12s %12s %18s %15s %14s',
                 $row['currency'] ?? '',
                 $row['orders'] ?? 0,
                 $row['taxable_sales'] ?? '0.00',
@@ -406,10 +409,10 @@ class Tax_Report_Exporter
 
         $lines[] = '';
         $lines[] = 'STATE FILING SUMMARY';
-        $lines[] = 'State Cur Orders  Taxable sales  Non-taxable  Review sales  Net collected  Tax due  Difference  Status';
+        $lines[] = 'State Cur Orders  Taxable incl. shipping  Non-taxable  Review sales  Net collected  Tax due  Difference  Status';
         foreach ((array) ($report['summaries']['states'] ?? []) as $row) {
             $lines[] = sprintf(
-                '%-5s %-3s %5s %14s %12s %12s %14s %9s %11s  %s',
+                '%-5s %-3s %5s %22s %12s %12s %14s %9s %11s  %s',
                 $row['state'] ?? '',
                 $row['currency'] ?? '',
                 $row['orders'] ?? 0,
@@ -425,10 +428,10 @@ class Tax_Report_Exporter
 
         $lines[] = '';
         $lines[] = 'JURISDICTIONS WITH ACTIVITY';
-        $lines[] = 'State Type     Jurisdiction                 Rate   Taxable sales  Net collected  Tax due  Difference  Status';
+        $lines[] = 'State Type     Jurisdiction                 Rate   Taxable incl. shipping  Net collected  Tax due  Difference  Status';
         foreach ((array) ($report['summaries']['jurisdictions'] ?? []) as $row) {
             $lines[] = sprintf(
-                '%-5s %-8.8s %-28.28s %6s%% %14s %14s %9s %11s  %s',
+                '%-5s %-8.8s %-28.28s %6s%% %22s %14s %9s %11s  %s',
                 $row['state'] ?? '',
                 $row['jurisdiction_type'] ?? '',
                 $row['jurisdiction_name'] ?? '',
@@ -442,7 +445,7 @@ class Tax_Report_Exporter
         }
 
         $lines[] = '';
-        $lines[] = 'Taxable sales includes taxed product, fee, and shipping lines; CSV/XLSX show taxed shipping separately.';
+        $lines[] = 'Total taxable sales includes all taxed product, fee, and shipping lines and is the single filing-base amount.';
         $lines[] = 'Calculated tax uses the effective rate stored with each WooCommerce order.';
         $lines[] = 'Review any state or jurisdiction marked Needs review before filing.';
         $lines[] = 'This report helps prepare returns; the filing portal and tax professional remain authoritative.';
@@ -522,7 +525,7 @@ class Tax_Report_Exporter
             . ($advanced
                 ? "Advanced mode includes order, line, tax, refund, product, payment and exception audit datasets. Filing mode intentionally omits these detailed datasets except for the optional PII-controlled order audit.\r\n\r\n"
                 : "Filing mode intentionally keeps the package concise. Choose advanced detail when order, line, tax, refund, product, payment and exception audit datasets are required.\r\n\r\n")
-            . "Taxable sales already includes every taxed shipping line. The taxable_shipping column shows that net shipping component separately for verification and must not be added to taxable_sales again.\r\n\r\n"
+            . "The taxable_sales column is total taxable sales including every taxed shipping line. It is the single filing-base amount; shipping must not be added again.\r\n\r\n"
             . "Report ID: " . ($manifest['report_id'] ?? '') . "\r\n"
             . "Generated UTC: " . ($manifest['generated_at_utc'] ?? '') . "\r\n";
     }
