@@ -407,12 +407,12 @@ class Tax_Coverage
             return [
                 'key'             => 'usgeocoder_api',
                 'family'          => self::SOURCE_STRATEGY_USGEOCODER,
-                'label'           => 'USGeocoder live API',
-                'shortLabel'      => 'USGeo API',
+                'label'           => 'USGeocoder live API with Sheet fallback',
+                'shortLabel'      => 'USGeo → Sheet',
                 'primary'         => 'usgeocoder_api',
                 'primaryLabel'    => 'Live tax rate lookup via USGeocoder JSON API',
-                'fallback'        => null,
-                'fallbackLabel'   => null,
+                'fallback'        => 'sheet_zip_dataset',
+                'fallbackLabel'   => 'Local Google Sheet ZIP dataset when the API is unavailable or returns no usable rate',
                 'requiresGeocode' => $requires_geocode,
             ];
         }
