@@ -43,8 +43,8 @@ class Tax_Quote_Engine
      * them would keep serving a failure after the API recovered.
      */
     private const CACHEABLE_NEGATIVE_OUTCOMES = [
-        Tax_Quote_Result::OUTCOME_VALIDATION_ERROR,      // USGeocoder "NoMatch"
-        Tax_Quote_Result::OUTCOME_RATE_NOT_DETERMINABLE, // resolved, but no rate for it
+        Tax_Quote_Result::OUTCOME_VALIDATION_ERROR,      // malformed or incomplete resolver input
+        Tax_Quote_Result::OUTCOME_RATE_NOT_DETERMINABLE, // API NoMatch, or no usable rate from either source
     ];
 
     private const CACHE_SCHEMA_VERSION = '2026-04-01-sheet-dataset-v1';
@@ -131,15 +131,17 @@ class Tax_Quote_Engine
                     : Tax_Geocoder::empty_result();
 
                 $fallback_result = self::run_resolver($fallback, $input, $normalized, $state_code, $fallback_geocode);
+                $fallback_attempt = [
+                    'resolver'    => $fallback->get_id(),
+                    'source'      => $fallback_result->source,
+                    'outcomeCode' => $fallback_result->outcomeCode,
+                    'error'       => $fallback_result->errorMessage,
+                ];
 
                 if ($fallback_result->is_success()) {
                     $fallback_result->trace['fallbackChain'] = [
                         $primary_attempt,
-                        [
-                            'resolver'    => $fallback->get_id(),
-                            'source'      => $fallback_result->source,
-                            'outcomeCode' => $fallback_result->outcomeCode,
-                        ],
+                        $fallback_attempt,
                     ];
                     $fallback_result->sourceVersion = 'sheet_fallback';
                     $fallback_result->limitations[] = sprintf(
@@ -148,7 +150,19 @@ class Tax_Quote_Engine
                         (string) $primary_attempt['resolver']
                     );
                     $result = $fallback_result;
+                } else {
+                    $result->trace['fallbackChain'] = [$primary_attempt, $fallback_attempt];
                 }
+            } else {
+                $result->trace['fallbackChain'] = [
+                    $primary_attempt,
+                    [
+                        'resolver'    => 'sheet_zip_dataset',
+                        'source'      => null,
+                        'outcomeCode' => Tax_Quote_Result::OUTCOME_SOURCE_UNAVAILABLE,
+                        'error'       => 'Sheet ZIP dataset resolver is not registered.',
+                    ],
+                ];
             }
         }
 
@@ -252,6 +266,7 @@ class Tax_Quote_Engine
         return in_array($result->outcomeCode, [
             Tax_Quote_Result::OUTCOME_SOURCE_UNAVAILABLE,
             Tax_Quote_Result::OUTCOME_RATE_NOT_DETERMINABLE,
+            Tax_Quote_Result::OUTCOME_GEOCODE_FAILED,
             Tax_Quote_Result::OUTCOME_INTERNAL_ERROR,
         ], true);
     }
