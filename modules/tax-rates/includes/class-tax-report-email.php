@@ -419,21 +419,19 @@ class Tax_Report_Email
 
         $message .= '<table cellpadding="6" cellspacing="0" border="1" style="border-collapse:collapse"><thead><tr>'
             . '<th>' . esc_html__('Currency', 'ffl-funnels-addons') . '</th>'
-            . '<th>' . esc_html__('Taxable sales', 'ffl-funnels-addons') . '</th>'
-            . '<th>' . esc_html__('Taxed shipping included', 'ffl-funnels-addons') . '</th>'
+            . '<th>' . esc_html__('Total taxable sales (including shipping)', 'ffl-funnels-addons') . '</th>'
             . '<th>' . esc_html__('Net tax collected', 'ffl-funnels-addons') . '</th>'
             . '<th>' . esc_html__('Tax calculated / owed', 'ffl-funnels-addons') . '</th>'
             . '<th>' . esc_html__('Over / under collected', 'ffl-funnels-addons') . '</th></tr></thead><tbody>';
         foreach ((array) ($report['summaries']['filing_totals'] ?? []) as $row) {
             $message .= '<tr><td>' . esc_html((string) ($row['currency'] ?? '')) . '</td>'
                 . '<td>' . esc_html((string) ($row['taxable_sales'] ?? '0.00')) . '</td>'
-                . '<td>' . esc_html((string) ($row['taxable_shipping'] ?? '0.00')) . '</td>'
                 . '<td>' . esc_html((string) ($row['net_tax'] ?? '0.00')) . '</td>'
                 . '<td>' . esc_html((string) ($row['calculated_tax'] ?? '0.00')) . '</td>'
                 . '<td>' . esc_html((string) ($row['over_under'] ?? '0.00')) . '</td></tr>';
         }
         $message .= '</tbody></table>';
-        $message .= '<p><small>' . esc_html__('Taxed shipping is already included in taxable sales and is shown separately only for verification; do not add it again.', 'ffl-funnels-addons') . '</small></p>';
+        $message .= '<p><small>' . esc_html__('Total taxable sales already includes all taxed shipping and is the single filing-base amount.', 'ffl-funnels-addons') . '</small></p>';
 
         if ($summary_only) {
             $message .= '<p><strong>' . esc_html__('Attachment notice:', 'ffl-funnels-addons') . '</strong> '

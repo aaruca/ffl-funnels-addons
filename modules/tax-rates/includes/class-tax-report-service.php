@@ -460,16 +460,16 @@ class Tax_Report_Service
                 'line_items_json',
             ],
             'filing-totals' => [
-                'currency', 'orders', 'taxable_sales', 'taxable_shipping', 'non_taxable_sales', 'needs_review_sales',
+                'currency', 'orders', 'taxable_sales', 'non_taxable_sales', 'needs_review_sales',
                 'tax_collected', 'tax_refunded', 'net_tax', 'calculated_tax', 'over_under',
             ],
             'state-summary' => [
-                'state', 'currency', 'orders', 'taxable_sales', 'taxable_shipping', 'non_taxable_sales', 'needs_review_sales',
+                'state', 'currency', 'orders', 'taxable_sales', 'non_taxable_sales', 'needs_review_sales',
                 'tax_collected', 'tax_refunded', 'net_tax', 'calculated_tax', 'over_under', 'filing_status',
             ],
             'jurisdiction-summary' => [
                 'state', 'jurisdiction_type', 'jurisdiction_name', 'rate_percent',
-                'currency', 'orders', 'taxable_sales', 'taxable_shipping', 'tax_collected', 'tax_refunded', 'net_tax',
+                'currency', 'orders', 'taxable_sales', 'tax_collected', 'tax_refunded', 'net_tax',
                 'calculated_tax', 'over_under', 'filing_status',
             ],
             'order-audit' => [
