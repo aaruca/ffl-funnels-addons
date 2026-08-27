@@ -1252,9 +1252,9 @@ class Tax_Rates_Admin
             [
                 'auto'              => __('Automatic (recommended)', 'ffl-funnels-addons'),
                 'sheet_zip_dataset' => __('Google Sheet ZIP dataset', 'ffl-funnels-addons'),
-                'usgeocoder_api'    => __('USGeocoder API (live)', 'ffl-funnels-addons'),
+                'usgeocoder_api'    => __('USGeocoder API (live) → Sheet fallback', 'ffl-funnels-addons'),
             ],
-            __('Where the resolver pulls rates from. "Automatic" picks the best source per state. Force the Sheet ZIP dataset for fully local lookups, or the USGeocoder API for live address-level precision. If the chosen source does not cover a state, the resolver falls back to automatic routing.', 'ffl-funnels-addons')
+            __('Where the resolver pulls rates from. "Automatic" picks the best source per state. Whenever USGeocoder is used and the API is unavailable, rejects the request, returns NoMatch, or has no usable rate, the local Google Sheet ZIP dataset is tried automatically. Keep Auto sheet sync enabled so this fallback stays current.', 'ffl-funnels-addons')
         );
 
         echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-sm)">' . esc_html__('WooCommerce checkout reads taxes from the runtime resolver and local imported datasets. Legacy WooCommerce tax-table sync is no longer part of the normal flow.', 'ffl-funnels-addons') . '</p>';
