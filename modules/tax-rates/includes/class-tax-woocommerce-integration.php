@@ -24,11 +24,76 @@ class Tax_WooCommerce_Integration
         }
 
         add_filter('woocommerce_matched_tax_rates', [__CLASS__, 'filter_matched_tax_rates'], 20, 6);
+        add_filter('woocommerce_product_is_taxable', [__CLASS__, 'filter_product_is_taxable'], 20, 2);
+        add_action('woocommerce_before_calculate_totals', [__CLASS__, 'prime_cart_product_terms'], 5, 1);
         add_filter('woocommerce_rate_label', [__CLASS__, 'filter_runtime_rate_label'], 10, 2);
         add_filter('woocommerce_rate_code', [__CLASS__, 'filter_runtime_rate_code'], 10, 2);
         add_filter('woocommerce_rate_compound', [__CLASS__, 'filter_runtime_rate_compound'], 10, 2);
         add_action('woocommerce_checkout_create_order', [__CLASS__, 'store_order_tax_quote'], 10, 2);
+        add_action('woocommerce_checkout_create_order_line_item', [__CLASS__, 'store_line_item_exemption'], 20, 4);
+        add_action('woocommerce_checkout_create_order', [__CLASS__, 'store_order_exemption_summary'], 20, 2);
+        add_action('woocommerce_store_api_checkout_update_order_meta', [__CLASS__, 'store_api_order_exemptions'], 20, 1);
         add_action('woocommerce_checkout_create_order_tax_item', [__CLASS__, 'decorate_runtime_order_tax_item'], 10, 3);
+    }
+
+    /**
+     * Make only products matched by a conditional exemption rule non-taxable.
+     *
+     * This hook is supported by classic checkout and Checkout Blocks. It runs
+     * before WooCommerce builds line taxes, while shipping remains independently
+     * taxable. The legacy full-order gate still operates in matched-tax-rates.
+     *
+     * @param bool  $taxable Current WooCommerce product taxability.
+     * @param mixed $product WC_Product instance.
+     */
+    public static function filter_product_is_taxable($taxable, $product): bool
+    {
+        if (!$taxable || !class_exists('Tax_Role_Gate') || !Tax_Role_Gate::is_active()) {
+            return (bool) $taxable;
+        }
+
+        // Product editing screens should always display the stored tax status;
+        // AJAX/REST cart calculations still pass through the rule engine.
+        $doing_ajax = function_exists('wp_doing_ajax')
+            ? wp_doing_ajax()
+            : (defined('DOING_AJAX') && DOING_AJAX);
+        if (is_admin() && !$doing_ajax) {
+            return (bool) $taxable;
+        }
+
+        return !Tax_Role_Gate::should_exempt_product($product);
+    }
+
+    /**
+     * Prime product taxonomy caches in one batch before per-line evaluation.
+     *
+     * This avoids category/tag database queries per cart item on stores with
+     * many conditional rules. Variations are represented by their parent ID.
+     */
+    public static function prime_cart_product_terms($cart): void
+    {
+        if (!class_exists('Tax_Role_Gate') || !Tax_Role_Gate::is_active()
+            || empty(Tax_Role_Gate::get_conditional_rules(true))
+            || !is_object($cart) || !method_exists($cart, 'get_cart')) {
+            return;
+        }
+
+        $product_ids = [];
+        foreach ($cart->get_cart() as $cart_item) {
+            $product = is_array($cart_item) ? ($cart_item['data'] ?? null) : null;
+            if (!is_object($product) || !method_exists($product, 'get_id')) {
+                continue;
+            }
+            $parent_id = method_exists($product, 'get_parent_id') ? (int) $product->get_parent_id() : 0;
+            $product_id = $parent_id > 0 ? $parent_id : (int) $product->get_id();
+            if ($product_id > 0) {
+                $product_ids[$product_id] = $product_id;
+            }
+        }
+
+        if (!empty($product_ids) && function_exists('update_object_term_cache')) {
+            update_object_term_cache(array_values($product_ids), 'product');
+        }
     }
 
     /**
@@ -165,6 +230,135 @@ class Tax_WooCommerce_Integration
             $order->update_meta_data('_ffla_tax_query_id', $quote['queryId'] ?? '');
             $order->update_meta_data('_ffla_tax_source', $quote['source'] ?? '');
         }
+    }
+
+    /**
+     * Persist the exact conditional-rule match on each exempt order line.
+     *
+     * The snapshot keeps historical tax reports stable after a rule is renamed,
+     * disabled, or deleted. Leading-underscore metadata stays out of normal
+     * customer-facing item meta displays.
+     */
+    public static function store_line_item_exemption($item, $cart_item_key, $values, $order): void
+    {
+        if (!class_exists('Tax_Role_Gate') || !Tax_Role_Gate::is_active()) {
+            return;
+        }
+
+        $product = is_array($values) ? ($values['data'] ?? null) : null;
+        $matches = Tax_Role_Gate::get_matching_rules_for_product($product);
+        if (empty($matches)) {
+            return;
+        }
+
+        $rule_ids = [];
+        $rule_names = [];
+        foreach ($matches as $match) {
+            $rule_ids[] = (string) ($match['id'] ?? '');
+            $rule_names[] = (string) ($match['name'] ?? '');
+        }
+        $rule_ids = array_values(array_filter(array_unique($rule_ids)));
+        $rule_names = array_values(array_filter(array_unique($rule_names)));
+
+        $item->add_meta_data('_ffla_tax_exempt', 'yes', true);
+        $item->add_meta_data('_ffla_tax_exemption_rule_ids', implode(', ', $rule_ids), true);
+        $item->add_meta_data('_ffla_tax_exemption_rule_names', implode(', ', $rule_names), true);
+        $item->add_meta_data('_ffla_tax_exemption_snapshot', wp_json_encode($matches), true);
+    }
+
+    /**
+     * Store an order-level summary while retaining product-line granularity.
+     */
+    public static function store_order_exemption_summary($order, array $data): void
+    {
+        if (!is_object($order) || !class_exists('Tax_Role_Gate')) {
+            return;
+        }
+
+        $order->delete_meta_data('_ffla_tax_full_order_exempt');
+        $order->delete_meta_data('_ffla_tax_full_order_exempt_context');
+        $order->delete_meta_data('_ffla_conditional_tax_exempt_items');
+        $order->delete_meta_data('_ffla_conditional_tax_exempt_sales');
+        $order->delete_meta_data('_ffla_conditional_tax_exemption_rules');
+
+        if (!Tax_Role_Gate::is_active()) {
+            return;
+        }
+
+        if (!Tax_Role_Gate::should_charge_for_current_customer()) {
+            $context = Tax_Role_Gate::get_current_customer_context();
+            $order->update_meta_data('_ffla_tax_full_order_exempt', 'yes');
+            $order->update_meta_data('_ffla_tax_full_order_exempt_context', wp_json_encode($context));
+        }
+
+        $count = 0;
+        $sales = 0.0;
+        $rule_names = [];
+        foreach ($order->get_items('line_item') as $item) {
+            if (strtolower((string) $item->get_meta('_ffla_tax_exempt', true)) !== 'yes') {
+                continue;
+            }
+            $count++;
+            $sales += (float) $item->get_total();
+            $names = array_map('trim', explode(',', (string) $item->get_meta('_ffla_tax_exemption_rule_names', true)));
+            foreach ($names as $name) {
+                if ($name !== '') {
+                    $rule_names[$name] = true;
+                }
+            }
+        }
+
+        if ($count <= 0) {
+            return;
+        }
+
+        $order->update_meta_data('_ffla_conditional_tax_exempt_items', $count);
+        $order->update_meta_data(
+            '_ffla_conditional_tax_exempt_sales',
+            function_exists('wc_format_decimal') ? wc_format_decimal($sales) : number_format($sales, 2, '.', '')
+        );
+        $order->update_meta_data('_ffla_conditional_tax_exemption_rules', implode(', ', array_keys($rule_names)));
+    }
+
+    /**
+     * Persist exemption evidence for Cart/Checkout Blocks (Store API).
+     *
+     * Store API checkout does not fire the classic create-order line/meta
+     * hooks, so update the already-created draft order items before payment.
+     */
+    public static function store_api_order_exemptions($order): void
+    {
+        if (!is_object($order) || !class_exists('Tax_Role_Gate')) {
+            return;
+        }
+
+        foreach ($order->get_items('line_item') as $item) {
+            $item->delete_meta_data('_ffla_tax_exempt');
+            $item->delete_meta_data('_ffla_tax_exemption_rule_ids');
+            $item->delete_meta_data('_ffla_tax_exemption_rule_names');
+            $item->delete_meta_data('_ffla_tax_exemption_snapshot');
+
+            $matches = Tax_Role_Gate::is_active()
+                ? Tax_Role_Gate::get_matching_rules_for_product($item->get_product())
+                : [];
+            if (!empty($matches)) {
+                $rule_ids = [];
+                $rule_names = [];
+                foreach ($matches as $match) {
+                    $rule_ids[] = (string) ($match['id'] ?? '');
+                    $rule_names[] = (string) ($match['name'] ?? '');
+                }
+                $item->update_meta_data('_ffla_tax_exempt', 'yes');
+                $item->update_meta_data('_ffla_tax_exemption_rule_ids', implode(', ', array_values(array_filter(array_unique($rule_ids)))));
+                $item->update_meta_data('_ffla_tax_exemption_rule_names', implode(', ', array_values(array_filter(array_unique($rule_names)))));
+                $item->update_meta_data('_ffla_tax_exemption_snapshot', wp_json_encode($matches));
+            }
+            $item->save();
+        }
+
+        self::store_order_tax_quote($order, []);
+        self::store_order_exemption_summary($order, []);
+        $order->save();
     }
 
     /**

@@ -26,7 +26,7 @@ class Tax_Rates_Module extends FFLA_Module
 
     public function get_name(): string
     {
-        return __('Tax Address Resolver', 'ffl-funnels-addons');
+        return __('Sales Tax Resolver', 'ffl-funnels-addons');
     }
 
     public function get_description(): string
@@ -59,13 +59,6 @@ class Tax_Rates_Module extends FFLA_Module
         require_once $base . 'includes/class-tax-dataset-pipeline.php';
         require_once $base . 'includes/class-tax-rest-api.php';
         require_once $base . 'includes/class-tax-woocommerce-integration.php';
-        require_once $base . 'includes/class-tax-report-service.php';
-        require_once $base . 'includes/class-tax-report-exporter.php';
-        require_once $base . 'includes/class-tax-report-reconciliation.php';
-        require_once $base . 'includes/class-tax-nexus-monitor.php';
-        require_once $base . 'includes/class-tax-report-combiner.php';
-        require_once $base . 'includes/class-tax-report-snapshot.php';
-        require_once $base . 'includes/class-tax-report-email.php';
         require_once $base . 'includes/class-tax-usgeocoder-usage.php';
         require_once $base . 'includes/class-tax-role-gate.php';
 
@@ -83,12 +76,6 @@ class Tax_Rates_Module extends FFLA_Module
 
         // WooCommerce runtime tax calculation.
         Tax_WooCommerce_Integration::init();
-
-        // Permanent fiscal snapshots used by accountant-ready tax reports.
-        Tax_Report_Snapshot::init();
-
-        // Configurable monthly delivery of the previous month's report.
-        Tax_Report_Email::init();
 
         // Cron.
         require_once $base . 'includes/class-tax-rates-cron.php';
@@ -114,8 +101,6 @@ class Tax_Rates_Module extends FFLA_Module
         // Admin UI.
         if (is_admin()) {
             require_once $base . 'admin/class-tax-rates-admin.php';
-            require_once $base . 'admin/class-tax-reports-admin.php';
-            Tax_Reports_Admin::init();
             $this->admin = new Tax_Rates_Admin();
             $this->admin->init();
         }
@@ -154,6 +139,8 @@ class Tax_Rates_Module extends FFLA_Module
                 'usgeocoder_auth_key' => '',
                 'tax_role_restrict' => '0',
                 'tax_exempt_roles'  => [],
+                'tax_exempt_user_ids' => [],
+                'tax_exemption_rules' => [],
             ]);
         }
 
@@ -167,10 +154,12 @@ class Tax_Rates_Module extends FFLA_Module
      */
     public static function on_settings_updated($old_value, $new_value): void
     {
-        if (!class_exists('Tax_Coverage')) {
-            return;
+        if (class_exists('Tax_Role_Gate')) {
+            Tax_Role_Gate::reset_runtime_cache();
         }
-        Tax_Coverage::reconcile_from_settings(is_array($new_value) ? $new_value : []);
+        if (class_exists('Tax_Coverage')) {
+            Tax_Coverage::reconcile_from_settings(is_array($new_value) ? $new_value : []);
+        }
     }
 
     /**
@@ -178,10 +167,12 @@ class Tax_Rates_Module extends FFLA_Module
      */
     public static function on_settings_added($option, $value): void
     {
-        if (!class_exists('Tax_Coverage')) {
-            return;
+        if (class_exists('Tax_Role_Gate')) {
+            Tax_Role_Gate::reset_runtime_cache();
         }
-        Tax_Coverage::reconcile_from_settings(is_array($value) ? $value : []);
+        if (class_exists('Tax_Coverage')) {
+            Tax_Coverage::reconcile_from_settings(is_array($value) ? $value : []);
+        }
     }
 
     public function deactivate(): void
@@ -190,11 +181,6 @@ class Tax_Rates_Module extends FFLA_Module
         wp_clear_scheduled_hook('ffla_tax_cache_cleanup');
         wp_clear_scheduled_hook('ffla_tax_audit_purge');
         wp_clear_scheduled_hook('ffla_tax_cache_flush');
-        wp_clear_scheduled_hook('ffla_tax_report_monthly_email');
-        wp_clear_scheduled_hook('ffla_tax_report_email_send');
-        if (class_exists('Tax_Report_Email')) {
-            Tax_Report_Email::clear_all_schedules();
-        }
     }
 
     /* ── Admin Pages ───────────────────────────────────────────────── */

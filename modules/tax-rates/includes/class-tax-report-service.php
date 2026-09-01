@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
 
 class Tax_Report_Service
 {
-    const SCHEMA_VERSION = '2.2.0';
+    const SCHEMA_VERSION = '2.3.0';
     const HISTORY_OPTION = 'ffla_tax_report_runs';
 
     /** @var int */
@@ -179,6 +179,7 @@ class Tax_Report_Service
                 'orders_without_snapshot'   => 0,
                 'orders_with_stored_quote'  => 0,
                 'orders_with_cogs'          => 0,
+                'orders_with_conditional_exemptions' => 0,
                 'orders_excluded_by_state'  => 0,
                 'orders_excluded_negative'  => 0,
                 'refunds_excluded_by_state' => 0,
@@ -288,6 +289,9 @@ class Tax_Report_Service
                 if ($this->rows_have_cogs($line_rows)) {
                     $report['stats']['orders_with_cogs']++;
                 }
+                if ((int) ($order_row['conditional_tax_exempt_items'] ?? 0) > 0) {
+                    $report['stats']['orders_with_conditional_exemptions']++;
+                }
 
                 if ($collect_order_rows) {
                     $report['orders'][] = $order_row;
@@ -393,7 +397,8 @@ class Tax_Report_Service
                 'item_id', 'item_type', 'product_id', 'variation_id', 'sku', 'name',
                 'quantity', 'tax_class', 'subtotal', 'discount', 'total_ex_tax',
                 'tax', 'total_inc_tax', 'refunded_amount', 'refunded_tax', 'vendor',
-                'vendor_sku', 'taxes_json', 'cogs_value',
+                'vendor_sku', 'tax_exempt', 'tax_exemption_rule_ids',
+                'tax_exemption_rules', 'tax_exemption_snapshot_json', 'taxes_json', 'cogs_value',
             ]));
         }
 
@@ -408,7 +413,8 @@ class Tax_Report_Service
             'totals'         => array_intersect_key($order_row, array_flip([
                 'gross_product_sales', 'discounts', 'net_product_sales', 'shipping',
                 'fees', 'tax_collected', 'tax_refunded', 'net_tax', 'refunds',
-                'order_total', 'net_collected',
+                'order_total', 'net_collected', 'customer_tax_exempt',
+                'conditional_tax_exempt_items', 'conditional_tax_exempt_sales', 'tax_exemption_rules',
             ])),
             'quote'          => $this->sanitize_quote_evidence($quote, false),
             'lines'          => $compact_lines,
@@ -439,6 +445,7 @@ class Tax_Report_Service
                 'shipping_city', 'shipping_state', 'shipping_postcode', 'shipping_country', 'shipping_address_formatted',
                 'gross_product_sales', 'discounts', 'net_product_sales', 'shipping', 'fees', 'tax_collected',
                 'tax_refunded', 'net_tax', 'refunds', 'order_total', 'net_collected', 'customer_tax_exempt',
+                'conditional_tax_exempt_items', 'conditional_tax_exempt_sales', 'tax_exemption_rules',
                 'tax_quote_query_id', 'tax_quote_source', 'tax_quote_outcome', 'tax_quote_rate_percent',
                 'tax_quote_effective_date', 'tax_quote_evidence_json', 'snapshot_hash', 'customer_note',
             ],
@@ -447,7 +454,8 @@ class Tax_Report_Service
                 'item_type', 'product_id', 'variation_id', 'sku', 'name', 'categories', 'quantity', 'tax_class',
                 'subtotal', 'subtotal_tax', 'discount', 'total_ex_tax', 'tax', 'total_inc_tax', 'refunded_quantity',
                 'refunded_amount', 'refunded_tax', 'vendor', 'vendor_sku', 'vendor_price', 'shipping_class',
-                'shipping_method_id', 'coupon_code', 'taxes_json', 'cogs_value', 'cogs_source',
+                'shipping_method_id', 'coupon_code', 'tax_exempt', 'tax_exemption_rule_ids',
+                'tax_exemption_rules', 'tax_exemption_snapshot_json', 'taxes_json', 'cogs_value', 'cogs_source',
             ],
             'tax_lines' => [
                 'order_id', 'order_number', 'date_created_local', 'status', 'currency', 'tax_state', 'tax_item_id',
@@ -476,6 +484,7 @@ class Tax_Report_Service
                 'order_number', 'date_created_local', 'status', 'currency', 'tax_address_source', 'tax_state',
                 'tax_city', 'tax_postcode', 'shipping_address_formatted', 'net_product_sales', 'shipping', 'fees',
                 'tax_collected', 'tax_refunded', 'net_tax', 'order_total', 'customer_tax_exempt',
+                'conditional_tax_exempt_items', 'conditional_tax_exempt_sales', 'tax_exemption_rules',
             ],
             'product-summary' => [
                 'product_id', 'variation_id', 'sku', 'product_name', 'categories', 'currency', 'orders', 'quantity',
@@ -565,9 +574,25 @@ class Tax_Report_Service
         $refunds = $refunds === null ? $order->get_refunds() : $refunds;
         $gross = 0;
         $net_products = 0;
-        foreach ($order->get_items('line_item') as $item) {
+        $conditional_exempt_items = 0;
+        $conditional_exempt_sales = 0;
+        $conditional_rule_names = [];
+        foreach ($order->get_items('line_item') as $item_id => $item) {
             $gross += $this->minor($item->get_subtotal());
             $net_products += $this->minor($item->get_total());
+            if (strtolower((string) $item->get_meta('_ffla_tax_exempt', true)) === 'yes') {
+                $conditional_exempt_items++;
+                $refunded_line = method_exists($order, 'get_total_refunded_for_item')
+                    ? $this->minor(abs((float) $order->get_total_refunded_for_item($item_id)))
+                    : 0;
+                $conditional_exempt_sales += max(0, $this->minor($item->get_total()) - $refunded_line);
+                $names = array_map('trim', explode(',', (string) $item->get_meta('_ffla_tax_exemption_rule_names', true)));
+                foreach ($names as $name) {
+                    if ($name !== '') {
+                        $conditional_rule_names[$name] = true;
+                    }
+                }
+            }
         }
 
         $fees = 0;
@@ -657,6 +682,9 @@ class Tax_Report_Service
             'order_total'             => $this->decimal($order_total),
             'net_collected'           => $this->decimal($order_total - $refunded_amount),
             'customer_tax_exempt'     => $this->is_order_tax_exempt($order) ? 'yes' : 'no',
+            'conditional_tax_exempt_items' => $conditional_exempt_items,
+            'conditional_tax_exempt_sales' => $this->decimal($conditional_exempt_sales),
+            'tax_exemption_rules'      => implode(', ', array_keys($conditional_rule_names)),
             'tax_quote_query_id'      => (string) ($quote['queryId'] ?? $order->get_meta('_ffla_tax_query_id', true)),
             'tax_quote_source'        => (string) ($quote['source'] ?? $order->get_meta('_ffla_tax_source', true)),
             'tax_quote_outcome'       => is_scalar($quote['outcomeCode'] ?? '') ? (string) ($quote['outcomeCode'] ?? '') : wp_json_encode($quote['outcomeCode']),
@@ -723,6 +751,10 @@ class Tax_Report_Service
                 'shipping_class'     => (string) $item->get_meta('_ShippingClass', true),
                 'shipping_method_id' => '',
                 'coupon_code'        => '',
+                'tax_exempt'         => strtolower((string) $item->get_meta('_ffla_tax_exempt', true)) === 'yes' ? 'yes' : 'no',
+                'tax_exemption_rule_ids' => (string) $item->get_meta('_ffla_tax_exemption_rule_ids', true),
+                'tax_exemption_rules' => (string) $item->get_meta('_ffla_tax_exemption_rule_names', true),
+                'tax_exemption_snapshot_json' => (string) $item->get_meta('_ffla_tax_exemption_snapshot', true),
                 'taxes_json'         => wp_json_encode($item->get_taxes()),
                 'cogs_value'         => $cogs,
                 'cogs_source'        => $cogs !== '' ? 'woocommerce' : '',
@@ -1043,7 +1075,7 @@ class Tax_Report_Service
                     if ($item_type === 'shipping') {
                         $sales['taxable_shipping'] += $amount;
                     }
-                } elseif ($known_non_taxable) {
+                } elseif ($known_non_taxable || ($original && strtolower((string) $original->get_meta('_ffla_tax_exempt', true)) === 'yes')) {
                     $sales['non_taxable_sales'] += $amount;
                 } else {
                     $sales['needs_review_sales'] += $amount;
@@ -1075,7 +1107,7 @@ class Tax_Report_Service
                     if (($line['item_type'] ?? '') === 'shipping') {
                         $original['taxable_shipping'] += $line_amount;
                     }
-                } elseif ($known_non_taxable) {
+                } elseif ($known_non_taxable || strtolower((string) ($line['tax_exempt'] ?? '')) === 'yes') {
                     $original['non_taxable_sales'] += $line_amount;
                 } else {
                     $original['needs_review_sales'] += $line_amount;
@@ -1279,7 +1311,7 @@ class Tax_Report_Service
 
     private function is_order_tax_exempt($order): bool
     {
-        $keys = ['_vat_exempt', 'is_vat_exempt', '_billing_tax_exempt', '_woocommerce_customer_tax_exempt'];
+        $keys = ['_vat_exempt', 'is_vat_exempt', '_billing_tax_exempt', '_woocommerce_customer_tax_exempt', '_ffla_tax_full_order_exempt'];
         foreach ($keys as $key) {
             $value = strtolower((string) $order->get_meta($key, true));
             if (in_array($value, ['1', 'yes', 'true', 'on'], true)) {
@@ -1376,6 +1408,14 @@ class Tax_Report_Service
                 $add('info', 'no_sales_tax_quote', 'No tax was collected and the stored resolver quote identifies a no-sales-tax result.', $this->decimal($sales_before_tax));
             } elseif ($order_row['customer_tax_exempt'] === 'yes') {
                 $add('info', 'tax_exempt_order', 'No tax was collected and the order contains a tax-exempt indicator.', $this->decimal($sales_before_tax));
+            } elseif ($this->minor($order_row['conditional_tax_exempt_sales'] ?? 0) >= $sales_before_tax) {
+                $add(
+                    'info',
+                    'conditional_product_exemption',
+                    'No product tax was collected because every positive-value filing line is covered by stored conditional exemption evidence.',
+                    $this->decimal($sales_before_tax),
+                    (string) ($order_row['tax_exemption_rules'] ?? '')
+                );
             } else {
                 $add('warning', 'no_tax_collected', 'No tax was collected on a positive-value US order. Review nexus, product taxability, and exemption evidence.', $this->decimal($sales_before_tax));
             }
@@ -1439,7 +1479,7 @@ class Tax_Report_Service
                 if ($line['item_type'] === 'shipping') {
                     $totals[$key]['taxable_shipping'] += $net_sales;
                 }
-            } elseif ($known_non_taxable) {
+            } elseif ($known_non_taxable || strtolower((string) ($line['tax_exempt'] ?? '')) === 'yes') {
                 $totals[$key]['sales_without_tax'] += $net_sales;
                 $totals[$key]['non_taxable_sales'] += $net_sales;
             } else {

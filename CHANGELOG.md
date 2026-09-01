@@ -2,6 +2,24 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.44.0] - 2026-09-01
+
+### Changed
+- **Sales Tax Reports is now an independent module.** The module dashboard displays separate **Sales Tax Resolver** and **Sales Tax Reports** cards. Reports, exports, reconciliation, nexus monitoring, fiscal snapshots, and monthly email delivery can remain active when the resolver is disabled.
+- **Existing installations retain report access.** Sites that already had Sales Tax Resolver active automatically receive the new Sales Tax Reports module once during migration. Report settings, history, schedules, order metadata, and URLs are preserved.
+- **Independent lifecycle.** Disabling the resolver no longer clears report email schedules, and disabling reports does not affect rate resolution, datasets, exemptions, or resolver maintenance jobs.
+
+## [1.43.2] - 2026-08-28
+
+### Added
+- **Conditional tax exemptions by customer and catalog scope.** Administrators can create active rules for selected users and/or roles, limited to selected product categories and/or tags. Selecting a parent product category automatically covers all current and future descendants.
+- **Line-level exemption evidence.** Exempt order items store the matching rule IDs, names, and an audit snapshot. Tax reports expose conditional-exempt item counts, sales totals, rules, and line-level evidence.
+
+### Changed
+- **Mixed carts remain correctly taxed.** Only matching products become non-taxable; unrelated products keep their normal tax treatment. Shipping remains taxable for conditional rules.
+- **Legacy full-order exemptions remain compatible.** Existing global user/role exemptions continue to exempt the complete order, including shipping, exactly as before.
+- **Rule editor UI.** Adds searchable customer, role, category, and tag selectors, recursive-category guidance, completeness validation, and responsive full-width controls.
+
 ## [1.43.0] - 2026-08-12
 
 ### Added

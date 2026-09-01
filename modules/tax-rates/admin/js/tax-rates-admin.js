@@ -354,6 +354,149 @@
             }
         });
 
+        /* Conditional product tax exemption rules. */
+        var exemptionRuleIndex = 0;
+
+        $('#ffla-tax-exemption-rules .ffla-tax-exemption-rule').each(function () {
+            var name = $(this).find('[name^="tax_exemption_rules["]').first().attr('name') || '';
+            var match = name.match(/tax_exemption_rules\[(\d+)\]/);
+            if (match) {
+                exemptionRuleIndex = Math.max(exemptionRuleIndex, parseInt(match[1], 10) + 1);
+            }
+        });
+
+        function initTaxTermSearch($scope) {
+            var method = $.fn.selectWoo ? 'selectWoo' : ($.fn.select2 ? 'select2' : '');
+            if (!method) {
+                return;
+            }
+
+            $scope.find('.ffla-tax-term-search').each(function () {
+                var $select = $(this);
+                if ($select.hasClass('select2-hidden-accessible')) {
+                    return;
+                }
+
+                $select[method]({
+                    width: '100%',
+                    multiple: true,
+                    allowClear: true,
+                    placeholder: $select.data('placeholder') || '',
+                    minimumInputLength: 0,
+                    ajax: {
+                        url: FflaTaxResolver.ajaxUrl,
+                        dataType: 'json',
+                        delay: 250,
+                        cache: true,
+                        data: function (params) {
+                            return {
+                                action: 'ffla_tax_search_terms',
+                                security: FflaTaxResolver.nonce,
+                                taxonomy: $select.data('taxonomy'),
+                                term: params.term || '',
+                                page: params.page || 1
+                            };
+                        },
+                        processResults: function (response) {
+                            if (!response || !Array.isArray(response.results)) {
+                                return { results: [] };
+                            }
+                            return response;
+                        }
+                    }
+                });
+            });
+        }
+
+        function refreshExemptionRuleState($rule) {
+            var customerCount = $rule.find('.ffla-tax-rule-customers option:selected').length;
+            var roleCount = $rule.find('.ffla-tax-rule-roles option:selected').length;
+            var categoryCount = $rule.find('[data-taxonomy="product_cat"] option:selected').length;
+            var tagCount = $rule.find('[data-taxonomy="product_tag"] option:selected').length;
+            var complete = (customerCount + roleCount > 0) && (categoryCount + tagCount > 0);
+
+            $rule.toggleClass('ffla-tax-exemption-rule--incomplete', !complete);
+            $rule.find('.ffla-tax-exemption-rule__status').text(
+                complete ? t('ruleReady', 'Ready') : t('ruleNeedsSelections', 'Needs selections')
+            );
+        }
+
+        function initExemptionRule($rule) {
+            $(document.body).trigger('wc-enhanced_select_init');
+            initTaxTermSearch($rule);
+            refreshExemptionRuleState($rule);
+        }
+
+        initTaxTermSearch($(document));
+
+        $('#ffla-add-tax-exemption-rule').on('click', function () {
+            var template = $('#tmpl-ffla-tax-exemption-rule').html() || '';
+            if (!template) {
+                return;
+            }
+
+            var html = template.replace(/__INDEX__/g, String(exemptionRuleIndex++));
+            var $rule = $(html);
+            $('#ffla-tax-exemption-rules')
+                .find('.ffla-tax-exemption-rules__empty')
+                .remove();
+            $('#ffla-tax-exemption-rules').append($rule);
+            initExemptionRule($rule);
+            $rule.find('.ffla-tax-exemption-rule__name').trigger('focus').select();
+        });
+
+        $(document).on('click', '.ffla-remove-tax-exemption-rule', function () {
+            if (!window.confirm(t('confirmRemoveRule', 'Remove this conditional tax exemption rule?'))) {
+                return;
+            }
+            $(this).closest('.ffla-tax-exemption-rule').remove();
+            if (!$('#ffla-tax-exemption-rules .ffla-tax-exemption-rule').length) {
+                $('#ffla-tax-exemption-rules').html(
+                    '<div class="ffla-tax-exemption-rules__empty"><strong>' +
+                    escHtml(t('noConditionalRules', 'No conditional rules yet.')) +
+                    '</strong></div>'
+                );
+            }
+        });
+
+        $(document).on('change', '.ffla-tax-exemption-rule select, .ffla-tax-exemption-rule input[type="checkbox"]', function () {
+            refreshExemptionRuleState($(this).closest('.ffla-tax-exemption-rule'));
+        });
+
+        $('form[action*="admin-post.php"]').on('submit', function (event) {
+            var $master = $(this).find('input[name="tax_role_restrict"]');
+            if (!$master.is(':checked')) {
+                return;
+            }
+
+            var message = '';
+            var $invalidRule = $();
+            $(this).find('.ffla-tax-exemption-rule').each(function () {
+                var $rule = $(this);
+                if (!$rule.find('.ffla-tax-exemption-rule__enabled input').is(':checked')) {
+                    return;
+                }
+                var hasAudience = $rule.find('.ffla-tax-rule-customers option:selected, .ffla-tax-rule-roles option:selected').length > 0;
+                var hasScope = $rule.find('.ffla-tax-term-search option:selected').length > 0;
+                if (!hasAudience) {
+                    message = t('ruleNeedsAudience', 'Select at least one customer or role for every enabled rule.');
+                    $invalidRule = $rule;
+                    return false;
+                }
+                if (!hasScope) {
+                    message = t('ruleNeedsScope', 'Select at least one category or tag for every enabled rule.');
+                    $invalidRule = $rule;
+                    return false;
+                }
+            });
+
+            if (message) {
+                event.preventDefault();
+                window.alert(message);
+                $('html, body').animate({ scrollTop: Math.max(0, $invalidRule.offset().top - 80) }, 200);
+            }
+        });
+
         function escHtml(str) {
             if (!str) {
                 return '';

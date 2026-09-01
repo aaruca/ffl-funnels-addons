@@ -3,7 +3,7 @@
  * Plugin Name:       FFL Funnels Addons
  * Plugin URI:        https://github.com/aaruca/ffl-funnels-addons
  * Description:       Modular WooCommerce toolkit for sales, checkout, tax, reviews, inventory sync, analytics, and white-label admin tools.
- * Version:           1.43.1
+ * Version:           1.44.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants.
-define('FFLA_VERSION', '1.43.1');
+define('FFLA_VERSION', '1.44.0');
 define('FFLA_FILE', __FILE__);
 define('FFLA_PATH', plugin_dir_path(__FILE__));
 define('FFLA_URL', plugin_dir_url(__FILE__));
@@ -56,6 +56,7 @@ if (!class_exists('FFL_Funnels_Addons')):
         private function __construct()
         {
             $this->includes();
+            $this->maybe_migrate_tax_reports_module();
             $this->register_modules();
             $this->define_compat_constants();
             $this->init_hooks();
@@ -83,6 +84,7 @@ if (!class_exists('FFL_Funnels_Addons')):
             require_once FFLA_PATH . 'modules/ffl-checkout/class-ffl-checkout-module.php';
             require_once FFLA_PATH . 'modules/woo-sheets-sync/class-woo-sheets-module.php';
             require_once FFLA_PATH . 'modules/tax-rates/class-tax-rates-module.php';
+            require_once FFLA_PATH . 'modules/tax-reports/class-tax-reports-module.php';
             require_once FFLA_PATH . 'modules/product-reviews/class-product-reviews-module.php';
             require_once FFLA_PATH . 'modules/loadout/class-loadout-module.php';
             require_once FFLA_PATH . 'modules/media-cleaner/class-media-cleaner-module.php';
@@ -102,12 +104,37 @@ if (!class_exists('FFL_Funnels_Addons')):
             $this->registry->register(new FFL_Checkout_Module());
             $this->registry->register(new WooSheets_Module());
             $this->registry->register(new Tax_Rates_Module());
+            $this->registry->register(new Tax_Reports_Module());
             $this->registry->register(new Product_Reviews_Module());
             $this->registry->register(new Loadout_Module());
             $this->registry->register(new Media_Cleaner_Module());
             $this->registry->register(new Customer_Notes_Module());
             $this->registry->register(new Ga4_Bridge_Module());
             $this->registry->register(new White_Label_Module());
+        }
+
+        /**
+         * Preserve the report access existing Tax Resolver customers had before
+         * reports became an independently toggleable module.
+         */
+        private function maybe_migrate_tax_reports_module(): void
+        {
+            if ((string) get_option('ffla_tax_reports_module_migrated', '') === '1') {
+                return;
+            }
+
+            $active_ids = get_option('ffla_active_modules', false);
+            if (!is_array($active_ids)) {
+                // Let the normal first-activation routine create this option.
+                return;
+            }
+
+            if (in_array('tax-rates', $active_ids, true) && !in_array('tax-reports', $active_ids, true)) {
+                $active_ids[] = 'tax-reports';
+                update_option('ffla_active_modules', array_values(array_unique($active_ids)));
+            }
+
+            update_option('ffla_tax_reports_module_migrated', '1', false);
         }
 
         /**

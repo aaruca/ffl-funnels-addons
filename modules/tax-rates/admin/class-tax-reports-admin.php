@@ -945,6 +945,10 @@ class Tax_Reports_Admin
             'calculated_tax' => __('Tax calculated / owed', 'ffl-funnels-addons'),
             'over_under' => __('Over / under collected', 'ffl-funnels-addons'),
             'jurisdictions' => __('Jurisdictions with activity', 'ffl-funnels-addons'),
+            'conditional_tax_exempt_items' => __('Exempt product lines', 'ffl-funnels-addons'),
+            'conditional_tax_exempt_sales' => __('Conditionally exempt sales', 'ffl-funnels-addons'),
+            'tax_exemption_rules' => __('Exemption rules', 'ffl-funnels-addons'),
+            'tax_exempt' => __('Conditional tax exempt', 'ffl-funnels-addons'),
         ];
         echo '<table class="widefat striped ffla-tax-report-table">';
         if ($caption !== '') {

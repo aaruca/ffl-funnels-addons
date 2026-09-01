@@ -21,6 +21,7 @@ class Tax_Rates_Admin
         add_action('wp_ajax_ffla_tax_purge_legacy_data', [$this, 'ajax_purge_legacy_data']);
         add_action('wp_ajax_ffla_tax_test_usgeocoder', [$this, 'ajax_test_usgeocoder']);
         add_action('wp_ajax_ffla_tax_clear_cache', [$this, 'ajax_clear_cache']);
+        add_action('wp_ajax_ffla_tax_search_terms', [$this, 'ajax_search_terms']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
     }
 
@@ -105,6 +106,16 @@ class Tax_Rates_Admin
                 'testKeyOk'            => __('Key works. Sample lookup succeeded.', 'ffl-funnels-addons'),
                 'testKeyFailed'        => __('Key test failed.', 'ffl-funnels-addons'),
                 'testKeyRequestFailed' => __('Test request failed. Check your network and try again.', 'ffl-funnels-addons'),
+                'addExemptionRule'     => __('Add exemption rule', 'ffl-funnels-addons'),
+                'removeExemptionRule'  => __('Remove rule', 'ffl-funnels-addons'),
+                'confirmRemoveRule'    => __('Remove this conditional tax exemption rule?', 'ffl-funnels-addons'),
+                'searchCategories'     => __('Search product categories…', 'ffl-funnels-addons'),
+                'searchTags'           => __('Search product tags…', 'ffl-funnels-addons'),
+                'ruleNeedsAudience'    => __('Select at least one customer or role for every enabled rule.', 'ffl-funnels-addons'),
+                'ruleNeedsScope'       => __('Select at least one category or tag for every enabled rule.', 'ffl-funnels-addons'),
+                'ruleReady'            => __('Ready', 'ffl-funnels-addons'),
+                'ruleNeedsSelections'  => __('Needs selections', 'ffl-funnels-addons'),
+                'noConditionalRules'   => __('No conditional rules yet.', 'ffl-funnels-addons'),
             ],
         ]);
 
@@ -192,6 +203,24 @@ class Tax_Rates_Admin
         $tax_exempt_user_ids = array_values($tax_exempt_user_ids);
         sort($tax_exempt_user_ids, SORT_NUMERIC);
 
+        $tax_exemption_rules = [];
+        if (class_exists('Tax_Role_Gate')) {
+            $posted_rules = !empty($_POST['tax_exemption_rules']) && is_array($_POST['tax_exemption_rules'])
+                ? wp_unslash($_POST['tax_exemption_rules'])
+                : [];
+            $tax_exemption_rules = Tax_Role_Gate::sanitize_conditional_rules($posted_rules);
+
+            // Discard role slugs that no longer exist. Guest remains a valid
+            // pseudo-role and taxonomy IDs are harmless if a term is deleted.
+            $role_choices = Tax_Role_Gate::get_role_choices();
+            foreach ($tax_exemption_rules as &$rule) {
+                $rule['roles'] = array_values(array_filter($rule['roles'], function ($role) use ($role_choices) {
+                    return isset($role_choices[$role]);
+                }));
+            }
+            unset($rule);
+        }
+
         $rate_source = sanitize_key(wp_unslash($_POST['rate_source'] ?? 'auto'));
         if (!in_array($rate_source, ['auto', 'sheet_zip_dataset', 'usgeocoder_api'], true)) {
             $rate_source = 'auto';
@@ -216,6 +245,7 @@ class Tax_Rates_Admin
             'tax_role_restrict'   => isset($_POST['tax_role_restrict']) ? '1' : '0',
             'tax_exempt_roles'    => $tax_exempt_roles,
             'tax_exempt_user_ids' => $tax_exempt_user_ids,
+            'tax_exemption_rules' => $tax_exemption_rules,
         ];
 
         $removed_states = array_values(array_diff($previous_enabled_states, $enabled_states));
@@ -281,6 +311,61 @@ class Tax_Rates_Admin
             admin_url('admin.php')
         ));
         exit;
+    }
+
+    /**
+     * Search product categories or tags for conditional exemption rules.
+     *
+     * SelectWoo receives a small paginated result instead of preloading every
+     * term from large catalogs into the settings page.
+     */
+    public function ajax_search_terms(): void
+    {
+        check_ajax_referer('ffla_tax_resolver_nonce', 'security');
+
+        if (!current_user_can('manage_woocommerce')) {
+            wp_send_json_error(['message' => __('Permission denied.', 'ffl-funnels-addons')], 403);
+        }
+
+        $taxonomy = sanitize_key(wp_unslash($_GET['taxonomy'] ?? $_POST['taxonomy'] ?? ''));
+        if (!in_array($taxonomy, ['product_cat', 'product_tag'], true)) {
+            wp_send_json_error(['message' => __('Invalid product taxonomy.', 'ffl-funnels-addons')], 400);
+        }
+
+        $search = sanitize_text_field(wp_unslash($_GET['term'] ?? $_POST['term'] ?? ''));
+        $page = max(1, (int) ($_GET['page'] ?? $_POST['page'] ?? 1));
+        $per_page = 30;
+        $args = [
+            'taxonomy'   => $taxonomy,
+            'hide_empty' => false,
+            'orderby'    => 'name',
+            'order'      => 'ASC',
+            'number'     => $per_page,
+            'offset'     => ($page - 1) * $per_page,
+        ];
+        if ($search !== '') {
+            $args['search'] = $search;
+        }
+
+        $terms = get_terms($args);
+        if (is_wp_error($terms)) {
+            wp_send_json_error(['message' => $terms->get_error_message()], 500);
+        }
+
+        $results = [];
+        foreach ($terms as $term) {
+            $results[] = [
+                'id'   => (int) $term->term_id,
+                'text' => self::get_term_choice_label($term, $taxonomy),
+            ];
+        }
+
+        wp_send_json([
+            'results' => $results,
+            'pagination' => [
+                'more' => count($terms) === $per_page,
+            ],
+        ]);
     }
 
     public function ajax_quote_lookup(): void
@@ -644,12 +729,7 @@ class Tax_Rates_Admin
     }
 
     /**
-     * Render customer and role tax exemptions. Individual customers use
-     * WooCommerce's remote AJAX search instead of preloading all site users.
-     *
-     * Semantics: checked roles are EXEMPT from tax. Everyone else is taxed
-     * exactly like before. When the feature is off, the whole gate is
-     * ignored — every customer pays tax just like on a fresh install.
+     * Render full-order and product-scoped exemption rules.
      */
     private function render_role_gate_card(array $settings): void
     {
@@ -665,10 +745,27 @@ class Tax_Rates_Admin
         })));
         $checked_set   = array_flip(array_map('sanitize_key', array_map('strval', $exempt_roles)));
         $role_choices  = Tax_Role_Gate::get_role_choices();
+        $rules = Tax_Role_Gate::sanitize_conditional_rules($settings['tax_exemption_rules'] ?? []);
+
+        $all_user_ids = $exempt_users;
+        foreach ($rules as $rule) {
+            $all_user_ids = array_merge($all_user_ids, $rule['user_ids']);
+        }
+        $all_user_ids = array_values(array_unique(array_filter(array_map('intval', $all_user_ids))));
+        $user_labels = [];
+        if (!empty($all_user_ids)) {
+            $selected_users = get_users([
+                'include' => $all_user_ids,
+                'orderby' => 'include',
+            ]);
+            foreach ($selected_users as $user) {
+                $user_labels[(int) $user->ID] = self::get_user_choice_label($user);
+            }
+        }
 
         echo '<div class="wb-card" style="margin-top:var(--wb-spacing-xl)">';
         echo '<div class="wb-card__header" style="display:flex;align-items:center;justify-content:space-between;gap:var(--wb-spacing-md);">';
-        echo '<h3>' . esc_html__('Tax exemptions by customer or role', 'ffl-funnels-addons') . '</h3>';
+        echo '<h3>' . esc_html__('Tax exemption rules', 'ffl-funnels-addons') . '</h3>';
         $badge_label = $is_active
             ? __('Exemptions ON', 'ffl-funnels-addons')
             : __('Exemptions OFF', 'ffl-funnels-addons');
@@ -678,39 +775,30 @@ class Tax_Rates_Admin
         echo '<div class="wb-card__body">';
 
         FFLA_Admin::render_toggle_field(
-            __('Enable customer and role tax exemptions', 'ffl-funnels-addons'),
+            __('Enable tax exemptions', 'ffl-funnels-addons'),
             'tax_role_restrict',
             $is_active ? '1' : '0',
-            __('Turn this on to skip tax charges for the individual customers or roles selected below. When off, every customer is taxed exactly like before — this is the safe default.', 'ffl-funnels-addons')
+            __('Master switch for full-order and conditional product exemptions. When off, every customer and product is taxed normally.', 'ffl-funnels-addons')
         );
+
+        echo '<section class="ffla-tax-exemption-section">';
+        echo '<div class="ffla-tax-exemption-section__heading">';
+        echo '<div><h4>' . esc_html__('Full-order exemptions', 'ffl-funnels-addons') . '</h4>';
+        echo '<p class="wb-field__desc">' . esc_html__('Existing behavior: selected customers or roles are exempt from every product and shipping tax in the order.', 'ffl-funnels-addons') . '</p></div>';
+        echo '<span class="ffla-tax-exemption-scope-badge">' . esc_html__('All products + shipping', 'ffl-funnels-addons') . '</span>';
+        echo '</div>';
 
         echo '<div class="wb-field" style="margin-top:var(--wb-spacing-lg);">';
         echo '<label for="ffla-tax-exempt-users"><strong>'
-            . esc_html__('Individual customers who are tax exempt', 'ffl-funnels-addons')
+            . esc_html__('Customers exempt from the full order', 'ffl-funnels-addons')
             . '</strong></label>';
         echo '<select id="ffla-tax-exempt-users" class="wc-customer-search" name="tax_exempt_user_ids[]" multiple="multiple" style="width:100%;" data-placeholder="'
             . esc_attr__('Search by customer name, email, or ID…', 'ffl-funnels-addons')
             . '" data-action="woocommerce_json_search_customers">';
 
-        if (!empty($exempt_users)) {
-            $selected_users = get_users([
-                'include' => $exempt_users,
-                'orderby' => 'include',
-            ]);
-
-            foreach ($selected_users as $user) {
-                $display_name = trim((string) $user->display_name);
-                if ($display_name === '') {
-                    $display_name = (string) $user->user_login;
-                }
-                $label = sprintf(
-                    /* translators: 1: customer name, 2: WordPress user ID, 3: customer email. */
-                    __('%1$s (#%2$d — %3$s)', 'ffl-funnels-addons'),
-                    $display_name,
-                    (int) $user->ID,
-                    (string) $user->user_email
-                );
-                echo '<option value="' . esc_attr((string) $user->ID) . '" selected>' . esc_html($label) . '</option>';
+        foreach ($exempt_users as $user_id) {
+            if (isset($user_labels[$user_id])) {
+                echo '<option value="' . esc_attr((string) $user_id) . '" selected>' . esc_html($user_labels[$user_id]) . '</option>';
             }
         }
 
@@ -737,11 +825,162 @@ class Tax_Rates_Admin
 
         if ($is_active && empty($exempt_roles) && empty($exempt_users)) {
             echo '<p class="wb-field__desc" style="margin-top:var(--wb-spacing-sm);">'
-                . esc_html__('No customers or roles are exempt yet — every customer is taxed normally. Select at least one customer or role to create an exemption.', 'ffl-funnels-addons')
+                . esc_html__('No full-order exemptions are configured. Conditional rules below can still exempt selected products.', 'ffl-funnels-addons')
                 . '</p>';
         }
+        echo '</section>';
+
+        echo '<section class="ffla-tax-exemption-section ffla-tax-exemption-section--conditional">';
+        echo '<div class="ffla-tax-exemption-section__heading">';
+        echo '<div><h4>' . esc_html__('Conditional product exemptions', 'ffl-funnels-addons') . '</h4>';
+        echo '<p class="wb-field__desc">' . esc_html__('A product is exempt only when both its customer/role condition and its category/tag condition match. Shipping and unrelated products remain taxable.', 'ffl-funnels-addons') . '</p></div>';
+        echo '<span class="ffla-tax-exemption-scope-badge ffla-tax-exemption-scope-badge--conditional">' . esc_html__('Per product line', 'ffl-funnels-addons') . '</span>';
+        echo '</div>';
+
+        echo '<div class="ffla-tax-exemption-rules" id="ffla-tax-exemption-rules">';
+        if (empty($rules)) {
+            echo '<div class="ffla-tax-exemption-rules__empty">';
+            echo '<strong>' . esc_html__('No conditional rules yet.', 'ffl-funnels-addons') . '</strong>';
+            echo '<span>' . esc_html__('Add a rule to exempt selected categories or tags for specific customers or roles.', 'ffl-funnels-addons') . '</span>';
+            echo '</div>';
+        } else {
+            foreach ($rules as $index => $rule) {
+                $this->render_conditional_exemption_rule($rule, (string) $index, $role_choices, $user_labels);
+            }
+        }
+        echo '</div>';
+
+        echo '<button type="button" class="wb-btn wb-btn--secondary" id="ffla-add-tax-exemption-rule">'
+            . esc_html__('Add exemption rule', 'ffl-funnels-addons') . '</button>';
+        echo '<p class="wb-field__desc ffla-tax-exemption-footnote">'
+            . esc_html__('Selecting a parent category always includes all current and future child categories. Product variations use their parent product categories and tags. Tags match exactly because they are not hierarchical.', 'ffl-funnels-addons')
+            . '</p>';
+
+        echo '<script type="text/html" id="tmpl-ffla-tax-exemption-rule">';
+        $this->render_conditional_exemption_rule([
+            'id' => '',
+            'name' => __('New exemption rule', 'ffl-funnels-addons'),
+            'enabled' => '1',
+            'user_ids' => [],
+            'roles' => [],
+            'category_ids' => [],
+            'tag_ids' => [],
+        ], '__INDEX__', $role_choices, []);
+        echo '</script>';
+        echo '</section>';
 
         echo '</div></div>';
+    }
+
+    /**
+     * Render one conditional exemption rule editor.
+     *
+     * @param string $index Numeric row index or the JS template placeholder.
+     */
+    private function render_conditional_exemption_rule(array $rule, string $index, array $role_choices, array $user_labels): void
+    {
+        $prefix = 'tax_exemption_rules[' . $index . ']';
+        $complete = Tax_Role_Gate::is_rule_complete($rule);
+        $enabled = (string) ($rule['enabled'] ?? '0') === '1';
+
+        echo '<article class="ffla-tax-exemption-rule' . (!$complete ? ' ffla-tax-exemption-rule--incomplete' : '') . '">';
+        echo '<input type="hidden" name="' . esc_attr($prefix . '[id]') . '" value="' . esc_attr((string) ($rule['id'] ?? '')) . '">';
+        echo '<header class="ffla-tax-exemption-rule__header">';
+        echo '<label class="ffla-tax-exemption-rule__enabled">';
+        echo '<input type="checkbox" name="' . esc_attr($prefix . '[enabled]') . '" value="1"' . checked($enabled, true, false) . '>';
+        echo '<span>' . esc_html__('Active', 'ffl-funnels-addons') . '</span></label>';
+        echo '<input type="text" class="ffla-tax-exemption-rule__name" name="' . esc_attr($prefix . '[name]') . '" value="' . esc_attr((string) ($rule['name'] ?? '')) . '" maxlength="120" aria-label="' . esc_attr__('Rule name', 'ffl-funnels-addons') . '">';
+        echo '<span class="ffla-tax-exemption-rule__status">' . esc_html($complete ? __('Ready', 'ffl-funnels-addons') : __('Needs selections', 'ffl-funnels-addons')) . '</span>';
+        echo '<button type="button" class="button-link-delete ffla-remove-tax-exemption-rule">' . esc_html__('Remove', 'ffl-funnels-addons') . '</button>';
+        echo '</header>';
+
+        echo '<div class="ffla-tax-exemption-rule__logic">';
+        echo '<span>' . esc_html__('IF customer is', 'ffl-funnels-addons') . '</span>';
+        echo '<strong>' . esc_html__('a selected customer OR role', 'ffl-funnels-addons') . '</strong>';
+        echo '<span>' . esc_html__('AND product matches', 'ffl-funnels-addons') . '</span>';
+        echo '<strong>' . esc_html__('a category OR tag', 'ffl-funnels-addons') . '</strong>';
+        echo '<span>' . esc_html__('THEN', 'ffl-funnels-addons') . '</span>';
+        echo '<strong>' . esc_html__('product tax is exempt', 'ffl-funnels-addons') . '</strong>';
+        echo '</div>';
+
+        echo '<div class="ffla-tax-exemption-rule__grid">';
+        echo '<div class="wb-field"><label><strong>' . esc_html__('Customers', 'ffl-funnels-addons') . '</strong></label>';
+        echo '<select class="wc-customer-search ffla-tax-rule-customers" name="' . esc_attr($prefix . '[user_ids][]') . '" multiple="multiple" style="width:100%;" data-placeholder="' . esc_attr__('Search customers…', 'ffl-funnels-addons') . '" data-action="woocommerce_json_search_customers">';
+        foreach ((array) ($rule['user_ids'] ?? []) as $user_id) {
+            $user_id = (int) $user_id;
+            if (isset($user_labels[$user_id])) {
+                echo '<option value="' . esc_attr((string) $user_id) . '" selected>' . esc_html($user_labels[$user_id]) . '</option>';
+            }
+        }
+        echo '</select></div>';
+
+        echo '<div class="wb-field"><label><strong>' . esc_html__('Roles', 'ffl-funnels-addons') . '</strong></label>';
+        echo '<select class="wc-enhanced-select ffla-tax-rule-roles" name="' . esc_attr($prefix . '[roles][]') . '" multiple="multiple" style="width:100%;" data-placeholder="' . esc_attr__('Select roles…', 'ffl-funnels-addons') . '">';
+        foreach ($role_choices as $slug => $label) {
+            $selected = in_array($slug, (array) ($rule['roles'] ?? []), true);
+            echo '<option value="' . esc_attr($slug) . '"' . selected($selected, true, false) . '>' . esc_html($label) . '</option>';
+        }
+        echo '</select></div>';
+
+        $this->render_rule_term_selector($prefix, 'category_ids', 'product_cat', __('Categories', 'ffl-funnels-addons'), (array) ($rule['category_ids'] ?? []));
+        $this->render_rule_term_selector($prefix, 'tag_ids', 'product_tag', __('Tags', 'ffl-funnels-addons'), (array) ($rule['tag_ids'] ?? []));
+        echo '</div>';
+
+        echo '<p class="ffla-tax-exemption-rule__shipping">'
+            . esc_html__('Shipping remains taxable. Parent categories automatically include every descendant.', 'ffl-funnels-addons')
+            . '</p>';
+        echo '</article>';
+    }
+
+    private function render_rule_term_selector(string $prefix, string $field, string $taxonomy, string $label, array $term_ids): void
+    {
+        echo '<div class="wb-field"><label><strong>' . esc_html($label) . '</strong></label>';
+        echo '<select class="ffla-tax-term-search" name="' . esc_attr($prefix . '[' . $field . '][]') . '" multiple="multiple" style="width:100%;" data-taxonomy="' . esc_attr($taxonomy) . '" data-placeholder="' . esc_attr(sprintf(__('Search %s…', 'ffl-funnels-addons'), strtolower($label))) . '">';
+        foreach ($term_ids as $term_id) {
+            $term = get_term((int) $term_id, $taxonomy);
+            if (!$term || is_wp_error($term)) {
+                continue;
+            }
+            echo '<option value="' . esc_attr((string) $term->term_id) . '" selected>' . esc_html(self::get_term_choice_label($term, $taxonomy)) . '</option>';
+        }
+        echo '</select>';
+        if ($taxonomy === 'product_cat') {
+            echo '<p class="wb-field__desc">' . esc_html__('Includes all child categories recursively.', 'ffl-funnels-addons') . '</p>';
+        }
+        echo '</div>';
+    }
+
+    private static function get_user_choice_label($user): string
+    {
+        $display_name = trim((string) $user->display_name);
+        if ($display_name === '') {
+            $display_name = (string) $user->user_login;
+        }
+
+        return sprintf(
+            /* translators: 1: customer name, 2: WordPress user ID, 3: customer email. */
+            __('%1$s (#%2$d — %3$s)', 'ffl-funnels-addons'),
+            $display_name,
+            (int) $user->ID,
+            (string) $user->user_email
+        );
+    }
+
+    private static function get_term_choice_label($term, string $taxonomy): string
+    {
+        $parts = [];
+        if ($taxonomy === 'product_cat' && function_exists('get_ancestors')) {
+            $ancestors = array_reverse(get_ancestors((int) $term->term_id, 'product_cat', 'taxonomy'));
+            foreach ($ancestors as $ancestor_id) {
+                $ancestor = get_term((int) $ancestor_id, 'product_cat');
+                if ($ancestor && !is_wp_error($ancestor)) {
+                    $parts[] = (string) $ancestor->name;
+                }
+            }
+        }
+        $parts[] = (string) $term->name;
+
+        return implode(' → ', $parts);
     }
 
     public function render_settings_page(): void
@@ -793,13 +1032,20 @@ class Tax_Rates_Admin
             );
         }
 
-        $tabs = [
-            'lookup'    => __('Quote Lookup', 'ffl-funnels-addons'),
-            'reports'   => __('Tax Reports', 'ffl-funnels-addons'),
-            'coverage'  => __('Coverage Matrix', 'ffl-funnels-addons'),
-            'datasets'  => __('Datasets', 'ffl-funnels-addons'),
-            'audit'     => __('Audit Log', 'ffl-funnels-addons'),
-            'settings'  => __('Settings', 'ffl-funnels-addons'),
+        $reports_available = class_exists('Tax_Reports_Admin');
+        if ($tab === 'reports' && !$reports_available) {
+            $tab = 'lookup';
+        }
+
+        $tabs = ['lookup' => __('Quote Lookup', 'ffl-funnels-addons')];
+        if ($reports_available) {
+            $tabs['reports'] = __('Tax Reports', 'ffl-funnels-addons');
+        }
+        $tabs += [
+            'coverage' => __('Coverage Matrix', 'ffl-funnels-addons'),
+            'datasets' => __('Datasets', 'ffl-funnels-addons'),
+            'audit'    => __('Audit Log', 'ffl-funnels-addons'),
+            'settings' => __('Settings', 'ffl-funnels-addons'),
         ];
 
         echo '<div class="ffla-tax-tabs">';
@@ -816,7 +1062,9 @@ class Tax_Rates_Admin
 
         switch ($tab) {
             case 'reports':
-                Tax_Reports_Admin::render();
+                if ($reports_available) {
+                    Tax_Reports_Admin::render();
+                }
                 break;
             case 'coverage':
                 $this->render_coverage_tab();
@@ -1198,6 +1446,10 @@ class Tax_Rates_Admin
             'rate_source'          => 'auto',
             'sheet_source_url'     => Tax_Dataset_Pipeline::DEFAULT_SHEET_URL,
             'usgeocoder_auth_key'  => '',
+            'tax_role_restrict'    => '0',
+            'tax_exempt_roles'     => [],
+            'tax_exempt_user_ids'  => [],
+            'tax_exemption_rules'  => [],
         ]);
 
         $enabled_states = is_array($settings['enabled_states']) ? $settings['enabled_states'] : [];

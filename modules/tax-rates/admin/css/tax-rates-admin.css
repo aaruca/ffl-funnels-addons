@@ -659,6 +659,184 @@
     padding: 0;
 }
 
+/* ── Conditional tax exemption rules ───────────────────────────── */
+.ffla-tax-exemption-section {
+    margin-top: var(--wb-spacing-xl, 24px);
+    padding-top: var(--wb-spacing-xl, 24px);
+    border-top: 1px solid var(--wb-color-border-subtle, #e2e8f0);
+}
+
+.ffla-tax-exemption-section__heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--wb-spacing-lg, 16px);
+    margin-bottom: var(--wb-spacing-lg, 16px);
+}
+
+.ffla-tax-exemption-section__heading h4 {
+    margin: 0 0 var(--wb-spacing-xs, 4px);
+    font-size: 15px;
+}
+
+.ffla-tax-exemption-section__heading p {
+    margin: 0;
+}
+
+.ffla-tax-exemption-scope-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 0 10px;
+    border: 1px solid #d0d7de;
+    border-radius: 999px;
+    background: #f6f8fa;
+    color: #57606a;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.ffla-tax-exemption-scope-badge--conditional {
+    border-color: #b6d7ff;
+    background: #eef6ff;
+    color: #0550ae;
+}
+
+.ffla-tax-exemption-rules {
+    display: grid;
+    gap: var(--wb-spacing-lg, 16px);
+    margin-bottom: var(--wb-spacing-lg, 16px);
+}
+
+.ffla-tax-exemption-rules__empty {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 22px;
+    border: 1px dashed #b8c2cc;
+    border-radius: var(--wb-radius-md, 8px);
+    background: #fbfcfd;
+    color: #57606a;
+    text-align: center;
+}
+
+.ffla-tax-exemption-rule {
+    overflow: visible;
+    border: 1px solid #cfd8e3;
+    border-radius: var(--wb-radius-lg, 12px);
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+.ffla-tax-exemption-rule--incomplete {
+    border-color: #d4a72c;
+}
+
+.ffla-tax-exemption-rule__header {
+    display: grid;
+    grid-template-columns: auto minmax(180px, 1fr) auto auto;
+    align-items: center;
+    gap: var(--wb-spacing-md, 12px);
+    padding: var(--wb-spacing-md, 12px) var(--wb-spacing-lg, 16px);
+    border-bottom: 1px solid #e7ebf0;
+    border-radius: var(--wb-radius-lg, 12px) var(--wb-radius-lg, 12px) 0 0;
+    background: #f7f9fb;
+}
+
+.ffla-tax-exemption-rule__enabled {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+}
+
+.ffla-tax-exemption-rule__name {
+    width: 100%;
+    min-height: 36px;
+    margin: 0 !important;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.ffla-tax-exemption-rule__status {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 0 9px;
+    border-radius: 999px;
+    background: #dafbe1;
+    color: #116329;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.ffla-tax-exemption-rule--incomplete .ffla-tax-exemption-rule__status {
+    background: #fff8c5;
+    color: #7d4e00;
+}
+
+.ffla-tax-exemption-rule__logic {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: var(--wb-spacing-md, 12px) var(--wb-spacing-lg, 16px) 0;
+    color: #57606a;
+    font-size: 12px;
+}
+
+.ffla-tax-exemption-rule__logic strong {
+    padding: 3px 7px;
+    border-radius: 5px;
+    background: #ddf4ff;
+    color: #0550ae;
+}
+
+.ffla-tax-exemption-rule__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--wb-spacing-lg, 16px);
+    padding: var(--wb-spacing-lg, 16px);
+}
+
+.ffla-tax-exemption-rule__grid .wb-field {
+    min-width: 0;
+    max-width: none;
+    margin: 0;
+}
+
+.ffla-tax-exemption-rule__grid .wb-field label {
+    display: block;
+    margin-bottom: 6px;
+}
+
+.ffla-tax-exemption-rule .select2-container,
+.ffla-tax-exemption-rule .selectWoo-container,
+.ffla-tax-exemption-rule select {
+    width: 100% !important;
+    max-width: none !important;
+}
+
+.ffla-tax-exemption-rule .select2-selection--multiple {
+    min-height: 38px;
+}
+
+.ffla-tax-exemption-rule__shipping {
+    margin: 0;
+    padding: 10px var(--wb-spacing-lg, 16px);
+    border-top: 1px solid #e7ebf0;
+    border-radius: 0 0 var(--wb-radius-lg, 12px) var(--wb-radius-lg, 12px);
+    background: #f6f8fa;
+    color: #57606a;
+    font-size: 12px;
+}
+
+.ffla-tax-exemption-footnote {
+    margin-top: var(--wb-spacing-md, 12px);
+}
+
 /* ── Responsive ──────────────────────────────────────────────────── */
 @media (max-width: 768px) {
     .ffla-tax-row--inline {
@@ -680,5 +858,22 @@
 
     .ffla-tax-state-picker__header {
         flex-direction: column;
+    }
+
+    .ffla-tax-exemption-section__heading {
+        flex-direction: column;
+    }
+
+    .ffla-tax-exemption-rule__header {
+        grid-template-columns: 1fr auto;
+    }
+
+    .ffla-tax-exemption-rule__name {
+        grid-column: 1 / -1;
+        grid-row: 2;
+    }
+
+    .ffla-tax-exemption-rule__grid {
+        grid-template-columns: 1fr;
     }
 }
