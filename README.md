@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.43.1-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.46.0-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -93,12 +93,12 @@ Per-customer internal notes for staff (contributed by @adeelwebify).
 *   **Profile sync:** the same note is editable from the WordPress user profile; guest notes are keyed to the billing email and follow future orders.
 *   **Access:** requires `manage_woocommerce`; customers never see their own notes.
 
-### 11. GA4 Bridge
-Restores GA4 `view_item` and `add_to_cart` for **Google Analytics for WooCommerce** on stores using the Bricks theme and the Merchant AJAX side-cart.
-*   **view_item:** Bricks fires almost no standard product-page hooks; the bridge re-fires the two the tracker needs (`did_action()`-guarded, never double-fires) from the one hook Bricks does emit.
-*   **add_to_cart:** persisted into the WC session during the AJAX add (the GA plugin only does this itself when redirect-after-add is on); the plugin's own restore path emits it on the next pageview.
-*   **Untouched:** `purchase`, `begin_checkout`, `view_item_list` — they already work; duplicating them would double-count revenue.
-*   **Limits:** out-of-stock products don't fire `view_item`; `add_to_cart` lands on the next pageview; `view_cart` is unsupported by the GA plugin; keep Site Kit's Analytics module disconnected so the site has exactly one GA4 tag.
+### 11. MonsterInsights Compatibility
+Optional GA4 compatibility for **MonsterInsights Pro + the eCommerce Addon** on stores using custom Bricks product templates and the Merchant AJAX side-cart.
+*   **One analytics owner:** MonsterInsights loads the Google tag, handles consent/excluded roles, and owns WooCommerce purchases and refunds. The bridge never loads another tag and never sends purchase revenue.
+*   **Narrow storefront coverage:** Provides guarded fallbacks only for missing `view_item` and AJAX `add_to_cart` events.
+*   **Deduplication:** Before sending a fallback, the bridge inspects the active MonsterInsights GA4 destination in `dataLayer`; an event MonsterInsights already emitted is left untouched.
+*   **Opt-in:** MonsterInsights works by itself on standard WooCommerce templates. Enable this module only on stores with the affected custom template or side-cart; it is never activated automatically. Stores still using Google Analytics for WooCommerce retain the previous compatibility path.
 
 ### 12. White Label
 Brand and simplify wp-admin for store clients without changing WordPress core.

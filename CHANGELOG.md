@@ -2,6 +2,14 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.46.0] - 2026-09-03
+
+### Changed
+- **GA4 Bridge is now MonsterInsights-native.** The module uses the existing MonsterInsights Pro GA4 tracker and eCommerce Addon instead of depending on Google Analytics for WooCommerce. It never loads a second Google tag.
+- **Bricks and Merchant compatibility.** A narrow, deduplicated browser fallback covers missing product views and Merchant/AJAX `add_to_cart` events only when MonsterInsights has not already emitted them.
+- **Revenue remains single-source.** `purchase` and refund tracking stay exclusively under MonsterInsights' order-status lifecycle, preventing duplicate transactions and revenue.
+- **Opt-in compatibility only.** MonsterInsights and its eCommerce Addon work without this module on standard WooCommerce templates. The module is never activated automatically and does not emit `begin_checkout`, `purchase`, or refund events. Legacy Google Analytics for WooCommerce support remains available for stores not yet migrated.
+
 ## [1.45.0] - 2026-09-03
 
 ### Added

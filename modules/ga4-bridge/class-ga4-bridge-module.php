@@ -1,26 +1,15 @@
 <?php
 /**
- * GA4 Bridge Module — entry point.
+ * MonsterInsights Compatibility — entry point.
  *
- * Restores two GA4 ecommerce events for stores running "Google Analytics for
- * WooCommerce" with the Bricks theme and the Merchant AJAX side-cart:
+ * MonsterInsights remains the analytics owner: it loads the Google tag and
+ * records checkout, purchases, and refunds. This optional module only restores
+ * storefront events that custom Bricks product templates and AJAX side-carts can prevent WooCommerce
+ * integrations from seeing. Every JavaScript fallback first checks the shared
+ * dataLayer, so it does not duplicate an event MonsterInsights already sent.
  *
- * - view_item: Bricks replaces the single-product template and fires neither
- *   woocommerce_before_single_product (product data) nor
- *   woocommerce_after_single_product (the event). Both are re-fired, guarded,
- *   from the one standard hook Bricks does emit inside product content.
- * - add_to_cart: the GA plugin discards the AJAX payload unless the store
- *   redirects after add. It is persisted to the WC session instead, and the
- *   plugin's own restore path emits it on the next pageview.
- *
- * Deliberately does NOT touch purchase, begin_checkout, or view_item_list —
- * they already work, and re-emitting them would double-count revenue.
- *
- * Known limitations (by design — do not "fix"):
- * - view_item requires an add-to-cart form; out-of-stock products won't fire it.
- * - add_to_cart is emitted on the NEXT pageview, not instantly.
- * - view_cart is not supported by Google Analytics for WooCommerce at all.
- * - Only one GA4 tag per site: Site Kit's Analytics module must stay disconnected.
+ * Backward compatibility for Google Analytics for WooCommerce is retained for
+ * stores that have not migrated yet, but no second Google tag is ever loaded.
  *
  * @package FFL_Funnels_Addons
  */
@@ -31,6 +20,8 @@ if (!defined('ABSPATH')) {
 
 class Ga4_Bridge_Module extends FFLA_Module
 {
+    private const SCRIPT_HANDLE = 'ffla-monsterinsights-bridge';
+
     /**
      * WC_Abstract_Google_Analytics_JS::PENDING_ADDED_TO_CART_SESSION_KEY —
      * the key its restore_added_to_cart_from_session() re-emits from.
@@ -44,12 +35,12 @@ class Ga4_Bridge_Module extends FFLA_Module
 
     public function get_name(): string
     {
-        return __('GA4 Bridge', 'ffl-funnels-addons');
+        return __('MonsterInsights Compatibility', 'ffl-funnels-addons');
     }
 
     public function get_description(): string
     {
-        return __('Restores GA4 view_item on Bricks product pages and add_to_cart with an AJAX side-cart, for Google Analytics for WooCommerce.', 'ffl-funnels-addons');
+        return __('Optional compatibility for missing GA4 product views and AJAX add-to-cart events on Bricks and Merchant-powered WooCommerce stores.', 'ffl-funnels-addons');
     }
 
     public function get_icon_svg(): string
@@ -59,11 +50,10 @@ class Ga4_Bridge_Module extends FFLA_Module
 
     public function boot(): void
     {
-        // Both callbacks guard on WC_Google_Gtag_JS themselves. The class is
-        // loaded late (via WooCommerce's integrations), so checking here at
-        // init:0 could wrongly disable the module for the whole request.
         add_action('woocommerce_after_add_to_cart_form', [$this, 'fire_view_item_hooks'], 99);
         add_action('woocommerce_add_to_cart', [$this, 'persist_added_to_cart'], 99, 5);
+        add_action('wp_enqueue_scripts', [$this, 'enqueue_monsterinsights_bridge'], 99);
+        add_action('admin_notices', [$this, 'render_dependency_notice']);
     }
 
     public function activate(): void
@@ -96,7 +86,10 @@ class Ga4_Bridge_Module extends FFLA_Module
      */
     public function fire_view_item_hooks(): void
     {
-        if (!class_exists('WC_Google_Gtag_JS')) {
+        // MonsterInsights receives a narrow JavaScript fallback below. Re-firing
+        // broad WooCommerce template hooks can repeat unrelated plugin output,
+        // so this legacy hook repair is restricted to the old integration.
+        if ($this->is_monsterinsights_ready() || !class_exists('WC_Google_Gtag_JS')) {
             return;
         }
 
@@ -137,6 +130,13 @@ class Ga4_Bridge_Module extends FFLA_Module
     public function persist_added_to_cart($cart_item_key, $product_id, $quantity, $variation_id, $variation): void
     {
         try {
+            // MonsterInsights is handled immediately in the browser. Keeping
+            // the legacy payload as well would duplicate add_to_cart when both
+            // integrations are temporarily present during a migration.
+            if ($this->is_monsterinsights_ready()) {
+                return;
+            }
+
             if (!wp_doing_ajax()) {
                 return;
             }
@@ -167,5 +167,150 @@ class Ga4_Bridge_Module extends FFLA_Module
             // Analytics must never break add-to-cart.
             return;
         }
+    }
+
+    /**
+     * Add the small provider-aware fallback on product screens.
+     * It never loads gtag.js; events are sent through MonsterInsights' tracker.
+     */
+    public function enqueue_monsterinsights_bridge(): void
+    {
+        if (!$this->is_monsterinsights_ready() || is_admin()) {
+            return;
+        }
+
+        if (!function_exists('is_product') || !is_product()) {
+            return;
+        }
+
+        $items   = [];
+        $value   = 0.0;
+        $product = wc_get_product(get_queried_object_id());
+        if ($product instanceof WC_Product) {
+            $items[] = $this->format_product_item($product, 1);
+            $value   = $product->is_type('variable')
+                ? (float) $product->get_variation_price('min', false)
+                : (float) $product->get_price();
+        }
+
+        if (!$items) {
+            return;
+        }
+
+        wp_enqueue_script(
+            self::SCRIPT_HANDLE,
+            FFLA_URL . 'modules/ga4-bridge/assets/js/monsterinsights-bridge.js',
+            ['jquery'],
+            FFLA_VERSION,
+            true
+        );
+
+        wp_localize_script(
+            self::SCRIPT_HANDLE,
+            'fflaMonsterInsightsBridge',
+            [
+                'measurementId' => $this->monsterinsights_measurement_id(),
+                'currency'      => function_exists('get_woocommerce_currency') ? get_woocommerce_currency() : 'USD',
+                'value'         => wc_format_decimal($value, wc_get_price_decimals()),
+                'items'         => $items,
+            ]
+        );
+    }
+
+    /**
+     * Explain a missing dependency without turning analytics into a hard site
+     * dependency. The notice is limited to FFL Funnels screens.
+     */
+    public function render_dependency_notice(): void
+    {
+        if (!current_user_can('manage_woocommerce') || $this->is_monsterinsights_ready() || class_exists('WC_Google_Gtag_JS')) {
+            return;
+        }
+
+        $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+        if (!$screen || false === strpos((string) $screen->id, 'ffl-funnels')) {
+            return;
+        }
+
+        echo '<div class="notice notice-warning"><p>';
+        echo esc_html__('MonsterInsights Compatibility is active, but MonsterInsights Pro with the eCommerce Addon and a GA4 connection was not detected. The module will not load a separate Google tag.', 'ffl-funnels-addons');
+        echo '</p></div>';
+    }
+
+    /**
+     * Determine whether MonsterInsights owns a usable GA4 tracker.
+     */
+    private function is_monsterinsights_ready(): bool
+    {
+        $core_loaded = defined('MONSTERINSIGHTS_VERSION')
+            || defined('MONSTERINSIGHTS_PRO_VERSION')
+            || function_exists('monsterinsights');
+
+        return $core_loaded
+            && class_exists('MonsterInsights_eCommerce')
+            && '' !== $this->monsterinsights_measurement_id();
+    }
+
+    /**
+     * Return a validated public GA4 measurement ID (never credentials).
+     */
+    private function monsterinsights_measurement_id(): string
+    {
+        if (!function_exists('monsterinsights_get_v4_id')) {
+            return '';
+        }
+
+        $measurement_id = strtoupper(trim((string) monsterinsights_get_v4_id()));
+
+        return preg_match('/^G-[A-Z0-9]+$/', $measurement_id) ? $measurement_id : '';
+    }
+
+    /**
+     * Convert a WooCommerce product to the GA4 item fields used by the bridge.
+     *
+     * @return array<string, int|float|string>
+     */
+    private function format_product_item(WC_Product $product, int $quantity): array
+    {
+        $taxonomy_product_id = $product->is_type('variation') ? $product->get_parent_id() : $product->get_id();
+        $price               = $product->is_type('variable')
+            ? (float) $product->get_variation_price('min', false)
+            : (float) $product->get_price();
+
+        $item = [
+            'item_id'   => (string) $product->get_id(),
+            'item_name' => wp_strip_all_tags($product->get_name()),
+            'price'     => $price,
+            'quantity'  => max(1, $quantity),
+        ];
+
+        $category_names = wp_get_post_terms($taxonomy_product_id, 'product_cat', ['fields' => 'names']);
+        if (!is_wp_error($category_names)) {
+            foreach (array_slice(array_values($category_names), 0, 5) as $index => $category_name) {
+                $category_key        = 0 === $index ? 'item_category' : 'item_category' . ($index + 1);
+                $item[$category_key] = sanitize_text_field((string) $category_name);
+            }
+        }
+
+        if ($product->is_type('variation')) {
+            $attributes = wc_get_formatted_variation($product, true, false, false);
+            if ('' !== $attributes) {
+                $item['item_variant'] = wp_strip_all_tags($attributes);
+            }
+        }
+
+        foreach (['product_brand', 'pwb-brand'] as $brand_taxonomy) {
+            if (!taxonomy_exists($brand_taxonomy)) {
+                continue;
+            }
+
+            $brands = wp_get_post_terms($taxonomy_product_id, $brand_taxonomy, ['fields' => 'names']);
+            if (!is_wp_error($brands) && !empty($brands[0])) {
+                $item['item_brand'] = sanitize_text_field((string) $brands[0]);
+                break;
+            }
+        }
+
+        return $item;
     }
 }
