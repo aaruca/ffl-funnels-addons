@@ -463,6 +463,124 @@
             refreshExemptionRuleState($(this).closest('.ffla-tax-exemption-rule'));
         });
 
+        /* Merchant-defined tax holidays. */
+        var holidayRuleIndex = 0;
+        $('#ffla-tax-holiday-rules .ffla-tax-holiday-rule').each(function () {
+            var name = $(this).find('[name^="tax_holiday_rules["]').first().attr('name') || '';
+            var match = name.match(/tax_holiday_rules\[(\d+)\]/);
+            if (match) {
+                holidayRuleIndex = Math.max(holidayRuleIndex, parseInt(match[1], 10) + 1);
+            }
+        });
+
+        function refreshHolidayState($rule) {
+            var enabled = $rule.find('.ffla-tax-exemption-rule__enabled input').is(':checked');
+            var startValue = $rule.find('[name$="[start_at]"]').val();
+            var endValue = $rule.find('[name$="[end_at]"]').val();
+            var start = startValue ? new Date(startValue).getTime() : NaN;
+            var end = endValue ? new Date(endValue).getTime() : NaN;
+            var scope = $rule.find('.ffla-tax-holiday-scope').val();
+            var hasProducts = $rule.find('.ffla-tax-holiday-products option:selected, .ffla-tax-term-search option:selected').length > 0;
+            var complete = Number.isFinite(start) && Number.isFinite(end) && end >= start && (scope === 'all' || hasProducts);
+            var status = 'incomplete';
+            var label = t('holidayIncomplete', 'Needs dates or products');
+            var now = Date.now();
+
+            if (!enabled) {
+                status = 'disabled';
+                label = t('holidayDisabled', 'Disabled');
+            } else if (complete && now < start) {
+                status = 'scheduled';
+                label = t('holidayScheduled', 'Scheduled');
+            } else if (complete && now > end) {
+                status = 'expired';
+                label = t('holidayExpired', 'Expired');
+            } else if (complete) {
+                status = 'active';
+                label = t('holidayActive', 'Active now');
+            }
+
+            $rule.attr('data-holiday-status', status);
+            $rule.find('.ffla-tax-holiday-rule__status')
+                .attr('class', 'ffla-tax-holiday-rule__status ffla-tax-holiday-rule__status--' + status)
+                .text(label);
+            $rule.find('.ffla-tax-holiday-rule__scope-fields').toggle(scope !== 'all');
+        }
+
+        function prepareClonedSelects($rule) {
+            $rule.find('.select2-container').remove();
+            $rule.find('select').each(function () {
+                $(this).removeClass('select2-hidden-accessible enhanced').removeAttr('data-select2-id aria-hidden tabindex');
+                $(this).find('option').removeAttr('data-select2-id');
+            });
+        }
+
+        function initHolidayRule($rule) {
+            prepareClonedSelects($rule);
+            $(document.body).trigger('wc-enhanced_select_init');
+            initTaxTermSearch($rule);
+            refreshHolidayState($rule);
+        }
+
+        $('#ffla-tax-holiday-rules .ffla-tax-holiday-rule').each(function () {
+            refreshHolidayState($(this));
+        });
+
+        $('#ffla-add-tax-holiday').on('click', function () {
+            var template = $('#tmpl-ffla-tax-holiday-rule').html() || '';
+            if (!template) {
+                return;
+            }
+            var $rule = $(template.replace(/__INDEX__/g, String(holidayRuleIndex++)));
+            $('#ffla-tax-holiday-rules').find('.ffla-tax-exemption-rules__empty').remove();
+            $('#ffla-tax-holiday-rules').append($rule);
+            initHolidayRule($rule);
+            $rule.find('.ffla-tax-exemption-rule__name').trigger('focus').select();
+        });
+
+        $(document).on('click', '.ffla-duplicate-tax-holiday', function () {
+            var $clone = $(this).closest('.ffla-tax-holiday-rule').clone(false, false);
+            prepareClonedSelects($clone);
+            $clone.find('[name]').each(function () {
+                var $field = $(this);
+                $field.attr('name', ($field.attr('name') || '').replace(/tax_holiday_rules\[\d+\]/, 'tax_holiday_rules[' + holidayRuleIndex + ']'));
+            });
+            $clone.find('[name$="[id]"]').val('');
+            $clone.find('.ffla-tax-exemption-rule__name').val(($clone.find('.ffla-tax-exemption-rule__name').val() || '') + ' ' + t('copy', 'Copy'));
+            holidayRuleIndex++;
+            $(this).closest('.ffla-tax-holiday-rule').after($clone);
+            initHolidayRule($clone);
+        });
+
+        $(document).on('click', '.ffla-remove-tax-holiday', function () {
+            if (!window.confirm(t('confirmRemoveHoliday', 'Remove this tax holiday rule?'))) {
+                return;
+            }
+            $(this).closest('.ffla-tax-holiday-rule').remove();
+            if (!$('#ffla-tax-holiday-rules .ffla-tax-holiday-rule').length) {
+                $('#ffla-tax-holiday-rules').html('<div class="ffla-tax-exemption-rules__empty"><strong>' + escHtml(t('noHolidayRules', 'No tax holidays yet.')) + '</strong></div>');
+            }
+        });
+
+        $(document).on('change input', '.ffla-tax-holiday-rule input, .ffla-tax-holiday-rule select', function () {
+            refreshHolidayState($(this).closest('.ffla-tax-holiday-rule'));
+        });
+
+        $('form[action*="admin-post.php"]').on('submit', function (event) {
+            var $form = $(this);
+            if (!$form.find('input[name="tax_holidays_enabled"]').is(':checked')) {
+                return;
+            }
+            var $invalid = $form.find('.ffla-tax-holiday-rule[data-holiday-status="incomplete"]').filter(function () {
+                return $(this).find('.ffla-tax-exemption-rule__enabled input').is(':checked');
+            }).first();
+            if ($invalid.length) {
+                event.preventDefault();
+                window.alert(t('holidayIncomplete', 'Needs dates or products'));
+                $('html, body').animate({ scrollTop: Math.max(0, $invalid.offset().top - 80) }, 200);
+            }
+        });
+
         $('form[action*="admin-post.php"]').on('submit', function (event) {
             var $master = $(this).find('input[name="tax_role_restrict"]');
             if (!$master.is(':checked')) {

@@ -58,9 +58,10 @@ class Tax_Rates_Module extends FFLA_Module
         require_once $base . 'includes/class-tax-quote-engine.php';
         require_once $base . 'includes/class-tax-dataset-pipeline.php';
         require_once $base . 'includes/class-tax-rest-api.php';
-        require_once $base . 'includes/class-tax-woocommerce-integration.php';
         require_once $base . 'includes/class-tax-usgeocoder-usage.php';
         require_once $base . 'includes/class-tax-role-gate.php';
+        require_once $base . 'includes/class-tax-holiday-engine.php';
+        require_once $base . 'includes/class-tax-woocommerce-integration.php';
 
         // Resolvers.
         require_once $base . 'includes/resolvers/class-tax-resolver-base.php';
@@ -141,6 +142,8 @@ class Tax_Rates_Module extends FFLA_Module
                 'tax_exempt_roles'  => [],
                 'tax_exempt_user_ids' => [],
                 'tax_exemption_rules' => [],
+                'tax_holidays_enabled' => '0',
+                'tax_holiday_rules'    => [],
             ]);
         }
 
@@ -157,6 +160,9 @@ class Tax_Rates_Module extends FFLA_Module
         if (class_exists('Tax_Role_Gate')) {
             Tax_Role_Gate::reset_runtime_cache();
         }
+        if (class_exists('Tax_Holiday_Engine')) {
+            Tax_Holiday_Engine::reset_runtime_cache();
+        }
         if (class_exists('Tax_Coverage')) {
             Tax_Coverage::reconcile_from_settings(is_array($new_value) ? $new_value : []);
         }
@@ -169,6 +175,9 @@ class Tax_Rates_Module extends FFLA_Module
     {
         if (class_exists('Tax_Role_Gate')) {
             Tax_Role_Gate::reset_runtime_cache();
+        }
+        if (class_exists('Tax_Holiday_Engine')) {
+            Tax_Holiday_Engine::reset_runtime_cache();
         }
         if (class_exists('Tax_Coverage')) {
             Tax_Coverage::reconcile_from_settings(is_array($value) ? $value : []);

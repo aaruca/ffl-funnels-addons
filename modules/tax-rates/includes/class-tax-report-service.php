@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
 
 class Tax_Report_Service
 {
-    const SCHEMA_VERSION = '2.3.0';
+    const SCHEMA_VERSION = '2.4.0';
     const HISTORY_OPTION = 'ffla_tax_report_runs';
 
     /** @var int */
@@ -180,6 +180,7 @@ class Tax_Report_Service
                 'orders_with_stored_quote'  => 0,
                 'orders_with_cogs'          => 0,
                 'orders_with_conditional_exemptions' => 0,
+                'orders_with_tax_holidays' => 0,
                 'orders_excluded_by_state'  => 0,
                 'orders_excluded_negative'  => 0,
                 'refunds_excluded_by_state' => 0,
@@ -292,6 +293,9 @@ class Tax_Report_Service
                 if ((int) ($order_row['conditional_tax_exempt_items'] ?? 0) > 0) {
                     $report['stats']['orders_with_conditional_exemptions']++;
                 }
+                if ((int) ($order_row['tax_holiday_exempt_items'] ?? 0) > 0) {
+                    $report['stats']['orders_with_tax_holidays']++;
+                }
 
                 if ($collect_order_rows) {
                     $report['orders'][] = $order_row;
@@ -398,7 +402,9 @@ class Tax_Report_Service
                 'quantity', 'tax_class', 'subtotal', 'discount', 'total_ex_tax',
                 'tax', 'total_inc_tax', 'refunded_amount', 'refunded_tax', 'vendor',
                 'vendor_sku', 'tax_exempt', 'tax_exemption_rule_ids',
-                'tax_exemption_rules', 'tax_exemption_snapshot_json', 'taxes_json', 'cogs_value',
+                'tax_exemption_rules', 'tax_exemption_type', 'tax_exemption_snapshot_json',
+                'tax_holiday_rule_ids', 'tax_holiday_rules', 'tax_holiday_exempt_amount', 'tax_holiday_snapshot_json',
+                'taxes_json', 'cogs_value',
             ]));
         }
 
@@ -415,6 +421,7 @@ class Tax_Report_Service
                 'fees', 'tax_collected', 'tax_refunded', 'net_tax', 'refunds',
                 'order_total', 'net_collected', 'customer_tax_exempt',
                 'conditional_tax_exempt_items', 'conditional_tax_exempt_sales', 'tax_exemption_rules',
+                'tax_holiday_exempt_items', 'tax_holiday_exempt_sales', 'tax_holiday_exempt_shipping', 'tax_holiday_rules', 'tax_holiday_snapshot_json',
             ])),
             'quote'          => $this->sanitize_quote_evidence($quote, false),
             'lines'          => $compact_lines,
@@ -446,6 +453,7 @@ class Tax_Report_Service
                 'gross_product_sales', 'discounts', 'net_product_sales', 'shipping', 'fees', 'tax_collected',
                 'tax_refunded', 'net_tax', 'refunds', 'order_total', 'net_collected', 'customer_tax_exempt',
                 'conditional_tax_exempt_items', 'conditional_tax_exempt_sales', 'tax_exemption_rules',
+                'tax_holiday_exempt_items', 'tax_holiday_exempt_sales', 'tax_holiday_exempt_shipping', 'tax_holiday_rules', 'tax_holiday_snapshot_json',
                 'tax_quote_query_id', 'tax_quote_source', 'tax_quote_outcome', 'tax_quote_rate_percent',
                 'tax_quote_effective_date', 'tax_quote_evidence_json', 'snapshot_hash', 'customer_note',
             ],
@@ -455,7 +463,9 @@ class Tax_Report_Service
                 'subtotal', 'subtotal_tax', 'discount', 'total_ex_tax', 'tax', 'total_inc_tax', 'refunded_quantity',
                 'refunded_amount', 'refunded_tax', 'vendor', 'vendor_sku', 'vendor_price', 'shipping_class',
                 'shipping_method_id', 'coupon_code', 'tax_exempt', 'tax_exemption_rule_ids',
-                'tax_exemption_rules', 'tax_exemption_snapshot_json', 'taxes_json', 'cogs_value', 'cogs_source',
+                'tax_exemption_rules', 'tax_exemption_type', 'tax_exemption_snapshot_json',
+                'tax_holiday_rule_ids', 'tax_holiday_rules', 'tax_holiday_exempt_amount', 'tax_holiday_snapshot_json',
+                'taxes_json', 'cogs_value', 'cogs_source',
             ],
             'tax_lines' => [
                 'order_id', 'order_number', 'date_created_local', 'status', 'currency', 'tax_state', 'tax_item_id',
@@ -485,6 +495,7 @@ class Tax_Report_Service
                 'tax_city', 'tax_postcode', 'shipping_address_formatted', 'net_product_sales', 'shipping', 'fees',
                 'tax_collected', 'tax_refunded', 'net_tax', 'order_total', 'customer_tax_exempt',
                 'conditional_tax_exempt_items', 'conditional_tax_exempt_sales', 'tax_exemption_rules',
+                'tax_holiday_exempt_items', 'tax_holiday_exempt_sales', 'tax_holiday_exempt_shipping', 'tax_holiday_rules', 'tax_holiday_snapshot_json',
             ],
             'product-summary' => [
                 'product_id', 'variation_id', 'sku', 'product_name', 'categories', 'currency', 'orders', 'quantity',
@@ -577,19 +588,43 @@ class Tax_Report_Service
         $conditional_exempt_items = 0;
         $conditional_exempt_sales = 0;
         $conditional_rule_names = [];
+        $holiday_exempt_items = 0;
+        $holiday_exempt_sales = 0;
+        $holiday_rule_names = [];
         foreach ($order->get_items('line_item') as $item_id => $item) {
             $gross += $this->minor($item->get_subtotal());
             $net_products += $this->minor($item->get_total());
             if (strtolower((string) $item->get_meta('_ffla_tax_exempt', true)) === 'yes') {
-                $conditional_exempt_items++;
                 $refunded_line = method_exists($order, 'get_total_refunded_for_item')
                     ? $this->minor(abs((float) $order->get_total_refunded_for_item($item_id)))
                     : 0;
-                $conditional_exempt_sales += max(0, $this->minor($item->get_total()) - $refunded_line);
-                $names = array_map('trim', explode(',', (string) $item->get_meta('_ffla_tax_exemption_rule_names', true)));
-                foreach ($names as $name) {
-                    if ($name !== '') {
-                        $conditional_rule_names[$name] = true;
+                $net_exempt_line = max(0, $this->minor($item->get_total()) - $refunded_line);
+                $type = (string) $item->get_meta('_ffla_tax_exemption_type', true);
+
+                // Empty type is legacy audience-rule evidence from pre-1.45 orders.
+                if ($type === '' || strpos($type, 'audience') !== false) {
+                    $conditional_exempt_items++;
+                    $conditional_exempt_sales += $net_exempt_line;
+                    $stored_names = (string) $item->get_meta('_ffla_tax_audience_rule_names', true);
+                    if ($stored_names === '') {
+                        $stored_names = (string) $item->get_meta('_ffla_tax_exemption_rule_names', true);
+                    }
+                    $names = array_map('trim', explode(',', $stored_names));
+                    foreach ($names as $name) {
+                        if ($name !== '') {
+                            $conditional_rule_names[$name] = true;
+                        }
+                    }
+                }
+
+                if ((string) $item->get_meta('_ffla_tax_holiday_snapshot', true) !== '') {
+                    $holiday_exempt_items++;
+                    $holiday_exempt_sales += $net_exempt_line;
+                    $names = array_map('trim', explode(',', (string) $item->get_meta('_ffla_tax_holiday_rule_names', true)));
+                    foreach ($names as $name) {
+                        if ($name !== '') {
+                            $holiday_rule_names[$name] = true;
+                        }
                     }
                 }
             }
@@ -685,6 +720,11 @@ class Tax_Report_Service
             'conditional_tax_exempt_items' => $conditional_exempt_items,
             'conditional_tax_exempt_sales' => $this->decimal($conditional_exempt_sales),
             'tax_exemption_rules'      => implode(', ', array_keys($conditional_rule_names)),
+            'tax_holiday_exempt_items' => $holiday_exempt_items,
+            'tax_holiday_exempt_sales' => $this->decimal($holiday_exempt_sales),
+            'tax_holiday_exempt_shipping' => $this->decimal($this->minor($order->get_meta('_ffla_tax_holiday_exempt_shipping', true))),
+            'tax_holiday_rules'        => implode(', ', array_keys($holiday_rule_names)),
+            'tax_holiday_snapshot_json'=> (string) $order->get_meta('_ffla_tax_holiday_snapshot', true),
             'tax_quote_query_id'      => (string) ($quote['queryId'] ?? $order->get_meta('_ffla_tax_query_id', true)),
             'tax_quote_source'        => (string) ($quote['source'] ?? $order->get_meta('_ffla_tax_source', true)),
             'tax_quote_outcome'       => is_scalar($quote['outcomeCode'] ?? '') ? (string) ($quote['outcomeCode'] ?? '') : wp_json_encode($quote['outcomeCode']),
@@ -754,7 +794,12 @@ class Tax_Report_Service
                 'tax_exempt'         => strtolower((string) $item->get_meta('_ffla_tax_exempt', true)) === 'yes' ? 'yes' : 'no',
                 'tax_exemption_rule_ids' => (string) $item->get_meta('_ffla_tax_exemption_rule_ids', true),
                 'tax_exemption_rules' => (string) $item->get_meta('_ffla_tax_exemption_rule_names', true),
+                'tax_exemption_type' => (string) $item->get_meta('_ffla_tax_exemption_type', true),
                 'tax_exemption_snapshot_json' => (string) $item->get_meta('_ffla_tax_exemption_snapshot', true),
+                'tax_holiday_rule_ids' => (string) $item->get_meta('_ffla_tax_holiday_rule_ids', true),
+                'tax_holiday_rules' => (string) $item->get_meta('_ffla_tax_holiday_rule_names', true),
+                'tax_holiday_exempt_amount' => (string) $item->get_meta('_ffla_tax_holiday_snapshot', true) !== '' ? $this->decimal($total) : $this->decimal(0),
+                'tax_holiday_snapshot_json' => (string) $item->get_meta('_ffla_tax_holiday_snapshot', true),
                 'taxes_json'         => wp_json_encode($item->get_taxes()),
                 'cogs_value'         => $cogs,
                 'cogs_source'        => $cogs !== '' ? 'woocommerce' : '',
@@ -762,10 +807,28 @@ class Tax_Report_Service
             $rows[] = apply_filters('ffla_tax_report_line_row', $row, $item, $order);
         }
 
-        foreach ($order->get_items('shipping') as $item_id => $item) {
+        $shipping_items = $order->get_items('shipping');
+        $holiday_shipping_total = max(0, $this->minor($order->get_meta('_ffla_tax_holiday_exempt_shipping', true)));
+        $shipping_base_total = 0;
+        foreach ($shipping_items as $shipping_item) {
+            $shipping_base_total += max(0, $this->minor($shipping_item->get_total()));
+        }
+        $holiday_shipping_allocated = 0;
+        $shipping_index = 0;
+        $shipping_count = count($shipping_items);
+        foreach ($shipping_items as $item_id => $item) {
             $refund = $refund_map['shipping:' . $item_id] ?? ['amount' => 0, 'tax' => 0, 'quantity' => 0];
             $total = $this->minor($item->get_total());
             $tax = $this->minor($item->get_total_tax());
+            $holiday_exempt = max(0, $this->minor($item->get_meta('_ffla_tax_holiday_exempt_amount', true)));
+            if ($holiday_exempt <= 0 && $holiday_shipping_total > 0 && $shipping_base_total > 0) {
+                $holiday_exempt = $shipping_index === $shipping_count - 1
+                    ? $holiday_shipping_total - $holiday_shipping_allocated
+                    : (int) round($holiday_shipping_total * (max(0, $total) / $shipping_base_total));
+                $holiday_exempt = max(0, min($total, $holiday_exempt));
+            }
+            $holiday_shipping_allocated += $holiday_exempt;
+            $shipping_index++;
             $row = array_merge($base, $this->empty_line_fields(), [
                 'item_id'            => (int) $item_id,
                 'item_type'          => 'shipping',
@@ -778,6 +841,11 @@ class Tax_Report_Service
                 'refunded_amount'    => $this->decimal((int) $refund['amount']),
                 'refunded_tax'       => $this->decimal((int) $refund['tax']),
                 'shipping_method_id' => method_exists($item, 'get_method_id') ? (string) $item->get_method_id() : '',
+                'tax_exempt'         => $holiday_exempt >= max(0, $total) && $total > 0 ? 'yes' : 'no',
+                'tax_exemption_type' => $holiday_exempt > 0 ? 'holiday' : '',
+                'tax_holiday_rules'  => $holiday_exempt > 0 ? (string) ($item->get_meta('_ffla_tax_holiday_rule_names', true) ?: $order->get_meta('_ffla_tax_holiday_rules', true)) : '',
+                'tax_holiday_exempt_amount' => $this->decimal($holiday_exempt),
+                'tax_holiday_snapshot_json' => $holiday_exempt > 0 ? (string) ($item->get_meta('_ffla_tax_holiday_snapshot', true) ?: $order->get_meta('_ffla_tax_holiday_snapshot', true)) : '',
                 'taxes_json'         => wp_json_encode($item->get_taxes()),
             ]);
             $rows[] = apply_filters('ffla_tax_report_line_row', $row, $item, $order);
@@ -1102,6 +1170,14 @@ class Tax_Report_Service
                     continue;
                 }
                 $line_amount = max(0, $this->minor($line['total_ex_tax'] ?? 0));
+                $holiday_exempt = min($line_amount, max(0, $this->minor($line['tax_holiday_exempt_amount'] ?? 0)));
+                if ($holiday_exempt > 0) {
+                    $original['non_taxable_sales'] += $holiday_exempt;
+                    $line_amount -= $holiday_exempt;
+                    if ($line_amount <= 0) {
+                        continue;
+                    }
+                }
                 if ($this->minor($line['tax'] ?? 0) !== 0) {
                     $original['taxable_sales'] += $line_amount;
                     if (($line['item_type'] ?? '') === 'shipping') {
@@ -1416,6 +1492,15 @@ class Tax_Report_Service
                     $this->decimal($sales_before_tax),
                     (string) ($order_row['tax_exemption_rules'] ?? '')
                 );
+            } elseif (($this->minor($order_row['tax_holiday_exempt_sales'] ?? 0)
+                + $this->minor($order_row['tax_holiday_exempt_shipping'] ?? 0)) >= $sales_before_tax) {
+                $add(
+                    'info',
+                    'tax_holiday_exemption',
+                    'No tax was collected because every positive-value filing line is covered by stored tax-holiday evidence.',
+                    $this->decimal($sales_before_tax),
+                    (string) ($order_row['tax_holiday_rules'] ?? '')
+                );
             } else {
                 $add('warning', 'no_tax_collected', 'No tax was collected on a positive-value US order. Review nexus, product taxability, and exemption evidence.', $this->decimal($sales_before_tax));
             }
@@ -1470,9 +1555,18 @@ class Tax_Report_Service
                 continue;
             }
             $net_sales = $this->minor($line['total_ex_tax']) - $this->minor($line['refunded_amount']);
+            $holiday_exempt = min(max(0, $net_sales), max(0, $this->minor($line['tax_holiday_exempt_amount'] ?? 0)));
             $was_taxed = ($line['refund_classification'] ?? '') === 'taxable_sales'
                 || $this->minor($line['tax']) !== 0
                 || $this->minor($line['refunded_tax']) !== 0;
+            if ($holiday_exempt > 0) {
+                $totals[$key]['sales_without_tax'] += $holiday_exempt;
+                $totals[$key]['non_taxable_sales'] += $holiday_exempt;
+                $net_sales -= $holiday_exempt;
+                if ($net_sales <= 0) {
+                    continue;
+                }
+            }
             if ($was_taxed) {
                 $totals[$key]['sales_with_tax'] += $net_sales;
                 $totals[$key]['taxable_sales'] += $net_sales;
@@ -1623,7 +1717,9 @@ class Tax_Report_Service
                 && $this->minor($line['refunded_tax'] ?? 0) === 0) {
                 continue;
             }
-            $taxable += $this->minor($line['total_ex_tax'] ?? 0) - $this->minor($line['refunded_amount'] ?? 0);
+            $net = $this->minor($line['total_ex_tax'] ?? 0) - $this->minor($line['refunded_amount'] ?? 0);
+            $holiday_exempt = min(max(0, $net), max(0, $this->minor($line['tax_holiday_exempt_amount'] ?? 0)));
+            $taxable += $net - $holiday_exempt;
         }
         return $taxable;
     }
@@ -1644,7 +1740,9 @@ class Tax_Report_Service
                 && $this->minor($line['refunded_tax'] ?? 0) === 0) {
                 continue;
             }
-            $taxable += $this->minor($line['total_ex_tax'] ?? 0) - $this->minor($line['refunded_amount'] ?? 0);
+            $net = $this->minor($line['total_ex_tax'] ?? 0) - $this->minor($line['refunded_amount'] ?? 0);
+            $holiday_exempt = min(max(0, $net), max(0, $this->minor($line['tax_holiday_exempt_amount'] ?? 0)));
+            $taxable += $net - $holiday_exempt;
         }
         return $taxable;
     }
@@ -1672,7 +1770,9 @@ class Tax_Report_Service
                 continue;
             }
             $matched = true;
-            $taxable += $this->minor($line['total_ex_tax'] ?? 0) - $this->minor($line['refunded_amount'] ?? 0);
+            $net = $this->minor($line['total_ex_tax'] ?? 0) - $this->minor($line['refunded_amount'] ?? 0);
+            $holiday_exempt = min(max(0, $net), max(0, $this->minor($line['tax_holiday_exempt_amount'] ?? 0)));
+            $taxable += $net - $holiday_exempt;
         }
 
         $matched_rate = $matched;

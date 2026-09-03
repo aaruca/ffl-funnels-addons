@@ -949,6 +949,12 @@ class Tax_Reports_Admin
             'conditional_tax_exempt_sales' => __('Conditionally exempt sales', 'ffl-funnels-addons'),
             'tax_exemption_rules' => __('Exemption rules', 'ffl-funnels-addons'),
             'tax_exempt' => __('Conditional tax exempt', 'ffl-funnels-addons'),
+            'tax_exemption_type' => __('Exemption type', 'ffl-funnels-addons'),
+            'tax_holiday_exempt_items' => __('Tax-holiday product lines', 'ffl-funnels-addons'),
+            'tax_holiday_exempt_sales' => __('Tax-holiday exempt sales', 'ffl-funnels-addons'),
+            'tax_holiday_exempt_shipping' => __('Tax-holiday exempt shipping', 'ffl-funnels-addons'),
+            'tax_holiday_exempt_amount' => __('Tax-holiday exempt amount', 'ffl-funnels-addons'),
+            'tax_holiday_rules' => __('Tax holiday rules', 'ffl-funnels-addons'),
         ];
         echo '<table class="widefat striped ffla-tax-report-table">';
         if ($caption !== '') {

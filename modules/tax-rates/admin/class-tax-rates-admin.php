@@ -116,6 +116,13 @@ class Tax_Rates_Admin
                 'ruleReady'            => __('Ready', 'ffl-funnels-addons'),
                 'ruleNeedsSelections'  => __('Needs selections', 'ffl-funnels-addons'),
                 'noConditionalRules'   => __('No conditional rules yet.', 'ffl-funnels-addons'),
+                'confirmRemoveHoliday' => __('Remove this tax holiday rule?', 'ffl-funnels-addons'),
+                'noHolidayRules'       => __('No tax holidays yet.', 'ffl-funnels-addons'),
+                'holidayActive'        => __('Active now', 'ffl-funnels-addons'),
+                'holidayScheduled'     => __('Scheduled', 'ffl-funnels-addons'),
+                'holidayExpired'       => __('Expired', 'ffl-funnels-addons'),
+                'holidayDisabled'      => __('Disabled', 'ffl-funnels-addons'),
+                'holidayIncomplete'    => __('Needs dates or products', 'ffl-funnels-addons'),
             ],
         ]);
 
@@ -221,6 +228,14 @@ class Tax_Rates_Admin
             unset($rule);
         }
 
+        $tax_holiday_rules = [];
+        if (class_exists('Tax_Holiday_Engine')) {
+            $posted_holidays = !empty($_POST['tax_holiday_rules']) && is_array($_POST['tax_holiday_rules'])
+                ? wp_unslash($_POST['tax_holiday_rules'])
+                : [];
+            $tax_holiday_rules = Tax_Holiday_Engine::sanitize_rules($posted_holidays);
+        }
+
         $rate_source = sanitize_key(wp_unslash($_POST['rate_source'] ?? 'auto'));
         if (!in_array($rate_source, ['auto', 'sheet_zip_dataset', 'usgeocoder_api'], true)) {
             $rate_source = 'auto';
@@ -246,6 +261,8 @@ class Tax_Rates_Admin
             'tax_exempt_roles'    => $tax_exempt_roles,
             'tax_exempt_user_ids' => $tax_exempt_user_ids,
             'tax_exemption_rules' => $tax_exemption_rules,
+            'tax_holidays_enabled' => isset($_POST['tax_holidays_enabled']) ? '1' : '0',
+            'tax_holiday_rules'    => $tax_holiday_rules,
         ];
 
         $removed_states = array_values(array_diff($previous_enabled_states, $enabled_states));
@@ -726,6 +743,138 @@ class Tax_Rates_Admin
         }
 
         echo '</div></div>';
+    }
+
+    /**
+     * Render merchant-defined tax holidays.
+     */
+    private function render_tax_holidays_card(array $settings): void
+    {
+        if (!class_exists('Tax_Holiday_Engine')) {
+            return;
+        }
+
+        $enabled = (string) ($settings['tax_holidays_enabled'] ?? '0') === '1';
+        $rules = Tax_Holiday_Engine::sanitize_rules($settings['tax_holiday_rules'] ?? []);
+
+        echo '<div class="wb-card ffla-tax-holidays-card" style="margin-top:var(--wb-spacing-xl)">';
+        echo '<div class="wb-card__header" style="display:flex;align-items:center;justify-content:space-between;gap:var(--wb-spacing-md);">';
+        echo '<h3>' . esc_html__('Tax Holidays', 'ffl-funnels-addons') . '</h3>';
+        echo '<span class="ffla-tax-mode-badge ' . esc_attr($enabled ? 'ffla-tax-mode-badge--api' : 'ffla-tax-mode-badge--sheet') . '">' . esc_html($enabled ? __('Holiday rules ON', 'ffl-funnels-addons') : __('Holiday rules OFF', 'ffl-funnels-addons')) . '</span>';
+        echo '</div><div class="wb-card__body">';
+
+        FFLA_Admin::render_toggle_field(
+            __('Enable tax holidays', 'ffl-funnels-addons'),
+            'tax_holidays_enabled',
+            $enabled ? '1' : '0',
+            __('Use store-defined date windows to exempt matching products. No state calendar is hard-coded; every date, destination, product scope, price limit, and shipping rule is controlled here.', 'ffl-funnels-addons')
+        );
+
+        echo '<div class="ffla-tax-holiday-notice">';
+        echo '<strong>' . esc_html__('Checkout-safe behavior', 'ffl-funnels-addons') . '</strong>';
+        echo '<span>' . esc_html__('Only matching product lines become non-taxable. Other lines still use the normal API → Google Sheet fallback. Times use the WordPress site timezone.', 'ffl-funnels-addons') . '</span>';
+        echo '</div>';
+
+        echo '<div class="ffla-tax-holiday-rules" id="ffla-tax-holiday-rules">';
+        if (empty($rules)) {
+            echo '<div class="ffla-tax-exemption-rules__empty"><strong>' . esc_html__('No tax holidays yet.', 'ffl-funnels-addons') . '</strong>';
+            echo '<span>' . esc_html__('Add a rule, choose its dates and destinations, then select the products that should be exempt.', 'ffl-funnels-addons') . '</span></div>';
+        } else {
+            foreach ($rules as $index => $rule) {
+                $this->render_tax_holiday_rule($rule, (string) $index);
+            }
+        }
+        echo '</div>';
+
+        echo '<button type="button" class="wb-btn wb-btn--secondary" id="ffla-add-tax-holiday">' . esc_html__('Add tax holiday', 'ffl-funnels-addons') . '</button>';
+        echo '<p class="wb-field__desc ffla-tax-exemption-footnote">' . esc_html__('Empty States means every destination state. Parent categories include all current and future children. Variations inherit the parent product categories and tags.', 'ffl-funnels-addons') . '</p>';
+
+        echo '<script type="text/html" id="tmpl-ffla-tax-holiday-rule">';
+        $start = wp_date('Y-m-d\TH:i', time() + HOUR_IN_SECONDS);
+        $this->render_tax_holiday_rule([
+            'id' => '',
+            'name' => __('New tax holiday', 'ffl-funnels-addons'),
+            'enabled' => '1',
+            'start_at' => $start,
+            'end_at' => wp_date('Y-m-d\TH:i', time() + DAY_IN_SECONDS),
+            'states' => [],
+            'scope' => 'selected',
+            'product_ids' => [],
+            'category_ids' => [],
+            'tag_ids' => [],
+            'price_limit' => '',
+            'shipping_mode' => 'taxable',
+        ], '__INDEX__');
+        echo '</script>';
+        echo '</div></div>';
+    }
+
+    private function render_tax_holiday_rule(array $rule, string $index): void
+    {
+        $prefix = 'tax_holiday_rules[' . $index . ']';
+        $status = Tax_Holiday_Engine::get_rule_status($rule);
+        $status_labels = [
+            'active' => __('Active now', 'ffl-funnels-addons'),
+            'scheduled' => __('Scheduled', 'ffl-funnels-addons'),
+            'expired' => __('Expired', 'ffl-funnels-addons'),
+            'disabled' => __('Disabled', 'ffl-funnels-addons'),
+            'incomplete' => __('Needs dates or products', 'ffl-funnels-addons'),
+        ];
+
+        echo '<article class="ffla-tax-holiday-rule" data-holiday-status="' . esc_attr($status) . '">';
+        echo '<input type="hidden" name="' . esc_attr($prefix . '[id]') . '" value="' . esc_attr((string) ($rule['id'] ?? '')) . '">';
+        echo '<header class="ffla-tax-exemption-rule__header">';
+        echo '<label class="ffla-tax-exemption-rule__enabled"><input type="checkbox" name="' . esc_attr($prefix . '[enabled]') . '" value="1"' . checked((string) ($rule['enabled'] ?? '0'), '1', false) . '><span>' . esc_html__('Enabled', 'ffl-funnels-addons') . '</span></label>';
+        echo '<input type="text" class="ffla-tax-exemption-rule__name" name="' . esc_attr($prefix . '[name]') . '" value="' . esc_attr((string) ($rule['name'] ?? '')) . '" maxlength="120" aria-label="' . esc_attr__('Holiday name', 'ffl-funnels-addons') . '">';
+        echo '<span class="ffla-tax-holiday-rule__status ffla-tax-holiday-rule__status--' . esc_attr($status) . '">' . esc_html($status_labels[$status] ?? $status) . '</span>';
+        echo '<button type="button" class="button-link ffla-duplicate-tax-holiday">' . esc_html__('Duplicate', 'ffl-funnels-addons') . '</button>';
+        echo '<button type="button" class="button-link-delete ffla-remove-tax-holiday">' . esc_html__('Remove', 'ffl-funnels-addons') . '</button>';
+        echo '</header>';
+
+        echo '<div class="ffla-tax-holiday-rule__grid">';
+        echo '<div class="wb-field"><label><strong>' . esc_html__('Starts', 'ffl-funnels-addons') . '</strong></label><input type="datetime-local" name="' . esc_attr($prefix . '[start_at]') . '" value="' . esc_attr((string) ($rule['start_at'] ?? '')) . '"></div>';
+        echo '<div class="wb-field"><label><strong>' . esc_html__('Ends', 'ffl-funnels-addons') . '</strong></label><input type="datetime-local" name="' . esc_attr($prefix . '[end_at]') . '" value="' . esc_attr((string) ($rule['end_at'] ?? '')) . '"></div>';
+
+        echo '<div class="wb-field"><label><strong>' . esc_html__('Destination states', 'ffl-funnels-addons') . '</strong></label>';
+        echo '<select class="wc-enhanced-select ffla-tax-holiday-states" name="' . esc_attr($prefix . '[states][]') . '" multiple="multiple" style="width:100%" data-placeholder="' . esc_attr__('All states', 'ffl-funnels-addons') . '">';
+        foreach (self::get_state_names() as $code => $name) {
+            echo '<option value="' . esc_attr($code) . '"' . selected(in_array($code, (array) ($rule['states'] ?? []), true), true, false) . '>' . esc_html($code . ' — ' . $name) . '</option>';
+        }
+        echo '</select><p class="wb-field__desc">' . esc_html__('Leave empty for every state.', 'ffl-funnels-addons') . '</p></div>';
+
+        echo '<div class="wb-field"><label><strong>' . esc_html__('Product scope', 'ffl-funnels-addons') . '</strong></label><select class="ffla-tax-holiday-scope" name="' . esc_attr($prefix . '[scope]') . '">';
+        echo '<option value="selected"' . selected((string) ($rule['scope'] ?? 'selected'), 'selected', false) . '>' . esc_html__('Selected products, categories, or tags', 'ffl-funnels-addons') . '</option>';
+        echo '<option value="all"' . selected((string) ($rule['scope'] ?? 'selected'), 'all', false) . '>' . esc_html__('All products', 'ffl-funnels-addons') . '</option></select></div>';
+
+        echo '<div class="wb-field"><label><strong>' . esc_html__('Maximum item price', 'ffl-funnels-addons') . '</strong></label><input type="number" min="0" step="0.01" name="' . esc_attr($prefix . '[price_limit]') . '" value="' . esc_attr((string) ($rule['price_limit'] ?? '')) . '" placeholder="' . esc_attr__('No limit', 'ffl-funnels-addons') . '"><p class="wb-field__desc">' . esc_html__('Optional; compared with the current unit price.', 'ffl-funnels-addons') . '</p></div>';
+
+        echo '<div class="wb-field"><label><strong>' . esc_html__('Shipping tax', 'ffl-funnels-addons') . '</strong></label><select name="' . esc_attr($prefix . '[shipping_mode]') . '">';
+        $shipping_choices = [
+            'taxable' => __('Keep shipping taxable', 'ffl-funnels-addons'),
+            'exempt' => __('Exempt all shipping', 'ffl-funnels-addons'),
+            'proportional' => __('Exempt shipping proportionally', 'ffl-funnels-addons'),
+        ];
+        foreach ($shipping_choices as $value => $label) {
+            echo '<option value="' . esc_attr($value) . '"' . selected((string) ($rule['shipping_mode'] ?? 'taxable'), $value, false) . '>' . esc_html($label) . '</option>';
+        }
+        echo '</select></div>';
+        echo '</div>';
+
+        echo '<div class="ffla-tax-holiday-rule__scope-fields">';
+        echo '<div class="wb-field"><label><strong>' . esc_html__('Products', 'ffl-funnels-addons') . '</strong></label>';
+        echo '<select class="wc-product-search ffla-tax-holiday-products" name="' . esc_attr($prefix . '[product_ids][]') . '" multiple="multiple" style="width:100%" data-placeholder="' . esc_attr__('Search products…', 'ffl-funnels-addons') . '" data-action="woocommerce_json_search_products_and_variations">';
+        foreach ((array) ($rule['product_ids'] ?? []) as $product_id) {
+            $product = function_exists('wc_get_product') ? wc_get_product((int) $product_id) : null;
+            if ($product) {
+                echo '<option value="' . esc_attr((string) $product->get_id()) . '" selected>' . esc_html($product->get_formatted_name()) . '</option>';
+            }
+        }
+        echo '</select></div>';
+        echo '<div class="ffla-tax-holiday-rule__taxonomy-grid">';
+        $this->render_rule_term_selector($prefix, 'category_ids', 'product_cat', __('Categories', 'ffl-funnels-addons'), (array) ($rule['category_ids'] ?? []));
+        $this->render_rule_term_selector($prefix, 'tag_ids', 'product_tag', __('Tags', 'ffl-funnels-addons'), (array) ($rule['tag_ids'] ?? []));
+        echo '</div></div>';
+        echo '</article>';
     }
 
     /**
@@ -1450,6 +1599,8 @@ class Tax_Rates_Admin
             'tax_exempt_roles'     => [],
             'tax_exempt_user_ids'  => [],
             'tax_exemption_rules'  => [],
+            'tax_holidays_enabled' => '0',
+            'tax_holiday_rules'    => [],
         ]);
 
         $enabled_states = is_array($settings['enabled_states']) ? $settings['enabled_states'] : [];
@@ -1575,6 +1726,7 @@ class Tax_Rates_Admin
 
         echo '</div></div></div></div>';
 
+        $this->render_tax_holidays_card($settings);
         $this->render_role_gate_card($settings);
 
         echo '<div style="padding-top:var(--wb-spacing-lg);padding-bottom:var(--wb-spacing-xl)">';

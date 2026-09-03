@@ -607,6 +607,7 @@ class Tax_Report_Exporter
             'total_inc_tax', 'product_tax', 'shipping_tax', 'tax_collected', 'tax_refunded', 'net_tax',
             'refunds', 'refund_amount', 'refunded_amount', 'amount', 'product_refund', 'shipping_refund',
             'fee_refund', 'order_total', 'net_collected', 'vendor_price', 'cogs_value', 'conditional_tax_exempt_sales',
+            'tax_holiday_exempt_sales', 'tax_holiday_exempt_shipping', 'tax_holiday_exempt_amount',
         ];
     }
 

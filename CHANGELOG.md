@@ -2,6 +2,18 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.45.0] - 2026-09-03
+
+### Added
+- **Merchant-defined Tax Holidays.** Sales Tax Resolver can schedule any number of date/time windows without hard-coded state calendars. Each rule supports every state or selected destination states, all products or selected products/categories/tags, recursive parent categories, variation inheritance, an optional unit-price ceiling, and taxable/full/proportional shipping behavior.
+- **Immutable holiday evidence in orders and reports.** Matching order lines store the holiday rule ID, name, type, dates, destination, price limit, shipping mode, and JSON snapshot. Orders store holiday-exempt product and shipping totals; report exports expose the same fields while retaining legacy exemption evidence.
+- **Google Merchant Policy module.** Adds a separate, optional module for Google for WooCommerce with inherited Allow/Block/Pending category policies, variation-to-parent evaluation, hard firearm/ammunition/restricted-part safety checks, audit reasons, background reconciliation, and the official pre-sync product filter.
+
+### Changed
+- **Safe activation defaults.** Tax Holidays remain disabled until configured. Google Merchant Policy starts in audit-only mode and never changes feed visibility until Enforce is selected.
+- **One-way feed safety.** Enforce mode can add Google’s `dont-sync-and-show` exclusion to blocked or pending products, but it never automatically removes an existing exclusion or overwrites a merchant’s decision to keep a product out of the feed.
+- **Mixed carts stay precise.** Holiday-eligible product lines are exempt while unrelated items continue through the normal Sales Tax Resolver API → Google Sheet fallback. Shipping follows the explicit rule selected for the active holiday.
+
 ## [1.44.0] - 2026-09-01
 
 ### Changed

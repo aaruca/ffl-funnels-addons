@@ -703,6 +703,102 @@
     color: #0550ae;
 }
 
+/* Tax holidays */
+.ffla-tax-holiday-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 18px 0;
+    padding: 12px 14px;
+    border-left: 4px solid #2271b1;
+    background: #f0f6fc;
+    color: #1d2327;
+}
+
+.ffla-tax-holiday-notice span {
+    color: #50575e;
+}
+
+.ffla-tax-holiday-rules {
+    display: grid;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.ffla-tax-holiday-rule {
+    overflow: hidden;
+    border: 1px solid #dcdcde;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.ffla-tax-holiday-rule .ffla-tax-exemption-rule__header {
+    padding: 14px 16px;
+    background: #f6f7f7;
+}
+
+.ffla-tax-holiday-rule__grid,
+.ffla-tax-holiday-rule__taxonomy-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+    padding: 16px;
+}
+
+.ffla-tax-holiday-rule__taxonomy-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 16px 0 0;
+}
+
+.ffla-tax-holiday-rule__scope-fields {
+    padding: 0 16px 16px;
+    border-top: 1px solid #f0f0f1;
+}
+
+.ffla-tax-holiday-rule .wb-field,
+.ffla-tax-holiday-rule .wb-field input,
+.ffla-tax-holiday-rule .wb-field select,
+.ffla-tax-holiday-rule .select2-container {
+    width: 100% !important;
+    max-width: none !important;
+}
+
+.ffla-tax-holiday-rule__status {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: #f0f0f1;
+    color: #50575e;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.ffla-tax-holiday-rule__status--active { background: #edfaef; color: #116329; }
+.ffla-tax-holiday-rule__status--scheduled { background: #e8f2ff; color: #135e96; }
+.ffla-tax-holiday-rule__status--expired { background: #f0f0f1; color: #646970; }
+.ffla-tax-holiday-rule__status--disabled { background: #f6f7f7; color: #787c82; }
+.ffla-tax-holiday-rule__status--incomplete { background: #fcf0f1; color: #8a2424; }
+
+@media (max-width: 1100px) {
+    .ffla-tax-holiday-rule__grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 782px) {
+    .ffla-tax-holiday-rule__grid,
+    .ffla-tax-holiday-rule__taxonomy-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ffla-tax-holiday-notice {
+        flex-direction: column;
+    }
+}
+
 .ffla-tax-exemption-rules {
     display: grid;
     gap: var(--wb-spacing-lg, 16px);

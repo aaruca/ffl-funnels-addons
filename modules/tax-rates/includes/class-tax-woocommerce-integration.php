@@ -25,6 +25,7 @@ class Tax_WooCommerce_Integration
 
         add_filter('woocommerce_matched_tax_rates', [__CLASS__, 'filter_matched_tax_rates'], 20, 6);
         add_filter('woocommerce_product_is_taxable', [__CLASS__, 'filter_product_is_taxable'], 20, 2);
+        add_filter('woocommerce_calc_shipping_tax', [__CLASS__, 'filter_shipping_taxes_for_holidays'], 20, 3);
         add_action('woocommerce_before_calculate_totals', [__CLASS__, 'prime_cart_product_terms'], 5, 1);
         add_filter('woocommerce_rate_label', [__CLASS__, 'filter_runtime_rate_label'], 10, 2);
         add_filter('woocommerce_rate_code', [__CLASS__, 'filter_runtime_rate_code'], 10, 2);
@@ -48,7 +49,7 @@ class Tax_WooCommerce_Integration
      */
     public static function filter_product_is_taxable($taxable, $product): bool
     {
-        if (!$taxable || !class_exists('Tax_Role_Gate') || !Tax_Role_Gate::is_active()) {
+        if (!$taxable) {
             return (bool) $taxable;
         }
 
@@ -61,7 +62,38 @@ class Tax_WooCommerce_Integration
             return (bool) $taxable;
         }
 
-        return !Tax_Role_Gate::should_exempt_product($product);
+        $audience_exempt = class_exists('Tax_Role_Gate')
+            && Tax_Role_Gate::is_active()
+            && Tax_Role_Gate::should_exempt_product($product);
+        $holiday_exempt = class_exists('Tax_Holiday_Engine')
+            && Tax_Holiday_Engine::is_active()
+            && Tax_Holiday_Engine::should_exempt_product($product);
+
+        return !($audience_exempt || $holiday_exempt);
+    }
+
+    /**
+     * Apply merchant-selected shipping behavior during an active holiday.
+     *
+     * @param array $taxes Calculated shipping taxes by rate ID.
+     * @return array
+     */
+    public static function filter_shipping_taxes_for_holidays($taxes, $price, $rates): array
+    {
+        if (!is_array($taxes) || !class_exists('Tax_Holiday_Engine')) {
+            return is_array($taxes) ? $taxes : [];
+        }
+
+        $fraction = Tax_Holiday_Engine::get_shipping_exempt_fraction();
+        if ($fraction <= 0) {
+            return $taxes;
+        }
+
+        $taxable_fraction = max(0.0, 1.0 - $fraction);
+        foreach ($taxes as $rate_id => $amount) {
+            $taxes[$rate_id] = (float) $amount * $taxable_fraction;
+        }
+        return $taxes;
     }
 
     /**
@@ -72,8 +104,10 @@ class Tax_WooCommerce_Integration
      */
     public static function prime_cart_product_terms($cart): void
     {
-        if (!class_exists('Tax_Role_Gate') || !Tax_Role_Gate::is_active()
-            || empty(Tax_Role_Gate::get_conditional_rules(true))
+        $has_audience_rules = class_exists('Tax_Role_Gate') && Tax_Role_Gate::is_active()
+            && !empty(Tax_Role_Gate::get_conditional_rules(true));
+        $has_holiday_rules = class_exists('Tax_Holiday_Engine') && Tax_Holiday_Engine::is_active();
+        if ((!$has_audience_rules && !$has_holiday_rules)
             || !is_object($cart) || !method_exists($cart, 'get_cart')) {
             return;
         }
@@ -241,12 +275,14 @@ class Tax_WooCommerce_Integration
      */
     public static function store_line_item_exemption($item, $cart_item_key, $values, $order): void
     {
-        if (!class_exists('Tax_Role_Gate') || !Tax_Role_Gate::is_active()) {
-            return;
-        }
-
         $product = is_array($values) ? ($values['data'] ?? null) : null;
-        $matches = Tax_Role_Gate::get_matching_rules_for_product($product);
+        $audience_matches = class_exists('Tax_Role_Gate') && Tax_Role_Gate::is_active()
+            ? Tax_Role_Gate::get_matching_rules_for_product($product)
+            : [];
+        $holiday_matches = class_exists('Tax_Holiday_Engine') && Tax_Holiday_Engine::is_active()
+            ? Tax_Holiday_Engine::get_matching_rules_for_product($product)
+            : [];
+        $matches = array_merge($audience_matches, $holiday_matches);
         if (empty($matches)) {
             return;
         }
@@ -264,6 +300,24 @@ class Tax_WooCommerce_Integration
         $item->add_meta_data('_ffla_tax_exemption_rule_ids', implode(', ', $rule_ids), true);
         $item->add_meta_data('_ffla_tax_exemption_rule_names', implode(', ', $rule_names), true);
         $item->add_meta_data('_ffla_tax_exemption_snapshot', wp_json_encode($matches), true);
+        $item->add_meta_data('_ffla_tax_exemption_type', !empty($holiday_matches) && !empty($audience_matches) ? 'audience+holiday' : (!empty($holiday_matches) ? 'holiday' : 'audience'), true);
+        if (!empty($audience_matches)) {
+            $audience_names = array_values(array_filter(array_unique(array_map(function ($match) {
+                return (string) ($match['name'] ?? '');
+            }, $audience_matches))));
+            $item->add_meta_data('_ffla_tax_audience_rule_names', implode(', ', $audience_names), true);
+        }
+        if (!empty($holiday_matches)) {
+            $holiday_ids = array_values(array_filter(array_unique(array_map(function ($match) {
+                return (string) ($match['id'] ?? '');
+            }, $holiday_matches))));
+            $holiday_names = array_values(array_filter(array_unique(array_map(function ($match) {
+                return (string) ($match['name'] ?? '');
+            }, $holiday_matches))));
+            $item->add_meta_data('_ffla_tax_holiday_rule_ids', implode(', ', $holiday_ids), true);
+            $item->add_meta_data('_ffla_tax_holiday_rule_names', implode(', ', $holiday_names), true);
+            $item->add_meta_data('_ffla_tax_holiday_snapshot', wp_json_encode($holiday_matches), true);
+        }
     }
 
     /**
@@ -271,7 +325,7 @@ class Tax_WooCommerce_Integration
      */
     public static function store_order_exemption_summary($order, array $data): void
     {
-        if (!is_object($order) || !class_exists('Tax_Role_Gate')) {
+        if (!is_object($order)) {
             return;
         }
 
@@ -280,12 +334,27 @@ class Tax_WooCommerce_Integration
         $order->delete_meta_data('_ffla_conditional_tax_exempt_items');
         $order->delete_meta_data('_ffla_conditional_tax_exempt_sales');
         $order->delete_meta_data('_ffla_conditional_tax_exemption_rules');
-
-        if (!Tax_Role_Gate::is_active()) {
-            return;
+        $order->delete_meta_data('_ffla_tax_holiday_exempt_items');
+        $order->delete_meta_data('_ffla_tax_holiday_exempt_sales');
+        $order->delete_meta_data('_ffla_tax_holiday_exempt_shipping');
+        $order->delete_meta_data('_ffla_tax_holiday_rules');
+        $order->delete_meta_data('_ffla_tax_holiday_snapshot');
+        foreach ($order->get_items('shipping') as $shipping_item) {
+            $was_holiday = (string) $shipping_item->get_meta('_ffla_tax_exemption_type', true) === 'holiday';
+            $shipping_item->delete_meta_data('_ffla_tax_holiday_exempt_amount');
+            $shipping_item->delete_meta_data('_ffla_tax_holiday_rule_names');
+            $shipping_item->delete_meta_data('_ffla_tax_holiday_snapshot');
+            if ($was_holiday) {
+                $shipping_item->delete_meta_data('_ffla_tax_exempt');
+                $shipping_item->delete_meta_data('_ffla_tax_exemption_type');
+            }
+            if (method_exists($shipping_item, 'get_id') && $shipping_item->get_id() > 0) {
+                $shipping_item->save();
+            }
         }
 
-        if (!Tax_Role_Gate::should_charge_for_current_customer()) {
+        if (class_exists('Tax_Role_Gate') && Tax_Role_Gate::is_active()
+            && !Tax_Role_Gate::should_charge_for_current_customer()) {
             $context = Tax_Role_Gate::get_current_customer_context();
             $order->update_meta_data('_ffla_tax_full_order_exempt', 'yes');
             $order->update_meta_data('_ffla_tax_full_order_exempt_context', wp_json_encode($context));
@@ -294,30 +363,84 @@ class Tax_WooCommerce_Integration
         $count = 0;
         $sales = 0.0;
         $rule_names = [];
+        $holiday_count = 0;
+        $holiday_sales = 0.0;
+        $holiday_rule_names = [];
+        $holiday_snapshots = [];
         foreach ($order->get_items('line_item') as $item) {
             if (strtolower((string) $item->get_meta('_ffla_tax_exempt', true)) !== 'yes') {
                 continue;
             }
-            $count++;
-            $sales += (float) $item->get_total();
-            $names = array_map('trim', explode(',', (string) $item->get_meta('_ffla_tax_exemption_rule_names', true)));
-            foreach ($names as $name) {
-                if ($name !== '') {
-                    $rule_names[$name] = true;
+            $type = (string) $item->get_meta('_ffla_tax_exemption_type', true);
+            if ($type === '' || strpos($type, 'audience') !== false) {
+                $count++;
+                $sales += (float) $item->get_total();
+                $stored_names = (string) $item->get_meta('_ffla_tax_audience_rule_names', true);
+                if ($stored_names === '') {
+                    $stored_names = (string) $item->get_meta('_ffla_tax_exemption_rule_names', true);
+                }
+                $names = array_map('trim', explode(',', $stored_names));
+                foreach ($names as $name) {
+                    if ($name !== '') {
+                        $rule_names[$name] = true;
+                    }
+                }
+            }
+
+            if ((string) $item->get_meta('_ffla_tax_holiday_snapshot', true) !== '') {
+                $holiday_count++;
+                $holiday_sales += (float) $item->get_total();
+                $names = array_map('trim', explode(',', (string) $item->get_meta('_ffla_tax_holiday_rule_names', true)));
+                foreach ($names as $name) {
+                    if ($name !== '') {
+                        $holiday_rule_names[$name] = true;
+                    }
+                }
+                $snapshot = json_decode((string) $item->get_meta('_ffla_tax_holiday_snapshot', true), true);
+                foreach (is_array($snapshot) ? $snapshot : [] as $entry) {
+                    if (!is_array($entry)) {
+                        continue;
+                    }
+                    $key = (string) ($entry['id'] ?? md5(wp_json_encode($entry)));
+                    $holiday_snapshots[$key] = $entry;
                 }
             }
         }
 
-        if ($count <= 0) {
-            return;
+        if ($count > 0) {
+            $order->update_meta_data('_ffla_conditional_tax_exempt_items', $count);
+            $order->update_meta_data(
+                '_ffla_conditional_tax_exempt_sales',
+                function_exists('wc_format_decimal') ? wc_format_decimal($sales) : number_format($sales, 2, '.', '')
+            );
+            $order->update_meta_data('_ffla_conditional_tax_exemption_rules', implode(', ', array_keys($rule_names)));
         }
 
-        $order->update_meta_data('_ffla_conditional_tax_exempt_items', $count);
-        $order->update_meta_data(
-            '_ffla_conditional_tax_exempt_sales',
-            function_exists('wc_format_decimal') ? wc_format_decimal($sales) : number_format($sales, 2, '.', '')
-        );
-        $order->update_meta_data('_ffla_conditional_tax_exemption_rules', implode(', ', array_keys($rule_names)));
+        if ($holiday_count > 0) {
+            $shipping_fraction = class_exists('Tax_Holiday_Engine') ? Tax_Holiday_Engine::get_shipping_exempt_fraction() : 0.0;
+            $shipping_exempt = max(0.0, (float) $order->get_shipping_total() * $shipping_fraction);
+            $order->update_meta_data('_ffla_tax_holiday_exempt_items', $holiday_count);
+            $order->update_meta_data('_ffla_tax_holiday_exempt_sales', function_exists('wc_format_decimal') ? wc_format_decimal($holiday_sales) : number_format($holiday_sales, 2, '.', ''));
+            $order->update_meta_data('_ffla_tax_holiday_exempt_shipping', function_exists('wc_format_decimal') ? wc_format_decimal($shipping_exempt) : number_format($shipping_exempt, 2, '.', ''));
+            $order->update_meta_data('_ffla_tax_holiday_rules', implode(', ', array_keys($holiday_rule_names)));
+            $order->update_meta_data('_ffla_tax_holiday_snapshot', wp_json_encode(array_values($holiday_snapshots)));
+
+            $shipping_total = max(0.0, (float) $order->get_shipping_total());
+            foreach ($order->get_items('shipping') as $shipping_item) {
+                $line_total = max(0.0, (float) $shipping_item->get_total());
+                $line_exempt = $shipping_total > 0 ? $shipping_exempt * ($line_total / $shipping_total) : 0.0;
+                $shipping_item->update_meta_data('_ffla_tax_holiday_exempt_amount', function_exists('wc_format_decimal') ? wc_format_decimal($line_exempt) : number_format($line_exempt, 2, '.', ''));
+                $shipping_item->update_meta_data('_ffla_tax_holiday_rule_names', implode(', ', array_keys($holiday_rule_names)));
+                $shipping_item->update_meta_data('_ffla_tax_holiday_snapshot', wp_json_encode(array_values($holiday_snapshots)));
+                if ($line_total > 0 && $line_exempt >= $line_total - 0.00001) {
+                    $shipping_item->update_meta_data('_ffla_tax_exempt', 'yes');
+                    $shipping_item->update_meta_data('_ffla_tax_exemption_type', 'holiday');
+                }
+                if (method_exists($shipping_item, 'get_id') && $shipping_item->get_id() > 0) {
+                    $shipping_item->save();
+                }
+            }
+        }
     }
 
     /**
@@ -337,10 +460,19 @@ class Tax_WooCommerce_Integration
             $item->delete_meta_data('_ffla_tax_exemption_rule_ids');
             $item->delete_meta_data('_ffla_tax_exemption_rule_names');
             $item->delete_meta_data('_ffla_tax_exemption_snapshot');
+            $item->delete_meta_data('_ffla_tax_exemption_type');
+            $item->delete_meta_data('_ffla_tax_audience_rule_names');
+            $item->delete_meta_data('_ffla_tax_holiday_rule_ids');
+            $item->delete_meta_data('_ffla_tax_holiday_rule_names');
+            $item->delete_meta_data('_ffla_tax_holiday_snapshot');
 
-            $matches = Tax_Role_Gate::is_active()
+            $audience_matches = class_exists('Tax_Role_Gate') && Tax_Role_Gate::is_active()
                 ? Tax_Role_Gate::get_matching_rules_for_product($item->get_product())
                 : [];
+            $holiday_matches = class_exists('Tax_Holiday_Engine') && Tax_Holiday_Engine::is_active()
+                ? Tax_Holiday_Engine::get_matching_rules_for_product($item->get_product())
+                : [];
+            $matches = array_merge($audience_matches, $holiday_matches);
             if (!empty($matches)) {
                 $rule_ids = [];
                 $rule_names = [];
@@ -352,6 +484,24 @@ class Tax_WooCommerce_Integration
                 $item->update_meta_data('_ffla_tax_exemption_rule_ids', implode(', ', array_values(array_filter(array_unique($rule_ids)))));
                 $item->update_meta_data('_ffla_tax_exemption_rule_names', implode(', ', array_values(array_filter(array_unique($rule_names)))));
                 $item->update_meta_data('_ffla_tax_exemption_snapshot', wp_json_encode($matches));
+                $item->update_meta_data('_ffla_tax_exemption_type', !empty($holiday_matches) && !empty($audience_matches) ? 'audience+holiday' : (!empty($holiday_matches) ? 'holiday' : 'audience'));
+                if (!empty($audience_matches)) {
+                    $audience_names = array_values(array_filter(array_unique(array_map(function ($match) {
+                        return (string) ($match['name'] ?? '');
+                    }, $audience_matches))));
+                    $item->update_meta_data('_ffla_tax_audience_rule_names', implode(', ', $audience_names));
+                }
+                if (!empty($holiday_matches)) {
+                    $holiday_ids = array_values(array_filter(array_unique(array_map(function ($match) {
+                        return (string) ($match['id'] ?? '');
+                    }, $holiday_matches))));
+                    $holiday_names = array_values(array_filter(array_unique(array_map(function ($match) {
+                        return (string) ($match['name'] ?? '');
+                    }, $holiday_matches))));
+                    $item->update_meta_data('_ffla_tax_holiday_rule_ids', implode(', ', $holiday_ids));
+                    $item->update_meta_data('_ffla_tax_holiday_rule_names', implode(', ', $holiday_names));
+                    $item->update_meta_data('_ffla_tax_holiday_snapshot', wp_json_encode($holiday_matches));
+                }
             }
             $item->save();
         }
