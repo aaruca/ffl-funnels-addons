@@ -59,7 +59,7 @@
 
     /* ── Helper: set a WooCommerce field and fire change events ──────- */
 
-    function setFieldValue(selector, value) {
+    function setFieldValue(selector, value, suppressAutocomplete) {
         var el = document.querySelector(selector);
         if (!el || value == null || value === '') return;
 
@@ -78,8 +78,21 @@
             el.value = value;
         }
 
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-        el.dispatchEvent(new Event('input',  { bubbles: true }));
+        // Updating address line 1 fires the same `input` event used to request
+        // suggestions. Mark programmatic fills so selecting an address cannot
+        // immediately schedule another search and reopen the dropdown.
+        if (suppressAutocomplete) {
+            el.dataset.mbxProgrammatic = '1';
+        }
+
+        try {
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            el.dispatchEvent(new Event('input',  { bubbles: true }));
+        } finally {
+            if (suppressAutocomplete) {
+                delete el.dataset.mbxProgrammatic;
+            }
+        }
 
         if (typeof jQuery !== 'undefined') {
             jQuery(el).trigger('change');
@@ -102,7 +115,7 @@
 
         // Street.
         var street = p.address_line1 || p.name || '';
-        if (street) setFieldValue(group.address1, street);
+        if (street) setFieldValue(group.address1, street, true);
 
         // Unit / apt.
         if (p.address_line2) setFieldValue(group.address2, p.address_line2);
@@ -149,7 +162,7 @@
 
     /* ── Suggestion dropdown ──────────────────────────────────────── */
 
-    function showSuggestions(input, group, suggestions, dropdownId) {
+    function showSuggestions(input, group, suggestions, dropdownId, beginSelection) {
         removeSuggestions(dropdownId);
         if (!suggestions.length) return;
 
@@ -184,14 +197,22 @@
             li.addEventListener('mousedown', function (e) {
                 e.preventDefault();
 
+                // Cancel debounced/in-flight suggestion requests before any
+                // field events fire, then close the current popup immediately.
+                if (typeof beginSelection === 'function') {
+                    beginSelection();
+                }
+                removeSuggestions(dropdownId);
+
                 // Pre-fill address line 1 immediately so the user sees feedback.
-                setFieldValue(group.address1, s.name || '');
+                setFieldValue(group.address1, s.name || '', true);
                 removeSuggestions(dropdownId);
 
                 // Retrieve full feature to fill the rest of the fields.
                 if (s.mapbox_id) {
                     retrieveFeature(s.mapbox_id, function (feature) {
                         fillFieldsFromFeature(group, feature);
+                        removeSuggestions(dropdownId);
                     });
                 }
             });
@@ -230,11 +251,26 @@
         input.setAttribute('autocomplete', 'off');
 
         var debounceTimer;
+        var requestSequence = 0;
         var dropdownId = 'ffl-mbx-' + group.prefix;
+
+        function cancelSuggestions() {
+            clearTimeout(debounceTimer);
+            requestSequence++;
+            removeSuggestions(dropdownId);
+        }
 
         input.addEventListener('input', function () {
             clearTimeout(debounceTimer);
+
+            if (input.dataset.mbxProgrammatic) {
+                requestSequence++;
+                removeSuggestions(dropdownId);
+                return;
+            }
+
             var q = input.value.trim();
+            var requestId = ++requestSequence;
 
             if (q.length < 3) {
                 removeSuggestions(dropdownId);
@@ -242,6 +278,8 @@
             }
 
             debounceTimer = setTimeout(function () {
+                if (requestId !== requestSequence) return;
+
                 fetch(
                     SUGGEST_URL +
                     '?q='             + encodeURIComponent(q) +
@@ -254,8 +292,12 @@
                 )
                 .then(function (r) { return r.json(); })
                 .then(function (data) {
+                    if (requestId !== requestSequence || input.value.trim() !== q) {
+                        return;
+                    }
+
                     var suggestions = (data && data.suggestions) || [];
-                    showSuggestions(input, group, suggestions, dropdownId);
+                    showSuggestions(input, group, suggestions, dropdownId, cancelSuggestions);
                 })
                 .catch(function (err) {
                     console.warn('[FFL Mapbox] suggest error:', err);
