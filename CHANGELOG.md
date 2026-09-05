@@ -2,6 +2,11 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.46.1] - 2026-09-05
+
+### Fixed
+- **Mapbox address selection now closes reliably.** Selecting an autocomplete result immediately dismisses the suggestions popup, suppresses searches caused by programmatic WooCommerce field updates, and prevents stale Mapbox responses from reopening the list. Manual edits can still open new suggestions normally.
+
 ## [1.46.0] - 2026-09-03
 
 ### Changed
