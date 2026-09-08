@@ -39,9 +39,11 @@ class Google_Merchant_Policy_Module extends FFLA_Module
         $base = $this->get_path();
         require_once $base . 'includes/class-google-merchant-policy-engine.php';
         require_once $base . 'includes/class-google-merchant-policy-reconciler.php';
+        require_once $base . 'includes/class-google-merchant-policy-google-sync.php';
 
         Google_Merchant_Policy_Engine::init();
         Google_Merchant_Policy_Reconciler::init();
+        Google_Merchant_Policy_Google_Sync::init();
 
         if (is_admin()) {
             require_once $base . 'admin/class-google-merchant-policy-admin.php';
