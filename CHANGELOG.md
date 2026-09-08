@@ -2,6 +2,18 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.46.2] - 2026-09-08
+
+### Fixed
+- **Merchant scans no longer stop after their own running action.** Successor detection checks only pending actions. Stable ID cursors, per-item checkpoints, atomic worker locks, pause/resume, WP-Cron fallback and a watchdog keep scans bounded and recoverable. Legacy running scans restart once without removing existing exclusions.
+- **Policy exclusions no longer create empty Google update retry loops.** A narrow adapter handles all-excluded and mixed queued updates while preserving Google's handling of unrelated failures.
+- **Existing Google listings receive withdrawal requests.** Reconciliation delegates excluded, previously synced products to Google for WooCommerce's removal lifecycle. Missing connections or inconsistent Google IDs are surfaced; local completion never claims confirmed remote deletion or approval.
+- **Product policies run after WooCommerce saves final visibility and terms.** Variation flags, long descriptions and stun-gun spellings are checked; an included case no longer overrides a firearm signal.
+
+### Added
+- Merchant scan progress timestamp, delegated-withdrawal count and explicit Merchant Center verification guidance.
+- Standalone Merchant regression harness, with optional real WordPress hook-dispatch checks.
+
 ## [1.46.1] - 2026-09-05
 
 ### Fixed
