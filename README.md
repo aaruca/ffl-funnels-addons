@@ -2,12 +2,24 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.46.1-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.46.2-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
 
 ## Features
+
+### Google Merchant Policy — feed reconciliation
+
+Enforce mode withholds Blocked and Pending products from Google for WooCommerce while keeping Audit mode read-only for feed visibility. Category policies are inherited; existing manual exclusions are never automatically removed.
+
+- Resumable, ID-based background scans use small batches, per-item checkpoints, a worker lock, and lost-task recovery. Paused or failed scans resume without resetting completed work. Legacy running scans restart once on the new cursor after upgrading.
+- Previously synchronized excluded products are delegated to Google for WooCommerce's own removal jobs, using its Google product IDs. An entirely policy-excluded queued update completes without the empty-product retry loop; unrelated errors retain Google's normal handling.
+- Final WooCommerce product saves are checked before Google's sync hooks. Safety checks include variation-specific flags, full descriptions and stun-gun spellings. An included case or lock no longer neutralizes a firearm signal.
+
+After installing an update, open **Google Merchant Policy**, verify your category rules, and choose **Save policies & start catalog scan** for a fresh audit, or **Resume / run next batch** for a paused/failed scan. Background processing requires working WordPress cron or Action Scheduler. Google for WooCommerce must be connected to request remote removals; connection or metadata issues appear as scan errors rather than successful removals.
+
+**A completed local scan is not confirmed remote deletion or Google approval.** Check Google for WooCommerce scheduled actions and Merchant Center inventory before requesting another account review. Other feed sources are not controlled by this module, and keyword checks cannot certify every product as compliant. The Google for WooCommerce source name and its default attribute rule do not change.
 
 This plugin is a modular suite of tools designed to enhance FFL Funnels stores. It includes:
 
