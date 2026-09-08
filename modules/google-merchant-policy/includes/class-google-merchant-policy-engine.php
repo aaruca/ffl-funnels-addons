@@ -18,7 +18,7 @@ class Google_Merchant_Policy_Engine
     const VERSION_META = '_ffla_gmp_version';
     const CHECKED_META = '_ffla_gmp_checked_at';
     const VISIBILITY_META = '_wc_gla_visibility';
-    const ENGINE_VERSION = '1.0';
+    const ENGINE_VERSION = '1.1';
 
     /** @var array<int,array> */
     private static $decision_cache = [];
@@ -26,10 +26,14 @@ class Google_Merchant_Policy_Engine
     public static function init(): void
     {
         add_filter('woocommerce_gla_get_sync_ready_products_pre_filter', [__CLASS__, 'filter_sync_ready_products'], 5, 1);
-        add_action('save_post_product', [__CLASS__, 'on_product_saved'], 20, 3);
-        add_action('save_post_product_variation', [__CLASS__, 'on_product_saved'], 20, 3);
+        // WooCommerce has saved terms and channel visibility by priority 80;
+        // Google's SyncerHooks reads the final object at priority 90.
+        foreach (['woocommerce_new_product', 'woocommerce_update_product', 'woocommerce_new_product_variation', 'woocommerce_update_product_variation'] as $hook) {
+            add_action($hook, [__CLASS__, 'on_wc_product_saved'], 80, 2);
+        }
+        add_action('woocommerce_process_product_meta', [__CLASS__, 'on_wc_product_saved'], 80, 1);
         add_action('created_product_cat', [__CLASS__, 'on_category_created'], 10, 2);
-        add_action('edited_product_cat', [__CLASS__, 'on_category_edited'], 20, 2);
+        add_action('edited_product_cat', [__CLASS__, 'on_category_edited'], 40, 2);
         add_action('update_option_' . self::OPTION, [__CLASS__, 'reset_runtime_cache'], 10, 0);
     }
 
@@ -123,6 +127,9 @@ class Google_Merchant_Policy_Engine
         }
 
         $hard_reasons = self::get_hard_block_reasons($policy_product, $policy_product_id);
+        if ($parent_id > 0) {
+            $hard_reasons = array_values(array_unique(array_merge($hard_reasons, self::get_hard_block_reasons($product, $product_id))));
+        }
         if (!empty($hard_reasons)) {
             $decision = [
                 'status' => 'blocked',
@@ -280,6 +287,15 @@ class Google_Merchant_Policy_Engine
         }
     }
 
+    public static function on_wc_product_saved(int $product_id, $product = null): void
+    {
+        self::reset_runtime_cache();
+        $product = is_object($product) ? $product : wc_get_product($product_id);
+        if ($product) {
+            self::apply_to_product($product);
+        }
+    }
+
     public static function on_category_created(int $term_id, int $tt_id): void
     {
         $term = get_term($term_id, 'product_cat');
@@ -318,6 +334,9 @@ class Google_Merchant_Policy_Engine
         if (method_exists($product, 'get_short_description')) {
             $parts[] = wp_strip_all_tags((string) $product->get_short_description());
         }
+        if (method_exists($product, 'get_description')) {
+            $parts[] = wp_strip_all_tags((string) $product->get_description());
+        }
         $terms = wp_get_post_terms($product_id, 'product_cat', ['fields' => 'names']);
         if (!is_wp_error($terms)) {
             $parts = array_merge($parts, (array) $terms);
@@ -327,19 +346,18 @@ class Google_Merchant_Policy_Engine
 
         // Storage and carrying accessories are not treated as weapons merely
         // because their title contains "gun" or "rifle".
-        $safe_accessory = preg_match('/\b(case|safe|cabinet|vault|lock|rack|bag|holster|sling|cleaning mat)\b/i', $text);
+        // Remove explicit accessory phrases, not every firearm signal merely
+        // because a description also mentions an included case or a lock.
+        $firearm_text = preg_replace('/\b(gun|firearm|handgun|pistol|revolver|rifle|shotgun)s?\s+(?:(?:carrying|storage|hard|soft)\s+)?(?:cases?|safes?|cabinets?|vaults?|locks?|racks?|bags?|holsters?|slings?|cleaning mats?)\b/i', '', $text);
         $patterns = apply_filters('ffla_google_merchant_hard_block_patterns', [
             'ammunition' => '/\b(ammunition|ammo|cartridges?|rounds?|primers?|gunpowder|smokeless powder)\b/i',
             'firearm' => '/\b(firearms?|handguns?|pistols?|revolvers?|rifles?|shotguns?|machine guns?|short[- ]barreled|sbr|nfa)\b/i',
             'regulated_part' => '/\b(receivers?|frames?|barrels?|triggers?|bolt carriers?|upper receivers?|lower receivers?|magazines?|suppressors?|silencers?)\b/i',
-            'weapon_accessory' => '/\b(rifle scopes?|gun scopes?|weapon sights?|night vision scopes?|thermal scopes?|less[- ]lethal weapons?|tasers?)\b/i',
+            'weapon_accessory' => '/\b(rifle scopes?|gun scopes?|weapon sights?|night vision scopes?|thermal scopes?|less[- ]lethal weapons?|tasers?|tazers?|stun guns?)\b/i',
         ], $product);
 
         foreach ((array) $patterns as $label => $pattern) {
-            if ($safe_accessory && $label === 'firearm') {
-                continue;
-            }
-            $matched = is_string($pattern) ? preg_match($pattern, $text) : false;
+            $matched = is_string($pattern) ? preg_match($pattern, $label === 'firearm' ? $firearm_text : $text) : false;
             if ($matched === 1) {
                 $reasons[] = sprintf(__('Hard block: restricted %s content detected.', 'ffl-funnels-addons'), str_replace('_', ' ', (string) $label));
             }
