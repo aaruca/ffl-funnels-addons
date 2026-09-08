@@ -75,7 +75,7 @@ class Google_Merchant_Policy_Admin
         $this->authorize('ffla_gmp_run_batch');
         $state = Google_Merchant_Policy_Reconciler::get_state();
         if (!in_array((string) $state['status'], ['running'], true)) {
-            Google_Merchant_Policy_Reconciler::start();
+            Google_Merchant_Policy_Reconciler::resume();
         }
         Google_Merchant_Policy_Reconciler::run_batch();
         wp_safe_redirect(add_query_arg(['page' => self::PAGE, 'batch' => '1'], admin_url('admin.php')));
@@ -110,6 +110,10 @@ class Google_Merchant_Policy_Admin
         echo '</div>';
 
         echo '<div class="wb-card ffla-gmp-intro"><div class="wb-card__body">';
+        if (!empty($state['updated_at'])) {
+            echo '<p>' . esc_html(sprintf(__('Last progress (UTC): %1$s. Google withdrawal requests delegated: %2$d. Unavailable products skipped: %3$d.', 'ffl-funnels-addons'), $state['updated_at'], $state['withdrawal_requests'], $state['skipped'])) . '</p>';
+        }
+        echo '<p><strong>' . esc_html__('Local scan completion is not Google approval.', 'ffl-funnels-addons') . '</strong> ' . esc_html__('Removal requests are processed asynchronously by Google for WooCommerce. Verify its scheduled actions and the remaining products in Merchant Center before requesting an account review. Keyword checks assist your category policies; they cannot certify every product as compliant.', 'ffl-funnels-addons') . '</p>';
         echo '<h3>' . esc_html__('Feed safety without catalog artifacts', 'ffl-funnels-addons') . '</h3>';
         echo '<p>' . esc_html__('This module does not create tags, categories, or customer-visible filters. It reads your existing product categories, applies an inherited Allow / Block / Pending policy, and gives hard firearm or ammunition signals priority over every allow rule.', 'ffl-funnels-addons') . '</p>';
         echo '<p><strong>' . esc_html__('Safe default:', 'ffl-funnels-addons') . '</strong> ' . esc_html__('Audit mode records decisions but does not change Google visibility. Enforce mode filters blocked and pending products and adds Google for WooCommerce’s “don’t sync and show” visibility value. It never automatically removes a previous exclusion.', 'ffl-funnels-addons') . '</p>';
@@ -151,7 +155,7 @@ class Google_Merchant_Policy_Admin
         echo '<div class="ffla-gmp-actions"><button type="submit" class="wb-btn wb-btn--primary">' . esc_html__('Save policies & start catalog scan', 'ffl-funnels-addons') . '</button><span>' . esc_html__('The scan continues in small background batches and can be paused without losing results.', 'ffl-funnels-addons') . '</span></div></form>';
 
         echo '<div class="ffla-gmp-secondary-actions">';
-        $this->action_form('ffla_gmp_run_batch', 'ffla_gmp_run_batch', __('Run next batch now', 'ffl-funnels-addons'), 'wb-btn wb-btn--secondary');
+        $this->action_form('ffla_gmp_run_batch', 'ffla_gmp_run_batch', __('Resume / run next batch', 'ffl-funnels-addons'), 'wb-btn wb-btn--secondary');
         $this->action_form('ffla_gmp_pause', 'ffla_gmp_pause', __('Pause scan', 'ffl-funnels-addons'), 'wb-btn');
         echo '</div>';
 
