@@ -45,7 +45,7 @@
         if ('percent' === format) {
             return isNumber(value) ? formatNumber(value, 2) + '%' : '—';
         }
-        return formatNumber(value, 0);
+        return formatNumber(value, format === 'decimal' ? 2 : 0);
     }
 
     function renderSalesChart() {
@@ -134,14 +134,21 @@
 
         Array.prototype.forEach.call(headers, function (th, index) {
             th.classList.add('is-sortable');
+            th.setAttribute('tabindex', '0');
+            th.setAttribute('aria-sort', 'none');
+            th.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); th.click(); }
+            });
             th.addEventListener('click', function () {
                 var numeric = th.getAttribute('data-type') === 'num';
                 var ascending = th.getAttribute('data-dir') !== 'asc';
 
                 Array.prototype.forEach.call(headers, function (header) {
                     header.removeAttribute('data-dir');
+                    header.setAttribute('aria-sort', 'none');
                 });
                 th.setAttribute('data-dir', ascending ? 'asc' : 'desc');
+                th.setAttribute('aria-sort', ascending ? 'ascending' : 'descending');
 
                 var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
                 rows.sort(function (a, b) {
@@ -205,7 +212,7 @@
                 var suffix = 'points' === metric.deltaFormat ? ' pp' : '%';
                 var delta = makeElement(
                     'span',
-                    'ffla-dash-delta ' + (up ? 'is-up' : 'is-down'),
+                    'ffla-dash-delta ' + ((metric.lowerIsBetter ? !up : up) ? 'is-up' : 'is-down'),
                     (up ? '↗ +' : '↘ ') + formatNumber(metric.delta, 1) + suffix
                 );
                 top.appendChild(delta);
@@ -213,7 +220,7 @@
 
             card.appendChild(top);
             card.appendChild(makeElement('strong', 'ffla-dash-analytics-metric__value', formatMetric(metric.value, metric.format)));
-            card.appendChild(makeElement('span', 'ffla-dash-analytics-metric__sub', strings.previousPeriod || 'vs. previous period'));
+            card.appendChild(makeElement('span', 'ffla-dash-analytics-metric__sub', isNumber(metric.delta) ? (strings.previousPeriod || 'vs. previous period') : (strings.noComparison || 'Previous-period comparison unavailable')));
             grid.appendChild(card);
         });
 
@@ -234,208 +241,121 @@
     }
 
     function renderGoogleChart(canvas, series) {
-        if (typeof window.Chart === 'undefined' || !series.length) {
-            return;
-        }
-
-        var accent = cssVar(canvas, '--ffla-dash-accent', '#2563eb');
-        var secondary = '#8b5cf6';
+        if (typeof window.Chart === 'undefined' || !series.length) { return; }
         var muted = cssVar(canvas, '--ffla-dash-muted', '#94a3b8');
-        var grid = cssVar(canvas, '--ffla-dash-border', '#e6eaf1');
-        var hasPageviews = series.some(function (point) { return isNumber(point.pageviews); });
-        var hasClicks = series.some(function (point) { return isNumber(point.clicks); });
-        var datasets = [];
-
-        if (hasPageviews) {
-            datasets.push({
-                label: strings.searchTraffic || 'Organic search traffic',
-                data: series.map(function (point) { return point.pageviews; }),
-                borderColor: accent,
-                backgroundColor: 'transparent',
-                fill: false,
-                tension: 0.32,
-                pointRadius: 2,
-                yAxisID: 'y'
-            });
-        }
-        if (hasClicks) {
-            datasets.push({
-                label: strings.organicClicks || 'Organic clicks',
-                data: series.map(function (point) { return point.clicks; }),
-                borderColor: secondary,
-                backgroundColor: 'transparent',
-                fill: false,
-                tension: 0.32,
-                pointRadius: 2,
-                yAxisID: hasPageviews ? 'y1' : 'y'
-            });
-        }
-        if (!datasets.length) {
-            return;
-        }
-
-        if (analyticsChart) {
-            analyticsChart.destroy();
-        }
-
+        var datasets = [
+            ['sessions', strings.sessions || 'Sessions', cssVar(canvas, '--ffla-dash-accent', '#2563eb')],
+            ['pageviews', strings.pageviews || 'Pageviews', '#8b5cf6']
+        ].filter(function (spec) {
+            return series.some(function (point) { return isNumber(point[spec[0]]); });
+        }).map(function (spec) {
+            return { label: spec[1], data: series.map(function (point) { return point[spec[0]]; }),
+                borderColor: spec[2], backgroundColor: 'transparent', tension: 0.25, pointRadius: 2, spanGaps: false };
+        });
+        if (!datasets.length) { return; }
         analyticsChart = new window.Chart(canvas, {
             type: 'line',
-            data: {
-                labels: series.map(function (point) { return point.label; }),
-                datasets: datasets
-            },
+            data: { labels: series.map(function (point) { return point.label; }), datasets: datasets },
             options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: { color: muted, usePointStyle: true, boxWidth: 8 }
-                    }
-                },
+                responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { position: 'bottom', labels: { color: muted, usePointStyle: true } } },
                 scales: {
-                    x: {
-                        grid: { display: false },
-                        ticks: { color: muted, maxRotation: 0, autoSkip: true, maxTicksLimit: 7 }
-                    },
-                    y: {
-                        beginAtZero: true,
-                        border: { display: false },
-                        grid: { color: grid },
-                        ticks: { color: muted, maxTicksLimit: 5 }
-                    },
-                    y1: {
-                        display: hasPageviews && hasClicks,
-                        beginAtZero: true,
-                        position: 'right',
-                        border: { display: false },
-                        grid: { drawOnChartArea: false },
-                        ticks: { color: muted, maxTicksLimit: 5 }
-                    }
+                    x: { grid: { display: false }, ticks: { color: muted, maxRotation: 0, autoSkip: true, maxTicksLimit: 7 } },
+                    y: { beginAtZero: true, ticks: { color: muted }, grid: { color: cssVar(canvas, '--ffla-dash-border', '#e6eaf1') } }
                 }
             }
         });
     }
 
-    function renderLandingPages(parent, rows) {
-        var panel = createPanel('Google', strings.topLandingPages || 'Top organic landing pages', 'ffla-dash-panel--full');
-        if (!rows || !rows.length) {
-            panel.appendChild(makeElement('p', 'ffla-dash-empty', strings.noMovement || 'No landing pages to show.'));
-            parent.appendChild(panel);
-            return;
-        }
-
-        var table = makeElement('table', 'ffla-dash-table');
-        table.setAttribute('data-ffla-sortable', '');
-        var thead = document.createElement('thead');
-        var headerRow = document.createElement('tr');
-        [
-            [strings.landingPage || 'Landing page', 'text'],
-            [strings.pageviews || 'Traffic', 'num'],
-            [strings.clicks || 'Clicks', 'num'],
-            [strings.impressions || 'Impressions', 'num'],
-            [strings.ctr || 'CTR', 'num']
-        ].forEach(function (heading) {
-            var th = makeElement('th', '', heading[0]);
-            th.setAttribute('data-type', heading[1]);
-            appendSortIndicator(th);
-            headerRow.appendChild(th);
-        });
-        thead.appendChild(headerRow);
-        table.appendChild(thead);
-
-        var tbody = document.createElement('tbody');
-        rows.forEach(function (row) {
-            var tr = document.createElement('tr');
-            var titleCell = document.createElement('td');
-            var link = makeElement('a', 'ffla-dash-table__link', row.title || row.url || '—');
-            link.href = row.url || '#';
-            link.target = '_blank';
-            link.rel = 'noopener';
-            titleCell.appendChild(link);
-            tr.appendChild(titleCell);
-
-            [
-                [row.pageviews, formatNumber(row.pageviews, 0)],
-                [row.clicks, formatNumber(row.clicks, 0)],
-                [row.impressions, formatNumber(row.impressions, 0)],
-                [row.ctr, isNumber(row.ctr) ? formatNumber(row.ctr, 2) + '%' : '—']
-            ].forEach(function (cellData) {
-                var td = makeElement('td', '', cellData[1]);
-                td.setAttribute('data-v', isNumber(cellData[0]) ? String(cellData[0]) : '-1');
-                tr.appendChild(td);
+    function renderProviderTables(parent, tables) {
+        (tables || []).forEach(function (data) {
+            var formats = data.formats || [];
+            var panel = createPanel('MonsterInsights', data.title || '', 'ffla-dash-panel--full');
+            if (!Array.isArray(data.rows) || !data.rows.length) {
+                panel.appendChild(makeElement('p', 'ffla-dash-empty', strings.noRows || 'No rows were returned for this period.'));
+                parent.appendChild(panel);
+                return;
+            }
+            var wrap = makeElement('div', 'ffla-dash-table-wrap');
+            wrap.setAttribute('tabindex', '0');
+            wrap.setAttribute('role', 'region');
+            wrap.setAttribute('aria-label', data.title || 'Report table');
+            var table = makeElement('table', 'ffla-dash-table');
+            var thead = document.createElement('thead');
+            var headings = document.createElement('tr');
+            (data.columns || []).forEach(function (label, i) {
+                var th = makeElement('th', '', label);
+                th.setAttribute('scope', 'col');
+                th.setAttribute('data-type', formats[i] === 'text' ? 'text' : 'num');
+                appendSortIndicator(th);
+                headings.appendChild(th);
             });
-            tbody.appendChild(tr);
+            thead.appendChild(headings);
+            table.appendChild(thead);
+            var tbody = document.createElement('tbody');
+            data.rows.forEach(function (row) {
+                var tr = document.createElement('tr');
+                (data.columns || []).forEach(function (_, i) {
+                    var value = row[i];
+                    var text = formats[i] === 'text' ? (value || '—') : formatMetric(value, formats[i]);
+                    var td = makeElement('td', '', text);
+                    if (formats[i] !== 'text') { td.setAttribute('data-v', isNumber(value) ? String(value) : '-1'); }
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+            wrap.appendChild(table);
+            panel.appendChild(wrap);
+            parent.appendChild(panel);
+            makeSortable(table);
         });
-        table.appendChild(tbody);
-        panel.appendChild(table);
-        parent.appendChild(panel);
-        makeSortable(table);
-    }
-
-    function renderMoverList(title, rows, direction) {
-        var section = makeElement('div', 'ffla-dash-movers__group');
-        section.appendChild(makeElement('h5', '', title));
-
-        if (!rows || !rows.length) {
-            section.appendChild(makeElement('p', 'ffla-dash-empty', strings.noMovement || 'No meaningful movement.'));
-            return section;
-        }
-
-        var list = makeElement('ul', 'ffla-dash-movers__list');
-        rows.forEach(function (row) {
-            var item = document.createElement('li');
-            var link = makeElement('a', '', row.title || row.url || '—');
-            link.href = row.url || '#';
-            link.target = '_blank';
-            link.rel = 'noopener';
-            item.appendChild(link);
-
-            var change = isNumber(row.change) ? row.change : 0;
-            var sign = change > 0 ? '+' : '';
-            item.appendChild(makeElement(
-                'span',
-                'ffla-dash-mover ' + ('up' === direction ? 'is-up' : 'is-down'),
-                sign + formatNumber(change, 0) + ' ' + (strings.clickChange || 'clicks')
-            ));
-            list.appendChild(item);
-        });
-        section.appendChild(list);
-        return section;
-    }
-
-    function renderMovers(parent, winners, losers) {
-        var panel = createPanel('Google Search Console', strings.movement || 'Organic movement', 'ffla-dash-panel--full');
-        var grid = makeElement('div', 'ffla-dash-movers');
-        grid.appendChild(renderMoverList(strings.winners || 'Winning pages', winners, 'up'));
-        grid.appendChild(renderMoverList(strings.losers || 'Losing pages', losers, 'down'));
-        panel.appendChild(grid);
-        parent.appendChild(panel);
     }
 
     function renderGoogle(parent, data) {
         var split = makeElement('div', 'ffla-dash-analytics-grid');
-        var chartPanel = createPanel('Google Analytics + Search Console', strings.trend || 'Traffic trend');
-        var chartWrap = makeElement('div', 'ffla-dash-chart-wrap ffla-dash-chart-wrap--analytics');
-        var canvas = document.createElement('canvas');
-        chartWrap.appendChild(canvas);
-        chartPanel.appendChild(chartWrap);
-        split.appendChild(chartPanel);
-
-        var summaryPanel = createPanel('Rank Math PRO', strings.searchTraffic || 'Organic search traffic', 'ffla-dash-analytics-summary');
-        summaryPanel.appendChild(makeElement('p', 'ffla-dash-analytics-copy', data.note || ''));
-        if (data.report_url) {
-            var report = makeElement('a', 'ffla-dash-report-link', (strings.openReport || 'Open full report') + ' →');
-            report.href = data.report_url;
-            summaryPanel.appendChild(report);
+        var chartPanel = createPanel('MonsterInsights · Google Analytics', strings.trend || 'Traffic trend');
+        var canvas = null;
+        if (Array.isArray(data.series) && data.series.length) {
+            var chartWrap = makeElement('div', 'ffla-dash-chart-wrap ffla-dash-chart-wrap--analytics');
+            canvas = document.createElement('canvas');
+            canvas.setAttribute('role', 'img');
+            canvas.setAttribute('aria-label', strings.trend || 'Sessions and pageviews by date');
+            chartWrap.appendChild(canvas);
+            chartPanel.appendChild(chartWrap);
+        } else {
+            chartPanel.appendChild(makeElement('p', 'ffla-dash-empty', strings.noRows || 'No trend data is available.'));
         }
-        split.appendChild(summaryPanel);
+        split.appendChild(chartPanel);
+        var summary = createPanel('MonsterInsights', strings.searchTraffic || 'All-channel website traffic', 'ffla-dash-analytics-summary');
+        if (data.dates) {
+            summary.appendChild(makeElement('p', 'ffla-dash-analytics-copy',
+                data.dates.start + ' – ' + data.dates.end + ' · ' + (strings.throughYesterday || 'Complete days through yesterday')));
+        }
+        summary.appendChild(makeElement('p', 'ffla-dash-analytics-copy', data.note || ''));
+        if (data.report_url) {
+            var link = makeElement('a', 'ffla-dash-report-link', (strings.openReport || 'Open full report') + ' →');
+            link.href = data.report_url;
+            summary.appendChild(link);
+        }
+        split.appendChild(summary);
         parent.appendChild(split);
-
-        renderGoogleChart(canvas, data.series || []);
-        renderLandingPages(parent, data.landing_pages || []);
-        renderMovers(parent, data.winners || [], data.losers || []);
+        if (canvas) { renderGoogleChart(canvas, data.series); }
+        renderProviderTables(parent, data.tables || []);
+        if (data.ecommerce) {
+            var commerce = data.ecommerce;
+            var commercePanel = createPanel('Google Analytics', strings.ecommerce || 'MonsterInsights eCommerce', 'ffla-dash-panel--full');
+            if (commerce.status === 'ready') {
+                renderMetrics(commercePanel, commerce.metrics || []);
+                commercePanel.appendChild(makeElement('p', 'ffla-dash-analytics-copy',
+                    (commerce.currency ? commerce.currency + ' · ' : '') +
+                    (strings.currencyNote || 'Monetary values use the Google Analytics property currency, not necessarily the store currency.')));
+                renderProviderTables(commercePanel, commerce.tables || []);
+            } else {
+                commercePanel.appendChild(makeElement('p', 'ffla-dash-empty', commerce.message || strings.noRows));
+            }
+            parent.appendChild(commercePanel);
+        }
     }
 
     function renderFunnel(parent, data) {
@@ -546,8 +466,8 @@
             return;
         }
 
-        if (!force && responseCache[cacheKey]) {
-            renderAnalytics(panel, responseCache[cacheKey]);
+        if (!force && responseCache[cacheKey] && Date.now() - responseCache[cacheKey].time < 600000) {
+            renderAnalytics(panel, responseCache[cacheKey].data);
             return;
         }
 
@@ -561,11 +481,14 @@
             body.set('force', '1');
         }
 
+        var controller = typeof window.AbortController === 'function' ? new window.AbortController() : null;
+        var timeout = controller ? window.setTimeout(function () { controller.abort(); }, 45000) : null;
         window.fetch(config.ajaxUrl || window.ajaxurl, {
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
-            body: body.toString()
+            body: body.toString(),
+            signal: controller ? controller.signal : undefined
         })
             .then(function (response) {
                 if (!response.ok) {
@@ -580,14 +503,17 @@
                 if (!response || !response.success || !response.data) {
                     throw new Error('Invalid analytics response');
                 }
-                responseCache[cacheKey] = response.data;
+                if (response.data.status === 'ready') {
+                    responseCache[cacheKey] = { data: response.data, time: Date.now() };
+                }
                 renderAnalytics(panel, response.data);
             })
             .catch(function () {
                 if (currentRequest === requestSequence) {
                     renderState(panel, strings.loadError || 'Analytics could not be loaded.');
                 }
-            });
+            })
+            .finally(function () { if (timeout !== null) { window.clearTimeout(timeout); } });
     }
 
     function activateTab(root, source, shouldFocus) {

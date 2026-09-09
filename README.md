@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.46.2-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.47.0-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -117,9 +117,19 @@ Brand and simplify wp-admin for store clients without changing WordPress core.
 *   **Light/dark branding:** Configure independent admin palettes and let each user switch modes from the admin bar.
 *   **Menu and access control:** Reorder top-level menus, hide or block admin/menu-bar items for client users, and exempt staff with email patterns.
 *   **Client dashboard:** Optional branded replacement for the standard WordPress dashboard, with configurable support/resource links and cached WooCommerce business metrics.
-*   **Analytics tabs:** Switch between **Google Analytics** (through the existing Rank Math PRO connection) and **SnapFind**. Includes shared 7/30/90-day ranges, per-user preferences, lazy loading, trends, landing pages, search funnel, and top terms.
-*   **No additional Google authorization:** Rank Math PRO remains responsible for Google authentication and daily data synchronization; FFL Funnels Addons reads the locally synced data.
+*   **Analytics tabs:** Switch between **MonsterInsights** and **SnapFind**, with per-user tab/range preferences and lazy loading. MonsterInsights supplies sessions, pageviews, new users, engagement rate, traffic trends, top pages and traffic sources. Rank Math is no longer an analytics dependency.
+*   **MonsterInsights eCommerce:** With an eligible license and active eCommerce Addon on MonsterInsights 11.2+, display purchases, analytics revenue, average order value, purchases per session and top products. Analytics revenue remains separate from WooCommerce business totals; values use the Google Analytics property currency.
+*   **Existing connection and permissions:** Reuses MonsterInsights server-side authentication without adding Google tags or tracking events. Respects report permissions, connection, license and disabled-report settings before reading its user/property-scoped cache. Pro supports 7/30/90-day ranges ending yesterday; Lite is limited to 30 days. Older releases use their registered overview-report interface; commerce details link to MonsterInsights instead.
+*   **Safe reporting UI:** Responsive light/dark cards, scrollable keyboard-sortable tables, explicit unavailable states, short failure caching, and no fabricated zeros or demo charts. SnapFind search reports and WooCommerce sales cards remain independent.
 *   **Portable settings:** Export and replace the complete White Label configuration with sanitized JSON.
+
+### 13. Pickup & Shipping
+* **Opt-in, per-site configuration:** An independent module, disabled by default. Choose pickup/shipping/both, the default selection, and existing WooCommerce shipping method instances (shown with their zones).
+* **Classic checkout selector:** Accessible delivery cards, server-refreshed availability, editable copy/colors and desktop/mobile admin preview. Use automatic placement before billing fields or place `[ffla_delivery_choice]` inside a custom classic checkout form. Addresses, prices, tax calculation and carrier requests stay under WooCommerce/the existing providers.
+* **Optional FFL rules:** Requires g-FFL Checkout. Map each own FFL license to a specific pickup method: own FFL → pickup only; external FFL → shipping only. No name/cookie-based local identification, no automatic dealer authorization and no bypass of provider license/address/restriction validation.
+* **Package safety:** Rules apply to each existing package. Mixed FFL/customer packages must be separated with correct destinations by the fulfillment provider; otherwise checkout is blocked with an explanation. This module does not split inventory, invent destinations, or override mixed-package taxation.
+* **Consistent delivery state:** Package-cache policy fingerprints, final server-side method validation, session cleanup, and delivery snapshots in shipping-line metadata, order details and emails. Existing rates/costs/taxes are preserved.
+* **Compatibility boundaries:** Checkout Blocks/Store API are not modified in this version. Incomplete configuration or detection of the old Camarillo shipping snippet pauses the module with an admin warning. Disable only the old shipping logic before enabling this module; preserve any separate tax code. Do not promise free pickup in editable text unless the configured method is free.
 
 ## Installation
 

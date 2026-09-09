@@ -1,0 +1,26 @@
+{
+  "accepted": {
+    "#ABC": "#ABC",
+    " #2271b1 ": "#2271b1",
+    "var(--primary)": "var(--primary)",
+    "--bricks-color-ab12": "var(--bricks-color-ab12)",
+    "var( --base-ultra-dark , #123 )": "var(--base-ultra-dark, #123)",
+    "var(--primary, var(--brand, #2271b1))": "var(--primary, var(--brand, #2271b1))",
+    "var(--Color_2)": "var(--Color_2)"
+  },
+  "rejected": [
+    "red;display:none",
+    "var(--primary); color:red",
+    "var(--primary, url(https://example.invalid/image))",
+    "var(--primary, red;display:none)",
+    "var(--primary,)",
+    "var(primary)",
+    "var(--primary))",
+    "var(--primary, #12)",
+    "var(--primary) !important",
+    "var(--primary, expression(alert(1)))",
+    "var(--primary, var(--b, var(--c, var(--d, var(--e, #123)))))",
+    "<style>body{display:none}</style>",
+    ""
+  ]
+}

@@ -96,11 +96,15 @@ class White_Label_Dashboard
             return;
         }
 
+        // Also invalidate old Rank Math UI assets on same-version ZIP updates.
+        $css_file = dirname(__DIR__) . '/admin/css/white-label-dashboard.css';
+        $js_file = dirname(__DIR__) . '/admin/js/white-label-dashboard.js';
+
         wp_enqueue_style(
             'ffla-wl-dashboard',
             FFLA_URL . 'modules/white-label/admin/css/white-label-dashboard.css',
             [],
-            FFLA_VERSION
+            FFLA_VERSION . '.' . (is_file($css_file) ? filemtime($css_file) : '0')
         );
 
         // Chart.js is already vendored in the plugin (woobooster module).
@@ -115,7 +119,7 @@ class White_Label_Dashboard
             'ffla-wl-dashboard',
             FFLA_URL . 'modules/white-label/admin/js/white-label-dashboard.js',
             ['ffla-wl-chartjs'],
-            FFLA_VERSION,
+            FFLA_VERSION . '.' . (is_file($js_file) ? filemtime($js_file) : '0'),
             true
         );
 
@@ -131,21 +135,17 @@ class White_Label_Dashboard
                 'loadError'        => __('Analytics could not be loaded. Please try again.', 'ffl-funnels-addons'),
                 'previousPeriod'   => __('vs. previous period', 'ffl-funnels-addons'),
                 'openReport'       => __('Open full report', 'ffl-funnels-addons'),
-                'openSettings'     => __('Open Rank Math settings', 'ffl-funnels-addons'),
+                'openSettings'     => __('Open MonsterInsights settings', 'ffl-funnels-addons'),
                 'trend'            => __('Traffic trend', 'ffl-funnels-addons'),
-                'searchTraffic'    => __('Organic search traffic', 'ffl-funnels-addons'),
-                'organicClicks'    => __('Organic clicks', 'ffl-funnels-addons'),
-                'topLandingPages'  => __('Top organic landing pages', 'ffl-funnels-addons'),
-                'landingPage'      => __('Landing page', 'ffl-funnels-addons'),
-                'pageviews'        => __('Traffic', 'ffl-funnels-addons'),
-                'clicks'           => __('Clicks', 'ffl-funnels-addons'),
-                'impressions'      => __('Impressions', 'ffl-funnels-addons'),
+                'searchTraffic'    => __('All-channel website traffic', 'ffl-funnels-addons'),
+                'sessions'         => __('Sessions', 'ffl-funnels-addons'),
+                'pageviews'        => __('Pageviews', 'ffl-funnels-addons'),
+                'ecommerce'        => __('MonsterInsights eCommerce', 'ffl-funnels-addons'),
+                'currencyNote'     => __('Monetary values use the Google Analytics property currency, which may differ from the store currency.', 'ffl-funnels-addons'),
+                'throughYesterday'=> __('Complete days through yesterday', 'ffl-funnels-addons'),
+                'noRows'           => __('No rows were returned for this period.', 'ffl-funnels-addons'),
+                'noComparison'     => __('Previous-period comparison unavailable', 'ffl-funnels-addons'),
                 'ctr'              => __('CTR', 'ffl-funnels-addons'),
-                'movement'         => __('Organic movement', 'ffl-funnels-addons'),
-                'winners'          => __('Winning pages', 'ffl-funnels-addons'),
-                'losers'           => __('Losing pages', 'ffl-funnels-addons'),
-                'clickChange'      => __('clicks', 'ffl-funnels-addons'),
-                'noMovement'       => __('No meaningful page movement in this period.', 'ffl-funnels-addons'),
                 'searchFunnel'     => __('On-site search funnel', 'ffl-funnels-addons'),
                 'topSearchTerms'   => __('Top search terms', 'ffl-funnels-addons'),
                 'searchTerm'       => __('Search term', 'ffl-funnels-addons'),
@@ -163,6 +163,7 @@ class White_Label_Dashboard
     {
         if (!check_ajax_referer(self::AJAX_NONCE, 'nonce', false) || !current_user_can('read')) {
             wp_send_json_error(['message' => __('You do not have permission to view analytics.', 'ffl-funnels-addons')], 403);
+            return;
         }
 
         // phpcs:ignore WordPress.Security.NonceVerification.Missing -- verified above.

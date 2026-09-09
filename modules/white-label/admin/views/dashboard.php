@@ -167,7 +167,7 @@ $tile_icons = [
 
         <div class="ffla-dash-tabs" role="tablist" aria-label="<?php esc_attr_e('Analytics source', 'ffl-funnels-addons'); ?>">
             <button id="ffla-dashboard-tab-google" type="button" class="ffla-dash-tab" role="tab" data-ffla-source="google" aria-controls="ffla-dashboard-analytics-panel" aria-selected="<?php echo 'google' === $analytics_source ? 'true' : 'false'; ?>" tabindex="<?php echo 'google' === $analytics_source ? '0' : '-1'; ?>">
-                <?php esc_html_e('Google Analytics', 'ffl-funnels-addons'); ?>
+                <?php esc_html_e('MonsterInsights', 'ffl-funnels-addons'); ?>
             </button>
             <button id="ffla-dashboard-tab-snapfind" type="button" class="ffla-dash-tab" role="tab" data-ffla-source="snapfind" aria-controls="ffla-dashboard-analytics-panel" aria-selected="<?php echo 'snapfind' === $analytics_source ? 'true' : 'false'; ?>" tabindex="<?php echo 'snapfind' === $analytics_source ? '0' : '-1'; ?>">
                 <?php esc_html_e('SnapFind', 'ffl-funnels-addons'); ?>

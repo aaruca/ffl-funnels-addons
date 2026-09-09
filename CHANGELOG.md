@@ -2,6 +2,20 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.47.0] - 2026-09-09
+
+### Added
+- Pickup & Shipping colors accept site CSS variables, optional HEX/nested-variable fallbacks and HEX values, with matching safe validation in settings, checkout and live preview.
+- Independent opt-in **Pickup & Shipping** module: General, FFL Integration, and Appearance & Text settings with searchable zone/method lists, multiple own FFL mappings, customizable delivery cards and responsive previews.
+- Classic checkout/shortcode integration, package-aware shipping-rate filtering, policy-aware cache keys, final checkout validation, session cleanup and order/email pickup information. No rates, charges, tax overrides or additional external API calls are introduced.
+- Safe handling of missing methods and unsplit mixed packages; admin warnings for incomplete configuration, Checkout Blocks and the legacy Camarillo snippet. Existing checkout and provider validation are preserved outside the supported configuration.
+- Offline PHP policy/checkout regression tests and browser tests exercising the actual new admin and checkout assets with synthetic data.
+
+### Changed
+- White Label dashboard analytics now use the existing MonsterInsights connection instead of Rank Math. Added all-channel traffic, top pages/sources and optional licensed eCommerce reporting through MonsterInsights 11.2's API client; older versions retain the registered overview-report fallback.
+- Dashboard access respects MonsterInsights report permissions, disabled reporting, authentication and licensing before cache lookup. Credentials and provider exception details never enter the dashboard response. User/property-scoped caching, bounded requests, missing-data states and rejection of demo data protect the integration.
+- Preserved WooCommerce business totals, SnapFind, saved tab preferences and White Label branding. Added keyboard-sortable scrollable report tables, complete-day date labels, previous-period comparisons and explicit Analytics/store-currency separation. No new tracking events or Google authorization are introduced.
+
 ## [1.46.2] - 2026-09-08
 
 ### Fixed
