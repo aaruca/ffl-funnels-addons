@@ -83,8 +83,9 @@ if(($argv[1]??'')==='missing-provider'){
  echo "$checks missing-provider checks passed.\n";exit;
 }
 if(($argv[1]??'')==='fixture'){
- if(($argv[4]??'')==='variables'){$options[Pickup_Shipping_Settings::OPTION]=array_merge($s,['accent'=>'var(--primary, #2271b1)','background'=>'var(--surface, #ffffff)','text_color'=>'var(--text, #123456)']);}
+ if(($argv[4]??'')==='variables'){$options[Pickup_Shipping_Settings::OPTION]=array_merge($s,['accent'=>'var(--primary, #2271b1)','background'=>'var(--surface, #ffffff)','text_color'=>'var(--text, #123456)','card_background'=>'var(--card-surface, #111111)','card_text'=>'var(--card-text, #dddddd)','selected_text'=>'var(--selected-text, #ffffff)','border_color'=>'var(--line, #333333)','container_radius'=>'var(--panel-radius, 0px)','card_radius'=>'var(--card-radius, 0px)']);}
  if(($argv[3]??'')==='ffl'){$wc->cart->items=cart_items([2]);$package['contents']=$wc->cart->items;$ffl=true;$options[Pickup_Shipping_Settings::OPTION]['ffl_enabled']=true;}
+ if(($argv[4]??'')==='variables'){$options[Pickup_Shipping_Settings::OPTION]['card_gap']='var(--space, 16px)';}
  if(!empty($argv[2])){Pickup_Shipping_Checkout::update($argv[2]);}
  $wc->ship->packages=Pickup_Shipping_Checkout::packages([$package]);$wc->ship->packages[0]['rates']=Pickup_Shipping_Checkout::rates($rates,$wc->ship->packages[0]);
  ob_start();Pickup_Shipping_Admin::render();$admin=ob_get_clean();
@@ -111,6 +112,18 @@ $options[Pickup_Shipping_Settings::OPTION]=array_merge($s,['accent'=>'var(--prim
 check(strpos(Pickup_Shipping_Checkout::html(),'--ffla-delivery-accent:')===false,'unsafe stored color rejected at rendering');
 $options[Pickup_Shipping_Settings::OPTION]=$s;
 check(count($s['locations'])===2,'multiple own FFLs');
+$radii=json_decode(file_get_contents(__DIR__.'/pickup-shipping-radii.json'),true);
+foreach($radii['accepted'] as $input=>$expected){
+ $saved=Pickup_Shipping_Settings::sanitize(array_merge($s,['container_radius'=>(string)$input,'card_radius'=>(string)$input,'card_gap'=>(string)$input]),$catalog);
+ check($saved['container_radius']===$expected&&$saved['card_radius']===$expected,'radius saved: '.$input);
+ check(strpos(Pickup_Shipping_Settings::styles($saved),'--ffla-delivery-card-radius:'.$expected)!==false,'radius safely rendered: '.$input);
+ check($saved['card_gap']===$expected&&strpos(Pickup_Shipping_Settings::styles($saved),'--ffla-delivery-gap:'.$expected)!==false,'gap saved and rendered: '.$input);
+}
+foreach($radii['rejected'] as $input){check(Pickup_Shipping_Settings::appearance_value($input,'radius')==='','unsafe radius rejected');}
+foreach(['card_background','card_text','selected_text','border_color'] as $key){
+ $saved=Pickup_Shipping_Settings::sanitize(array_merge($s,[$key=>'var(--site-color)']),$catalog);
+ check($saved[$key]==='var(--site-color)','new color setting retains site variable');
+}
 check(Pickup_Shipping_Engine::product_requires_ffl($products[3]),'variation inherits FFL flag');
 $d=Pickup_Shipping_Engine::decision($s,'regular',['mode'=>'ship']);
 check(array_keys(Pickup_Shipping_Engine::filter($rates,$d))===['flat_rate:2'],'ship only');
@@ -196,4 +209,23 @@ Pickup_Shipping_Checkout::init();
 check(!isset($hooks['option_ffl_local_pickup']),'native FFL option and validation never overridden');
 check(isset($hooks['woocommerce_after_checkout_validation'],$hooks['ffla_delivery_choice'],$hooks['woocommerce_cart_shipping_packages']),'server validation, shortcode, cache hooks registered');
 $module=new Pickup_Shipping_Module();check($module->get_id()==='pickup-shipping','independent module id');
+$options[Pickup_Shipping_Settings::OPTION]=array_merge($s,['ffl_enabled'=>true]);
+$wc->cart->items=cart_items([2]);$ffl=true;$wc->ship->packages=[];
+$placeholder=Pickup_Shipping_Checkout::html();
+check(strpos($placeholder,' hidden ')!==false&&strpos($placeholder,'<h3')===false&&strpos($placeholder,'Select your FFL')===false,'FFL initial checkout contains only an invisible fragment anchor');
+foreach(['','9-77-111-01-8A-05780','9-77-111-01-8A-99999'] as $dealer){
+ Pickup_Shipping_Checkout::update('shipping_fflno='.urlencode($dealer));
+ $wc->ship->packages=Pickup_Shipping_Checkout::packages([['contents'=>$wc->cart->items]]);
+ $wc->ship->packages[0]['rates']=Pickup_Shipping_Checkout::rates($rates,$wc->ship->packages[0]);
+ check(Pickup_Shipping_Checkout::html()===$placeholder,'FFL status never renders duplicate delivery text');
+ $fragments=Pickup_Shipping_Checkout::fragments([]);
+ check(($fragments['#ffla-delivery-choice']??'')===$placeholder,'FFL AJAX fragment remains empty and hidden');
+}
+$wc->cart->items=cart_items([1,2]);
+$wc->ship->packages=Pickup_Shipping_Checkout::packages([['contents'=>cart_items([2])],['contents'=>cart_items([1])]]);
+$mixedHtml=Pickup_Shipping_Checkout::html();
+check(strpos($mixedHtml,'name="ffla_delivery_mode"')!==false,'separate non-FFL package keeps its customer delivery controls');
+check(strpos($mixedHtml,'Select your FFL')===false&&strpos($mixedHtml,'selected FFL requires shipping')===false,'mixed cart does not duplicate native dealer notices');
+$wc->cart->items=cart_items([1]);$ffl=false;$wc->ship->packages=[];
+check(strpos(Pickup_Shipping_Checkout::html(),'<h3')!==false,'regular checkout restores delivery selector');
 echo "$checks Pickup & Shipping checks passed.\n";

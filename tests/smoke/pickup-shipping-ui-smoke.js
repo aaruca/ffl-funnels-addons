@@ -10,6 +10,7 @@ const root=path.resolve(__dirname,'../..');
 const jquery=process.env.FFLA_TEST_JQUERY||path.join(root,'tmp/pickup-jquery.min.js');
 function fixture(body='',scope=''){return JSON.parse(execFileSync('php',[path.join(__dirname,'pickup-shipping-smoke.php'),'fixture',body,scope,'variables'],{encoding:'utf8'}));}
 const colors=JSON.parse(fs.readFileSync(path.join(__dirname,'pickup-shipping-colors.json'),'utf8'));
+const radii=JSON.parse(fs.readFileSync(path.join(__dirname,'pickup-shipping-radii.json'),'utf8'));
 let checks=0;function check(v,msg){assert.ok(v,msg);checks++;}
 (async()=>{
  const browser=await chromium.launch({headless:true,channel:process.env.FFLA_TEST_BROWSER_CHANNEL||'chrome'});
@@ -34,7 +35,7 @@ let checks=0;function check(v,msg){assert.ok(v,msg);checks++;}
  if(out)await page.locator('.ffla-ps-admin').screenshot({path:path.join(out,'pickup-admin-ffl-'+width+'.png')});
  await page.locator('#ps-tab-appearance').click();
  await page.locator('[name="ps[title]"]').fill('<img src=x onerror=alert(1)> New title');
- check(await page.locator('#ffla-ps-preview h3').innerText()==='<img src=x onerror=alert(1)> New title','preview is plain text '+width);
+ check(await page.locator('#ffla-ps-preview h3').textContent()==='<img src=x onerror=alert(1)> New title','preview is plain text '+width);
  check(await page.locator('#ffla-ps-preview img').count()===0,'no preview HTML injection '+width);
  await page.locator('[name="ps[title]"]').fill('How would you like to receive your order?');
  await page.locator('[name="ps[accent]"]').fill('#e01919');
@@ -56,6 +57,26 @@ let checks=0;function check(v,msg){assert.ok(v,msg);checks++;}
  await page.locator('[name="ps[accent]"]').fill('var(--not-defined, var(--also-missing, #2271b1))');
  check(await page.locator('#ffla-ps-preview .ffla-delivery__card').first().evaluate(e=>getComputedStyle(e).borderTopColor)==='rgb(34, 113, 177)','missing site variables use nested fallback '+width);
  await page.locator('[data-preview-width=mobile]').click();
+ for(const key of ['container_radius','card_radius','card_gap']){
+  for(const [input,expected] of Object.entries(radii.accepted)){
+   await page.locator('[name="ps['+key+']"]').fill(input);
+   check(await page.locator('[name="ps['+key+']"]').getAttribute('aria-invalid')==='false','valid '+key+' '+input);
+  }
+  for(const input of radii.rejected){
+   await page.locator('[name="ps['+key+']"]').fill(input);
+   check(await page.locator('[name="ps['+key+']"]').getAttribute('aria-invalid')==='true','invalid '+key+' '+input);
+  }
+  await page.locator('[name="ps['+key+']"]').fill('0px');
+ }
+ await page.addStyleTag({content:':root{--panel-round:12px;--card-round:8px;--space:24px}'});
+ await page.locator('[name="ps[container_radius]"]').fill('var(--panel-round)');
+ await page.locator('[name="ps[card_radius]"]').fill('var(--card-round)');
+ await page.locator('[name="ps[card_gap]"]').fill('var(--space)');
+ check(await page.locator('#ffla-ps-preview').evaluate(e=>getComputedStyle(e).borderTopLeftRadius)==='12px','container radius variable preview '+width);
+ check(await page.locator('#ffla-ps-preview .ffla-delivery__card').first().evaluate(e=>getComputedStyle(e).borderTopLeftRadius)==='8px','card radius variable preview '+width);
+ check(await page.locator('#ffla-ps-preview .ffla-delivery__options').evaluate(e=>getComputedStyle(e).gap)==='24px','addon gap controls mobile and desktop '+width);
+ await page.evaluate(()=>document.documentElement.style.setProperty('--space','30px'));
+ check(await page.locator('#ffla-ps-preview .ffla-delivery__options').evaluate(e=>getComputedStyle(e).gap)==='30px','gap variable updates live '+width);
  check(await page.locator('#ffla-ps-preview').evaluate(e=>e.getBoundingClientRect().width<=390),'mobile preview bounded '+width);
  if(out)await page.locator('.ffla-ps-admin').screenshot({path:path.join(out,'pickup-admin-preview-'+width+'.png')});
  await page.close();
@@ -66,9 +87,10 @@ let checks=0;function check(v,msg){assert.ok(v,msg);checks++;}
  await page.setContent('<html lang="en"><head><meta charset="utf-8"></head><body style="font-family:Arial;padding:24px"><form class="checkout">'+first.checkout+'<input type="hidden" name="shipping_fflno" value=""><div id="rates"></div></form></body></html>');
  await page.addStyleTag({path:path.join(root,'modules/pickup-shipping/assets/delivery.css')});
  await page.addStyleTag({content:':root{--primary:#008800;--surface:#f1f2f3;--text:#123456}'});
- check(await page.locator('#ffla-delivery-choice').evaluate(e=>getComputedStyle(e).backgroundColor==='rgb(241, 242, 243)'&&getComputedStyle(e).color==='rgb(18, 52, 86)'),'PHP-rendered checkout resolves site variables '+scope);
+ if(!scope)check(await page.locator('#ffla-delivery-choice').evaluate(e=>getComputedStyle(e).backgroundColor==='rgb(241, 242, 243)'&&getComputedStyle(e).color==='rgb(18, 52, 86)'),'PHP-rendered checkout resolves site variables');
  await page.addScriptTag({path:jquery});
- await page.exposeFunction('getDeliveryFixture',body=>fixture(body,scope));
+ let activeScope=scope;
+ await page.exposeFunction('getDeliveryFixture',body=>fixture(body,activeScope));
  await page.evaluate(()=>{
  window.fflaDelivery={updating:'Updating delivery options…',error:'Please review delivery.'};window.updateCalls=0;window.completedCalls=0;
  jQuery(document.body).on('update_checkout',async function(){
@@ -80,34 +102,67 @@ let checks=0;function check(v,msg){assert.ok(v,msg);checks++;}
  });
  await page.addScriptTag({path:path.join(root,'modules/pickup-shipping/assets/delivery.js')});
  if(!scope){
- await page.locator('[name=ffla_delivery_mode][value=ship]').check();
+ await page.addStyleTag({content:'.checkout label,.checkout label span,.checkout h3{color:#ff00ff}.checkout .ffla-delivery__options{gap:80px}'});
+ check(await page.locator('#ffla-delivery-choice h3').evaluate(e=>getComputedStyle(e).color)==='rgb(18, 52, 86)','heading color survives generic checkout theme styles');
+ check(await page.locator('.ffla-delivery__options').evaluate(e=>getComputedStyle(e).gap)==='16px','addon spacing is not inherited from theme grid defaults');
+ await page.locator('[name=ffla_delivery_mode][value=ship]').locator('..').click();
  await page.waitForFunction(()=>window.completedCalls===1);
  check(await page.locator('#rates').innerText()==='flat_rate:2','shipping card filters to shipping server-side');
- await page.locator('[name=ffla_delivery_mode][value=pickup]').check();
+ await page.locator('[name=ffla_delivery_mode][value=pickup]').focus();await page.keyboard.press('Space');
  await page.waitForFunction(()=>window.completedCalls===2);
  check(!(await page.locator('#rates').innerText()).includes('flat_rate'),'pickup card removes shipping');
  check(await page.locator('[name=ffla_delivery_mode][value=pickup]').isChecked(),'selection preserved after fragment');
  check(await page.locator('#ffla-delivery-choice .ffla-delivery__card').first().evaluate(e=>getComputedStyle(e).borderTopColor)==='rgb(0, 136, 0)','site accent survives checkout fragment refresh');
+ check(await page.locator('#ffla-delivery-choice .ffla-delivery__card').first().evaluate(e=>getComputedStyle(e).backgroundColor)==='rgb(0, 136, 0)','selected card uses solid site color');
+ check(await page.locator('#ffla-delivery-choice .ffla-delivery__card strong').first().evaluate(e=>getComputedStyle(e).color)==='rgb(255, 255, 255)','selected text color survives generic theme label styles');
+ check(await page.locator('#ffla-delivery-choice .ffla-delivery__card').last().evaluate(e=>getComputedStyle(e).backgroundColor==='rgb(17, 17, 17)'&&getComputedStyle(e).color==='rgb(221, 221, 221)'),'unselected card has independent background and text');
+ check(await page.locator('#ffla-delivery-choice .ffla-delivery__card').first().evaluate(e=>getComputedStyle(e).outlineStyle)==='solid','keyboard selection has a visible focus ring');
+ await page.evaluate(()=>{document.documentElement.style.setProperty('--panel-radius','12px');document.documentElement.style.setProperty('--card-radius','8px');document.documentElement.style.setProperty('--space','24px');});
+ check(await page.locator('#ffla-delivery-choice').evaluate(e=>getComputedStyle(e).borderTopLeftRadius)==='12px','saved container radius variable resolves on checkout');
+ check(await page.locator('#ffla-delivery-choice .ffla-delivery__card').first().evaluate(e=>getComputedStyle(e).borderTopLeftRadius)==='8px','saved card radius variable resolves on checkout');
+ check(await page.locator('#ffla-delivery-choice .ffla-delivery__options').evaluate(e=>getComputedStyle(e).gap)==='24px','saved gap variable resolves on checkout');
  check(await page.locator('#ffla-delivery-choice').getAttribute('aria-busy')==='false','busy cleared after review');
  check(await page.evaluate(()=>window.updateCalls)===2,'no updated_checkout recursion');
  await page.setViewportSize({width:390,height:900});
  check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'checkout fits mobile');
  if(out)await page.locator('#ffla-delivery-choice').screenshot({path:path.join(out,'pickup-checkout-mobile.png')});
+ await page.setViewportSize({width:1100,height:900});
+ await page.evaluate(()=>{
+  const root=document.documentElement;
+  Object.entries({'--primary':'#ff1616','--surface':'#050505','--text':'#ffffff','--card-surface':'#111111','--card-text':'#dddddd','--selected-text':'#ffffff','--line':'#333333','--panel-radius':'0px','--card-radius':'0px'}).forEach(([key,value])=>root.style.setProperty(key,value));
+  document.activeElement.blur();
+ });
+ check(await page.locator('#ffla-delivery-choice .ffla-delivery__card').first().evaluate(e=>getComputedStyle(e).backgroundColor)==='rgb(255, 22, 22)','site variable changes update checkout without resaving');
+ if(out)await page.locator('#ffla-delivery-choice').screenshot({path:path.join(out,'pickup-checkout-reference-style.png')});
  await page.evaluate(()=>jQuery(document.body).trigger('checkout_error'));
  check(await page.locator('.ffla-delivery__status').innerText()==='Please review delivery.','error notice accessible');
  await page.evaluate(()=>{jQuery(document.body).trigger('update_checkout');jQuery(document).trigger('ajaxError',[{}, {url:'/?wc-ajax=update_order_review'}]);});
  check(await page.locator('#ffla-delivery-choice').getAttribute('aria-busy')==='false','transport failure clears busy state');
  }else{
+ check(await page.locator('#ffla-delivery-choice').isHidden(),'FFL cart hides entire duplicate delivery block');
+ check(await page.locator('#ffla-delivery-choice').innerHTML()==='','FFL placeholder has no heading, notice or cards');
  check(await page.locator('[name=ffla_delivery_mode]').count()===0,'FFL cart does not ask redundant mode choice');
  await page.evaluate(()=>jQuery('[name=shipping_fflno]').val('9-77-111-01-8A-05780').trigger('change'));
  await page.waitForFunction(()=>window.completedCalls===1);
  check(await page.locator('#rates').innerText()==='local_pickup:1,local_pickup:3','native own FFL only configured pickup methods');
+ check(await page.locator('#ffla-delivery-choice').isHidden(),'native pickup refresh does not reveal duplicate UI');
  await page.evaluate(()=>jQuery('[name=shipping_fflno]').val('9-77-111-01-8A-99999').trigger('change'));
  await page.waitForFunction(()=>window.completedCalls===2);
  check(await page.locator('#rates').innerText()==='flat_rate:2','external FFL only shipping');
+ check(await page.locator('#ffla-delivery-choice').isHidden(),'external FFL refresh does not reveal duplicate UI');
  await page.evaluate(()=>jQuery('[name=shipping_fflno]').val('').trigger('change'));
  await page.waitForFunction(()=>window.completedCalls===3);
  check(await page.locator('#rates').innerText()==='','clearing FFL removes authorized methods');
+ check(await page.locator('#ffla-delivery-choice').isHidden(),'clearing dealer does not reveal duplicate UI');
+ activeScope='';
+ await page.evaluate(()=>jQuery(document.body).trigger('update_checkout'));
+ await page.waitForFunction(()=>window.completedCalls===4);
+ check(await page.locator('#ffla-delivery-choice').isVisible(),'AJAX can replace hidden FFL anchor with regular-item selector');
+ check(await page.locator('[name=ffla_delivery_mode]').count()===2,'regular-item choices restored after cart transition');
+ activeScope='ffl';
+ await page.evaluate(()=>jQuery(document.body).trigger('update_checkout'));
+ await page.waitForFunction(()=>window.completedCalls===5);
+ check(await page.locator('#ffla-delivery-choice').isHidden(),'AJAX hides regular selector when cart becomes FFL-only');
  }
  await page.close();
  }

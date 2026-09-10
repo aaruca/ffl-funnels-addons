@@ -8,18 +8,30 @@ tabs.forEach((t,i)=>{t.addEventListener('click',()=>activate(t.dataset.psTab,fal
 form.querySelectorAll('[data-method-search]').forEach(input=>input.addEventListener('input',()=>{input.closest('fieldset').querySelectorAll('[data-method-row]').forEach(row=>{row.hidden=!row.textContent.toLowerCase().includes(input.value.toLowerCase());});}));
 const preview=document.getElementById('ffla-ps-preview');
 // Match the PHP allowlist; never interpret arbitrary CSS declarations.
-function color(value,depth=0){
+function styleValue(value,type,depth=0){
  if(typeof value!=='string'||value.length>256||depth>4)return '';
  value=value.trim();
- if(/^#(?:[a-f0-9]{3}|[a-f0-9]{6})$/i.test(value))return value;
+ if(type==='color'&&(/^#(?:[a-f0-9]{3,4}|[a-f0-9]{6}|[a-f0-9]{8})$/i.test(value)||/^(transparent|currentcolor)$/i.test(value)))return value;
+ if(['radius','spacing'].includes(type)&&/^(?:0|(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:px|rem|em|%))$/.test(value))return value;
  if(/^--[a-zA-Z0-9_-]+$/.test(value))return 'var('+value+')';
  const match=value.match(/^var\(\s*(--[a-zA-Z0-9_-]+)\s*(?:,\s*(.+))?\)$/);
  if(!match)return '';
  if(match[2]===undefined)return 'var('+match[1]+')';
- const fallback=color(match[2],depth+1);
+ const fallback=styleValue(match[2],type,depth+1);
  return fallback?'var('+match[1]+', '+fallback+')':'';
 }
-function refresh(){preview.querySelectorAll('[data-preview-text]').forEach(el=>{el.textContent=form.elements['ps['+el.dataset.previewText+']'].value;});Object.entries({accent:'--ffla-delivery-accent',background:'--ffla-delivery-bg',text_color:'--ffla-delivery-text'}).forEach(([key,css])=>{const value=color(form.elements['ps['+key+']'].value);if(value)preview.style.setProperty(css,value);else preview.style.removeProperty(css);});}
+function refresh(){
+ preview.querySelectorAll('[data-preview-text]').forEach(el=>{el.textContent=form.elements['ps['+el.dataset.previewText+']'].value;});
+ let invalid=false;
+ form.querySelectorAll('[data-ps-css]').forEach(input=>{
+  const value=styleValue(input.value,input.dataset.psType);
+  const bad=Boolean(input.value.trim()&&!value);invalid=invalid||bad;
+  input.setAttribute('aria-invalid',String(bad));
+  input.setCustomValidity(bad?form.querySelector('[data-ps-style-error]').textContent:'');
+  if(value)preview.style.setProperty(input.dataset.psCss,value);else preview.style.removeProperty(input.dataset.psCss);
+ });
+ form.querySelector('[data-ps-style-error]').hidden=!invalid;
+}
 form.addEventListener('input',refresh);refresh();
 form.querySelectorAll('[data-preview-width]').forEach(button=>button.addEventListener('click',()=>{preview.dataset.width=button.dataset.previewWidth;form.querySelectorAll('[data-preview-width]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));}));
 form.addEventListener('invalid',e=>{const panel=e.target.closest('[data-ps-panel]');if(panel)activate(panel.dataset.psPanel,false);},true);

@@ -1,5 +1,9 @@
 {
   "accepted": {
+    "#1234": "#1234",
+    "#12345678": "#12345678",
+    "transparent": "transparent",
+    "currentColor": "currentColor",
     "#ABC": "#ABC",
     " #2271b1 ": "#2271b1",
     "var(--primary)": "var(--primary)",

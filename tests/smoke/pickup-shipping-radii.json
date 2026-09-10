@@ -1,0 +1,9 @@
+{
+  "accepted": {
+    "0": "0", "0px": "0px", "12px": "12px", " .5rem ": ".5rem",
+    "1.25em": "1.25em", "50%": "50%", "--radius": "var(--radius)",
+    "var(--radius, 8px)": "var(--radius, 8px)",
+    "var(--radius, var(--round, 0))": "var(--radius, var(--round, 0))"
+  },
+  "rejected": ["-1px", "12", "red", "#123", "12px;display:none", "var(--radius, #123)", "url(x)", "var(--radius, -1px)", "var(--radius) !important"]
+}

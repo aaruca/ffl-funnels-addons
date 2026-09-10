@@ -248,31 +248,21 @@ class Pickup_Shipping_Checkout
         $s = Pickup_Shipping_Settings::get();
         $packages = WC()->shipping()->get_packages();
         $regular = !($s['ffl_enabled'] && self::requires_ffl());
-        $notices = [];
         foreach ($packages as $package) {
             $scope = self::scope($package);
             if ($scope === 'regular') { $regular = true; }
-            if ($scope !== 'regular') {
-                $d = Pickup_Shipping_Engine::decision($s,$scope,self::state());
-                $text = !in_array($d['mode'],['pickup','ship'],true) || empty($package['rates'])
-                    ? self::message($d)
-                    : ($d['mode'] === 'pickup' ? __('Your selected FFL is a store pickup location. Only pickup methods are available for its package.', 'ffl-funnels-addons') : __('Your selected FFL requires shipping. Pickup is unavailable for its package.', 'ffl-funnels-addons'));
-                $notices[] = $text;
-            }
         }
-        if (!$packages && !$regular) { $notices[] = __('Select your FFL dealer to see the available delivery methods.', 'ffl-funnels-addons'); }
-        $styles = [];
-        foreach (['accent'=>'--ffla-delivery-accent','background'=>'--ffla-delivery-bg','text_color'=>'--ffla-delivery-text'] as $key=>$variable) {
-            $color = Pickup_Shipping_Settings::color($s[$key]);
-            if ($color !== '') { $styles[] = $variable . ':' . $color; }
-        }
+        // FFL Checkout owns the dealer UI. Keep only an empty fragment anchor so
+        // AJAX can restore the regular-item selector if the cart changes later.
+        // Rate filtering and final validation remain independent of this markup.
+        if (!$regular) { return '<div id="ffla-delivery-choice" hidden aria-hidden="true" style="display:none!important"></div>'; }
+        $styles = Pickup_Shipping_Settings::styles($s);
         $mode = self::state()['mode'] ?? $s['default'];
         if ($s['delivery'] !== 'both') { $mode = $s['delivery']; }
         $available = WC()->session->get(self::AVAILABLE, []);
         ob_start(); ?>
-        <section id="ffla-delivery-choice" class="ffla-delivery" style="<?php echo esc_attr(implode(';',$styles)); ?>" aria-labelledby="ffla-delivery-title">
+        <section id="ffla-delivery-choice" class="ffla-delivery" style="<?php echo esc_attr($styles); ?>" aria-labelledby="ffla-delivery-title">
             <h3 id="ffla-delivery-title"><?php echo esc_html($s['title']); ?></h3>
-            <?php foreach (array_unique($notices) as $notice): ?><p class="ffla-delivery__notice" role="status"><?php echo esc_html($notice); ?></p><?php endforeach; ?>
             <?php if ($regular): ?>
             <div class="ffla-delivery__options" role="radiogroup" aria-labelledby="ffla-delivery-title">
                 <?php foreach (['pickup','ship'] as $choice):
@@ -302,8 +292,8 @@ class Pickup_Shipping_Checkout
     {
         if (!self::active()) { return; }
         $base = FFLA_URL . 'modules/pickup-shipping/assets/';
-        wp_enqueue_style('ffla-delivery',$base . 'delivery.css',[],FFLA_VERSION . '.1');
-        wp_enqueue_script('ffla-delivery',$base . 'delivery.js',['jquery','wc-checkout'],FFLA_VERSION . '.1',true);
+        wp_enqueue_style('ffla-delivery',$base . 'delivery.css',[],FFLA_VERSION . '.4');
+        wp_enqueue_script('ffla-delivery',$base . 'delivery.js',['jquery','wc-checkout'],FFLA_VERSION . '.4',true);
         wp_localize_script('ffla-delivery','fflaDelivery',[
             'updating'=>__('Updating delivery options…','ffl-funnels-addons'),
             'error'=>__('Delivery could not be updated. Please try again before placing your order.','ffl-funnels-addons'),

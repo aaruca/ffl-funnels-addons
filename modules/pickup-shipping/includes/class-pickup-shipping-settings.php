@@ -15,6 +15,8 @@ class Pickup_Shipping_Settings
             'ship_title'=>__('Ship my order', 'ffl-funnels-addons'),
             'ship_description'=>__('Deliver to your shipping address.', 'ffl-funnels-addons'),
             'accent'=>'', 'background'=>'', 'text_color'=>'',
+            'card_background'=>'', 'card_text'=>'', 'selected_text'=>'', 'border_color'=>'',
+            'container_radius'=>'', 'card_radius'=>'', 'card_gap'=>'16px',
         ];
     }
     public static function get(): array
@@ -37,16 +39,45 @@ class Pickup_Shipping_Settings
         $value = preg_replace('/[\s-]/', '', $value);
         return preg_match('/^[0-9]{9}[A-Z][0-9]{5}$/', $value) ? $value : '';
     }
-    /** Keep site variables unresolved; only allow HEX and bounded var() references. */
+    public static function appearance_fields(): array
+    {
+        return [
+            'background'=>['label'=>__('Container background','ffl-funnels-addons'),'property'=>'--ffla-delivery-bg','type'=>'color','example'=>'var(--surface)'],
+            'text_color'=>['label'=>__('Heading and container text','ffl-funnels-addons'),'property'=>'--ffla-delivery-text','type'=>'color','example'=>'var(--text)'],
+            'card_background'=>['label'=>__('Unselected card background','ffl-funnels-addons'),'property'=>'--ffla-delivery-card-bg','type'=>'color','example'=>'var(--surface-alt)'],
+            'card_text'=>['label'=>__('Unselected card text','ffl-funnels-addons'),'property'=>'--ffla-delivery-card-text','type'=>'color','example'=>'var(--text)'],
+            'accent'=>['label'=>__('Selected card background','ffl-funnels-addons'),'property'=>'--ffla-delivery-accent','type'=>'color','example'=>'var(--primary)'],
+            'selected_text'=>['label'=>__('Selected card text','ffl-funnels-addons'),'property'=>'--ffla-delivery-selected-text','type'=>'color','example'=>'#ffffff'],
+            'border_color'=>['label'=>__('Container and unselected card border','ffl-funnels-addons'),'property'=>'--ffla-delivery-border','type'=>'color','example'=>'var(--border-color)'],
+            'container_radius'=>['label'=>__('Container border radius','ffl-funnels-addons'),'property'=>'--ffla-delivery-radius','type'=>'radius','example'=>'0px or var(--radius)'],
+            'card_radius'=>['label'=>__('Card border radius','ffl-funnels-addons'),'property'=>'--ffla-delivery-card-radius','type'=>'radius','example'=>'0px or var(--radius)'],
+            'card_gap'=>['label'=>__('Gap between cards','ffl-funnels-addons'),'property'=>'--ffla-delivery-gap','type'=>'spacing','example'=>'16px or var(--space-m)'],
+        ];
+    }
+    public static function styles(array $s): string
+    {
+        $styles = [];
+        foreach (self::appearance_fields() as $key=>$field) {
+            $value = self::appearance_value($s[$key] ?? '', $field['type']);
+            if ($value !== '') { $styles[] = $field['property'] . ':' . $value; }
+        }
+        return implode(';', $styles);
+    }
+    /** Keep variables live; reject arbitrary declarations, URLs and expressions. */
     public static function color($value, int $depth = 0): string
+    {
+        return self::appearance_value($value, 'color', $depth);
+    }
+    public static function appearance_value($value, string $type, int $depth = 0): string
     {
         if (!is_string($value) || strlen($value) > 256 || $depth > 4) { return ''; }
         $value = trim($value);
-        if (preg_match('/\A#(?:[a-f0-9]{3}|[a-f0-9]{6})\z/i', $value)) { return $value; }
+        if ($type === 'color' && (preg_match('/\A#(?:[a-f0-9]{3,4}|[a-f0-9]{6}|[a-f0-9]{8})\z/i', $value) || in_array(strtolower($value), ['transparent','currentcolor'], true))) { return $value; }
+        if (in_array($type, ['radius','spacing'], true) && preg_match('/\A(?:0|(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:px|rem|em|%))\z/', $value)) { return $value; }
         if (preg_match('/\A--[a-zA-Z0-9_-]+\z/', $value)) { return 'var(' . $value . ')'; }
         if (!preg_match('/\Avar\(\s*(--[a-zA-Z0-9_-]+)\s*(?:,\s*(.+))?\)\z/', $value, $match)) { return ''; }
         if (!isset($match[2])) { return 'var(' . $match[1] . ')'; }
-        $fallback = self::color($match[2], $depth + 1);
+        $fallback = self::appearance_value($match[2], $type, $depth + 1);
         return $fallback !== '' ? 'var(' . $match[1] . ', ' . $fallback . ')' : '';
     }
     public static function methods(): array
@@ -86,7 +117,7 @@ class Pickup_Shipping_Settings
         foreach (['store_address','instructions'] as $key) {
             if (is_scalar($input[$key] ?? null)) { $s[$key] = substr(sanitize_textarea_field($input[$key]), 0, 1500); }
         }
-        foreach (['accent','background','text_color'] as $key) { $s[$key] = self::color($input[$key] ?? ''); }
+        foreach (self::appearance_fields() as $key=>$field) { $s[$key] = self::appearance_value($input[$key] ?? $s[$key], $field['type']); }
         $seen = [];
         foreach (array_slice(is_array($input['locations'] ?? null) ? $input['locations'] : [], 0, 25) as $row) {
             if (!is_array($row)) { continue; }

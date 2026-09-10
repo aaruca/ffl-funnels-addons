@@ -11,9 +11,9 @@ class Pickup_Shipping_Admin
     {
         if (($_GET['page'] ?? '') !== 'ffla-pickup-shipping') { return; }
         $base = FFLA_URL . 'modules/pickup-shipping/assets/';
-        wp_enqueue_style('ffla-delivery-admin',$base . 'admin.css',[],FFLA_VERSION . '.1');
-        wp_enqueue_style('ffla-delivery-preview',$base . 'delivery.css',[],FFLA_VERSION . '.1');
-        wp_enqueue_script('ffla-delivery-admin',$base . 'admin.js',[],FFLA_VERSION . '.3',true);
+        wp_enqueue_style('ffla-delivery-admin',$base . 'admin.css',[],FFLA_VERSION . '.4');
+        wp_enqueue_style('ffla-delivery-preview',$base . 'delivery.css',[],FFLA_VERSION . '.4');
+        wp_enqueue_script('ffla-delivery-admin',$base . 'admin.js',[],FFLA_VERSION . '.4',true);
     }
     public static function save(): void
     {
@@ -32,7 +32,11 @@ class Pickup_Shipping_Admin
     {
         echo '<label class="ffla-ps-field"><span>' . esc_html($label) . '</span>';
         if ($area) { echo '<textarea rows="3" name="ps[' . esc_attr($key) . ']">' . esc_textarea($s[$key]) . '</textarea>'; }
-        else { echo '<input type="text" name="ps[' . esc_attr($key) . ']" value="' . esc_attr($s[$key]) . '">'; }
+        else {
+            $field = Pickup_Shipping_Settings::appearance_fields()[$key] ?? null;
+            $attrs = $field ? ' maxlength="256" data-ps-css="' . esc_attr($field['property']) . '" data-ps-type="' . esc_attr($field['type']) . '" placeholder="' . esc_attr($field['example']) . '" aria-describedby="ffla-ps-style-help"' : '';
+            echo '<input type="text" name="ps[' . esc_attr($key) . ']" value="' . esc_attr($s[$key]) . '"' . $attrs . '>';
+        }
         echo '</label>';
     }
     private static function select(string $key, string $label, array $values, array $s): void
@@ -107,16 +111,20 @@ class Pickup_Shipping_Admin
                     <h3><?php esc_html_e('Text and appearance','ffl-funnels-addons'); ?></h3>
                     <div class="ffla-ps-grid">
                         <?php foreach (['title'=>__('Selector heading','ffl-funnels-addons'),'pickup_title'=>__('Pickup title','ffl-funnels-addons'),'pickup_description'=>__('Pickup description','ffl-funnels-addons'),'ship_title'=>__('Shipping title','ffl-funnels-addons'),'ship_description'=>__('Shipping description','ffl-funnels-addons')] as $key=>$label) { self::field($key,$label,$s); } ?>
-                        <?php foreach (['accent'=>__('Accent color','ffl-funnels-addons'),'background'=>__('Background color','ffl-funnels-addons'),'text_color'=>__('Text color','ffl-funnels-addons')] as $key=>$label) { self::field($key,$label . ' — ' . __('HEX or CSS variable','ffl-funnels-addons'),$s); } ?>
                     </div>
-                    <p><?php esc_html_e('Colors accept #2271b1, var(--primary), --primary, or var(--primary, #2271b1) with a fallback. Site variables update automatically with your theme. Variables loaded only on the storefront will not resolve in this admin preview; use a fallback to preview them here.','ffl-funnels-addons'); ?></p>
+                    <h3><?php esc_html_e('Colors, corners and spacing','ffl-funnels-addons'); ?></h3>
+                    <div class="ffla-ps-grid">
+                        <?php foreach (Pickup_Shipping_Settings::appearance_fields() as $key=>$field) { self::field($key,$field['label'],$s); } ?>
+                    </div>
+                    <p id="ffla-ps-style-help"><?php esc_html_e('Use HEX, transparent, currentColor or a full-color CSS variable such as var(--primary, #2271b1). Radius and gap accept 0, px, rem, em, % or variables such as var(--radius, 0px) and var(--space-m, 16px). Bare --variable names also work. Variables must exist on the storefront; theme variables not loaded in wp-admin only show their fallback in this preview.','ffl-funnels-addons'); ?></p>
+                    <p data-ps-style-error hidden role="status"><?php esc_html_e('Some style values are invalid. Use the formats shown above; CSS declarations and URLs are not allowed.','ffl-funnels-addons'); ?></p>
                     <p><?php esc_html_e('Leave colors blank to inherit the site style. Prices are not inferred from descriptions: do not promise free pickup unless your WooCommerce rate is free.','ffl-funnels-addons'); ?></p>
                     <div class="ffla-ps-preview-tools">
                         <strong><?php esc_html_e('Preview','ffl-funnels-addons'); ?></strong>
                         <button type="button" class="button" data-preview-width="desktop" aria-pressed="true"><?php esc_html_e('Desktop','ffl-funnels-addons'); ?></button>
                         <button type="button" class="button" data-preview-width="mobile" aria-pressed="false"><?php esc_html_e('Mobile','ffl-funnels-addons'); ?></button>
                     </div>
-                    <div class="ffla-delivery" id="ffla-ps-preview">
+                    <div class="ffla-delivery" id="ffla-ps-preview" style="<?php echo esc_attr(Pickup_Shipping_Settings::styles($s)); ?>">
                         <h3 data-preview-text="title"><?php echo esc_html($s['title']); ?></h3>
                         <div class="ffla-delivery__options">
                             <?php foreach (['pickup','ship'] as $choice): ?>
@@ -126,7 +134,7 @@ class Pickup_Shipping_Admin
                     </div>
                 </section>
                 <div class="ffla-ps-save"><button type="submit" class="button button-primary"><?php esc_html_e('Save settings','ffl-funnels-addons'); ?></button></div>
-                <noscript><p><?php esc_html_e('All settings sections are shown. JavaScript enables tabs, preview updates and adding new FFL rows.','ffl-funnels-addons'); ?></p></noscript>
+                <noscript><p><?php esc_html_e('All settings sections are shown. JavaScript enables tabs and live preview updates.','ffl-funnels-addons'); ?></p></noscript>
             </form>
         </div>
         <?php

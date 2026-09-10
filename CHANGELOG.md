@@ -4,7 +4,13 @@ All notable changes to FFL Funnels Addons are documented in this file.
 
 ## [1.47.0] - 2026-09-09
 
+### Fixed
+- Hide the duplicate delivery heading and dealer notices for FFL-only checkout. FFL Checkout retains the selector; pickup/shipping rate filtering and final validation stay active. An invisible fragment anchor supports AJAX changes; separate regular-item packages retain their delivery choice.
+- Restyled delivery choices as full-card solid-fill selections with inherited typography and accessible keyboard focus. Split container, unselected-card, selected-card and border colors; apply configured colors explicitly to card text and refresh asset cache versions.
+
 ### Added
+- Independent container/card radius and card-gap settings accepting site CSS variables or safe length values. Shared server/preview styling, invalid-input feedback and tests for generic theme conflicts, CSS-variable changes, radii and spacing.
+
 - Pickup & Shipping colors accept site CSS variables, optional HEX/nested-variable fallbacks and HEX values, with matching safe validation in settings, checkout and live preview.
 - Independent opt-in **Pickup & Shipping** module: General, FFL Integration, and Appearance & Text settings with searchable zone/method lists, native FFL Checkout pickup detection, customizable delivery cards and responsive previews.
 - Classic checkout/shortcode integration, package-aware shipping-rate filtering, policy-aware cache keys, final checkout validation, session cleanup and order/email pickup information. No rates, charges, tax overrides or additional external API calls are introduced.

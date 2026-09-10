@@ -15,13 +15,20 @@ The module is registered but never automatically activated or configured. Produc
 
 ## Site colors
 
-Accent, background and text settings accept HEX colors or site CSS variables, such as `var(--primary)`, `var(--surface)` and `var(--text)`. A bare `--primary` is normalized to `var(--primary)`. Optional fallbacks work too: `var(--primary, #2271b1)` or `var(--primary, var(--brand, #2271b1))`.
+Appearance & Text provides separate container background/text, unselected card background/text, selected card background/text and border colors. Selected cards use a solid fill; keyboard-accessible native radio inputs are visually hidden. The component inherits the site's font.
+
+Colors accept HEX (including alpha), transparent, currentColor or site CSS variables, such as `var(--primary)`, `var(--surface)` and `var(--text)`. A bare `--primary` is normalized to `var(--primary)`. Optional fallbacks work too: `var(--primary, #2271b1)` or `var(--primary, var(--brand, #2271b1))`.
+
+Container radius, card radius and gap between cards are independent settings. Corners default to square; gap defaults to 16px. Use nonnegative px/rem/em/% values, 0, or variables with optional fallbacks, such as `var(--radius, 0px)` and `var(--space-m, 16px)`. The addon defines its grid gap explicitly for both desktop and mobile; generic checkout grid rules must not replace it.
 
 References remain live, so changing the site's variables updates the checkout without saving the addon again. Blank settings retain the default site inheritance. Variables must resolve to full CSS colors, not partial RGB/HSL channel values. A theme variable defined only on the storefront cannot resolve in the admin preview; use an explicit fallback if needed. Theme styles are not loaded into wp-admin by this module.
+
+Example dark styling: container #050505, heading #ffffff, card #111111, card text #dddddd, selected background var(--primary, #ff1616), selected text #ffffff, border #333333, both radii 0px, gap 16px. These are optional per-site settings, not hardcoded store branding.
 
 ## Support boundaries
 
 - Classic checkout and compatible custom templates only. The standard WooCommerce checkout script/form and order-review fragments are required.
+- FFL-only delivery displays no duplicate heading, cards or dealer notices from this addon; use the native FFL Checkout selector. An empty hidden fragment target allows AJAX to restore controls when regular-item packages appear. Server-side delivery rules and final validation remain active.
 - Checkout Blocks and Store API requests are left untouched; an admin notice explains the limitation.
 - Existing distinct FFL and customer packages are handled separately. An unsplit mixed package is rejected instead of choosing a destination for its items. No package splitting or inventory allocation is performed.
 - Package classification uses parent-aware firearm flags, the provider's required-selector check and its state-compliance helper. The server filter `ffla_pickup_shipping_package_scope` can classify an existing package as `ffl`, `regular` or `mixed`. Integrators must preserve actual destinations and provider validation.
