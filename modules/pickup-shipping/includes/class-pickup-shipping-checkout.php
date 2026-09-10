@@ -76,6 +76,22 @@ class Pickup_Shipping_Checkout
         foreach (['ffla_delivery_mode','shipping_fflno','compliance_mode','ammo_compliance','non_firearms_compliance'] as $key) {
             if (isset($raw[$key]) && is_scalar($raw[$key])) { $data[$key] = sanitize_text_field(wp_unslash($raw[$key])); }
         }
+        // The native widget also posts these fields when the primary license
+        // control is absent/disabled. Never resurrect an explicitly cleared or
+        // malformed primary, or choose arbitrarily between conflicting backups.
+        if (array_key_exists('shipping_fflno', $raw)) {
+            $data['shipping_fflno'] = $data['shipping_fflno'] ?? '';
+        } else {
+            $licenses = [];
+            foreach (['backup_fflno','ffl_license_backup','ffl_id'] as $key) {
+                if (array_key_exists($key, $raw)) {
+                    $licenses[] = Pickup_Shipping_Settings::license(is_scalar($raw[$key]) ? wp_unslash($raw[$key]) : '');
+                }
+            }
+            if ($licenses) {
+                $data['shipping_fflno'] = count(array_unique($licenses)) === 1 ? $licenses[0] : '';
+            }
+        }
         return $data;
     }
     public static function update($raw): void
@@ -293,7 +309,7 @@ class Pickup_Shipping_Checkout
         if (!self::active()) { return; }
         $base = FFLA_URL . 'modules/pickup-shipping/assets/';
         wp_enqueue_style('ffla-delivery',$base . 'delivery.css',[],FFLA_VERSION . '.4');
-        wp_enqueue_script('ffla-delivery',$base . 'delivery.js',['jquery','wc-checkout'],FFLA_VERSION . '.4',true);
+        wp_enqueue_script('ffla-delivery',$base . 'delivery.js',['jquery','wc-checkout'],FFLA_VERSION . '.5',true);
         wp_localize_script('ffla-delivery','fflaDelivery',[
             'updating'=>__('Updating delivery options…','ffl-funnels-addons'),
             'error'=>__('Delivery could not be updated. Please try again before placing your order.','ffl-funnels-addons'),

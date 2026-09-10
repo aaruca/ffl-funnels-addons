@@ -27,6 +27,8 @@ Example dark styling: container #050505, heading #ffffff, card #111111, card tex
 
 ## Support boundaries
 
+- Native FFL Checkout behavior varies by release and store configuration: **CLICK HERE FOR IN STORE PICKUP** may search for the store and may also complete its dealer selection automatically. This addon does not infer intent from the button click. It follows the final license that FFL Checkout posts in its primary or documented backup fields, so an automatically selected store receives pickup and any other selected FFL receives shipping.
+- Review and final validation accept native `backup_fflno`, `ffl_license_backup` and `ffl_id` fields only when `shipping_fflno` is absent (for example, disabled fields are omitted from form serialization). Present primary values, including an explicit clear, take priority. Conflicting or malformed backups fail closed. No cookie/localStorage identity fallback is used. Native `update_checkout` requests cancel redundant pending addon refreshes.
 - Classic checkout and compatible custom templates only. The standard WooCommerce checkout script/form and order-review fragments are required.
 - FFL-only delivery displays no duplicate heading, cards or dealer notices from this addon; use the native FFL Checkout selector. An empty hidden fragment target allows AJAX to restore controls when regular-item packages appear. Server-side delivery rules and final validation remain active.
 - Checkout Blocks and Store API requests are left untouched; an admin notice explains the limitation.

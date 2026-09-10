@@ -173,6 +173,35 @@ check((bool)$e->errors,'invalid delivery mode not treated as consent');
 $wc->cart->items=cart_items([2]);Pickup_Shipping_Checkout::cart_updated();
 check(Pickup_Shipping_Checkout::state()===[],'changed cart clears state');
 $ffl=true;$sf['delivery']='both';$options[Pickup_Shipping_Settings::OPTION]=$sf;
+Pickup_Shipping_Checkout::update('shipping_fflno=9-77-111-01-8A-99999');
+Pickup_Shipping_Checkout::update('backup_fflno=9-77-111-01-8A-05780&ffl_license_backup=9-77-111-01-8A-05780&ffl_id=9-77-111-01-8A-05780');
+check(Pickup_Shipping_Checkout::state()['license']==='977111018A05780','native backup fields replace previous external dealer with pickup dealer');
+$nativePickup=Pickup_Shipping_Checkout::packages([['contents'=>$wc->cart->items]]);
+check(array_keys(Pickup_Shipping_Checkout::rates($rates,$nativePickup[0]))===['local_pickup:1','local_pickup:3'],'native backup selection filters out shipping');
+Pickup_Shipping_Checkout::update('backup_fflno=9-77-111-01-8A-99999');
+$nativeExternal=Pickup_Shipping_Checkout::packages([['contents'=>$wc->cart->items]]);
+check(array_keys(Pickup_Shipping_Checkout::rates($rates,$nativeExternal[0]))===['flat_rate:2'],'native external backup selection removes pickup');
+check($nativePickup[0]['ffla_delivery']!==$nativeExternal[0]['ffla_delivery'],'backup dealer changes invalidate WooCommerce package hash');
+foreach (['backup_fflno','ffl_license_backup','ffl_id'] as $backup) {
+ $_POST=[$backup=>'9-77-111-01-8A-05780'];Pickup_Shipping_Checkout::process();
+ check(Pickup_Shipping_Checkout::state()['license']==='977111018A05780','final submit accepts current provider field '.$backup);
+ $wc->ship->packages=Pickup_Shipping_Checkout::packages([['contents'=>$wc->cart->items]]);
+ $wc->ship->packages[0]['rates']=Pickup_Shipping_Checkout::rates($rates,$wc->ship->packages[0]);
+ $e=new Errors();Pickup_Shipping_Checkout::validate(['shipping_method'=>['local_pickup:1']],$e);
+ check(!$e->errors,'final validation accepts available pickup from '.$backup);
+ $e=new Errors();Pickup_Shipping_Checkout::validate(['shipping_method'=>['flat_rate:2']],$e);
+ check((bool)$e->errors,'final validation rejects shipping for pickup dealer from '.$backup);
+}
+foreach ([['shipping_fflno'=>''],['shipping_fflno'=>['invalid']],['shipping_fflno'=>'invalid'],['shipping_fflno'=>null]] as $input) {
+ Pickup_Shipping_Checkout::update(array_merge(['backup_fflno'=>'9-77-111-01-8A-05780'],$input));
+ check(Pickup_Shipping_Checkout::state()['license']==='','explicit empty or invalid primary never revived by backup');
+}
+Pickup_Shipping_Checkout::update(['shipping_fflno'=>'9-77-111-01-8A-99999','backup_fflno'=>'9-77-111-01-8A-05780']);
+check(Pickup_Shipping_Checkout::state()['license']==='977111018A99999','current primary beats stale backup');
+Pickup_Shipping_Checkout::update(['backup_fflno'=>'9-77-111-01-8A-05780','ffl_id'=>'9-77-111-01-8A-99999']);
+check(Pickup_Shipping_Checkout::state()['license']==='','conflicting backup identities fail closed');
+Pickup_Shipping_Checkout::update(['backup_fflno'=>['invalid']]);
+check(Pickup_Shipping_Checkout::state()['license']==='','malformed backup clears stale dealer');
 Pickup_Shipping_Checkout::update('shipping_fflno=9-77-111-01-8A-05780');
 $_POST=[];Pickup_Shipping_Checkout::process();
 check(Pickup_Shipping_Checkout::state()['license']==='','final submit cannot rely on old dealer session');
