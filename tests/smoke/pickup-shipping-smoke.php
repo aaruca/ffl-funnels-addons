@@ -242,13 +242,17 @@ $options[Pickup_Shipping_Settings::OPTION]=array_merge($s,['ffl_enabled'=>true])
 $wc->cart->items=cart_items([2]);$ffl=true;$wc->ship->packages=[];
 $placeholder=Pickup_Shipping_Checkout::html();
 check(strpos($placeholder,' hidden ')!==false&&strpos($placeholder,'<h3')===false&&strpos($placeholder,'Select your FFL')===false,'FFL initial checkout contains only an invisible fragment anchor');
-foreach(['','9-77-111-01-8A-05780','9-77-111-01-8A-99999'] as $dealer){
+foreach([''=>'pending','9-77-111-01-8A-05780'=>'pickup','9-77-111-01-8A-99999'=>'ship'] as $dealer=>$expectedMode){
  Pickup_Shipping_Checkout::update('shipping_fflno='.urlencode($dealer));
  $wc->ship->packages=Pickup_Shipping_Checkout::packages([['contents'=>$wc->cart->items]]);
  $wc->ship->packages[0]['rates']=Pickup_Shipping_Checkout::rates($rates,$wc->ship->packages[0]);
- check(Pickup_Shipping_Checkout::html()===$placeholder,'FFL status never renders duplicate delivery text');
+ $current=Pickup_Shipping_Checkout::html();
+ check(strpos($current,' hidden ')!==false&&strpos($current,'<h3')===false,'FFL status never renders duplicate delivery text');
+ preg_match('/data-ffla-shipping-policy="([^"]*)"/',$current,$match);
+ $renderedPolicy=json_decode(html_entity_decode($match[1]??'',ENT_QUOTES),true);
+ check(($renderedPolicy[0]['mode']??'')===$expectedMode,'FFL fragment exposes the current server-authorized mode');
  $fragments=Pickup_Shipping_Checkout::fragments([]);
- check(($fragments['#ffla-delivery-choice']??'')===$placeholder,'FFL AJAX fragment remains empty and hidden');
+ check(($fragments['#ffla-delivery-choice']??'')===$current,'FFL AJAX fragment carries the same hidden server policy');
 }
 $wc->cart->items=cart_items([1,2]);
 $wc->ship->packages=Pickup_Shipping_Checkout::packages([['contents'=>cart_items([2])],['contents'=>cart_items([1])]]);
@@ -258,3 +262,4 @@ check(strpos($mixedHtml,'Select your FFL')===false&&strpos($mixedHtml,'selected 
 $wc->cart->items=cart_items([1]);$ffl=false;$wc->ship->packages=[];
 check(strpos(Pickup_Shipping_Checkout::html(),'<h3')!==false,'regular checkout restores delivery selector');
 echo "$checks Pickup & Shipping checks passed.\n";
+

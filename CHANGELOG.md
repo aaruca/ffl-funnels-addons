@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 39433)
-Total output lines: 1781
-
 # Changelog
 
 All notable changes to FFL Funnels Addons are documented in this file.
@@ -8,6 +5,7 @@ All notable changes to FFL Funnels Addons are documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- Pickup & Shipping: reconcile WooCommerce's newly rendered shipping control after each checkout review using the server-authorized package policy. Native in-store FFL selections now remain on Local Pickup after the asynchronous checkout refresh, including multi-step checkout flows.
 - Pickup & Shipping: read the native FFL selector's posted backup license fields when its primary field is absent or disabled, including native versions where the in-store button completes the store selection. Changing dealers no longer retains a stale shipping/pickup decision. Explicitly cleared primary fields and conflicting backups fail closed; review requests and final validation use the same parser, native checkout refreshes are coalesced, and native FFL validation remains authoritative.
 
 ## [1.47.0] - 2026-09-09
@@ -580,7 +578,476 @@ Added a **Google service account** auth path alongside the existing proxy-based 
 **Changed:**
 - `WSS_Google_Sheets` now type-hints `WSS_Token_Provider` instead of the concrete OAuth class — sync logic is unchanged.
 - `WSS_Cron`, `WSS_Sync_Job`, and the dashboard tab-delete path resolve their provider through `WSS_Auth::get_provider()`, so a configured service account drives scheduled, background, and manual syncs.
-- **Settings page:** new "Authentication — Service Account (Recommended)" card t…9433 tokens truncated…ave the second's session write overwrite the first. Added a short-lived (5s) per-session+cart-item transient lock; concurrent updates now return "Another vendor update is in progress. Please retry." with the lock released on every error and success path.
+- **Settings page:** new "Authentication — Service Account (Recommended)" card to paste the JSON key (stored encrypted, never echoed back), see the service-account email to share the sheet with, or remove it to revert to OAuth.
+- `uninstall.php` clears the `wss_sa_access_token` transient.
+
+**Upgrade safety:** existing OAuth connections are untouched and remain the default until a service account is saved.
+
+## [1.31.0] - 2026-05-18
+
+### Removed — Doofinder Sync addon and all Doofinder integration
+
+The **Doofinder Sync** addon has been fully removed from the plugin, along with the Wishlist module's Doofinder search-layer integration. The plugin no longer ships, registers, or references any Doofinder functionality.
+
+**Deleted:**
+- `modules/doofinder-sync/` — the entire Doofinder Sync module (entry class, includes, admin, assets)
+- `modules/wishlist/integrations/class-wishlist-doofinder.php` — the Wishlist→Doofinder search-layer compatibility class
+
+**Core plugin (`ffl-funnels-addons.php`):**
+- Removed the `Doofinder_Module` include and registration
+- Removed the `DSYNC_PREFIX` / `DSYNC_PLUGIN_BASENAME` / `DSYNC_PLUGIN_SLUG` compat-constant block
+
+**Wishlist module:**
+- Removed Doofinder integration loading from `load_integrations()` (Bricks + SnapFind remain)
+- Removed the "Doofinder Integration" admin card (the Layer-Template HTML snippet + copy button)
+- Removed the `df:layer:render` event listener and the now-orphaned `updateShadowRoots()` from the frontend JS (generic shadow-DOM button syncing for SnapFind is retained)
+- Removed the `.wbw-doofinder-btn` CSS rules
+- Updated the module description to drop "Doofinder"
+
+**Supporting files:**
+- `includes/class-ffla-conflict-checker.php` — dropped the `doofinder-sync/doofinder-sync.php` conflict entry
+- `includes/class-ffla-updater.php` — refreshed the plugin-info description
+- `includes/class-ffla-module.php` — updated doc-comment examples
+- `README.md` — removed the Doofinder Sync section and the Wishlist Doofinder bullet; renumbered subsequent module sections
+- `uninstall.php` — converted the conditional Doofinder cleanup into an **unconditional legacy purge** of `dsync_settings` / `dsync_layer_hash`, so installs that previously ran the addon don't leave orphaned options behind on uninstall
+
+**Upgrade safety:** Sites that had `doofinder-sync` in their saved active-modules list are unaffected — `FFLA_Module_Registry::get_active()` ignores module IDs that are no longer registered, so the stale entry is silently dropped with no errors.
+
+## [1.30.2] - 2026-05-18
+
+### Tax Rates — USGeocoder parser now uses the documented field schema
+
+Audited our resolver against the official USGeocoder API Integration Guide (v17.0825) and replaced fuzzy keyword matching with explicit field mappings. The parser previously walked the response tree looking for any node with a `*rate*` / `*tax*` key, which was the root cause of the v1.30.1 double-count bug (summary AND details rows both got collected).
+
+**Now using the documented schema:**
+
+The response wraps everything under `usgeocoder.*`. The sales-tax payload lives in two sibling modules:
+
+- `totalcollection_tax_summary` + `totalcollection_tax_details` (`t_tax_*` field prefix) — what your current plan returns
+- `mandatorycollection_tax_summary` + `mandatorycollection_tax_details` (`m_tax_*` field prefix) — available on full plans
+
+The resolver now:
+
+1. **Honors `usgeocoder.request_status.request_status_code.value`** — if USGeocoder returned `Denied` / `Invalid` / `Error` / `NoMatch` with HTTP 200, the resolver returns a clean error result instead of trying to scrape rates from an empty payload. Status string is captured in `trace.requestStatus`.
+2. **Prefers `totalcollection_tax_details` over `_summary`** (when both exist) since details includes district breakdowns. Falls back to `_summary` if details isn't included. Falls back again to `mandatorycollection_*` if neither Total Collection variant is present.
+3. **Explicit field extraction** instead of fuzzy walks:
+    - State: `t_tax_state_tax` + `t_tax_state_jurisction_name` (note vendor typo in field name)
+    - County: `t_tax_county_tax` + `t_tax_county_jurisdiction_name`
+    - City: `t_tax_city_tax` + `t_tax_city_jurisdiction_name`
+    - County districts 1..N: `t_tax_county_district{N}_tax` + `t_tax_county_district{N}_name`
+    - City districts 1..N: `t_tax_city_district{N}_tax` + `t_tax_city_district{N}_name`
+    - Special districts 1..N: `t_tax_special_district{N}_tax` + `t_tax_special_district{N}_name`
+4. **Skips non-numeric rate values** like `"Collections Not Required"` (mandatory-collection sentinel for jurisdictions with no obligation) by requiring at least one digit in the raw field.
+5. **Captures `t_tax_code` and `t_tax_incorporated_city` to the audit trace** so the order admin / audit log shows the vendor's state-specific tax code and incorporated-city designation.
+6. **Bumps confidence from `MEDIUM` to `HIGH`** when the explicit parser finds known fields — we're no longer guessing at the response shape.
+7. **`extract_total_rate()` now reads `t_tax_total_tax` / `m_tax_total_tax` directly** instead of pattern-matching for total-like keys.
+
+The old fuzzy parser is kept as a fallback for response shapes that don't match the documented schema (e.g. if USGeocoder ever returns a payload without the `usgeocoder.*` wrapper).
+
+**Result for Santa Cruz, CA example from the docs:** state CA 7.250%, county Santa Cruz 1.250%, city Santa Cruz 0.750%, plus 3 county districts (0.250% + 0.500% + 0.500%) and 2 city districts (0.500% + 0.250%) — total 9.250% with proper jurisdiction names and types. Previously this showed as 2 rows of "USGeocoder Detail / SPECIAL" summing to ~18.5%.
+
+## [1.30.1] - 2026-05-18
+
+### Tax Rates — Fix double-counting in USGeocoder breakdown parser
+
+The Lookup tab was showing the total tax rate **doubled** — for an address that should have returned ~10%, the engine displayed 20.00% as two breakdown rows of 10.0000% each, both labeled "USGeocoder Detail".
+
+**Root cause:** `USGeocoder_API_Resolver::collect_arrays_with_rate()` walked the response tree and added every node that had a rate-like key (`*rate*` / `*tax*`) to the candidate list — **including parent nodes whose children also matched**. USGeocoder returns both a summary (`total_sales_tax_rate`) and itemized details nested below it, so the parser collected both depths and summed them.
+
+**Fix:**
+
+1. **Depth-first preference.** `collect_arrays_with_rate()` now recurses into descendants first. If any descendant returns a row, those are used (they're the more specific detail rows) and the current node is skipped. The current node is only included when no descendant qualifies — eliminating summary+detail double-counting at the source.
+
+2. **Defensive dedupe in `extract_breakdown_items()`.** Rows are now de-duplicated by `(jurisdiction lowercased | rate to 6dp)`. If the JSON shape ever changes and a row gets collected at two depths anyway, only one copy makes it into the breakdown.
+
+The "USGeocoder Detail" generic fallback label also tells us the rate is being pulled from a node that has no jurisdiction name field — which means we're still parsing the wrong level for naming. The proper fix is to write explicit field mappings against the real response shape; share one successful JSON response from the dashboard and that landing will be a one-commit follow-up.
+
+## [1.30.0] - 2026-05-15
+
+### Loadout — Composable elements auto-detect the current product's loadout + full color tokenization
+
+**Auto-detection in composable Bricks elements.** Loadout: Tier Tabs, Loadout: Progress Bar, and Loadout: Cart Mirror now resolve which loadout to bind to automatically — no more manually picking from the dropdown each time you drop them on a product page. The dropdown still works for explicit overrides, but the first option is now **"— Auto-detect from current product —"** and that's what gets used when left blank.
+
+Resolution priority (shared across all three elements via new `Loadout_Element_Helpers::resolve_tiers_for_current_context()`):
+
+1. Explicit loadout picked from the dropdown
+2. Current Bricks Query Loop's Loadout/Tier object (so you can nest them inside Loadout loops)
+3. Current product page → linked global Loadout (set via the product editor's Loadout tab)
+4. Current product page → per-product custom tiers (also from the product editor's Loadout tab)
+
+Result: drop a **Loadout: Tier Tabs** element on a single-product template, configure the product's Loadout settings normally, and the tabs render automatically with the correct tier names/slugs/IDs — including for per-product custom tiers where there's no global Loadout to reference. Same for Progress Bar (gets `data-loadout-id` / `data-product-loadout-id` for cart-summary AJAX) and Cart Mirror (auto-filters to the current product's loadout).
+
+The `data-product-loadout-id` attribute on the root of these elements lets the frontend JS pass the right context when calling the cart-summary endpoint, so progress-bar fills correctly for per-product setups too.
+
+**Full color tokenization for plugin scalability.** Every hardcoded brand color in the Loadout frontend now reads from site CSS custom properties with safe fallbacks — so a single design-system update at `:root` retheme the entire loadout UI:
+
+- `--primary` (accent / "Main" tag / active tier underline) — fallback `#d4a017` gold
+- `--success` (savings / total savings) — fallback `#2e7d32` green
+- `--danger` (discount badge in product tab / OOS) — fallback `#e91e63`
+- `--warning` / `--warning-bg` (set-discount callout in product tab) — fallback `#f9a825` / `#fff8e1`
+- `--bg`, `--fg`, `--muted`, `--card`, `--border` (widget background, text, dim text, panel bg, dividers)
+
+Translucent accent backgrounds (perks panel, bonus panel) now use `color-mix(in srgb, var(--primary) 10%, transparent)` so the tint automatically derives from whatever primary color the site has set. Hex fallbacks are provided immediately before each `color-mix` declaration for older browsers.
+
+No schema, behavior, or data changes. Pure UX/scalability improvements.
+
+## [1.29.3] - 2026-05-15
+
+### Loadout — Cart actually updates after add (no more page-refresh needed)
+
+The AJAX add flows (`loadout_add_item` and `loadout_add_tier`) were not returning WooCommerce cart fragments, so the mini-cart widget and any cart-related UI never knew to refresh. On the cart page itself, fragments don't help either — that page requires a reload to show new items in the cart table.
+
+**Server side:**
+
+- New `Loadout_Cart::build_cart_response()` helper that calls `WC()->cart->calculate_totals()`, ensures cart cookies are set, renders the standard mini-cart template, runs the `woocommerce_add_to_cart_fragments` filter, and returns the standard payload (`fragments`, `cart_hash`, `cart_count`, `cart_total`, `cart_url`).
+- All three AJAX endpoints (`ajax_add_item`, `ajax_add_tier`, `ajax_get_cart_summary`) now return this payload — same shape WC's own AJAX add-to-cart returns. Result: mini-cart widgets, cart counters, and any `wc_cart_fragments_params`-aware theme/plugin auto-update.
+
+**Client side:**
+
+- New `addToCart()` flow detects whether we're on the cart/checkout page (by `body.woocommerce-cart` / `body.woocommerce-checkout` classes, the cart-form selector, or by comparing the path against `loadoutFrontend.cartUrl`). If yes, it reloads the page — fragments can't update the cart table itself, so a reload is the only reliable way to show the new line.
+- If we're NOT on cart/checkout, the JS:
+  - Writes the new fragments to `sessionStorage` (the WC Cart Fragments cache used to persist cart UI across page navigations)
+  - Manually `.replaceWith()` each fragment selector returned by the server — so mini-cart updates even if the theme isn't using `wc-cart-fragments.js`
+  - Fires `wc_fragments_refreshed`, `added_to_cart`, and `wc_fragment_refresh` events for any other plugins/themes hooked in
+
+Result: after clicking ADD (single item or entire tier), the cart visibly updates without a manual refresh.
+
+## [1.29.2] - 2026-05-15
+
+### Loadout — Use site CSS variables for the "Main" tag and savings colors
+
+The bundle "Includes:" rendering hardcoded brand colors (`#d4a017` gold for the Main tag, `#2e7d32` green for savings). Swapped to site-defined CSS custom properties so the colors automatically match each site's design system:
+
+- **Main tag background:** `var(--primary, #d4a017)` — uses the site's primary color, fallback to gold
+- **Per-line "Save $X.XX" text:** `var(--success, #2e7d32)` — uses the site's success/positive color, fallback to green
+- **"Total Loadout Savings" footer text:** `var(--success, #2e7d32)`
+
+Sites that define `--primary` and `--success` at the `:root` (or any ancestor of the cart) get a perfectly themed bundle line. Sites that don't define them fall back to the previous defaults — no breakage.
+
+The "Main" tag also now uses white text (`#fff`) instead of the gold-on-tinted-gold combo, since the background now varies per site.
+
+## [1.29.1] - 2026-05-15
+
+### Loadout — Richer "Includes:" rendering in cart (links, prices, per-line savings, total savings)
+
+The bundle line's `Includes:` sub-list in the cart was previously plain product names. It now shows, for each contained product:
+
+- **Product name as a clickable link** to the product page
+- **Quantity** badge when > 1 (`× 2`)
+- **"Main" tag** on the anchor product so the customer can see at a glance which is the hero item vs. the accessories
+- **Original price** with strikethrough when discounted
+- **Final price** (after all loadout discounts applied) in bold
+- **Per-line "Save $X.XX"** badge in green showing how much the loadout saved them on that specific line
+
+Plus a **"Total Loadout Savings: $X.XX"** footer below the list summing all per-line savings — so the customer immediately sees the dollar value of the loadout discount on this bundle line.
+
+Layout is a flexbox row per item so it stays readable on dark/light themes. Colors use opacity-based dimming for strikethrough and an accessible green (`#2e7d32`) for savings — no hardcoded background that would clash with the theme.
+
+Plain-text fallback (used by emails and order line item meta) still uses the comma-separated `Name × Qty — $price` format so it renders cleanly when HTML is stripped.
+
+## [1.29.0] - 2026-05-15
+
+### Loadout — "Add Entire Tier" now adds as a single inseparable bundle line (+ includes the anchor)
+
+The **ADD ENTIRE TIER / ADD CART** button now behaves like a WooBooster Bundle:
+
+- Adds **one synthetic cart line** representing the whole tier — instead of N separate cart lines
+- **The anchor / main product is automatically included** in that line (the rifle on a product page tab, or the loadout's configured anchor product in the standalone widget)
+- All discounts (per-item, accessory, set) are pre-applied; the line price is the final total
+- Removing the line removes the entire tier-bundle in one click — customers can't accidentally break the set apart
+- Cart shows "Includes: Daniel Defense V7, EOTech HWS, Magpul Sling × 1..." sub-list under the line
+- Same "Includes:" appears in the order line item meta (admin order view + customer emails)
+
+**Why:** the user requested that ADD ENTIRE TIER mirrors Bundle behavior so the discount can be applied as one atomic operation with no ambiguity about which items the discount belongs to, no orphaned items, and no risk of partial-set state.
+
+**Individual ADD buttons are unchanged** — they still add per-item cart lines so customers can mix and match. Only the master ADD ENTIRE TIER action uses the new bundle behavior.
+
+**Implementation:**
+
+- New cart-item meta: `_ffla_tier_bundle` (flag), `_ffla_tier_bundle_items` (composition), `_ffla_tier_bundle_total` (price), `_ffla_tier_bundle_hash` (unique key so two bundles never merge)
+- `Loadout_Cart::ajax_add_tier()` rewritten to:
+  - Resolve anchor (widget = `Loadout::get_anchor_product_id()`, product_tab = the current product)
+  - Build the bundle items list (anchor first as representative, then tier items at configured qty, skipping anchor duplication)
+  - Pre-compute the total with per-item + accessory + set discount baked in (capped at 100% per line; anchor itself is not discounted by accessory/set)
+  - Add one cart line with bundle meta + unique hash
+- `apply_loadout_pricing()` overrides the line price to the pre-computed total when `META_TIER_BUNDLE` is set
+- `display_cart_item_meta()` renders a styled "Includes:" list (HTML for cart display, plain comma list for emails)
+- Order line item save captures the full bundle composition + a human-readable "Includes" meta
+
+Works for both global Loadout tiers and per-product custom tiers. No schema migration needed — bundle meta is cart/order-side only.
+
+## [1.28.2] - 2026-05-15
+
+### Loadout — Self-service admin: collapsible "How Loadouts work" intro + per-field descriptions
+
+Both the global Loadout edit form and the per-product Loadout metabox now include enough inline help that a non-technical client can configure tiers without external documentation.
+
+**New collapsible "How Loadouts work" overview** at the top of both forms covers, in plain language:
+
+- What a tier is and what each one shows
+- What **Accessory Discount %** does vs. **Set Discount %**
+- How **Perk Threshold + Perks + Bonus** gamification works (and what happens if you set the threshold to 0)
+- What the **Anchor Product** is
+- What **Cross-Sells** are for
+- The "leave fields blank to skip the feature" rule
+
+**Per-field descriptions on every input** (global form `<p class="description">`, per-product metabox `<span class="loadout-help">` for compact grids):
+
+- Name, Status, Headline, Subheadline
+- Hero Image, Brand Logo, Anchor Product
+- Tier Name, Accessory Discount %, Set Discount %, Perk Threshold (clarifies "0 = always unlocked, gamification disabled")
+- Perks (clarifies they're display-only)
+- Bonus Product, Bonus Label, Bonus Display Value (clarifies the customer is still charged $0; display value is cosmetic)
+- "Enable Loadout Tab" and "Link to Global Loadout" toggles in the product editor
+
+Pure content/UX additions — no schema, behavior, or data changes.
+
+## [1.28.1] - 2026-05-15
+
+### Loadout — Show stock status in admin item rows
+
+Per the previous request, "quantity" actually meant **stock**. The admin product picker now surfaces stock alongside price.
+
+- **Search dropdown results** show each product's current stock with a colored chip: green "X in stock" (managed-stock products), yellow "X in stock" when ≤5, "In stock" (untracked), red "Out of stock", or blue "On backorder".
+- **Selected-product chip** (the one that appears next to the chosen product in the admin row) now shows the same stock chip beside the price chip.
+- Pre-existing items render with both price and stock chips on form load — so reopening a saved loadout immediately shows you whether each item is still in stock.
+
+Applies to:
+- Global Loadout edit form: tier items, bonus product
+- Per-product Loadout metabox in the WooCommerce product editor: tier items, bonus product
+- AJAX search response: new `stock_status`, `stock_quantity`, `manages_stock`, `stock_html` fields
+
+Shared helper `Loadout_Ajax::format_stock_html($product)` keeps the chip markup consistent across the AJAX response and PHP renderers.
+
+## [1.28.0] - 2026-05-15
+
+### Loadout — Per-product config feature parity with global + price/qty visibility
+
+**Per-product Loadout config now exposes every field the global Loadout admin form has.** Previously it only had Tier Name, Set Discount, Product, Qty, and Discount %. The product editor metabox now also includes:
+
+- **Accessory Discount %** — applied per-item on top of the per-item discount
+- **Perk Threshold** — number of items needed to unlock perks/bonus
+- **Perks** — multi-line textarea, one perk per line
+- **Bonus Product** — picker (uses the same OOS-filtered product search)
+- **Bonus Label** — display text, e.g. "FREE Kinetic Armory"
+- **Bonus Display Value** — cosmetic "valued at $X" amount
+- **Pre-checked** — toggle on each item to flag it as required/selected by default
+
+All persist to `_ffla_product_loadout_tiers` post meta (existing key, expanded JSON schema with new fields). Existing per-product configs continue to load — missing fields default cleanly.
+
+**Product/qty/price visibility in admin item rows.**
+
+- When you select a product from the search dropdown, its **price** is now shown in the dropdown result and again as a chip next to the chosen product (so you can immediately verify which product is configured).
+- The price chip appears in both the **global Loadout edit form** and the **per-product Loadout metabox**.
+- Pre-existing items now re-render with the price chip on form load.
+- Product-display markup uses two spans (`.loadout-product-name` and `.loadout-product-price`) so each can be styled independently.
+
+**Product tab frontend updated** to render the new fields:
+
+- Combined per-item + accessory discount is now displayed (e.g., a 5% item discount in a tier with 10% accessory discount shows "15% OFF" and the matching final price).
+- Item quantity shows next to product name (`Item Name ×2`).
+- Perks list and bonus item block now render below the tier items in the product tab (same UI affordance as the standalone widget).
+- Threshold attribute is now exposed on the panel for future progress-bar integration.
+
+**Known follow-up** (not in this release): cart-side application of the per-product custom-tier accessory discount and threshold-based bonus auto-add. Currently only the global tier path applies these in the cart; product-tab custom tiers display perks/bonus but the bonus product isn't auto-added at threshold yet. Will be addressed in a v1.28.x patch.
+
+## [1.27.4] - 2026-05-15
+
+### Loadout — Fix "Class Loadout_Product_Admin not found" frontend fatal
+
+Patches a critical fatal triggered on **every WooCommerce product page render** since v1.26.0:
+
+```
+PHP Fatal error: Uncaught Error: Class "Loadout_Product_Admin" not found
+in .../modules/loadout/includes/class-loadout-product-tab.php:21
+```
+
+**Root cause:** `Loadout_Product_Tab::add_loadout_tab()` (hooked to `woocommerce_product_tabs`, runs on every frontend product page) calls `Loadout_Product_Admin::get_product_config()` to decide whether to render the Loadout tab. But the `class-loadout-product-admin.php` file was only required inside an `is_admin()` guard in `Loadout_Module::boot()` — so the class doesn't exist on the frontend, and calling its static method fatals.
+
+**Fix:** Moved the `require_once 'admin/class-loadout-product-admin.php'` outside the `is_admin()` block. The class is now always available (its definition has no side effects), but instantiation still only happens in admin. The static `get_product_config()` helper is now reachable from frontend code.
+
+Pure load-order fix. No behavior, schema, or data changes.
+
+## [1.27.3] - 2026-05-15
+
+### Loadout — Product editor save flow fixes
+
+Three related bugs were preventing the per-product Loadout configuration from saving correctly when clicking **Update product**.
+
+**1. Wrong tier index on dynamically-added tier "+ Add Item" buttons.** When a user clicked "+ Add Tier", the JS only replaced the form-name placeholder `product_tiers[0]` but left `data-tier-index="0"` and `data-index="0"` baked in from the template. Items added to the new tier were therefore submitted under tier 0's name array (`product_tiers[0][items][N]`), overwriting tier 0's items and silently dropping the new tier's items.
+
+   - JS now replaces `product_tiers[0]`, `data-tier-index="0"`, AND `data-index="0"` when cloning the tier template
+
+**2. Tiers with empty names were silently discarded.** The save loop did `if (empty($name)) continue;` and skipped entire tiers, including their items, even if items were valid. So a tier with products but no typed name vanished on save.
+
+   - Save logic now keeps a tier as long as it has a name OR items
+   - Tiers with items but no name auto-fall back to "Tier N" so the data persists and the user can rename later
+   - Truly blank rows (no name AND no items) are still skipped
+
+**3. Save handler could nuke data on programmatic product saves.** `woocommerce_process_product_meta` also fires from REST API calls, `wc_update_product()`, etc., where `$_POST` is empty. The previous handler ran anyway and called `delete_post_meta` on the custom-tiers key, wiping configured loadouts.
+
+   - Handler now early-returns when none of `loadout_enable_tab`, `loadout_link`, or `product_tiers` are present in `$_POST`
+
+**Bonus:** added a `_ffla_loadout_last_save` post meta breadcrumb (timestamp) plus a `WP_DEBUG`-gated `error_log` line so future "did the save fire?" questions can be answered by checking the post meta or the PHP error log.
+
+## [1.27.2] - 2026-05-15
+
+### Loadout — Fix fatal error from Bricks integration filter signatures
+
+Critical patch fixing a `TypeError: trim(): Argument #1 ($string) must be of type string, array given` fatal in `class-loadout-bricks.php:232` that brought down the entire site whenever a Bricks page rendered.
+
+**Root cause:** Two filter callbacks had wrong signatures.
+
+1. **`bricks/dynamic_data/render_tag`** — Bricks calls this with `($value, $tag, $post_id, $context)`. Our callback only declared 3 args and treated the first arg as `$tag`, but it's actually `$value` (which can be a string, an array, or other types depending on what other plugins return). Calling `trim()` on an array threw the fatal.
+
+   - Fixed signature to `($value, $tag, $post_id, $context)` with 4-arg filter registration
+   - Added strict type check: only process when `$tag` is a string starting with `{loadout_`
+   - Returns the original `$value` (preserves any other plugin's value) when the tag isn't ours
+
+2. **`bricks/query/loop_object`, `bricks/query/loop_object_id`, `bricks/query/after_loop`** — `$query_obj` is sometimes passed as a string (e.g. from older Bricks versions or certain code paths). Accessing `->object_type` on a string produced a PHP warning.
+
+   - Added `is_object($query_obj) && isset($query_obj->object_type)` guards in `run_query()`, `set_loop_object()`, `set_loop_object_id()`, and `after_loop()`
+   - All four handlers now silently pass through when `$query_obj` isn't the expected object shape
+
+3. **`bricks/dynamic_data/render_content`** — added defensive type check and explicit `(string)` cast on resolved tag values to prevent similar issues with non-string content.
+
+No behavior, schema, or data changes — purely defensive patches against Bricks API variance.
+
+## [1.27.1] - 2026-05-15
+
+### Loadout — Fix product editor metabox layout
+
+The per-product Loadout configuration metabox in the WooCommerce product editor was being broken by WooCommerce's `.woocommerce_options_panel` admin CSS — labels were being floated to a fixed 150px width, hiding the Tier Name input entirely and causing "Discount %" text to overlap the input field.
+
+- Restructured tier and item rows from inline `<p><label>` markup to explicit `<div class="loadout-field">` blocks with a deterministic CSS Grid layout.
+- Added scoped CSS overrides under `#loadout_product_data` that neutralize WC's float/width rules on labels, inputs, and `<p>` tags inside our metabox.
+- Tier row now shows a 2-column grid (Tier Name + Set Discount %).
+- Item row uses a 4-column grid (Product search + Qty + Discount % + Remove), collapsing to 2 columns on mobile.
+- Product search results dropdown is now absolutely positioned with proper z-index so it doesn't push other content around.
+
+Pure styling/markup fix — no behavior, schema, or data changes.
+
+## [1.27.0] - 2026-05-15
+
+### Loadout — Bricks Query Loop + Composable Elements
+
+The Loadout module now exposes its data through Bricks Builder's native Query Loop system and Dynamic Data tags, so you can lay out the entire UI yourself using Containers, Nestable Tabs, Loops, etc. — no need to use the monolithic widget if you want fine-grained control.
+
+**New Bricks Query Types** (available in the Query Loop dropdown):
+- **Loadouts** — iterates over all active loadouts
+- **Loadout Tiers** — iterates over tiers of a chosen (or inherited) loadout
+- **Loadout Tier Items** — iterates over items of a chosen (or inherited) tier
+- **Loadout Cross-Sells** — iterates over cross-sell tiles
+
+Nested loops automatically inherit context: drop a `Loadout Tier Items` loop inside a `Loadout Tiers` loop and it will iterate the current tier's items.
+
+**New Dynamic Data Tags** (use inside text, headings, image, button URL, custom HTML, etc.):
+- Loadout: `{loadout_name}`, `{loadout_headline}`, `{loadout_subheadline}`, `{loadout_hero_image}`, `{loadout_brand_logo}`, `{loadout_anchor_name}`, `{loadout_anchor_price}`
+- Tier: `{loadout_tier_name}`, `{loadout_tier_slug}`, `{loadout_tier_accessory_discount}`, `{loadout_tier_set_discount}`, `{loadout_tier_threshold}`, `{loadout_tier_bonus_label}`, `{loadout_tier_bonus_value}`, `{loadout_tier_perks}`
+- Item: `{loadout_item_product_name}`, `{loadout_item_product_image}`, `{loadout_item_product_thumb}`, `{loadout_item_quantity}`, `{loadout_item_discount}`, `{loadout_item_regular_price}`, `{loadout_item_final_price}`, `{loadout_item_savings}`, `{loadout_item_in_stock}`
+- Cross-sell: `{loadout_cross_sell_label}`, `{loadout_cross_sell_image}`, `{loadout_cross_sell_link}`
+
+**New Composable Bricks Elements:**
+- **Loadout: Add Item Button** — auto-binds to the current item in a Tier Items loop; carries product/tier/loadout data attributes so the existing AJAX endpoints handle the rest
+- **Loadout: Add Tier Button** — auto-binds to the current tier in a Tiers loop; the "ADD CART" master button
+- **Loadout: Tier Tabs** — standalone tier navigation that controls all panels (matched by `data-tier-slug`) globally on the page
+- **Loadout: Progress Bar** — standalone progress bar that fills based on active tier's items in cart
+- **Loadout: Cart Mirror** — live cart summary, optionally filtered by loadout
+
+**JS rewrite:**
+The frontend JS is now decoupled from a single root container. Tier tab clicks switch panels globally by `data-tier-slug`, cart summaries refresh across all instances on the page, and add buttons read data attributes directly so they work in any context (inside Bricks Nestable Tabs, Query Loops, or anywhere else).
+
+The original monolithic **Loadout** element from v1.26.0 still works unchanged — this release is purely additive.
+
+## [1.26.0] - 2026-05-15
+
+### New Module — Loadout: Tier-Based Product Configurator
+
+A new **Loadout** addon module that complements the existing Bundles feature with a fundamentally different cart model: per-item add-to-cart with gamified perks, tier-based discounts, and bonus items.
+
+**Two complementary surfaces:**
+
+1. **Standalone Widget** (Bricks Builder element + shortcode)
+   - "Build Your Loadout" configurator with hero product + tier tabs (e.g., Essential / Performance / Elite)
+   - Per-tier recommended items list with individual ADD buttons and master ADD CART button
+   - Live cart mirror panel showing items, savings, totals
+   - Bundle & Save progress bar that fills as items are added
+   - Perks unlock at tier threshold (e.g., "Add 3 items to unlock 10% off accessories")
+   - Bonus product auto-adds as $0 line when threshold met; auto-removes when dropped
+   - "Complete Your Loadout" cross-sell tiles section
+   - Gold-on-dark aesthetic matching the mockup
+   - Customizable accent color and panel visibility via Bricks controls
+
+2. **Product-level Loadout Tab** (WooCommerce product editor)
+   - New "Loadout" tab in the product data panel
+   - Two configuration modes:
+     - **Link to Global Loadout**: dropdown reuses an existing Loadout config
+     - **Per-Product Config**: inline tier/item repeater stored as post meta (no global Loadout needed)
+   - Frontend renders a tab on the product page with tier switcher and per-item ADD buttons
+   - **Set discount** applies when the customer adds the entire tier together; reverts if any item is removed
+
+**Schema** (4 new tables, migration version `FFLA_LOADOUT_DB_VERSION = 1.0.0`):
+- `wp_ffla_loadouts` — main loadout configs (name, headlines, branding, anchor product)
+- `wp_ffla_loadout_tiers` — tiers per loadout (discount %, set discount %, perks JSON, bonus, threshold)
+- `wp_ffla_loadout_tier_items` — products per tier (qty, per-item discount, required flag)
+- `wp_ffla_loadout_cross_sells` — cross-sell tiles (label, image, link type/value)
+
+**Cart Integration:**
+- Each loadout item is its own WC cart line (unlike Bundles' synthetic single line); customers can remove individual items
+- Cart-item meta preserves loadout/tier/source context across session and into order line items
+- Per-item discount + tier accessory discount combine additively (capped at 100%)
+- For product tab: set discount applies when ALL tier items are present in cart
+- Bonus product (free gift) auto-managed based on widget item count vs. threshold
+- AJAX endpoints: `loadout_add_item`, `loadout_add_tier`, `loadout_get_cart_summary`
+
+**Admin:**
+- New "Loadouts" menu page at `/wp-admin/admin.php?page=ffla-loadouts`
+- List table with bulk actions (delete, activate, deactivate)
+- Edit form with collapsible sections (basic info, branding, anchor, tiers repeater, cross-sells repeater)
+- Reuses image picker pattern from v1.25.0 bundle work
+- Reuses OOS-filtered product search pattern from v1.25.1
+- Each tier has nested repeater for items, perks chip input, bonus product picker
+
+**Architecture:**
+- New standalone module `modules/loadout/` extending `FFLA_Module` (independent activation)
+- Models with transaction-safe CRUD (`Loadout`, `Loadout_Tier`, `Loadout_Tier_Item`, `Loadout_Cross_Sell`)
+- Bricks element class `Loadout_Element` extending `\Bricks\Element`
+- Plain `[loadout id="X"]` shortcode for non-Bricks embedding
+
+## [1.25.1] - 2026-05-15
+
+### WooBooster — Out-of-stock products hidden from bundle picker
+
+- The product search on the bundle admin form now filters out products with stock status `outofstock`. You can't sell a bundle that contains something not in the warehouse.
+- Rule targeting (conditions / actions) is unaffected and still sees the full catalog — rules may legitimately match OOS items.
+- Implemented via a new `context` parameter on the shared `woobooster_search_products` AJAX endpoint (`context=bundle` ⇒ adds `_stock_status != outofstock` meta query).
+
+## [1.25.0] - 2026-05-15
+
+### WooBooster — Bundle image & better "Includes" layout in cart
+
+**Bundle Image**
+- Each bundle now supports an optional **image** (managed via the WordPress media library) that replaces the representative product's thumbnail in the cart and checkout. Helpful for showing a custom hero / lifestyle shot for the bundle instead of whatever happened to be the first product.
+- Admin: new "Bundle Image" field on the bundle form with the standard WP media picker (select + remove). Empty = use the first product's thumbnail (existing behavior).
+- Schema: `image_id bigint(20) NULL` added to `wp_woobooster_bundles`. Safe migration in `WOOBOOSTER_DB_VERSION` 1.10.0 with INFORMATION_SCHEMA check.
+- Cart: new `woocommerce_cart_item_thumbnail` filter swaps the line image when `image_id` is set; falls back gracefully when not.
+
+**"Includes" list now visually separated**
+- Replaced the `<br>`-joined inline list under bundle cart items with a styled `<ul>`: each contained product sits on its own row with 4px padding and a faint bottom border, so a bundle of 3-4 products is no longer a wall of text.
+- The plain-text `value` (used by emails / order details that strip HTML) remains comma-separated for readability there.
+
+## [1.24.0] - 2026-05-15
+
+### Full plugin audit & critical fixes
+
+A comprehensive multi-module audit was performed across all 7 addons. Most modules were found stable. Critical and high-severity issues were fixed in `product-reviews` and `ffl-checkout`. The unreleased v1.23.0 work (bundle pricing, Bricks customization, homepage support, single cart item model) is included here.
+
+**Product Reviews — Critical Fixes**
+- **Fixed TOCTOU race in helpful-votes counter** (`class-product-reviews-ajax.php`). The previous read-modify-write pattern (`get_comment_meta` → `++` in PHP → `update_comment_meta`) lost votes under concurrent traffic: two requests would both read the same value and both write `current+1`, dropping one increment. Replaced with an atomic SQL `UPDATE wp_commentmeta SET meta_value = CAST(meta_value AS UNSIGNED) + 1` after ensuring the meta row exists. Comment meta cache is busted post-update.
+- **Tightened nonce validation** (`class-product-reviews-core.php`). Nonce check now runs FIRST in the review submission pre-process hook, before honeypot and Cloudflare Turnstile checks. Additionally, a missing nonce field now rejects the submission outright — previously, `isset($_POST['ffla_review_form_nonce'])` returning false would silently skip the entire nonce check.
+
+**FFL Checkout — Stability**
+- **Per-session lock on vendor cart updates** (`class-ffl-checkout-ajax.php`). Double-click and multi-tab race conditions on `update_cart_vendor` could let two concurrent requests both pass validation and have the second's session write overwrite the first. Added a short-lived (5s) per-session+cart-item transient lock; concurrent updates now return "Another vendor update is in progress. Please retry." with the lock released on every error and success path.
 
 **WooBooster — Code Quality**
 - Removed redundant `WOOBOOSTER_VERSION` and `WOOBOOSTER_DB_VERSION` class constants in `WooBooster_Activator`. They duplicated and would have gone stale relative to the globally-defined compat constants in the main plugin file (which auto-sync with `FFLA_VERSION`). All references now use the globals.
@@ -1313,3 +1780,4 @@ This project follows [Semantic Versioning](https://semver.org/):
 - **MAJOR** version for breaking changes
 - **MINOR** version for new features
 - **PATCH** version for bug fixes
+

@@ -264,20 +264,30 @@ class Pickup_Shipping_Checkout
         $s = Pickup_Shipping_Settings::get();
         $packages = WC()->shipping()->get_packages();
         $regular = !($s['ffl_enabled'] && self::requires_ffl());
-        foreach ($packages as $package) {
+        $policy = [];
+        foreach ($packages as $key=>$package) {
             $scope = self::scope($package);
             if ($scope === 'regular') { $regular = true; }
+            $decision = is_array($package['ffla_delivery']['decision'] ?? null)
+                ? $package['ffla_delivery']['decision']
+                : Pickup_Shipping_Engine::decision($s,$scope,self::state());
+            $policy[(string)$key] = [
+                'mode'=>is_string($decision['mode'] ?? null) ? $decision['mode'] : '',
+                'methods'=>array_values(array_filter((array)($decision['methods'] ?? []),'is_string')),
+            ];
         }
+        $policy_attr = esc_attr(wp_json_encode($policy));
         // FFL Checkout owns the dealer UI. Keep only an empty fragment anchor so
         // AJAX can restore the regular-item selector if the cart changes later.
-        // Rate filtering and final validation remain independent of this markup.
-        if (!$regular) { return '<div id="ffla-delivery-choice" hidden aria-hidden="true" style="display:none!important"></div>'; }
+        // The policy attribute lets the browser reconcile WooCommerce's newly
+        // rendered shipping control after the native selector's AJAX race.
+        if (!$regular) { return '<div id="ffla-delivery-choice" data-ffla-shipping-policy="' . $policy_attr . '" hidden aria-hidden="true" style="display:none!important"></div>'; }
         $styles = Pickup_Shipping_Settings::styles($s);
         $mode = self::state()['mode'] ?? $s['default'];
         if ($s['delivery'] !== 'both') { $mode = $s['delivery']; }
         $available = WC()->session->get(self::AVAILABLE, []);
         ob_start(); ?>
-        <section id="ffla-delivery-choice" class="ffla-delivery" style="<?php echo esc_attr($styles); ?>" aria-labelledby="ffla-delivery-title">
+        <section id="ffla-delivery-choice" class="ffla-delivery" data-ffla-shipping-policy="<?php echo $policy_attr; ?>" style="<?php echo esc_attr($styles); ?>" aria-labelledby="ffla-delivery-title">
             <h3 id="ffla-delivery-title"><?php echo esc_html($s['title']); ?></h3>
             <?php if ($regular): ?>
             <div class="ffla-delivery__options" role="radiogroup" aria-labelledby="ffla-delivery-title">
@@ -309,7 +319,7 @@ class Pickup_Shipping_Checkout
         if (!self::active()) { return; }
         $base = FFLA_URL . 'modules/pickup-shipping/assets/';
         wp_enqueue_style('ffla-delivery',$base . 'delivery.css',[],FFLA_VERSION . '.4');
-        wp_enqueue_script('ffla-delivery',$base . 'delivery.js',['jquery','wc-checkout'],FFLA_VERSION . '.5',true);
+        wp_enqueue_script('ffla-delivery',$base . 'delivery.js',['jquery','wc-checkout'],FFLA_VERSION . '.6',true);
         wp_localize_script('ffla-delivery','fflaDelivery',[
             'updating'=>__('Updating delivery options…','ffl-funnels-addons'),
             'error'=>__('Delivery could not be updated. Please try again before placing your order.','ffl-funnels-addons'),
@@ -325,3 +335,4 @@ class Pickup_Shipping_Checkout
         if ($message) { echo '<div class="notice notice-warning"><p>' . esc_html($message) . ' <a href="' . esc_url(admin_url('admin.php?page=ffla-pickup-shipping')) . '">' . esc_html__('Settings','ffl-funnels-addons') . '</a></p></div>'; }
     }
 }
+

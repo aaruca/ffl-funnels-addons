@@ -84,7 +84,7 @@ let checks=0;function check(v,msg){assert.ok(v,msg);checks++;}
  for(const scope of ['','ffl']){
  const page=await browser.newPage({viewport:{width:1100,height:900}});page.on('pageerror',e=>errors.push(e.message));await page.route('**/*',r=>r.abort());
  const first=fixture('',scope);
- await page.setContent('<html lang="en"><head><meta charset="utf-8"></head><body style="font-family:Arial;padding:24px"><form class="checkout">'+first.checkout+'<input type="hidden" name="shipping_fflno" value=""><div id="rates"></div></form></body></html>');
+ await page.setContent('<html lang="en"><head><meta charset="utf-8"></head><body style="font-family:Arial;padding:24px"><form class="checkout">'+first.checkout+'<input type="hidden" name="shipping_fflno" value=""><div id="rates"></div><div id="shipping-controls"><input type="radio" name="shipping_method[0]" value="flat_rate:2" checked></div></form></body></html>');
  await page.addStyleTag({path:path.join(root,'modules/pickup-shipping/assets/delivery.css')});
  await page.addStyleTag({content:':root{--primary:#008800;--surface:#f1f2f3;--text:#123456}'});
  if(!scope)check(await page.locator('#ffla-delivery-choice').evaluate(e=>getComputedStyle(e).backgroundColor==='rgb(241, 242, 243)'&&getComputedStyle(e).color==='rgb(18, 52, 86)'),'PHP-rendered checkout resolves site variables');
@@ -97,6 +97,7 @@ let checks=0;function check(v,msg){assert.ok(v,msg);checks++;}
  window.updateCalls++;const data=await window.getDeliveryFixture(jQuery('form.checkout').serialize());
  jQuery('#ffla-delivery-choice').replaceWith(data.checkout);
  jQuery('#rates').text(data.rates.join(','));
+ jQuery('#shipping-controls').html(data.rates.map(function(rate){return '<input type="radio" name="shipping_method[0]" value="'+rate+'">';}).join(''));
  jQuery(document.body).trigger('updated_checkout');window.completedCalls++;
  });
  });
@@ -142,13 +143,21 @@ let checks=0;function check(v,msg){assert.ok(v,msg);checks++;}
  check(await page.locator('#ffla-delivery-choice').isHidden(),'FFL cart hides entire duplicate delivery block');
  check(await page.locator('#ffla-delivery-choice').innerHTML()==='','FFL placeholder has no heading, notice or cards');
  check(await page.locator('[name=ffla_delivery_mode]').count()===0,'FFL cart does not ask redundant mode choice');
- await page.evaluate(()=>jQuery('[name=shipping_fflno]').val('9-77-111-01-8A-05780').trigger('change'));
+ // The native widget emits a premature updated_checkout before its real AJAX
+ // response. The old shipping control must not win that race.
+ await page.evaluate(()=>{
+  jQuery('[name=shipping_fflno]').val('9-77-111-01-8A-05780');
+  jQuery(document.body).trigger('update_checkout');
+  jQuery(document.body).trigger('updated_checkout');
+ });
  await page.waitForFunction(()=>window.completedCalls===1);
  check(await page.locator('#rates').innerText()==='local_pickup:1,local_pickup:3','native own FFL only configured pickup methods');
+ check(await page.locator('[name="shipping_method[0]"][value="local_pickup:1"]').isChecked(),'post-AJAX policy selects native local pickup after provider race');
  check(await page.locator('#ffla-delivery-choice').isHidden(),'native pickup refresh does not reveal duplicate UI');
  await page.evaluate(()=>jQuery('[name=shipping_fflno]').val('9-77-111-01-8A-99999').trigger('change'));
  await page.waitForFunction(()=>window.completedCalls===2);
  check(await page.locator('#rates').innerText()==='flat_rate:2','external FFL only shipping');
+ check(await page.locator('[name="shipping_method[0]"][value="flat_rate:2"]').isChecked(),'post-AJAX policy selects shipping for an external FFL');
  check(await page.locator('#ffla-delivery-choice').isHidden(),'external FFL refresh does not reveal duplicate UI');
  await page.evaluate(()=>jQuery('[name=shipping_fflno]').val('').trigger('change'));
  await page.waitForFunction(()=>window.completedCalls===3);
@@ -164,6 +173,7 @@ let checks=0;function check(v,msg){assert.ok(v,msg);checks++;}
  });
  await page.waitForFunction(()=>window.completedCalls===4);
  check(await page.locator('#rates').innerText()==='local_pickup:1,local_pickup:3','native backup fields select pickup while primary is disabled');
+ check(await page.locator('[name="shipping_method[0]"][value="local_pickup:1"]').isChecked(),'backup-field pickup remains selected after checkout refresh');
  await page.waitForTimeout(350);
  check(await page.evaluate(()=>window.updateCalls)===4,'native update coalesces pending addon refresh');
  await page.evaluate(()=>{
@@ -195,3 +205,4 @@ let checks=0;function check(v,msg){assert.ok(v,msg);checks++;}
  console.log(checks+' Pickup & Shipping browser checks passed.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
+
