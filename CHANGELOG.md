@@ -5,6 +5,7 @@ All notable changes to FFL Funnels Addons are documented in this file.
 ## [1.47.0] - 2026-09-09
 
 ### Fixed
+- Merchant policy settings: prevent the content-safety checkbox from stretching to full width, align its label and description, and give the sticky category-table header a white background. Refresh the stylesheet cache key.
 - Hide the duplicate delivery heading and dealer notices for FFL-only checkout. FFL Checkout retains the selector; pickup/shipping rate filtering and final validation stay active. An invisible fragment anchor supports AJAX changes; separate regular-item packages retain their delivery choice.
 - Restyled delivery choices as full-card solid-fill selections with inherited typography and accessible keyboard focus. Split container, unselected-card, selected-card and border colors; apply configured colors explicitly to card text and refresh asset cache versions.
 
@@ -18,6 +19,7 @@ All notable changes to FFL Funnels Addons are documented in this file.
 - Offline PHP policy/checkout regression tests and browser tests exercising the actual new admin and checkout assets with synthetic data.
 
 ### Changed
+- Google Merchant Policy dashboard: add an English step-by-step usage guide, expandable rule/action/counter/troubleshooting explanations, precise inline field help and an unsaved-changes notice. Clarify that Pending is excluded in Enforce, saving restarts the scan, pausing does not disable filtering, saved category badges are not product approval, and prior exclusions are not automatically restored. No policy or synchronization behavior changed. Refresh the existing v1.47.0 ZIP and include Merchant changes in its rebuild trigger.
 - Refreshed v1.47.0 in place: Pickup & Shipping reads the native FFL Checkout Local Pickup FFL directly. Removed duplicate own-location controls and the native-option override. Provider configuration changes invalidate the delivery policy cache automatically; legacy mappings no longer authorize pickup. WooCommerce still controls delivery methods and prices.
 - White Label dashboard analytics now use the existing MonsterInsights connection instead of Rank Math. Added all-channel traffic, top pages/sources and optional licensed eCommerce reporting through MonsterInsights 11.2's API client; older versions retain the registered overview-report fallback.
 - Dashboard access respects MonsterInsights report permissions, disabled reporting, authentication and licensing before cache lookup. Credentials and provider exception details never enter the dashboard response. User/property-scoped caching, bounded requests, missing-data states and rejection of demo data protect the integration.

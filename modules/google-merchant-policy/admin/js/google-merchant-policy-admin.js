@@ -13,8 +13,15 @@
 
     var mode = document.getElementById('ffla-gmp-mode');
     if (mode) {
-        mode.closest('form').addEventListener('submit', function (event) {
-            if (mode.value === 'enforce' && !window.confirm('Enforce mode can exclude blocked and pending products from Google. Continue and start the catalog scan?')) {
+        var form = mode.closest('form');
+        var unsaved = document.getElementById('ffla-gmp-unsaved');
+        form.addEventListener('change', function (event) {
+            if (unsaved && event.target.name && event.target.type !== 'hidden') {
+                unsaved.hidden = false;
+            }
+        });
+        form.addEventListener('submit', function (event) {
+            if (mode.value === 'enforce' && !window.confirm('Enforce excludes Blocked AND Pending products from eligible Google sync requests. Saving starts a NEW scan and resets its counters; existing exclusions remain. Google removals are not immediate. Save and start?')) {
                 event.preventDefault();
             }
         });
