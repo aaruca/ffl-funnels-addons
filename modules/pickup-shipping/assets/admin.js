@@ -6,9 +6,6 @@ function activate(name,focus){tabs.forEach(t=>{const on=t.dataset.psTab===name;t
 form.querySelectorAll('[data-ps-panel]').forEach(p=>{p.hidden=p.dataset.psPanel!==name;p.setAttribute('role','tabpanel');p.setAttribute('aria-labelledby','ps-tab-'+p.dataset.psPanel);});}
 tabs.forEach((t,i)=>{t.addEventListener('click',()=>activate(t.dataset.psTab,false));t.addEventListener('keydown',e=>{let n;if(e.key==='ArrowRight')n=(i+1)%tabs.length;if(e.key==='ArrowLeft')n=(i+tabs.length-1)%tabs.length;if(e.key==='Home')n=0;if(e.key==='End')n=tabs.length-1;if(n!==undefined){e.preventDefault();activate(tabs[n].dataset.psTab,true);}});});activate('general',false);
 form.querySelectorAll('[data-method-search]').forEach(input=>input.addEventListener('input',()=>{input.closest('fieldset').querySelectorAll('[data-method-row]').forEach(row=>{row.hidden=!row.textContent.toLowerCase().includes(input.value.toLowerCase());});}));
-let next=0;form.querySelectorAll('#ffla-ps-locations input').forEach(input=>{const match=input.name.match(/locations\]\[(\d+)\]/);if(match)next=Math.max(next,Number(match[1])+1);});
-document.getElementById('ffla-ps-add-location').addEventListener('click',()=>{const holder=document.getElementById('ffla-ps-locations');if(holder.children.length>=25)return;const fragment=document.getElementById('ffla-ps-location-template').content.cloneNode(true);fragment.querySelectorAll('[name]').forEach(el=>el.name=el.name.replace('__INDEX__',String(next)));next++;holder.appendChild(fragment);holder.lastElementChild.querySelector('input').focus();});
-form.addEventListener('click',e=>{if(e.target.classList.contains('ffla-ps-remove'))e.target.closest('.ffla-ps-location').remove();});
 const preview=document.getElementById('ffla-ps-preview');
 // Match the PHP allowlist; never interpret arbitrary CSS declarations.
 function color(value,depth=0){

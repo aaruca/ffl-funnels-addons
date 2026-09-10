@@ -28,11 +28,9 @@ let checks=0;function check(v,msg){assert.ok(v,msg);checks++;}
  check(await page.locator('fieldset').first().locator('[data-method-row]:visible').count()===0,'method search filters '+width);await search.fill('');
  await page.locator('#ps-tab-general').focus();await page.keyboard.press('ArrowRight');
  check(await page.locator('#ps-tab-ffl').getAttribute('aria-selected')==='true','keyboard tab switching '+width);
- check(await page.locator('.ffla-ps-location').count()===2,'existing FFL locations '+width);
- await page.locator('#ffla-ps-add-location').click();await page.locator('#ffla-ps-add-location').click();
- const names=await page.locator('#ffla-ps-locations input[name$="[license]"]').evaluateAll(els=>els.map(e=>e.name));
- check(new Set(names).size===4,'added rows have unique indexes '+width);
- await page.locator('.ffla-ps-remove').last().click();check(await page.locator('.ffla-ps-location').count()===3,'remove location '+width);
+ check(await page.locator('#ffla-ps-provider-pickup').innerText().then(t=>t.includes('977111018A05780')),'native local pickup displayed '+width);
+ check(await page.locator('[name*="[locations]"]').count()===0,'no duplicate local FFL fields '+width);
+ check(await page.locator('#ffla-ps-add-location').count()===0,'no duplicate location setup '+width);
  if(out)await page.locator('.ffla-ps-admin').screenshot({path:path.join(out,'pickup-admin-ffl-'+width+'.png')});
  await page.locator('#ps-tab-appearance').click();
  await page.locator('[name="ps[title]"]').fill('<img src=x onerror=alert(1)> New title');
@@ -103,7 +101,7 @@ let checks=0;function check(v,msg){assert.ok(v,msg);checks++;}
  check(await page.locator('[name=ffla_delivery_mode]').count()===0,'FFL cart does not ask redundant mode choice');
  await page.evaluate(()=>jQuery('[name=shipping_fflno]').val('9-77-111-01-8A-05780').trigger('change'));
  await page.waitForFunction(()=>window.completedCalls===1);
- check(await page.locator('#rates').innerText()==='local_pickup:1','own FFL only its pickup');
+ check(await page.locator('#rates').innerText()==='local_pickup:1,local_pickup:3','native own FFL only configured pickup methods');
  await page.evaluate(()=>jQuery('[name=shipping_fflno]').val('9-77-111-01-8A-99999').trigger('change'));
  await page.waitForFunction(()=>window.completedCalls===2);
  check(await page.locator('#rates').innerText()==='flat_rate:2','external FFL only shipping');

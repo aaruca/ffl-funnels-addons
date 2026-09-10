@@ -8,8 +8,8 @@ The module is registered but never automatically activated or configured. Produc
 2. Enable **Pickup & Shipping** under FFL Funnels modules.
 3. Select enabled shipping-zone method instances in General. Empty/incomplete settings leave checkout unchanged.
 4. Select automatic placement or use `[ffla_delivery_choice]` inside the classic `form.checkout`. A shortcode outside the form cannot submit a choice.
-5. Optionally enable FFL rules with g-FFL Checkout active. Add own license numbers and map each to an enabled pickup instance that is also selected in General.
-6. Configure the existing provider's own local-pickup button separately. The addon does not mutate its stored options.
+5. Optionally enable FFL rules with g-FFL Checkout active. The addon reads the native `ffl_local_pickup` setting directly and displays the detected license read-only. Configure the local FFL only in FFL Checkout, not in this addon.
+6. Select the corresponding WooCommerce pickup method instances in General. The existing FFL Checkout local-pickup selector stays in control: its configured local FFL permits pickup rates; another selected FFL permits shipping rates. Prices remain under WooCommerce.
 7. Disable the old Camarillo shipping snippet before enabling these rules. If taxes are in the same legacy snippet, separate them first; do not discard tax code.
 8. Confirm pickup cost in WooCommerce. The addon never makes a method free.
 
@@ -26,7 +26,7 @@ References remain live, so changing the site's variables updates the checkout wi
 - Existing distinct FFL and customer packages are handled separately. An unsplit mixed package is rejected instead of choosing a destination for its items. No package splitting or inventory allocation is performed.
 - Package classification uses parent-aware firearm flags, the provider's required-selector check and its state-compliance helper. The server filter `ffla_pickup_shipping_package_scope` can classify an existing package as `ffl`, `regular` or `mixed`. Integrators must preserve actual destinations and provider validation.
 - License normalization accepts a full formatted/unformatted FFL number. It is identification matching, not license verification. The FFL provider retains its authorization/restriction checks.
-- The g-FFL single-local-license option is overridden only during checkout validation, only when the posted license matches an explicitly configured own location. Nothing is written to the provider's options. Other validations remain installed.
+- The native local-pickup option is never overridden or written. Provider changes are read automatically and enter WooCommerce's package-cache fingerprint. Missing/malformed native configuration cannot fall back to an old addon mapping. Legacy mappings are retained on settings saves for rollback only, not used for authorization. The native FFL Checkout validators remain installed.
 - The addon does not override billing/shipping addresses, fees, tax addresses or tax calculations. Stores with per-package pickup/delivery taxation need the relevant provider integration verified separately.
 - No cron jobs, schema changes, remote services or stored customer-address copies in module session state. Delivery/location snapshots are stored through shipping-item CRUD.
 
@@ -45,7 +45,7 @@ The browser tests block all network requests and use synthetic PHP fixtures. The
 
 - Guest and logged-in non-FFL order; no default, default shipping, default pickup; missing address and unavailable zones.
 - Shipping-only, pickup-only and both; paid pickup must keep its price and tax.
-- Own FFL A, own FFL B, external FFL, clearing/changing dealer; no fallback based on name/cookies.
+- Native local FFL, external FFL, clearing/changing dealer; change or clear the native pickup setting without saving the addon and verify cache invalidation. No fallback based on names, cookies or legacy mappings.
 - Variation firearm flags; provider state-compliance carts; provider-specific verified exemptions/selector overrides.
 - Multiple regular packages, separated mixed packages, and unsupported unsplit mixed packages.
 - Cart → checkout, address edits, coupons, quantity changes, emptied cart, retry after payment failure, restored checkout.

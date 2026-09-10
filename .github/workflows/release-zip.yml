@@ -12,6 +12,7 @@ on:
       - 'modules/tax-rates/admin/css/tax-reports-admin.css'
       - 'modules/tax-rates/admin/js/tax-reports-admin.js'
       - 'modules/woo-sheets-sync/**'
+      - 'modules/pickup-shipping/**'
       - '.github/workflows/release-zip.yml'
   workflow_dispatch:
     inputs:

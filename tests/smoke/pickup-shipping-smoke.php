@@ -30,7 +30,7 @@ function is_checkout(){return $GLOBALS['checkout'];} function is_order_received_
 function has_block(...$a){return $GLOBALS['blocks'];} function wc_get_page_id($s){return 1;}
 function current_user_can($s){return true;} function admin_url($s){return 'https://fixture.invalid/'.$s;}
 function wp_nonce_field($s){echo '<input type="hidden" name="_wpnonce" value="fixture">';}
-function order_requires_ffl_selector(){return $GLOBALS['ffl'];}
+if(($argv[1]??'')!=='missing-provider'){function order_requires_ffl_selector(){return $GLOBALS['ffl'];}}
 function ffl_get_checkout_compliance_type(){return $GLOBALS['compliance'];}
 function doing_action($s){return $GLOBALS['doing']===$s;}
 class Session {public $data=[];function get($k,$d=null){return $this->data[$k]??$d;}function set($k,$v){$this->data[$k]=$v;}function __unset($k){unset($this->data[$k]);}}
@@ -68,10 +68,20 @@ $s=Pickup_Shipping_Settings::sanitize([
 'locations'=>[['name'=>'Main store','license'=>'9-77-111-01-8A-05780','method'=>'local_pickup:1','address'=>'100 Sample Street'],['name'=>'Second store','license'=>'9-77-111-01-8A-05781','method'=>'local_pickup:3','address'=>'200 Sample Street']],
 ],$catalog);
 $options[Pickup_Shipping_Settings::OPTION]=$s;
+$options['ffl_local_pickup']='9-77-111-01-8A-05780';
+$s=Pickup_Shipping_Settings::get();
 $rates=['local_pickup:1'=>new Rate(),'flat_rate:2'=>new Rate(),'local_pickup:3'=>new Rate(),'free_shipping:4'=>new Rate()];
 $package=['contents'=>$wc->cart->items,'destination'=>['country'=>'US','postcode'=>'10001']];
 $checks=0;
 function check($c,$m){$GLOBALS['checks']++;if(!$c)throw new RuntimeException('FAIL: '.$m);}
+if(($argv[1]??'')==='missing-provider'){
+ check(Pickup_Shipping_Settings::provider_license()==='','inactive provider cannot authorize native pickup from leftover options');
+ $without=$s;$without['ffl_enabled']=true;
+ check(!Pickup_Shipping_Settings::configured($without),'FFL integration pauses without provider');
+ $without['ffl_enabled']=false;
+ check(Pickup_Shipping_Settings::configured($without),'regular pickup remains usable without FFL provider');
+ echo "$checks missing-provider checks passed.\n";exit;
+}
 if(($argv[1]??'')==='fixture'){
  if(($argv[4]??'')==='variables'){$options[Pickup_Shipping_Settings::OPTION]=array_merge($s,['accent'=>'var(--primary, #2271b1)','background'=>'var(--surface, #ffffff)','text_color'=>'var(--text, #123456)']);}
  if(($argv[3]??'')==='ffl'){$wc->cart->items=cart_items([2]);$package['contents']=$wc->cart->items;$ffl=true;$options[Pickup_Shipping_Settings::OPTION]['ffl_enabled']=true;}
@@ -112,8 +122,10 @@ $filtered=Pickup_Shipping_Engine::filter($rates,$d);
 check(array_keys($filtered)===['local_pickup:1','local_pickup:3'],'pickup only');
 check($filtered['local_pickup:1']===$rates['local_pickup:1']&&$filtered['local_pickup:1']->cost===17,'preserves rates and charges');
 $sf=$s;$sf['ffl_enabled']=true;
+$d=Pickup_Shipping_Engine::decision($sf,'ffl',['license'=>'9-77-111-01-8A-05780']);
+check($d['methods']===['local_pickup:1','local_pickup:3'],'native local FFL uses configured WooCommerce pickup methods');
 $d=Pickup_Shipping_Engine::decision($sf,'ffl',['license'=>'9-77-111-01-8A-05781']);
-check($d['methods']===['local_pickup:3'],'own FFL maps to its specific instance');
+check($d['mode']==='ship','legacy own FFL cannot authorize pickup');
 $d=Pickup_Shipping_Engine::decision($sf,'ffl',['license'=>'9-77-111-01-8A-99999','shipping_ffl_name'=>'Main store']);
 check($d['mode']==='ship','matching name cannot authorize local pickup');
 check(Pickup_Shipping_Engine::decision($sf,'ffl',[])['mode']==='pending','missing dealer blocks methods');
@@ -151,11 +163,25 @@ $ffl=true;$sf['delivery']='both';$options[Pickup_Shipping_Settings::OPTION]=$sf;
 Pickup_Shipping_Checkout::update('shipping_fflno=9-77-111-01-8A-05780');
 $_POST=[];Pickup_Shipping_Checkout::process();
 check(Pickup_Shipping_Checkout::state()['license']==='','final submit cannot rely on old dealer session');
-$_POST=['shipping_fflno'=>'9-77-111-01-8A-05781'];Pickup_Shipping_Checkout::process();
-$doing='woocommerce_after_checkout_validation';
-check(Pickup_Shipping_Checkout::provider_pickup('old')==='9-77-111-01-8A-05781','second own FFL works with provider conflict check');
-$_POST=['shipping_fflno'=>'9-77-111-01-8A-99999'];
-check(Pickup_Shipping_Checkout::provider_pickup('old')==='old','external FFL does not override provider option');
+$_POST=['shipping_fflno'=>'9-77-111-01-8A-05780'];Pickup_Shipping_Checkout::process();
+$before=Pickup_Shipping_Checkout::packages([['contents'=>$wc->cart->items]]);
+$options['ffl_local_pickup']='9-77-111-01-8A-05781';
+$after=Pickup_Shipping_Checkout::packages([['contents'=>$wc->cart->items]]);
+check($before[0]['ffla_delivery']['decision']['mode']==='pickup'&&$after[0]['ffla_delivery']['decision']['mode']==='ship','changing native configuration revokes old local identity without addon save');
+check($before[0]['ffla_delivery']['version']!==$after[0]['ffla_delivery']['version'],'native setting changes invalidate shipping policy cache');
+check(Pickup_Shipping_Engine::decision(Pickup_Shipping_Settings::get(),'ffl',['license'=>'977111018A05781'])['mode']==='pickup','new native local FFL is detected automatically');
+foreach(['', 'not a license', ['invalid']] as $native){
+ $options['ffl_local_pickup']=$native;
+ check(Pickup_Shipping_Engine::decision(Pickup_Shipping_Settings::get(),'ffl',['license'=>'977111018A05780'])['mode']==='ship','missing/malformed native setting cannot fall back to legacy own locations');
+}
+ob_start();Pickup_Shipping_Admin::render();$missingHtml=ob_get_clean();
+check(strpos($missingHtml,'No valid Local Pickup FFL detected.')!==false,'missing native setup explained in admin');
+$options[Pickup_Shipping_Settings::OPTION]['ffl_pickup_license']='977111018A05780';
+check(Pickup_Shipping_Settings::get()['ffl_pickup_license']==='','forged addon setting cannot override missing native configuration');
+$options['ffl_local_pickup']='9-77-111-01-8A-05780';
+$options[Pickup_Shipping_Settings::OPTION]['locations']=[];
+check(Pickup_Shipping_Settings::configured(Pickup_Shipping_Settings::get()),'FFL integration no longer needs duplicate location setup');
+check(Pickup_Shipping_Engine::decision(Pickup_Shipping_Settings::get(),'ffl',['license'=>'977111018A05780'])['mode']==='pickup','native pickup works with no addon location rows');
 $doing='';$_POST=[];$ffl=false;$wc->cart->items=cart_items([1]);$options[Pickup_Shipping_Settings::OPTION]=$s;Pickup_Shipping_Checkout::clear();
 Pickup_Shipping_Checkout::update('ffla_delivery_mode=pickup');
 $item=new ShipItem();Pickup_Shipping_Checkout::shipping_meta($item,0,$package,new Order());
@@ -167,6 +193,7 @@ $blocks=true;check(!Pickup_Shipping_Checkout::active(),'Blocks left untouched');
 Pickup_Shipping_Checkout::clear();
 check($wc->session->get(Pickup_Shipping_Checkout::SESSION)===null&&$wc->session->get(Pickup_Shipping_Checkout::AVAILABLE)===null,'all module session keys cleared');
 Pickup_Shipping_Checkout::init();
+check(!isset($hooks['option_ffl_local_pickup']),'native FFL option and validation never overridden');
 check(isset($hooks['woocommerce_after_checkout_validation'],$hooks['ffla_delivery_choice'],$hooks['woocommerce_cart_shipping_packages']),'server validation, shortcode, cache hooks registered');
 $module=new Pickup_Shipping_Module();check($module->get_id()==='pickup-shipping','independent module id');
 echo "$checks Pickup & Shipping checks passed.\n";

@@ -22,7 +22,6 @@ class Pickup_Shipping_Checkout
         add_action('woocommerce_cart_updated', [__CLASS__,'cart_updated']);
         add_action('woocommerce_checkout_order_processed', [__CLASS__,'clear'], 999);
         add_action('admin_notices', [__CLASS__,'notice']);
-        add_filter('option_ffl_local_pickup', [__CLASS__,'provider_pickup'], 20);
         add_action('woocommerce_email_after_order_table', [__CLASS__,'email_summary'], 20, 4);
         add_action('woocommerce_order_details_after_order_table', [__CLASS__,'order_summary']);
         add_action('woocommerce_admin_order_data_after_shipping_address', [__CLASS__,'order_summary']);
@@ -215,17 +214,6 @@ class Pickup_Shipping_Checkout
     public static function automatic(): void
     {
         if (Pickup_Shipping_Settings::get()['placement'] === 'automatic') { echo self::shortcode(); }
-    }
-    /** Only expand g-FFL's single-location conflict check for configured own FFLs.
-     * Does not remove or bypass its dealer/address/license validators or save options.
-     */
-    public static function provider_pickup($value)
-    {
-        if (!doing_action('woocommerce_after_checkout_validation') || !self::active()) { return $value; }
-        $s = Pickup_Shipping_Settings::get();
-        $raw = self::parse($_POST)['shipping_fflno'] ?? '';
-        if ($s['ffl_enabled'] && Pickup_Shipping_Engine::location($s,Pickup_Shipping_Settings::license($raw))) { return $raw; }
-        return $value;
     }
     private static function summary($order, bool $plain): void
     {

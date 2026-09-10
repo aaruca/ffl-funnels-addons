@@ -20,7 +20,14 @@ class Pickup_Shipping_Settings
     public static function get(): array
     {
         $raw = get_option(self::OPTION, []);
-        return array_merge(self::defaults(), is_array($raw) ? $raw : []);
+        $s = array_merge(self::defaults(), is_array($raw) ? $raw : []);
+        // Read on every request, never copy the provider's identity into our option.
+        $s['ffl_pickup_license'] = self::provider_license();
+        return $s;
+    }
+    public static function provider_license(): string
+    {
+        return function_exists('order_requires_ffl_selector') ? self::license(get_option('ffl_local_pickup', '')) : '';
     }
     public static function license($value): string
     {
@@ -100,6 +107,6 @@ class Pickup_Shipping_Settings
     {
         return ($s['delivery'] === 'ship' || !empty($s['pickup_methods']))
             && ($s['delivery'] === 'pickup' || !empty($s['shipping_methods']))
-            && (!$s['ffl_enabled'] || (!empty($s['locations']) && function_exists('order_requires_ffl_selector')));
+            && (!$s['ffl_enabled'] || function_exists('order_requires_ffl_selector'));
     }
 }

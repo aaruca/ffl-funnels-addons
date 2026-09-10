@@ -13,7 +13,7 @@ class Pickup_Shipping_Admin
         $base = FFLA_URL . 'modules/pickup-shipping/assets/';
         wp_enqueue_style('ffla-delivery-admin',$base . 'admin.css',[],FFLA_VERSION . '.1');
         wp_enqueue_style('ffla-delivery-preview',$base . 'delivery.css',[],FFLA_VERSION . '.1');
-        wp_enqueue_script('ffla-delivery-admin',$base . 'admin.js',[],FFLA_VERSION . '.2',true);
+        wp_enqueue_script('ffla-delivery-admin',$base . 'admin.js',[],FFLA_VERSION . '.3',true);
     }
     public static function save(): void
     {
@@ -21,11 +21,11 @@ class Pickup_Shipping_Admin
         check_admin_referer('ffla_pickup_shipping_save');
         $input = isset($_POST['ps']) && is_array($_POST['ps']) ? wp_unslash($_POST['ps']) : [];
         $settings = Pickup_Shipping_Settings::sanitize($input,Pickup_Shipping_Settings::methods());
-        // Surface rejected/removed methods or malformed FFL rows, never quietly
-        // claim a fully usable configuration after dropping invalid input.
-        $invalid = count(array_filter((array)($input['locations'] ?? []),static function($r){return is_array($r) && (!empty($r['license']) || !empty($r['name']));})) !== count($settings['locations']);
+        // Retain legacy mappings for rollback only. They no longer authorize pickup.
+        $previous = Pickup_Shipping_Settings::get();
+        $settings['locations'] = $previous['locations'];
         update_option(Pickup_Shipping_Settings::OPTION,$settings,false);
-        wp_safe_redirect(add_query_arg(['page'=>'ffla-pickup-shipping','saved'=>$invalid ? 'review' : '1'],admin_url('admin.php')));
+        wp_safe_redirect(add_query_arg(['page'=>'ffla-pickup-shipping','saved'=>'1'],admin_url('admin.php')));
         exit;
     }
     private static function field(string $key, string $label, array $s, bool $area = false): void
@@ -41,18 +41,6 @@ class Pickup_Shipping_Admin
         foreach ($values as $value=>$text) { echo '<option value="' . esc_attr($value) . '" ' . selected($s[$key],$value,false) . '>' . esc_html($text) . '</option>'; }
         echo '</select></label>';
     }
-    public static function location_row($i, array $row, array $catalog): void
-    {
-        echo '<div class="ffla-ps-location">';
-        foreach (['name'=>__('Location name','ffl-funnels-addons'),'license'=>__('FFL license number','ffl-funnels-addons'),'address'=>__('Pickup address','ffl-funnels-addons'),'instructions'=>__('Pickup instructions','ffl-funnels-addons')] as $key=>$label) {
-            echo '<label class="ffla-ps-field"><span>' . esc_html($label) . '</span><input name="ps[locations][' . esc_attr((string)$i) . '][' . esc_attr($key) . ']" value="' . esc_attr($row[$key] ?? '') . '"></label>';
-        }
-        echo '<label class="ffla-ps-field"><span>' . esc_html__('Pickup method','ffl-funnels-addons') . '</span><select name="ps[locations][' . esc_attr((string)$i) . '][method]"><option value="">' . esc_html__('Select a pickup method','ffl-funnels-addons') . '</option>';
-        foreach ($catalog as $id=>$method) {
-            if ($method['pickup']) { echo '<option value="' . esc_attr($id) . '" ' . selected($row['method'] ?? '',$id,false) . '>' . esc_html($method['label']) . '</option>'; }
-        }
-        echo '</select></label><button type="button" class="button ffla-ps-remove">' . esc_html__('Remove location','ffl-funnels-addons') . '</button></div>';
-    }
     public static function render(): void
     {
         if (!current_user_can('manage_woocommerce')) { return; }
@@ -62,7 +50,7 @@ class Pickup_Shipping_Admin
         <div class="ffla-ps-admin">
             <h2><?php esc_html_e('Pickup & Shipping','ffl-funnels-addons'); ?></h2>
             <p><?php esc_html_e('Configure how customers receive their orders. WooCommerce remains responsible for prices, addresses and taxes.','ffl-funnels-addons'); ?></p>
-            <?php if (isset($_GET['saved'])): ?><p class="ffla-ps-alert" role="status"><?php echo esc_html($_GET['saved'] === 'review' ? __('Settings saved, but some FFL rows were invalid, duplicated or not linked to a selected pickup method. Review the list below.','ffl-funnels-addons') : __('Settings saved.','ffl-funnels-addons')); ?></p><?php endif; ?>
+            <?php if (isset($_GET['saved'])): ?><p class="ffla-ps-alert" role="status"><?php esc_html_e('Settings saved.','ffl-funnels-addons'); ?></p><?php endif; ?>
             <?php if (!Pickup_Shipping_Settings::configured($s)): ?><p class="ffla-ps-alert"><?php esc_html_e('Setup incomplete. Checkout is unchanged until required methods and FFL settings are configured.','ffl-funnels-addons'); ?></p><?php endif; ?>
             <?php foreach (array_merge($s['pickup_methods'],$s['shipping_methods']) as $id): if (!isset($catalog[$id])): ?>
                 <p class="ffla-ps-alert"><?php echo esc_html(sprintf(__('A selected method is disabled or missing: %s. Review shipping settings.','ffl-funnels-addons'),$id)); ?></p>
@@ -104,11 +92,16 @@ class Pickup_Shipping_Admin
                 <section class="ffla-ps-panel" id="ps-panel-ffl" data-ps-panel="ffl">
                     <h3><?php esc_html_e('FFL delivery rules','ffl-funnels-addons'); ?></h3>
                     <label><input type="checkbox" name="ps[ffl_enabled]" value="1" <?php checked($s['ffl_enabled']); ?>> <?php esc_html_e('Enable FFL delivery rules','ffl-funnels-addons'); ?></label>
-                    <p><?php esc_html_e('Requires g-FFL Checkout. Our FFL → its pickup method. Other FFL → shipping only. Dealer names and browser cookies never authorize local pickup. License verification remains the responsibility of your FFL provider.','ffl-funnels-addons'); ?></p>
-                    <p><?php esc_html_e('Select each associated pickup method in General as well. This module does not change the provider’s local-pickup button configuration. Mixed carts must already have separate FFL/customer packages and destinations.','ffl-funnels-addons'); ?></p>
-                    <div id="ffla-ps-locations"><?php foreach ($s['locations'] as $i=>$row) { self::location_row($i,$row,$catalog); } ?></div>
-                    <button type="button" class="button" id="ffla-ps-add-location"><?php esc_html_e('Add store FFL','ffl-funnels-addons'); ?></button>
-                    <template id="ffla-ps-location-template"><?php self::location_row('__INDEX__',[],$catalog); ?></template>
+                    <p><?php esc_html_e('Local pickup comes directly from the Local Pickup FFL configured in FFL Checkout. Select it using the existing FFL Checkout selector: our addon allows pickup only. Select another FFL: shipping only. No duplicate dealer setup is needed here.','ffl-funnels-addons'); ?></p>
+                    <div class="ffla-ps-alert" id="ffla-ps-provider-pickup">
+                        <strong><?php esc_html_e('Local Pickup FFL — managed by FFL Checkout','ffl-funnels-addons'); ?></strong>
+                        <?php if ($s['ffl_pickup_license'] !== ''): ?>
+                            <p><code><?php echo esc_html($s['ffl_pickup_license']); ?></code></p>
+                        <?php else: ?>
+                            <p><?php esc_html_e('No valid Local Pickup FFL detected. Configure it in FFL Checkout to enable FFL pickup. Other selected dealers use shipping; saved legacy locations do not enable pickup.','ffl-funnels-addons'); ?></p>
+                        <?php endif; ?>
+                    </div>
+                    <p><?php esc_html_e('Changes in FFL Checkout are read automatically. Select the corresponding WooCommerce pickup and shipping methods in General; their prices stay unchanged. Mixed carts must already have separate FFL/customer packages and destinations. Dealer names, cookies and old addon mappings never authorize pickup. FFL Checkout retains its own validation.','ffl-funnels-addons'); ?></p>
                 </section>
                 <section class="ffla-ps-panel" id="ps-panel-appearance" data-ps-panel="appearance">
                     <h3><?php esc_html_e('Text and appearance','ffl-funnels-addons'); ?></h3>

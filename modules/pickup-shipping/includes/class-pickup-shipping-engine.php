@@ -5,8 +5,8 @@ class Pickup_Shipping_Engine
 {
     public static function location(array $s, string $license): ?array
     {
-        foreach ($s['locations'] as $row) {
-            if ($license !== '' && $row['license'] === $license) { return $row; }
+        if ($license !== '' && $license === ($s['ffl_pickup_license'] ?? '')) {
+            return ['license'=>$license, 'name'=>$s['store_name'], 'address'=>$s['store_address'], 'instructions'=>$s['instructions']];
         }
         return null;
     }
@@ -18,7 +18,7 @@ class Pickup_Shipping_Engine
             if (!$license) { return ['mode'=>'pending','methods'=>[], 'reason'=>'dealer']; }
             $local = self::location($s, $license);
             $mode = $local ? 'pickup' : 'ship';
-            $methods = $local ? [$local['method']] : $s['shipping_methods'];
+            $methods = $local ? $s['pickup_methods'] : $s['shipping_methods'];
             // FFL rules do not silently override a site's pickup-only/ship-only policy.
             if ($s['delivery'] !== 'both' && $s['delivery'] !== $mode) { $methods = []; }
             return ['mode'=>$mode, 'methods'=>$methods, 'reason'=>'ffl', 'location'=>$local];
