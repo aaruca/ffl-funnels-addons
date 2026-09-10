@@ -3,9 +3,22 @@ defined('ABSPATH') || exit;
 /** Pure policy helpers: they only remove rates, never create/free/retax a rate. */
 class Pickup_Shipping_Engine
 {
+    public static function licensee_key($license): string
+    {
+        $license = Pickup_Shipping_Settings::license($license);
+        // ATF's abbreviated FFL identity is the first three and last five
+        // digits. The middle expiration segment can change on renewal.
+        return $license === '' ? '' : substr($license,0,3) . substr($license,-5);
+    }
+    public static function same_licensee($first, $second): bool
+    {
+        $first = self::licensee_key($first);
+        $second = self::licensee_key($second);
+        return $first !== '' && $first === $second;
+    }
     public static function location(array $s, string $license): ?array
     {
-        if ($license !== '' && $license === ($s['ffl_pickup_license'] ?? '')) {
+        if (self::same_licensee($license,$s['ffl_pickup_license'] ?? '')) {
             return ['license'=>$license, 'name'=>$s['store_name'], 'address'=>$s['store_address'], 'instructions'=>$s['instructions']];
         }
         return null;
@@ -67,3 +80,4 @@ class Pickup_Shipping_Engine
         return in_array($scope,['ffl','regular','mixed'],true) ? $scope : 'mixed';
     }
 }
+

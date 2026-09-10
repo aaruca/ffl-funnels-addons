@@ -27,14 +27,14 @@ Example dark styling: container #050505, heading #ffffff, card #111111, card tex
 
 ## Support boundaries
 
-- Native FFL Checkout behavior varies by release and store configuration: **CLICK HERE FOR IN STORE PICKUP** may search for the store and may also complete its dealer selection automatically. This addon does not infer intent from the button click. It follows the final license that FFL Checkout posts in its primary or documented backup fields, so an automatically selected store receives pickup and any other selected FFL receives shipping.
+- Native FFL Checkout behavior varies by release and store configuration: **CLICK HERE FOR IN STORE PICKUP** may search for the store and may also complete its dealer selection automatically. This addon does not infer intent from the button click. It follows the final license that FFL Checkout posts in its primary or documented backup fields. The configured store and its renewed license are matched by ATF's abbreviated identity (first three plus last five digits), so expiration-segment changes do not turn local pickup into shipping. Any other selected FFL receives shipping.
 - Review and final validation accept native `backup_fflno`, `ffl_license_backup` and `ffl_id` fields only when `shipping_fflno` is absent (for example, disabled fields are omitted from form serialization). Present primary values, including an explicit clear, take priority. Conflicting or malformed backups fail closed. No cookie/localStorage identity fallback is used. Native `update_checkout` requests cancel redundant pending addon refreshes.
 - Classic checkout and compatible custom templates only. The standard WooCommerce checkout script/form and order-review fragments are required.
 - FFL-only delivery displays no duplicate heading, cards or dealer notices from this addon; use the native FFL Checkout selector. An empty hidden fragment target allows AJAX to restore controls when regular-item packages appear. Server-side delivery rules and final validation remain active.
 - Checkout Blocks and Store API requests are left untouched; an admin notice explains the limitation.
 - Existing distinct FFL and customer packages are handled separately. An unsplit mixed package is rejected instead of choosing a destination for its items. No package splitting or inventory allocation is performed.
 - Package classification uses parent-aware firearm flags, the provider's required-selector check and its state-compliance helper. The server filter `ffla_pickup_shipping_package_scope` can classify an existing package as `ffl`, `regular` or `mixed`. Integrators must preserve actual destinations and provider validation.
-- License normalization accepts a full formatted/unformatted FFL number. It is identification matching, not license verification. The FFL provider retains its authorization/restriction checks.
+- License normalization accepts a full formatted/unformatted FFL number. Local identity comparison uses ATF's first-three/last-five abbreviated FFL identifier so routine license renewals remain attached to the configured store. This is identification matching, not license verification. The FFL provider retains its authorization/restriction checks.
 - The native local-pickup option is never overridden or written. Provider changes are read automatically and enter WooCommerce's package-cache fingerprint. Missing/malformed native configuration cannot fall back to an old addon mapping. Legacy mappings are retained on settings saves for rollback only, not used for authorization. The native FFL Checkout validators remain installed.
 - The addon does not override billing/shipping addresses, fees, tax addresses or tax calculations. Stores with per-package pickup/delivery taxation need the relevant provider integration verified separately.
 - No cron jobs, schema changes, remote services or stored customer-address copies in module session state. Delivery/location snapshots are stored through shipping-item CRUD.
@@ -63,3 +63,4 @@ The browser tests block all network requests and use synthetic PHP fixtures. The
 - Metadata in administration, customer order view, HTML/plain-text emails and HPOS-enabled orders.
 - Classic custom templates: shortcode inside form, correct checkout script, no duplicate selector, no old snippet active.
 - Disable the module: existing WooCommerce delivery flow remains available.
+

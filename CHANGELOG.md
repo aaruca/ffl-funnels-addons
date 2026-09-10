@@ -5,6 +5,7 @@ All notable changes to FFL Funnels Addons are documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- Pickup & Shipping: recognize a renewed native Local Pickup FFL as the same store by the ATF abbreviated identity (first three plus last five digits). A changed expiration segment no longer misclassifies the store as an external dealer and switches pickup to shipping.
 - Pickup & Shipping: reconcile WooCommerce's newly rendered shipping control after each checkout review using the server-authorized package policy. Native in-store FFL selections now remain on Local Pickup after the asynchronous checkout refresh, including multi-step checkout flows.
 - Pickup & Shipping: read the native FFL selector's posted backup license fields when its primary field is absent or disabled, including native versions where the in-store button completes the store selection. Changing dealers no longer retains a stale shipping/pickup decision. Explicitly cleared primary fields and conflicting backups fail closed; review requests and final validation use the same parser, native checkout refreshes are coalesced, and native FFL validation remains authoritative.
 

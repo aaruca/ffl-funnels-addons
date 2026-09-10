@@ -125,6 +125,11 @@ foreach(['card_background','card_text','selected_text','border_color'] as $key){
  check($saved[$key]==='var(--site-color)','new color setting retains site variable');
 }
 check(Pickup_Shipping_Engine::product_requires_ffl($products[3]),'variation inherits FFL flag');
+check(Pickup_Shipping_Engine::licensee_key('9-77-111-01-8A-05780')==='97705780','ATF abbreviated identity uses first three and last five digits');
+check(Pickup_Shipping_Engine::same_licensee('5-72-015-07-6L-06681','5-72-015-07-9L-06681'),'renewed license remains the same local FFL');
+check(!Pickup_Shipping_Engine::same_licensee('5-72-015-07-6L-06681','5-72-015-07-9L-06682'),'different sequence is not local pickup');
+check(!Pickup_Shipping_Engine::same_licensee('5-72-015-07-6L-06681','6-72-015-07-9L-06681'),'different region is not local pickup');
+check(!Pickup_Shipping_Engine::same_licensee('invalid','5-72-015-07-9L-06681'),'invalid license cannot authorize pickup');
 $d=Pickup_Shipping_Engine::decision($s,'regular',['mode'=>'ship']);
 check(array_keys(Pickup_Shipping_Engine::filter($rates,$d))===['flat_rate:2'],'ship only');
 check(Pickup_Shipping_Engine::allows('ups:4:ground',['ups:4']),'carrier service suffix allowed');
@@ -137,6 +142,9 @@ check($filtered['local_pickup:1']===$rates['local_pickup:1']&&$filtered['local_p
 $sf=$s;$sf['ffl_enabled']=true;
 $d=Pickup_Shipping_Engine::decision($sf,'ffl',['license'=>'9-77-111-01-8A-05780']);
 check($d['methods']===['local_pickup:1','local_pickup:3'],'native local FFL uses configured WooCommerce pickup methods');
+$renewed=$sf;$renewed['ffl_pickup_license']='572015076L06681';
+$d=Pickup_Shipping_Engine::decision($renewed,'ffl',['license'=>'572015079L06681']);
+check($d['mode']==='pickup'&&$d['methods']===['local_pickup:1','local_pickup:3'],'renewed native license authorizes the same store pickup methods');
 $d=Pickup_Shipping_Engine::decision($sf,'ffl',['license'=>'9-77-111-01-8A-05781']);
 check($d['mode']==='ship','legacy own FFL cannot authorize pickup');
 $d=Pickup_Shipping_Engine::decision($sf,'ffl',['license'=>'9-77-111-01-8A-99999','shipping_ffl_name'=>'Main store']);
