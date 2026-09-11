@@ -189,18 +189,46 @@ class Pickup_Shipping_Checkout
         $posted = self::parse($_POST);
         $state = self::state();
         if (self::requires_ffl() && $s['ffl_enabled']) { $state['license'] = Pickup_Shipping_Settings::license($posted['shipping_fflno'] ?? ($data['shipping_fflno'] ?? '')); }
+        $packages_valid = true;
+        $has_ffl_pickup = false;
         foreach (WC()->shipping()->get_packages() as $key=>$package) {
             $decision = Pickup_Shipping_Engine::decision($s,self::scope($package),$state);
             if (in_array($decision['mode'],['blocked','pending','none'],true)) {
+                $packages_valid = false;
                 $errors->add('ffla_delivery_' . $key, $decision['mode'] === 'none' ? __('Choose pickup or shipping before placing your order.', 'ffl-funnels-addons') : self::message($decision));
                 continue;
             }
             $selected = is_array($data['shipping_method'] ?? null) ? ($data['shipping_method'][$key] ?? '') : '';
             if (!is_string($selected) || !Pickup_Shipping_Engine::allows($selected,$decision['methods']) || !isset($package['rates'][$selected])) {
+                $packages_valid = false;
                 $errors->add('ffla_delivery_' . $key,self::message($decision));
+            } elseif ($decision['mode'] === 'pickup' && $decision['reason'] === 'ffl') {
+                $has_ffl_pickup = true;
             }
         }
+        if ($packages_valid && $has_ffl_pickup) { self::reconcile_native_pickup_conflict($data, $errors); }
         // g-FFL's license/address/restriction validators remain registered.
+    }
+    /** Reconcile only g-FFL's strict string comparison, never its other errors. */
+    private static function reconcile_native_pickup_conflict($data, $errors): void
+    {
+        if (!is_callable([$errors, 'remove'])) { return; }
+        $posted = self::parse($_POST);
+        $license = Pickup_Shipping_Settings::license($posted['shipping_fflno'] ?? '');
+        if (!Pickup_Shipping_Engine::same_licensee($license, Pickup_Shipping_Settings::provider_license())) { return; }
+        // Require a current submitted identity. Cookies, names and old session
+        // values cannot resolve a conflict. Nonempty native fields must agree
+        // on the complete selected license, not just the abbreviated identity.
+        foreach ([$_POST, $data] as $source) {
+            foreach (['shipping_fflno','backup_fflno','ffl_license_backup','ffl_id'] as $key) {
+                if (!array_key_exists($key, $source) || $source[$key] === '') { continue; }
+                if (Pickup_Shipping_Settings::license($source[$key]) !== $license) { return; }
+            }
+        }
+        // g-FFL 2.2.5 compares raw strings here: renewals and hyphen/case
+        // differences can reject our already-validated same-store pickup.
+        // Preserve the actual selected license and configured provider option.
+        $errors->remove('ffl_local_pickup_conflict');
     }
     public static function shipping_meta($item, $key, $package, $order): void
     {

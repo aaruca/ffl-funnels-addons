@@ -40,7 +40,7 @@ function get_meta($k){return $this->firearm?'yes':'no';}function get_parent_id()
 function wc_get_product($id){return $GLOBALS['products'][$id]??null;}
 class Cart {public $items=[];function get_cart(){return $this->items;}function needs_shipping(){foreach($this->items as $i){if($i['data']->needs_shipping())return true;}return false;}}
 class Shipping {public $packages=[];function get_packages(){return $this->packages;}}
-class Errors {public $errors=[];function add($k,$v){$this->errors[$k]=$v;}}
+class Errors {public $errors=[];function add($k,$v){$this->errors[$k]=$v;}function remove($k){unset($this->errors[$k]);}}
 class Rate {public $cost=17;public $taxes=[2.1];}
 class ShipItem {public $meta=[];function add_meta_data($k,$v,$u){$this->meta[$k]=$v;}function get_meta($k){return $this->meta[$k]??'';}function get_name(){return 'Pickup';}}
 class Order {public $items=[];function get_shipping_methods(){return $this->items;}}
@@ -270,4 +270,3 @@ check(strpos($mixedHtml,'Select your FFL')===false&&strpos($mixedHtml,'selected 
 $wc->cart->items=cart_items([1]);$ffl=false;$wc->ship->packages=[];
 check(strpos(Pickup_Shipping_Checkout::html(),'<h3')!==false,'regular checkout restores delivery selector');
 echo "$checks Pickup & Shipping checks passed.\n";
-

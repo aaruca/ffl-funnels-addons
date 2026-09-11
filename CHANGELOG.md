@@ -2,6 +2,11 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.47.3] - 2026-09-11
+
+### Fixed
+- Pickup & Shipping: reconcile FFL Checkout's local-pickup conflict when a current submitted license identifies the configured store but differs in formatting or renewal details. Only that specific conflict is removed, after all package methods have passed server validation and native license fields agree. External dealers, missing/conflicting identities, unavailable pickup rates, and other native validation errors remain blocked. No provider settings or selected license values are rewritten.
+
 ## [1.47.2] - 2026-09-11
 
 ### Added
