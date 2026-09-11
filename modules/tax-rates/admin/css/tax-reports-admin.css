@@ -295,6 +295,13 @@
     box-shadow: inset 0 -1px 0 var(--ffla-report-border, #d8dee8);
 }
 
+.ffla-tax-report-table tr.ffla-tax-report-row--state-total td {
+    background: var(--wb-color-surface-2, #eef5ff);
+    color: var(--wb-color-neutral-foreground-1, #1d2327);
+    font-weight: 700;
+    box-shadow: inset 0 -1px 0 var(--ffla-report-border, #d8dee8);
+}
+
 .ffla-tax-report-table td:last-child {
     max-width: 520px;
     white-space: normal;

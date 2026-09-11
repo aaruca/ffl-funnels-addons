@@ -2,6 +2,11 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.47.2] - 2026-09-11
+
+### Added
+- Sales Tax Reports: add a complete filing table at the beginning of Overview and as the first CSV/XLSX/HTML export dataset. It places each state total before all of its jurisdiction rows and retains gross sales, taxable sales including taxed shipping, exempt/review sales, collected/refunded/net tax, calculated tax, over/under collection, filing codes, rates and status. Existing filing, state, jurisdiction and audit tables remain unchanged.
+
 ## [1.47.1] - 2026-09-11
 
 ### Added

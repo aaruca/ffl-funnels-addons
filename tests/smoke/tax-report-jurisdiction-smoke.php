@@ -92,4 +92,54 @@ ffla_jurisdiction_assert($rows[0]['tax_collected'] === '20.70', 'Collected tax m
 ffla_jurisdiction_assert($rows[0]['calculated_tax'] === '20.70', 'Expected tax must be totaled order by order.');
 ffla_jurisdiction_assert($rows[0]['rate_percent'] === '7.6667', 'Displayed rate must be the weighted effective rate.');
 
+$master = new ReflectionMethod(Tax_Report_Service::class, 'build_filing_master');
+$master->setAccessible(true);
+$master_rows = $master->invoke($service, [[
+    'country' => 'US',
+    'state' => 'GA',
+    'filing_code' => '000',
+    'currency' => 'USD',
+    'orders' => 2,
+    'jurisdictions' => 1,
+    'gross_sales' => '300.00',
+    'taxable_sales' => '270.00',
+    'taxable_shipping' => '30.00',
+    'non_taxable_sales' => '30.00',
+    'needs_review_sales' => '0.00',
+    'tax_collected' => '20.70',
+    'tax_refunded' => '0.00',
+    'net_tax' => '20.70',
+    'calculated_tax' => '20.70',
+    'over_under' => '0.00',
+    'filing_status' => 'Ready',
+]], $rows);
+ffla_jurisdiction_assert(count($master_rows) === 2, 'The complete filing table must preserve one state total and every jurisdiction row.');
+ffla_jurisdiction_assert($master_rows[0]['row_type'] === 'State total', 'The state total must appear before its jurisdictions.');
+ffla_jurisdiction_assert($master_rows[0]['filing_code'] === '000', 'The complete table must preserve the state filing code.');
+ffla_jurisdiction_assert($master_rows[0]['jurisdictions'] === 1, 'The complete table must preserve the state jurisdiction count.');
+ffla_jurisdiction_assert($master_rows[1]['row_type'] === 'Jurisdiction', 'Jurisdiction rows must remain identifiable in the complete table.');
+ffla_jurisdiction_assert($master_rows[1]['filing_code'] === '038', 'The complete table must preserve the official jurisdiction code.');
+ffla_jurisdiction_assert($master_rows[1]['taxable_sales'] === '270.00', 'Jurisdiction taxable sales including shipping must remain unchanged in the complete table.');
+
+$master_columns = Tax_Report_Service::get_columns('filing-master');
+ffla_jurisdiction_assert($master_columns[0] === 'row_type', 'The complete filing export must begin with the row type.');
+ffla_jurisdiction_assert(in_array('taxable_shipping', $master_columns, true), 'The complete filing export must retain taxed shipping visibility.');
+ffla_jurisdiction_assert(in_array('over_under', $master_columns, true), 'The complete filing export must retain over/under collection.');
+
+$admin_source = file_get_contents(__DIR__ . '/../../modules/tax-rates/admin/class-tax-reports-admin.php');
+$complete_table_position = strpos((string) $admin_source, "__('Complete tax filing table'");
+$filing_totals_position = strpos((string) $admin_source, "__('Filing totals'");
+ffla_jurisdiction_assert(
+    $complete_table_position !== false && $filing_totals_position !== false && $complete_table_position < $filing_totals_position,
+    'The complete filing table must render before the existing Overview tables.'
+);
+
+$exporter_source = file_get_contents(__DIR__ . '/../../modules/tax-rates/includes/class-tax-report-exporter.php');
+$master_export_position = strpos((string) $exporter_source, "'filing-master'");
+$totals_export_position = strpos((string) $exporter_source, "'filing-totals'");
+ffla_jurisdiction_assert(
+    $master_export_position !== false && $totals_export_position !== false && $master_export_position < $totals_export_position,
+    'The complete filing table must be the first exported dataset without removing existing exports.'
+);
+
 echo "Tax report jurisdiction smoke checks passed.\n";

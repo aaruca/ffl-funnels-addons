@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
 
 class Tax_Report_Service
 {
-    const SCHEMA_VERSION = '2.5.0';
+    const SCHEMA_VERSION = '2.6.0';
     const HISTORY_OPTION = 'ffla_tax_report_runs';
 
     /** @var int */
@@ -200,6 +200,7 @@ class Tax_Report_Service
             'refunds'             => [],
             'exceptions'          => [],
             'summaries'           => [
+                'filing_master' => [],
                 'filing_totals' => [],
                 'states'        => [],
                 'jurisdictions' => [],
@@ -355,6 +356,10 @@ class Tax_Report_Service
             $this->finalize_state_totals($state_totals),
             $report['summaries']['jurisdictions']
         );
+        $report['summaries']['filing_master'] = $this->build_filing_master(
+            $report['summaries']['states'],
+            $report['summaries']['jurisdictions']
+        );
         $report['summaries']['filing_totals'] = $this->build_filing_totals($report['summaries']['states']);
         $report['summaries']['products'] = $this->finalize_product_totals($product_totals);
         $report['summaries']['payments'] = $this->finalize_payment_totals($payment_totals);
@@ -487,6 +492,12 @@ class Tax_Report_Service
             'filing-totals' => [
                 'currency', 'orders', 'taxable_sales', 'non_taxable_sales', 'needs_review_sales',
                 'tax_collected', 'tax_refunded', 'net_tax', 'calculated_tax', 'over_under',
+            ],
+            'filing-master' => [
+                'row_type', 'country', 'state', 'filing_code', 'jurisdiction_type', 'jurisdiction_name',
+                'rate_percent', 'currency', 'orders', 'jurisdictions', 'gross_sales', 'taxable_sales', 'taxable_shipping',
+                'non_taxable_sales', 'needs_review_sales', 'tax_collected', 'tax_refunded', 'net_tax',
+                'calculated_tax', 'over_under', 'filing_status',
             ],
             'state-summary' => [
                 'state', 'filing_code', 'currency', 'orders', 'gross_sales', 'taxable_sales', 'taxable_shipping',
@@ -2482,6 +2493,88 @@ class Tax_Report_Service
         unset($state);
 
         return $states;
+    }
+
+    private function build_filing_master(array $states, array $jurisdictions): array
+    {
+        $rows = [];
+        foreach ($states as $state) {
+            $state_code = (string) ($state['state'] ?? '');
+            $rows[] = [
+                'row_type'            => 'State total',
+                'country'             => (string) ($state['country'] ?? ''),
+                'state'               => $state_code,
+                'filing_code'         => (string) ($state['filing_code'] ?? ''),
+                'jurisdiction_type'    => 'state',
+                'jurisdiction_name'    => $state_code !== '' ? $state_code . ' total' : 'State total',
+                'rate_percent'         => '',
+                'currency'             => (string) ($state['currency'] ?? ''),
+                'orders'               => (int) ($state['orders'] ?? 0),
+                'jurisdictions'        => (int) ($state['jurisdictions'] ?? 0),
+                'gross_sales'          => (string) ($state['gross_sales'] ?? '0.00'),
+                'taxable_sales'        => (string) ($state['taxable_sales'] ?? '0.00'),
+                'taxable_shipping'     => (string) ($state['taxable_shipping'] ?? '0.00'),
+                'non_taxable_sales'    => (string) ($state['non_taxable_sales'] ?? '0.00'),
+                'needs_review_sales'   => (string) ($state['needs_review_sales'] ?? '0.00'),
+                'tax_collected'        => (string) ($state['tax_collected'] ?? '0.00'),
+                'tax_refunded'         => (string) ($state['tax_refunded'] ?? '0.00'),
+                'net_tax'              => (string) ($state['net_tax'] ?? '0.00'),
+                'calculated_tax'       => (string) ($state['calculated_tax'] ?? '0.00'),
+                'over_under'           => (string) ($state['over_under'] ?? '0.00'),
+                'filing_status'        => (string) ($state['filing_status'] ?? ''),
+                '_sort_level'          => 0,
+            ];
+        }
+
+        foreach ($jurisdictions as $jurisdiction) {
+            $rows[] = [
+                'row_type'            => 'Jurisdiction',
+                'country'             => (string) ($jurisdiction['country'] ?? ''),
+                'state'               => (string) ($jurisdiction['state'] ?? ''),
+                'filing_code'         => (string) ($jurisdiction['jurisdiction_code'] ?? ''),
+                'jurisdiction_type'    => (string) ($jurisdiction['jurisdiction_type'] ?? ''),
+                'jurisdiction_name'    => (string) ($jurisdiction['jurisdiction_name'] ?? ''),
+                'rate_percent'         => (string) ($jurisdiction['rate_percent'] ?? ''),
+                'currency'             => (string) ($jurisdiction['currency'] ?? ''),
+                'orders'               => (int) ($jurisdiction['orders'] ?? 0),
+                'jurisdictions'        => '',
+                'gross_sales'          => (string) ($jurisdiction['gross_sales'] ?? '0.00'),
+                'taxable_sales'        => (string) ($jurisdiction['taxable_sales'] ?? '0.00'),
+                'taxable_shipping'     => (string) ($jurisdiction['taxable_shipping'] ?? '0.00'),
+                'non_taxable_sales'    => '',
+                'needs_review_sales'   => '',
+                'tax_collected'        => (string) ($jurisdiction['tax_collected'] ?? '0.00'),
+                'tax_refunded'         => (string) ($jurisdiction['tax_refunded'] ?? '0.00'),
+                'net_tax'              => (string) ($jurisdiction['net_tax'] ?? '0.00'),
+                'calculated_tax'       => (string) ($jurisdiction['calculated_tax'] ?? '0.00'),
+                'over_under'           => (string) ($jurisdiction['over_under'] ?? '0.00'),
+                'filing_status'        => (string) ($jurisdiction['filing_status'] ?? ''),
+                '_sort_level'          => 1,
+            ];
+        }
+
+        usort($rows, function ($a, $b) {
+            $group_a = implode('|', [(string) $a['country'], (string) $a['state'], (string) $a['currency']]);
+            $group_b = implode('|', [(string) $b['country'], (string) $b['state'], (string) $b['currency']]);
+            $group_compare = strcmp($group_a, $group_b);
+            if ($group_compare !== 0) {
+                return $group_compare;
+            }
+            if ((int) $a['_sort_level'] !== (int) $b['_sort_level']) {
+                return (int) $a['_sort_level'] <=> (int) $b['_sort_level'];
+            }
+            return strcmp(
+                (string) $a['filing_code'] . '|' . (string) $a['jurisdiction_name'],
+                (string) $b['filing_code'] . '|' . (string) $b['jurisdiction_name']
+            );
+        });
+
+        foreach ($rows as &$row) {
+            unset($row['_sort_level']);
+        }
+        unset($row);
+
+        return $rows;
     }
 
     private function build_filing_totals(array $states): array

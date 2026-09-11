@@ -859,6 +859,12 @@ class Tax_Reports_Admin
         echo '<section class="ffla-tax-report-preview" data-ffla-report-panel="' . esc_attr($active_tab) . '">';
 
         if ($active_tab === 'overview') {
+            self::render_dataset_card(
+                __('Complete tax filing table', 'ffl-funnels-addons'),
+                'filing-master',
+                (array) ($report['summaries']['filing_master'] ?? []),
+                __('This first table combines every state total and every jurisdiction with activity. Taxable sales already includes taxed shipping. All detailed tables below and in the other tabs remain available.', 'ffl-funnels-addons')
+            );
             echo '<div class="ffla-tax-report-kpis">';
             self::render_kpi(__('Orders', 'ffl-funnels-addons'), (string) ($stats['orders'] ?? 0));
             self::render_kpi(__('States', 'ffl-funnels-addons'), (string) count($states));
@@ -942,8 +948,9 @@ class Tax_Reports_Admin
     private static function render_table(array $columns, array $rows, string $caption = ''): void
     {
         $labels = [
+            'row_type' => __('Row type', 'ffl-funnels-addons'),
             'gross_sales' => __('Gross sales (net of refunds)', 'ffl-funnels-addons'),
-            'filing_code' => __('State filing code', 'ffl-funnels-addons'),
+            'filing_code' => __('Filing code', 'ffl-funnels-addons'),
             'jurisdiction_code' => __('Jurisdiction code', 'ffl-funnels-addons'),
             'jurisdiction_type' => __('Jurisdiction type', 'ffl-funnels-addons'),
             'jurisdiction_name' => __('Jurisdiction', 'ffl-funnels-addons'),
@@ -982,7 +989,9 @@ class Tax_Reports_Admin
             echo '<tr><td colspan="' . esc_attr((string) max(1, count($columns))) . '">' . esc_html__('No records for this selection.', 'ffl-funnels-addons') . '</td></tr>';
         } else {
             foreach ($rows as $row) {
-                echo '<tr>';
+                $row_type = sanitize_html_class(strtolower(str_replace(' ', '-', (string) ($row['row_type'] ?? ''))));
+                $row_class = $row_type !== '' ? ' class="ffla-tax-report-row--' . esc_attr($row_type) . '"' : '';
+                echo '<tr' . $row_class . '>';
                 foreach ($columns as $column) {
                     echo '<td data-column="' . esc_attr($column) . '">' . esc_html((string) ($row[$column] ?? '')) . '</td>';
                 }

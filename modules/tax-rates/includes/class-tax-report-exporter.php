@@ -143,6 +143,7 @@ class Tax_Report_Exporter
     private static function datasets(array $report): array
     {
         $datasets = [
+            'filing-master'        => (array) ($report['summaries']['filing_master'] ?? []),
             'filing-totals'        => (array) ($report['summaries']['filing_totals'] ?? []),
             'state-summary'        => (array) ($report['summaries']['states'] ?? []),
             'jurisdiction-summary' => (array) ($report['summaries']['jurisdictions'] ?? []),
@@ -209,6 +210,7 @@ class Tax_Report_Exporter
         $parts = [];
 
         $sheet_names = [
+            'filing-master' => 'Complete Filing Table',
             'filing-totals' => 'Filing Totals',
             'state-summary' => 'State Summary',
             'jurisdiction-summary' => 'Jurisdictions',
@@ -334,6 +336,10 @@ class Tax_Report_Exporter
             . '<div class="card">Exceptions<b>' . esc_html((string) ($stats['exceptions'] ?? 0)) . '</b></div>'
             . '<div class="card">Snapshot coverage<b>' . esc_html((string) ($manifest['data_quality']['snapshot_coverage_percent'] ?? 0)) . '%</b></div></div>';
 
+        $html .= '<h2>Complete tax filing table</h2>' . self::html_table(
+            Tax_Report_Service::get_columns('filing-master'),
+            (array) ($report['summaries']['filing_master'] ?? [])
+        );
         $html .= '<h2>Totals by currency</h2>' . self::html_table(
             ['currency', 'orders', 'gross_product_sales', 'discounts', 'net_product_sales', 'shipping', 'fees', 'tax_collected', 'tax_refunded', 'net_tax', 'refunds', 'order_total', 'net_collected'],
             (array) ($report['totals_by_currency'] ?? [])
@@ -520,8 +526,8 @@ class Tax_Report_Exporter
             . "Negative orders: " . (!empty($filters['include_negative_orders']) ? 'Included' : 'Excluded') . "\r\n\r\n"
             . "Recommended review order:\r\n"
             . "1. tax-filing-summary.pdf or tax-filing-summary.html\r\n"
-            . "2. filing-totals.csv\r\n"
-            . "3. state-summary.csv and jurisdiction-summary.csv\r\n"
+            . "2. filing-master.csv (state totals and every jurisdiction in one table)\r\n"
+            . "3. filing-totals.csv, state-summary.csv and jurisdiction-summary.csv\r\n"
             . $detail_files . "\r\n"
             . "The XLSX workbook contains the same tabular datasets in one file. The HTML summary can be opened in a browser and printed or saved as PDF.\r\n\r\n"
             . ($advanced
