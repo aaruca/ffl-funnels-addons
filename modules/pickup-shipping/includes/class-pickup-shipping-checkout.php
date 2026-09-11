@@ -8,10 +8,11 @@ class Pickup_Shipping_Checkout
     private static $rendered = false;
     public static function init(): void
     {
-        add_action('woocommerce_checkout_update_order_review', [__CLASS__,'update'], 20);
+        add_action('woocommerce_checkout_update_order_review', [__CLASS__,'update'], 5);
         add_action('woocommerce_checkout_process', [__CLASS__,'process'], 1);
         add_filter('woocommerce_cart_shipping_packages', [__CLASS__,'packages'], 999);
         add_filter('woocommerce_package_rates', [__CLASS__,'rates'], 999, 2);
+        add_filter('woocommerce_shipping_packages', [__CLASS__,'sync_packages'], 999);
         add_action('woocommerce_after_checkout_validation', [__CLASS__,'validate'], 999, 2);
         add_action('woocommerce_checkout_create_order_shipping_item', [__CLASS__,'shipping_meta'], 20, 4);
         add_action('woocommerce_checkout_billing', [__CLASS__,'automatic'], 5);
@@ -99,6 +100,7 @@ class Pickup_Shipping_Checkout
         if (!self::supported()) { return; }
         self::$posted = self::parse($raw);
         $state = self::state();
+        $previous = $state;
         $s = Pickup_Shipping_Settings::get();
         $state['mode'] = $state['mode'] ?? $s['default'];
         if (array_key_exists('ffla_delivery_mode',self::$posted)) {
@@ -108,17 +110,30 @@ class Pickup_Shipping_Checkout
         if (array_key_exists('shipping_fflno', self::$posted)) { $state['license'] = Pickup_Shipping_Settings::license(self::$posted['shipping_fflno']); }
         if (!self::requires_ffl()) { unset($state['license']); }
         $state['cart'] = self::fingerprint();
+        $state['policy_hash'] = md5(wp_json_encode($s));
+        $state['requires_ffl'] = self::requires_ffl();
         WC()->session->set(self::SESSION, $state);
+        if ($previous !== $state) { self::invalidate_shipping_cache(); }
+    }
+    /** Camarillo's transition flow, scoped to this cart's shipping packages. */
+    private static function invalidate_shipping_cache(): void
+    {
+        $packages = WC()->shipping()->get_packages();
+        // Include newly split packages as well as the previously calculated ones.
+        $current = WC()->cart->get_shipping_packages();
+        foreach (array_unique(array_merge(array_keys($packages),array_keys($current))) as $key) {
+            WC()->session->__unset('shipping_for_package_' . $key);
+        }
+        WC()->session->__unset(self::AVAILABLE);
     }
     public static function process(): void
     {
-        self::update($_POST);
         // Never authorize a final FFL choice using a stale session/cookie.
-        if (self::supported() && self::requires_ffl()) {
-            $state = self::state();
-            $state['license'] = Pickup_Shipping_Settings::license(self::$posted['shipping_fflno'] ?? '');
-            WC()->session->set(self::SESSION, $state);
+        $raw = $_POST;
+        if (self::supported() && self::requires_ffl() && !array_key_exists('shipping_fflno',self::parse($raw))) {
+            $raw['shipping_fflno'] = '';
         }
+        self::update($raw);
     }
     public static function requires_ffl(): bool
     {
@@ -175,6 +190,28 @@ class Pickup_Shipping_Checkout
         ];
         WC()->session->set(self::AVAILABLE, $availability);
         return Pickup_Shipping_Engine::filter($rates,$package['ffla_delivery']['decision']);
+    }
+    /** Run before WC_Cart consumes rates to calculate shipping and tax totals. */
+    public static function sync_packages(array $packages): array
+    {
+        if (!self::active()) { return $packages; }
+        $settings = Pickup_Shipping_Settings::get();
+        $state = self::state();
+        foreach ($packages as $key=>&$package) {
+            $scope = self::scope($package);
+            $decision = Pickup_Shipping_Engine::decision($settings,$scope,$state);
+            // Reapply to cached packages too. Never create a rate, change its
+            // price, or substitute pickup when this address has no pickup rate.
+            $package['rates'] = Pickup_Shipping_Engine::filter((array)($package['rates'] ?? []),$decision);
+            $package['ffla_delivery'] = array_merge($package['ffla_delivery'] ?? [],[
+                'active'=>true,'scope'=>$scope,'decision'=>$decision,'package_key'=>(string)$key,
+            ]);
+            // WooCommerce owns default selection (including free-shipping
+            // coupons). It must see only valid rates before it stores a choice.
+            wc_get_chosen_shipping_method_for_package($key,$package);
+        }
+        unset($package);
+        return $packages;
     }
     public static function message(array $decision): string
     {
@@ -293,6 +330,8 @@ class Pickup_Shipping_Checkout
         $packages = WC()->shipping()->get_packages();
         $regular = !($s['ffl_enabled'] && self::requires_ffl());
         $policy = [];
+        $chosen = WC()->session->get('chosen_shipping_methods', []);
+        $dealer = $s['ffl_enabled'] && self::requires_ffl() ? (self::state()['license'] ?? '') : '';
         foreach ($packages as $key=>$package) {
             $scope = self::scope($package);
             if ($scope === 'regular') { $regular = true; }
@@ -302,6 +341,8 @@ class Pickup_Shipping_Checkout
             $policy[(string)$key] = [
                 'mode'=>is_string($decision['mode'] ?? null) ? $decision['mode'] : '',
                 'methods'=>array_values(array_filter((array)($decision['methods'] ?? []),'is_string')),
+                'selected'=>is_string($chosen[$key] ?? null) && isset($package['rates'][$chosen[$key]]) ? $chosen[$key] : '',
+                'dealer'=>$scope === 'ffl' ? $dealer : null,
             ];
         }
         $policy_attr = esc_attr(wp_json_encode($policy));
@@ -347,7 +388,7 @@ class Pickup_Shipping_Checkout
         if (!self::active()) { return; }
         $base = FFLA_URL . 'modules/pickup-shipping/assets/';
         wp_enqueue_style('ffla-delivery',$base . 'delivery.css',[],FFLA_VERSION . '.4');
-        wp_enqueue_script('ffla-delivery',$base . 'delivery.js',['jquery','wc-checkout'],FFLA_VERSION . '.7',true);
+        wp_enqueue_script('ffla-delivery',$base . 'delivery.js',['jquery','wc-checkout'],FFLA_VERSION . '.8',true);
         wp_localize_script('ffla-delivery','fflaDelivery',[
             'updating'=>__('Updating delivery options…','ffl-funnels-addons'),
             'error'=>__('Delivery could not be updated. Please try again before placing your order.','ffl-funnels-addons'),

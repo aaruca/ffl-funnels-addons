@@ -97,7 +97,7 @@ let checks=0;function check(v,msg){assert.ok(v,msg);checks++;}
  window.updateCalls++;const data=await window.getDeliveryFixture(jQuery('form.checkout').serialize());
  jQuery('#ffla-delivery-choice').replaceWith(data.checkout);
  jQuery('#rates').text(data.rates.join(','));
- jQuery('#shipping-controls').html(data.rates.map(function(rate){return '<input type="radio" name="shipping_method[0]" value="'+rate+'">';}).join(''));
+ jQuery('#shipping-controls').html(data.rates.map(function(rate){return '<input type="radio" name="shipping_method[0]" value="'+rate+'"'+(data.selected[0]===rate?' checked':'')+'>';}).join(''));
  jQuery(document.body).trigger('updated_checkout');window.completedCalls++;
  });
  });

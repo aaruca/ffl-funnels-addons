@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.47.3-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.47.4-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -126,9 +126,10 @@ Brand and simplify wp-admin for store clients without changing WordPress core.
 ### 13. Pickup & Shipping
 * **Opt-in, per-site configuration:** An independent module, disabled by default. Choose pickup/shipping/both, the default selection, and existing WooCommerce shipping method instances (shown with their zones).
 * **Classic checkout selector:** Accessible delivery cards, server-refreshed availability, editable copy/colors and desktop/mobile admin preview. Use automatic placement before billing fields or place `[ffla_delivery_choice]` inside a custom classic checkout form. Addresses, prices, tax calculation and carrier requests stay under WooCommerce/the existing providers.
-* **Optional FFL rules:** Requires g-FFL Checkout. Reads its native Local Pickup FFL directly, without duplicate dealer setup: native local FFL → configured WooCommerce pickup methods only; external FFL → shipping only. Changes are detected automatically. No name/cookie/legacy-mapping authorization or override of provider options and validation.
+* **Optional FFL rules:** Requires g-FFL Checkout. Reads its native Local Pickup FFL directly, without duplicate dealer setup: native local FFL → configured WooCommerce pickup methods only; external FFL → shipping only. Changes are detected automatically. Names/cookies/legacy mappings never authorize pickup. Provider settings are not rewritten; its checks remain registered. Only the known raw-license pickup conflict is reconciled for a verified same-store renewal/format difference after every package passes final validation.
 * **Package safety:** Rules apply to each existing package. Mixed FFL/customer packages must be separated with correct destinations by the fulfillment provider; otherwise checkout is blocked with an explanation. This module does not split inventory, invent destinations, or override mixed-package taxation.
-* **Consistent delivery state:** Package-cache policy fingerprints, final server-side method validation, session cleanup, and delivery snapshots in shipping-line metadata, order details and emails. Existing rates/costs/taxes are preserved.
+* **Camarillo-style delivery flow, configurable for every store:** Capture the native selection before review calculations, store it in the customer's WooCommerce session, and invalidate only the cart's package caches when dealer, delivery choice, cart context or configuration changes. Filter actual rates and let WooCommerce select an available method before totals are calculated. The refreshed UI follows that server-confirmed method, including radio, dropdown and single-hidden-field checkout layouts. Repairs notify checkout once per choice; stale-dealer responses request a bounded fresh review instead of selecting the old dealer's method.
+* **Final validation and order data:** Final server-side method validation, session cleanup, and delivery snapshots in shipping-line metadata, order details and emails. Existing rates/costs/taxes are preserved. The search-store button alone does not authorize pickup; the native dealer selection must be present. The selected pickup instance must be available in the package's matching WooCommerce zone, not merely checked in the addon settings.
 * **Compatibility boundaries:** Checkout Blocks/Store API are not modified in this version. Incomplete configuration or detection of the old Camarillo shipping snippet pauses the module with an admin warning. Disable only the old shipping logic before enabling this module; preserve any separate tax code. Do not promise free pickup in editable text unless the configured method is free.
 
 ## Installation

@@ -2,6 +2,7 @@
 jQuery(function($){'use strict';
 const config=window.fflaDelivery||{};let timer=null;let focusedMode='';let reconcilingDealer=false;let recoveredDealer='';
 const checkout='form.checkout, form.woocommerce-checkout';
+const notifiedMethods={};const staleReviews={};let syncingMethods=false;let syncTimer=null;
 function license(value){
  const raw=String(value||'').trim();const normalized=raw.toUpperCase().replace(/[\s-]/g,'');
  return /^[0-9]{9}[A-Z][0-9]{5}$/.test(normalized)?{raw:raw,normalized:normalized}:null;
@@ -52,13 +53,16 @@ function reviewRecoveredDealer(){
 function dealer(){
  const form=$(checkout).first();const primary=form.find('[name="shipping_fflno"]:enabled').first();
  if(primary.length)return String(primary.val()||'').toUpperCase().replace(/[\s-]/g,'');
- return ['backup_fflno','ffl_license_backup','ffl_id'].map(function(name){const field=form.find('[name="'+name+'"]:enabled').first();return field.length?String(field.val()||'').toUpperCase().replace(/[\s-]/g,''):'<absent>';}).join('|');
+ const backups=[];
+ ['backup_fflno','ffl_license_backup','ffl_id'].forEach(function(name){const field=form.find('[name="'+name+'"]:enabled').first();if(field.length)backups.push(String(field.val()||'').toUpperCase().replace(/[\s-]/g,''));});
+ return backups.length&&backups.every(value=>value===backups[0])?backups[0]:'';
 }
 let lastFfl=dealer();
 function busy(){const box=$('#ffla-delivery-choice');box.attr('aria-busy','true');box.find('.ffla-delivery__status').text(config.updating||'Updating delivery options…');}
 function update(){clearTimeout(timer);timer=setTimeout(function(){timer=null;$(document.body).trigger('update_checkout');},120);}
 function allowed(rate,methods){return methods.some(function(method){return rate===method||rate.indexOf(method+':')===0;});}
 function syncShippingMethods(){
+ if(syncingMethods)return;
  const box=$('#ffla-delivery-choice');let policy={};
  try{policy=JSON.parse(String(box.attr('data-ffla-shipping-policy')||'{}'));}catch(error){return;}
  const form=$(checkout).first();
@@ -67,21 +71,47 @@ function syncShippingMethods(){
   if(!methods.length||!['pickup','ship'].includes(rule.mode))return;
   const name='shipping_method['+key+']';
   const controls=form.find('input[name^="shipping_method["], select[name^="shipping_method["]').filter(function(){return this.name===name;});
-  if(!controls.length)return;
-  const select=controls.filter('select').first();
-  if(select.length){
-   const current=String(select.val()||'');if(allowed(current,methods))return;
-   const option=select.find('option').filter(function(){return allowed(String(this.value||''),methods);}).first();
-   if(option.length)select.val(option.val());
+  // An older response must not switch methods for a newly selected dealer.
+  if(typeof rule.dealer==='string'&&rule.dealer!==dealer()){
+   controls.filter(':enabled').attr('data-ffla-stale','1').prop('disabled',true).prop('checked',false);
+   const stale=JSON.stringify([rule.dealer,dealer()]);
+   if(staleReviews[key]!==stale){staleReviews[key]=stale;busy();update();}
    return;
   }
-  const matching=controls.filter(function(){return allowed(String($(this).val()||''),methods);});
-  if(!matching.length)return;
-  const current=controls.filter(':checked').first();
-  if(current.length&&allowed(String(current.val()||''),methods))return;
-  const target=matching.first();
-  if(target.attr('type')==='radio'||target.attr('type')==='checkbox')target.prop('checked',true);
-  else if(!allowed(String(target.val()||''),methods))target.val(methods[0]);
+  controls.filter('[data-ffla-stale="1"]').prop('disabled',false).removeAttr('data-ffla-stale');
+  const requestedMode=form.find('[name="ffla_delivery_mode"]:checked').val();
+  if(rule.dealer===null&&requestedMode&&requestedMode!==rule.mode)return;
+  if(!controls.length)return;
+  const confirmed=typeof rule.selected==='string'&&allowed(rule.selected,methods)?rule.selected:'';
+  let target=null;
+  const select=controls.filter('select').first();
+  if(select.length){
+   const current=String(select.val()||'');
+   if(confirmed?current===confirmed:allowed(current,methods))return;
+   const option=select.find('option').filter(function(){return confirmed?this.value===confirmed:allowed(String(this.value||''),methods);}).first();
+   if(!option.length)return;
+   select.val(option.val());target=select;
+  }else{
+   const hidden=controls.filter('input[type="hidden"]:enabled');
+   if(controls.length===1&&hidden.length&&confirmed){
+    if(String(hidden.val())===confirmed)return;
+    hidden.val(confirmed);target=hidden;
+   }else{
+    const matching=controls.filter(':enabled').filter(function(){return confirmed?String($(this).val()||'')===confirmed:allowed(String($(this).val()||''),methods);});
+    if(!matching.length)return;
+    const current=controls.filter(':enabled').filter(':checked, [type="hidden"]').first();
+    if(current.length&&(confirmed?String(current.val())===confirmed:allowed(String(current.val()||''),methods)))return;
+    target=matching.first();
+    if(target.attr('type')==='radio'||target.attr('type')==='checkbox')target.prop('checked',true);
+   }
+  }
+  // Like Camarillo, notify checkout after repairing a stale control. Bound
+  // this to one notification per dealer/method so theme redraws cannot loop.
+  const signature=JSON.stringify([rule.dealer,rule.mode,methods,String(target.val())]);
+  if(notifiedMethods[key]===signature)return;
+  notifiedMethods[key]=signature;
+  update();syncingMethods=true;
+  try{target.trigger('change');}finally{syncingMethods=false;}
  });
 }
 $(document).on('change','input[name="ffla_delivery_mode"]',function(){if(!$(this).closest(checkout).length)return;focusedMode=this.value;update();});
@@ -89,7 +119,8 @@ $(document).on('change input','[name="shipping_fflno"], [name="backup_fflno"], [
 $(document).on('ffl-dealer-selected',function(){
  // g-FFL emits this after selecting a result and before its own checkout
  // refresh. Capture only that verified native selection, never the search click.
- recoveredDealer='';reviewRecoveredDealer();
+ recoveredDealer='';
+ if(!reviewRecoveredDealer()){const value=dealer();if(value!==lastFfl){lastFfl=value;update();}}
 });
 // The native selector already requests a review after populating its fields.
 // Coalesce our pending refresh rather than send a second, competing request.
@@ -101,6 +132,8 @@ $(document.body).on('updated_checkout',function(){
  // from that one native selected card and request one authoritative review.
  if(reviewRecoveredDealer())return;
  syncShippingMethods();
+ // Native/theme listeners may redraw controls later in the same event turn.
+ clearTimeout(syncTimer);syncTimer=setTimeout(syncShippingMethods,50);
  if(focusedMode){const input=box.find('input[name="ffla_delivery_mode"]').filter(function(){return this.value===focusedMode;})[0];if(input)input.focus({preventScroll:true});focusedMode='';}
 });
 $(document.body).on('checkout_error',function(){const box=$('#ffla-delivery-choice');box.attr('aria-busy','false');box.find('.ffla-delivery__status').text(config.error||'Please review your delivery selection.');});

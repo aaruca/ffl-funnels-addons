@@ -106,6 +106,7 @@ class Pickup_Shipping_Admin
                         <?php endif; ?>
                     </div>
                     <p><?php esc_html_e('Changes in FFL Checkout are read automatically. Select the corresponding WooCommerce pickup and shipping methods in General; their prices stay unchanged. Mixed carts must already have separate FFL/customer packages and destinations. Dealer names, cookies and old addon mappings never authorize pickup. FFL Checkout retains its own validation.','ffl-funnels-addons'); ?></p>
+                    <p><?php esc_html_e('The store-search button starts the native FFL selection; pickup is applied only when a dealer is selected. After each change, the addon refreshes that cart\'s cached rates and synchronizes the available method with WooCommerce before totals. Each selected method must be enabled and available in the package\'s matching WooCommerce shipping zone. If pickup is missing, check the zone and method conditions; selecting an instance here does not make it available in other zones.','ffl-funnels-addons'); ?></p>
                 </section>
                 <section class="ffla-ps-panel" id="ps-panel-appearance" data-ps-panel="appearance">
                     <h3><?php esc_html_e('Text and appearance','ffl-funnels-addons'); ?></h3>

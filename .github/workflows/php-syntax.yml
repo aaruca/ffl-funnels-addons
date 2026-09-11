@@ -21,3 +21,4 @@ jobs:
         run: |
           php tests/smoke/pickup-shipping-native-conflict-smoke.php
           php tests/smoke/pickup-shipping-smoke.php missing-provider
+          php tests/smoke/pickup-shipping-transitions-smoke.php

@@ -38,7 +38,7 @@ class Product {public $firearm;public $parent;public $shipping;
 function __construct($ffl=false,$parent=0,$shipping=true){$this->firearm=$ffl;$this->parent=$parent;$this->shipping=$shipping;}
 function get_meta($k){return $this->firearm?'yes':'no';}function get_parent_id(){return $this->parent;}function needs_shipping(){return $this->shipping;}}
 function wc_get_product($id){return $GLOBALS['products'][$id]??null;}
-class Cart {public $items=[];function get_cart(){return $this->items;}function needs_shipping(){foreach($this->items as $i){if($i['data']->needs_shipping())return true;}return false;}}
+class Cart {public $items=[];public $packages=null;function get_cart(){return $this->items;}function get_shipping_packages(){return $this->packages??[['contents'=>$this->items]];}function needs_shipping(){foreach($this->items as $i){if($i['data']->needs_shipping())return true;}return false;}}
 class Shipping {public $packages=[];function get_packages(){return $this->packages;}}
 class Errors {public $errors=[];function add($k,$v){$this->errors[$k]=$v;}function remove($k){unset($this->errors[$k]);}}
 class Rate {public $cost=17;public $taxes=[2.1];}
@@ -46,6 +46,8 @@ class ShipItem {public $meta=[];function add_meta_data($k,$v,$u){$this->meta[$k]
 class Order {public $items=[];function get_shipping_methods(){return $this->items;}}
 $wc=(object)['session'=>new Session(),'cart'=>new Cart(),'shipping'=>new Shipping()];
 function WC(){return $GLOBALS['wc'];}
+// Model WC's existing-rate selection; production calls WooCommerce itself.
+function wc_get_chosen_shipping_method_for_package($key,$package){$chosen=WC()->session->get('chosen_shipping_methods',[]);$id=$chosen[$key]??'';if(!isset($package['rates'][$id])){$id=array_key_first($package['rates'])??'';}$chosen[$key]=$id;WC()->session->set('chosen_shipping_methods',$chosen);return $id;}
 // Use an object method for WC()->shipping(), like WooCommerce.
 class Woo {public $session;public $cart;public $ship;function __construct(){ $this->session=new Session();$this->cart=new Cart();$this->ship=new Shipping();}function shipping(){return $this->ship;}}
 $wc=new Woo();
@@ -87,9 +89,12 @@ if(($argv[1]??'')==='fixture'){
  if(($argv[3]??'')==='ffl'){$wc->cart->items=cart_items([2]);$package['contents']=$wc->cart->items;$ffl=true;$options[Pickup_Shipping_Settings::OPTION]['ffl_enabled']=true;}
  if(($argv[4]??'')==='variables'){$options[Pickup_Shipping_Settings::OPTION]['card_gap']='var(--space, 16px)';}
  if(!empty($argv[2])){Pickup_Shipping_Checkout::update($argv[2]);}
+ parse_str($argv[2]??'', $fixtureRequest);
+ if(is_array($fixtureRequest['shipping_method']??null)){$wc->session->set('chosen_shipping_methods',$fixtureRequest['shipping_method']);}
  $wc->ship->packages=Pickup_Shipping_Checkout::packages([$package]);$wc->ship->packages[0]['rates']=Pickup_Shipping_Checkout::rates($rates,$wc->ship->packages[0]);
+ $wc->ship->packages=Pickup_Shipping_Checkout::sync_packages($wc->ship->packages);
  ob_start();Pickup_Shipping_Admin::render();$admin=ob_get_clean();
- echo json_encode(['admin'=>$admin,'checkout'=>Pickup_Shipping_Checkout::html(),'rates'=>array_keys($wc->ship->packages[0]['rates'])]);exit;
+ echo json_encode(['admin'=>$admin,'checkout'=>Pickup_Shipping_Checkout::html(),'rates'=>array_keys($wc->ship->packages[0]['rates']),'selected'=>$wc->session->get('chosen_shipping_methods',[])]);exit;
 }
 check(Pickup_Shipping_Settings::license('9-77-111-01-8a-05780')==='977111018A05780','canonical formatting');
 check(Pickup_Shipping_Settings::license(['bad'])==='' && Pickup_Shipping_Settings::license('store name')==='','malformed identity rejected');

@@ -2,6 +2,15 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.47.4] - 2026-09-11
+
+### Changed
+- Pickup & Shipping: adapt the Camarillo session/cache/method synchronization flow for any store using its native FFL Checkout pickup license and configured WooCommerce method instances. Capture selections at review priority 5, invalidate only current/previous package caches on state changes, and synchronize the chosen shipping method before WooCommerce computes totals. Rates, charges, destinations, appearance settings and provider validation remain owned by their existing systems.
+- Pickup & Shipping: expose the server-selected method and dealer identity in checkout fragments. Repair stale radio, dropdown and single hidden shipping controls, notify checkout once per choice, and retry a stale-dealer response without allowing a refresh loop. Native dealer events work with or without the provider requesting its own checkout review.
+
+### Tests
+- Add automated store → external dealer → store, cache reuse/invalidation, final addon validation, multiple package/instance, unavailable pickup, late theme redraw, stale response and hidden/select checkout regression scenarios. No live orders or payments are created by these tests.
+
 ## [1.47.3] - 2026-09-11
 
 ### Fixed
