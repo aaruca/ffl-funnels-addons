@@ -2,9 +2,16 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
-## [Unreleased]
+## [1.47.1] - 2026-09-11
+
+### Added
+- Sales Tax Reports: add the official Georgia filing-code registry from the October 1, 2026 rate chart, including code 000, all 159 counties, and the eight Atlanta/Fulton/Clayton special jurisdictions. Unknown Georgia labels are flagged for review instead of becoming invented jurisdictions.
+
+### Changed
+- Sales Tax Reports: consolidate every jurisdiction into one row per official code and currency, regardless of stored rate, API/sheet source, allocation method, or WooCommerce component order. State and jurisdiction summaries now expose gross sales including shipping, taxable sales including taxed shipping, collected tax, expected tax, and over/under collection.
 
 ### Fixed
+- Pickup & Shipping: recover the native selected FFL after WooCommerce fragments redraw `shipping_fflno` and its backup fields empty. The addon now restores the license only from one selected FFL Checkout result card and performs one authoritative checkout review, so the in-store FFL exposes the configured pickup method instead of an empty shipping section.
 - Pickup & Shipping: recognize a renewed native Local Pickup FFL as the same store by the ATF abbreviated identity (first three plus last five digits). A changed expiration segment no longer misclassifies the store as an external dealer and switches pickup to shipping.
 - Pickup & Shipping: reconcile WooCommerce's newly rendered shipping control after each checkout review using the server-authorized package policy. Native in-store FFL selections now remain on Local Pickup after the asynchronous checkout refresh, including multi-step checkout flows.
 - Pickup & Shipping: read the native FFL selector's posted backup license fields when its primary field is absent or disabled, including native versions where the in-store button completes the store selection. Changing dealers no longer retains a stale shipping/pickup decision. Explicitly cleared primary fields and conflicting backups fail closed; review requests and final validation use the same parser, native checkout refreshes are coalesced, and native FFL validation remains authoritative.
@@ -1781,4 +1788,3 @@ This project follows [Semantic Versioning](https://semver.org/):
 - **MAJOR** version for breaking changes
 - **MINOR** version for new features
 - **PATCH** version for bug fixes
-

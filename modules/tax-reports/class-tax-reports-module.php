@@ -39,6 +39,7 @@ class Tax_Reports_Module extends FFLA_Module
     {
         $report_base = FFLA_PATH . 'modules/tax-rates/';
 
+        require_once $report_base . 'includes/class-tax-report-jurisdiction-registry.php';
         require_once $report_base . 'includes/class-tax-report-service.php';
         require_once $report_base . 'includes/class-tax-report-exporter.php';
         require_once $report_base . 'includes/class-tax-report-reconciliation.php';

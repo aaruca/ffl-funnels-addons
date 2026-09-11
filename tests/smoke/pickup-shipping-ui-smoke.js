@@ -154,13 +154,37 @@ let checks=0;function check(v,msg){assert.ok(v,msg);checks++;}
  check(await page.locator('#rates').innerText()==='local_pickup:1,local_pickup:3','native own FFL only configured pickup methods');
  check(await page.locator('[name="shipping_method[0]"][value="local_pickup:1"]').isChecked(),'post-AJAX policy selects native local pickup after provider race');
  check(await page.locator('#ffla-delivery-choice').isHidden(),'native pickup refresh does not reveal duplicate UI');
- await page.evaluate(()=>jQuery('[name=shipping_fflno]').val('9-77-111-01-8A-99999').trigger('change'));
+ // Real g-FFL 2.2.5 can preserve the selected green card while WooCommerce
+ // redraws every native hidden FFL field with an empty value.
+ await page.evaluate(()=>{
+  const form=jQuery('form.checkout');
+  ['shipping_fflno','backup_fflno','ffl_license_backup','ffl_id'].forEach(function(name){
+   let field=form.find('[name="'+name+'"]');if(!field.length)field=jQuery('<input>',{type:'hidden',name}).appendTo(form);
+   field.val('');
+  });
+  jQuery('<div>',{id:'9-77-111-01-8A-05780'}).append(jQuery('<button>',{type:'button','class':'ffl-list-div selectedFFLDivButton','data-marker-id':'9-77-111-01-8A-05780'})).appendTo(jQuery('<div>',{id:'ffl-list'}).appendTo(form));
+  jQuery('<div>',{id:'ffl_container'}).appendTo(form);
+  jQuery(document.body).trigger('updated_checkout');
+ });
  await page.waitForFunction(()=>window.completedCalls===2);
+ check(await page.locator('[name=shipping_fflno]').getAttribute('value').then(()=>page.locator('[name=shipping_fflno]').evaluate(e=>e.value))==='9-77-111-01-8A-05780','selected native card restores primary FFL field after fragment loss');
+ check(await page.locator('[name=backup_fflno]').evaluate(e=>e.value)==='9-77-111-01-8A-05780','selected native card restores backup FFL field after fragment loss');
+ check(await page.locator('[name=ffl_selection_confirmed]').evaluate(e=>e.value)==='1','selected native card restores the provider confirmation flag');
+ check(await page.locator('#rates').innerText()==='local_pickup:1,local_pickup:3','restored native pickup selection returns pickup rates');
+ await page.evaluate(()=>{
+  ['shipping_fflno','backup_fflno','ffl_license_backup','ffl_id'].forEach(name=>jQuery('[name="'+name+'"]').val(''));
+  jQuery(document.body).trigger('updated_checkout');
+ });
+ await page.waitForTimeout(350);
+ check(await page.evaluate(()=>window.updateCalls)===2,'repeated native field loss is repaired without a checkout refresh loop');
+ check(await page.locator('[name=shipping_fflno]').evaluate(e=>e.value)==='9-77-111-01-8A-05780','repeat fragment loss still restores the native selected FFL');
+ await page.evaluate(()=>jQuery('[name=shipping_fflno]').val('9-77-111-01-8A-99999').trigger('change'));
+ await page.waitForFunction(()=>window.completedCalls===3);
  check(await page.locator('#rates').innerText()==='flat_rate:2','external FFL only shipping');
  check(await page.locator('[name="shipping_method[0]"][value="flat_rate:2"]').isChecked(),'post-AJAX policy selects shipping for an external FFL');
  check(await page.locator('#ffla-delivery-choice').isHidden(),'external FFL refresh does not reveal duplicate UI');
- await page.evaluate(()=>jQuery('[name=shipping_fflno]').val('').trigger('change'));
- await page.waitForFunction(()=>window.completedCalls===3);
+ await page.evaluate(()=>{jQuery('#ffl-list .selectedFFLDivButton').removeClass('selectedFFLDivButton');jQuery('[name=shipping_fflno]').val('').trigger('change');});
+ await page.waitForFunction(()=>window.completedCalls===4);
  check(await page.locator('#rates').innerText()==='','clearing FFL removes authorized methods');
  check(await page.locator('#ffla-delivery-choice').isHidden(),'clearing dealer does not reveal duplicate UI');
  // Native selectFFL fills backup fields and requests update_checkout itself.
@@ -171,11 +195,11 @@ let checks=0;function check(v,msg){assert.ok(v,msg);checks++;}
   ['backup_fflno','ffl_license_backup','ffl_id'].forEach(name=>jQuery('<input>',{type:'hidden',name,value:'9-77-111-01-8A-05780'}).appendTo(form).trigger('change'));
   jQuery(document.body).trigger('update_checkout');
  });
- await page.waitForFunction(()=>window.completedCalls===4);
+ await page.waitForFunction(()=>window.completedCalls===5);
  check(await page.locator('#rates').innerText()==='local_pickup:1,local_pickup:3','native backup fields select pickup while primary is disabled');
  check(await page.locator('[name="shipping_method[0]"][value="local_pickup:1"]').isChecked(),'backup-field pickup remains selected after checkout refresh');
  await page.waitForTimeout(350);
- check(await page.evaluate(()=>window.updateCalls)===4,'native update coalesces pending addon refresh');
+ check(await page.evaluate(()=>window.updateCalls)===5,'native update coalesces pending addon refresh');
  await page.evaluate(()=>{
   jQuery('form.checkout').removeClass('checkout').addClass('woocommerce-checkout');
   jQuery('[name=shipping_fflno]').prop('disabled',false).val('9-77-111-01-8A-99999').trigger('change');
@@ -183,20 +207,20 @@ let checks=0;function check(v,msg){assert.ok(v,msg);checks++;}
  // This fixture backend uses form.checkout just as classic Woo does; restore
  // the class after the event to test the alternative selector independently.
  await page.evaluate(()=>jQuery('form.woocommerce-checkout').addClass('checkout'));
- await page.waitForFunction(()=>window.completedCalls===5);
+ await page.waitForFunction(()=>window.completedCalls===6);
  check(await page.locator('#rates').innerText()==='flat_rate:2','current external primary overrides old pickup backups');
  check(await page.locator('#ffla-delivery-choice').isHidden(),'backup integration does not add duplicate FFL UI');
  await page.evaluate(()=>jQuery('[name=shipping_fflno]').val('').trigger('change'));
- await page.waitForFunction(()=>window.completedCalls===6);
+ await page.waitForFunction(()=>window.completedCalls===7);
  check(await page.locator('#rates').innerText()==='','cleared primary is not revived by old native backups');
  activeScope='';
  await page.evaluate(()=>jQuery(document.body).trigger('update_checkout'));
- await page.waitForFunction(()=>window.completedCalls===7);
+ await page.waitForFunction(()=>window.completedCalls===8);
  check(await page.locator('#ffla-delivery-choice').isVisible(),'AJAX can replace hidden FFL anchor with regular-item selector');
  check(await page.locator('[name=ffla_delivery_mode]').count()===2,'regular-item choices restored after cart transition');
  activeScope='ffl';
  await page.evaluate(()=>jQuery(document.body).trigger('update_checkout'));
- await page.waitForFunction(()=>window.completedCalls===8);
+ await page.waitForFunction(()=>window.completedCalls===9);
  check(await page.locator('#ffla-delivery-choice').isHidden(),'AJAX hides regular selector when cart becomes FFL-only');
  }
  await page.close();
@@ -205,4 +229,3 @@ let checks=0;function check(v,msg){assert.ok(v,msg);checks++;}
  console.log(checks+' Pickup & Shipping browser checks passed.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
-

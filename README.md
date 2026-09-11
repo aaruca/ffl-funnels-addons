@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.47.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.47.1-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -64,7 +64,7 @@ US sales tax resolution for WooCommerce using live USGeocoder API lookups (JSON)
 *   **WooCommerce runtime taxes:** Applies resolved taxes directly in cart and checkout.
 *   **State controls:** Limit the resolver to only the states your store uses, and purge local datasets when a state is removed from selection.
 *   **Admin tooling:** Includes Quote Lookup, Coverage Matrix, Datasets, Audit Log, and Settings screens.
-*   **Sales Tax Reports:** A dedicated **WooCommerce → Sales Tax Reports** workspace provides filing totals, state/county/jurisdiction breakdowns, taxable shipping, over/under collection, shipping-address order audits, refunds, line-item detail, and accountant-ready CSV/XLSX/PDF packages.
+*   **Sales Tax Reports:** A dedicated **WooCommerce → Sales Tax Reports** workspace provides filing totals, one consolidated row per filing jurisdiction and currency, gross and taxable sales including shipping, collected/expected tax, over/under collection, shipping-address order audits, refunds, line-item detail, and accountant-ready CSV/XLSX/PDF packages. Georgia reports validate county and special-jurisdiction identities against the official filing-code registry and use code 000 for the statewide row.
 *   **Reconciliation and monitoring:** Compares report totals with WooCommerce Analytics, surfaces data-quality checks, and provides an advisory multi-state economic-nexus monitor with replaceable threshold data.
 *   **Delivery and multi-site tools:** Schedules monthly email packages, keeps non-PII generation/delivery history, combines reports from multiple stores, and maps combined jurisdiction totals into a state/accountant CSV template.
 *   **Cleanup tool:** Includes a one-click button to delete old legacy local tax database rows after migrating to USGeocoder.

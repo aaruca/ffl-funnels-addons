@@ -339,6 +339,7 @@ class Tax_Report_Exporter
             (array) ($report['totals_by_currency'] ?? [])
         );
         $html .= '<h2>State summary</h2>' . self::html_table(Tax_Report_Service::get_columns('state-summary'), (array) ($report['summaries']['states'] ?? []));
+        $html .= '<h2>Jurisdictions with activity</h2>' . self::html_table(Tax_Report_Service::get_columns('jurisdiction-summary'), (array) ($report['summaries']['jurisdictions'] ?? []));
         $html .= '<h2>Exception summary</h2>' . self::html_table(['severity', 'code', 'count', 'message'], (array) ($report['summaries']['exceptions'] ?? []));
         $html .= '<h2>Scope and limitations</h2><div class="note"><ul>';
         foreach ((array) ($manifest['limitations'] ?? []) as $limitation) {
@@ -428,14 +429,15 @@ class Tax_Report_Exporter
 
         $lines[] = '';
         $lines[] = 'JURISDICTIONS WITH ACTIVITY';
-        $lines[] = 'State Type     Jurisdiction                 Rate   Taxable incl. shipping  Net collected  Tax due  Difference  Status';
+        $lines[] = 'State Code Jurisdiction             Orders  Gross incl. shipping  Taxable incl. shipping  Tax collected  Tax due  Difference  Status';
         foreach ((array) ($report['summaries']['jurisdictions'] ?? []) as $row) {
             $lines[] = sprintf(
-                '%-5s %-8.8s %-28.28s %6s%% %22s %14s %9s %11s  %s',
+                '%-5s %-4s %-24.24s %6s %21s %22s %13s %9s %11s  %s',
                 $row['state'] ?? '',
-                $row['jurisdiction_type'] ?? '',
+                $row['jurisdiction_code'] ?? '',
                 $row['jurisdiction_name'] ?? '',
-                $row['rate_percent'] ?? '0',
+                $row['orders'] ?? 0,
+                $row['gross_sales'] ?? '0.00',
                 $row['taxable_sales'] ?? '0.00',
                 $row['net_tax'] ?? '0.00',
                 $row['calculated_tax'] ?? '0.00',
@@ -526,6 +528,7 @@ class Tax_Report_Exporter
                 ? "Advanced mode includes order, line, tax, refund, product, payment and exception audit datasets. Filing mode intentionally omits these detailed datasets except for the optional PII-controlled order audit.\r\n\r\n"
                 : "Filing mode intentionally keeps the package concise. Choose advanced detail when order, line, tax, refund, product, payment and exception audit datasets are required.\r\n\r\n")
             . "The taxable_sales column is total taxable sales including every taxed shipping line. It is the single filing-base amount; shipping must not be added again.\r\n\r\n"
+            . "The jurisdiction summary consolidates all orders into one row per official filing code and currency. Georgia code 000 identifies the statewide filing total; county and special-jurisdiction codes follow the official Georgia rate chart.\r\n\r\n"
             . "Report ID: " . ($manifest['report_id'] ?? '') . "\r\n"
             . "Generated UTC: " . ($manifest['generated_at_utc'] ?? '') . "\r\n";
     }

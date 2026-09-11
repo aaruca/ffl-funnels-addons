@@ -319,7 +319,7 @@ class Pickup_Shipping_Checkout
         if (!self::active()) { return; }
         $base = FFLA_URL . 'modules/pickup-shipping/assets/';
         wp_enqueue_style('ffla-delivery',$base . 'delivery.css',[],FFLA_VERSION . '.4');
-        wp_enqueue_script('ffla-delivery',$base . 'delivery.js',['jquery','wc-checkout'],FFLA_VERSION . '.6',true);
+        wp_enqueue_script('ffla-delivery',$base . 'delivery.js',['jquery','wc-checkout'],FFLA_VERSION . '.7',true);
         wp_localize_script('ffla-delivery','fflaDelivery',[
             'updating'=>__('Updating delivery options…','ffl-funnels-addons'),
             'error'=>__('Delivery could not be updated. Please try again before placing your order.','ffl-funnels-addons'),
@@ -335,4 +335,3 @@ class Pickup_Shipping_Checkout
         if ($message) { echo '<div class="notice notice-warning"><p>' . esc_html($message) . ' <a href="' . esc_url(admin_url('admin.php?page=ffla-pickup-shipping')) . '">' . esc_html__('Settings','ffl-funnels-addons') . '</a></p></div>'; }
     }
 }
-

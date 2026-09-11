@@ -873,7 +873,12 @@ class Tax_Reports_Admin
         } elseif ($active_tab === 'states') {
             self::render_dataset_card(__('State filing summary', 'ffl-funnels-addons'), 'state-summary', $states);
         } elseif ($active_tab === 'jurisdictions') {
-            self::render_dataset_card(__('Jurisdictions with activity', 'ffl-funnels-addons'), 'jurisdiction-summary', $jurisdictions);
+            self::render_dataset_card(
+                __('Jurisdictions with activity', 'ffl-funnels-addons'),
+                'jurisdiction-summary',
+                $jurisdictions,
+                __('Each filing code appears once per currency. Every order assigned to that jurisdiction is included in its totals; taxed shipping is already included in taxable sales.', 'ffl-funnels-addons')
+            );
         } elseif ($active_tab === 'orders') {
             self::render_orders_panel($report);
         } elseif ($active_tab === 'reconciliation') {
@@ -938,7 +943,14 @@ class Tax_Reports_Admin
     {
         $labels = [
             'gross_sales' => __('Gross sales (net of refunds)', 'ffl-funnels-addons'),
+            'filing_code' => __('State filing code', 'ffl-funnels-addons'),
+            'jurisdiction_code' => __('Jurisdiction code', 'ffl-funnels-addons'),
+            'jurisdiction_type' => __('Jurisdiction type', 'ffl-funnels-addons'),
+            'jurisdiction_name' => __('Jurisdiction', 'ffl-funnels-addons'),
+            'rate_percent' => __('Effective tax rate (%)', 'ffl-funnels-addons'),
             'taxable_sales' => __('Total taxable sales (including shipping)', 'ffl-funnels-addons'),
+            'taxable_shipping' => __('Taxed shipping included', 'ffl-funnels-addons'),
+            'tax_collected' => __('Tax collected total', 'ffl-funnels-addons'),
             'non_taxable_sales' => __('Exempt / non-taxable sales', 'ffl-funnels-addons'),
             'needs_review_sales' => __('Sales needing review', 'ffl-funnels-addons'),
             'net_tax' => __('Net tax collected', 'ffl-funnels-addons'),

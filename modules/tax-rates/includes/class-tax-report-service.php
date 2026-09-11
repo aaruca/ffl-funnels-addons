@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
 
 class Tax_Report_Service
 {
-    const SCHEMA_VERSION = '2.4.0';
+    const SCHEMA_VERSION = '2.5.0';
     const HISTORY_OPTION = 'ffla_tax_report_runs';
 
     /** @var int */
@@ -165,6 +165,13 @@ class Tax_Report_Service
                 'filters'          => $filters,
                 'source_of_truth'  => 'WooCommerce final order, line-item, tax-line, refund, destination, and stored tax-quote values',
                 'calculation_note' => 'Collected tax is preserved as stored. Calculated tax is taxable sales multiplied by the effective rate stored with each order.',
+                'jurisdiction_registries' => class_exists('Tax_Report_Jurisdiction_Registry') ? [
+                    'GA' => [
+                        'source' => Tax_Report_Jurisdiction_Registry::GEORGIA_SOURCE,
+                        'effective_from' => Tax_Report_Jurisdiction_Registry::GEORGIA_EFFECTIVE_FROM,
+                        'purpose' => 'Official filing-code identity and consolidation; historical order rates remain the calculation source.',
+                    ],
+                ] : [],
                 'plugin_version'   => defined('FFLA_VERSION') ? FFLA_VERSION : '',
                 'woocommerce_version' => defined('WC_VERSION') ? WC_VERSION : '',
                 'wordpress_version'   => get_bloginfo('version'),
@@ -482,12 +489,14 @@ class Tax_Report_Service
                 'tax_collected', 'tax_refunded', 'net_tax', 'calculated_tax', 'over_under',
             ],
             'state-summary' => [
-                'state', 'currency', 'orders', 'taxable_sales', 'non_taxable_sales', 'needs_review_sales',
+                'state', 'filing_code', 'currency', 'orders', 'gross_sales', 'taxable_sales', 'taxable_shipping',
+                'non_taxable_sales', 'needs_review_sales',
                 'tax_collected', 'tax_refunded', 'net_tax', 'calculated_tax', 'over_under', 'filing_status',
             ],
             'jurisdiction-summary' => [
-                'state', 'jurisdiction_type', 'jurisdiction_name', 'rate_percent',
-                'currency', 'orders', 'taxable_sales', 'tax_collected', 'tax_refunded', 'net_tax',
+                'state', 'jurisdiction_code', 'jurisdiction_type', 'jurisdiction_name', 'rate_percent',
+                'currency', 'orders', 'gross_sales', 'taxable_sales', 'taxable_shipping',
+                'tax_collected', 'tax_refunded', 'net_tax',
                 'calculated_tax', 'over_under', 'filing_status',
             ],
             'order-audit' => [
@@ -1587,6 +1596,7 @@ class Tax_Report_Service
     {
         $collected = $this->minor($order['tax_collected']);
         $refunded = $this->minor($order['tax_refunded']);
+        $gross_sales = $this->calculate_reportable_sales($line_rows);
         $taxable_sales = $this->calculate_taxable_sales($line_rows);
         $taxable_shipping = $this->calculate_taxable_shipping($line_rows);
         $breakdown = isset($quote['breakdown']) && is_array($quote['breakdown']) ? $quote['breakdown'] : [];
@@ -1651,7 +1661,8 @@ class Tax_Report_Service
                 $calculated_tax,
                 (string) $jurisdiction['code'],
                 $filing_status,
-                $taxable_shipping
+                $taxable_shipping,
+                $gross_sales
             );
             return;
         }
@@ -1660,7 +1671,6 @@ class Tax_Report_Service
             $rate_percent = 0;
             $calculated_tax = 0;
             $all_rates_mapped = !$this->has_unallocated_refund_base($line_rows) || count($tax_rows) === 1;
-            $labels = [];
             $source = '';
             foreach ($tax_rows as $tax) {
                 $rate_percent += (float) ($tax['rate_percent'] ?? 0);
@@ -1670,10 +1680,6 @@ class Tax_Report_Service
                     $all_rates_mapped = false;
                 }
                 $calculated_tax += (int) round($rate_taxable_sales * ((float) ($tax['rate_percent'] ?? 0) / 100));
-                $label = trim((string) ($tax['label'] ?: $tax['rate_code']));
-                if ($label !== '') {
-                    $labels[$label] = true;
-                }
                 if ($source === '') {
                     $source = (string) ($tax['tax_quote_source'] ?? '');
                 }
@@ -1684,12 +1690,18 @@ class Tax_Report_Service
             if ($taxable_sales !== 0) {
                 $rate_percent = ($calculated_tax / $taxable_sales) * 100;
             }
+            $jurisdiction = $this->get_filing_jurisdiction($location, array_map(function ($tax) {
+                return [
+                    'type' => 'woocommerce_tax_line',
+                    'name' => trim((string) (($tax['label'] ?? '') ?: ($tax['rate_code'] ?? ''))),
+                ];
+            }, $tax_rows));
             $this->add_jurisdiction_bucket(
                 $totals,
                 $location,
                 $currency,
-                'woocommerce_tax_line',
-                !empty($labels) ? implode(' / ', array_keys($labels)) : 'Unassigned tax jurisdiction',
+                (string) $jurisdiction['type'],
+                (string) $jurisdiction['name'],
                 $rate_percent,
                 $source,
                 $collected,
@@ -1698,11 +1710,28 @@ class Tax_Report_Service
                 (int) $order['order_id'],
                 $taxable_sales,
                 $calculated_tax,
-                '',
-                'needs_review',
-                $taxable_shipping
+                (string) $jurisdiction['code'],
+                $all_rates_mapped ? (string) $jurisdiction['status'] : 'needs_review',
+                $taxable_shipping,
+                $gross_sales
             );
         }
+    }
+
+    /**
+     * Net sales before tax for filing context, including product, fee and
+     * shipping lines and reducing the total by in-period refunds.
+     */
+    private function calculate_reportable_sales(array $lines): int
+    {
+        $sales = 0;
+        foreach ($lines as $line) {
+            if (!in_array($line['item_type'] ?? '', ['product', 'shipping', 'fee'], true)) {
+                continue;
+            }
+            $sales += $this->minor($line['total_ex_tax'] ?? 0) - $this->minor($line['refunded_amount'] ?? 0);
+        }
+        return $sales;
     }
 
     private function calculate_taxable_sales(array $lines): int
@@ -1791,6 +1820,16 @@ class Tax_Report_Service
 
     private function get_filing_jurisdiction(array $location, array $breakdown): array
     {
+        if (class_exists('Tax_Report_Jurisdiction_Registry')) {
+            $official = Tax_Report_Jurisdiction_Registry::resolve($location, $breakdown);
+            if (is_array($official)) {
+                $filtered = apply_filters('ffla_tax_report_filing_jurisdiction', $official, $location, $breakdown);
+                return is_array($filtered)
+                    ? array_merge($official, array_intersect_key($filtered, $official))
+                    : $official;
+            }
+        }
+
         $local = [];
         $state = [];
         foreach ($breakdown as $item) {
@@ -1823,7 +1862,14 @@ class Tax_Report_Service
 
         $priority = ['county' => 10, 'city' => 20, 'special' => 30, 'jurisdiction' => 40, 'state' => 50];
         usort($components, function ($a, $b) use ($priority) {
-            return ($priority[$a['type']] ?? 99) <=> ($priority[$b['type']] ?? 99);
+            $type_order = ($priority[$a['type']] ?? 99) <=> ($priority[$b['type']] ?? 99);
+            if ($type_order !== 0) {
+                return $type_order;
+            }
+            return strcmp(
+                strtolower((string) ($a['name'] ?? '')) . '|' . strtolower((string) ($a['code'] ?? '')),
+                strtolower((string) ($b['name'] ?? '')) . '|' . strtolower((string) ($b['code'] ?? ''))
+            );
         });
 
         $names = array_column($components, 'name');
@@ -1858,13 +1904,19 @@ class Tax_Report_Service
         int $calculated_tax = 0,
         string $jurisdiction_code = '',
         string $filing_status = 'ready',
-        int $taxable_shipping = 0
+        int $taxable_shipping = 0,
+        int $gross_sales = 0
     ): void
     {
         $country = $location['country'] !== '' ? $location['country'] : '(none)';
         $state = $location['state'] !== '' ? $location['state'] : '(none)';
         $rate_formatted = number_format($rate, 4, '.', '');
-        $key = implode('|', [$country, $state, $jurisdiction_code, $type, $name, $rate_formatted, $source, $currency, $method]);
+        $identity = $jurisdiction_code !== ''
+            ? 'code:' . strtoupper($jurisdiction_code)
+            : 'name:' . strtolower(trim($type)) . ':' . strtolower(trim(preg_replace('/\s+/', ' ', $name)));
+        // Currency remains part of the key because unlike rates and resolver
+        // metadata, monetary values from different currencies cannot be added.
+        $key = implode('|', [$country, $state, $currency, $identity]);
         if (!isset($totals[$key])) {
             $totals[$key] = [
                 'country' => $country,
@@ -1876,6 +1928,10 @@ class Tax_Report_Service
                 'source' => $source,
                 'currency' => $currency,
                 'order_ids' => [],
+                '_rates' => [],
+                '_sources' => [],
+                '_methods' => [],
+                'gross_sales' => 0,
                 'tax_collected' => 0,
                 'tax_refunded' => 0,
                 'net_tax' => 0,
@@ -1886,7 +1942,17 @@ class Tax_Report_Service
                 'filing_status' => $filing_status,
             ];
         }
+        if ($rate_formatted !== '0.0000') {
+            $totals[$key]['_rates'][$rate_formatted] = true;
+        }
+        if ($source !== '') {
+            $totals[$key]['_sources'][$source] = true;
+        }
+        if ($method !== '') {
+            $totals[$key]['_methods'][$method] = true;
+        }
         $totals[$key]['order_ids'][$order_id] = true;
+        $totals[$key]['gross_sales'] += $gross_sales;
         $totals[$key]['tax_collected'] += $collected;
         $totals[$key]['tax_refunded'] += $refunded;
         $totals[$key]['net_tax'] += $collected - $refunded;
@@ -2074,7 +2140,10 @@ class Tax_Report_Service
                     $quote,
                     $tax,
                     (int) $refund_sales['taxable_sales'],
-                    (int) ($refund_sales['taxable_shipping'] ?? 0)
+                    (int) ($refund_sales['taxable_shipping'] ?? 0),
+                    (int) ($refund_sales['taxable_sales'] ?? 0)
+                        + (int) ($refund_sales['non_taxable_sales'] ?? 0)
+                        + (int) ($refund_sales['needs_review_sales'] ?? 0)
                 );
                 $this->add_refund_adjustment_to_products($product_totals, $currency, $order, $refund);
 
@@ -2166,7 +2235,7 @@ class Tax_Report_Service
         $totals[$key]['net_tax'] -= $tax;
     }
 
-    private function add_refund_adjustment_to_jurisdiction(array &$totals, string $currency, array $location, $order, array $quote, int $tax, int $taxable_sales, int $taxable_shipping): void
+    private function add_refund_adjustment_to_jurisdiction(array &$totals, string $currency, array $location, $order, array $quote, int $tax, int $taxable_sales, int $taxable_shipping, int $gross_sales): void
     {
         if ($tax <= 0) {
             return;
@@ -2196,17 +2265,28 @@ class Tax_Report_Service
                 -$tax,
                 (string) $jurisdiction['code'],
                 'needs_review',
-                -$taxable_shipping
+                -$taxable_shipping,
+                -$gross_sales
             );
             return;
         }
 
+        $components = [];
+        if (is_object($order) && method_exists($order, 'get_items')) {
+            foreach ($order->get_items('tax') as $tax_item) {
+                $components[] = [
+                    'type' => 'woocommerce_tax_line',
+                    'name' => method_exists($tax_item, 'get_label') ? (string) $tax_item->get_label() : '',
+                ];
+            }
+        }
+        $jurisdiction = $this->get_filing_jurisdiction($location, $components);
         $this->add_jurisdiction_bucket(
             $totals,
             $location,
             $currency,
-            'refund',
-            'Unallocated refund tax',
+            (string) $jurisdiction['type'],
+            (string) $jurisdiction['name'],
             0,
             '',
             0,
@@ -2215,9 +2295,10 @@ class Tax_Report_Service
             (int) $order->get_id(),
             -$taxable_sales,
             -$tax,
-            '',
+            (string) $jurisdiction['code'],
             'needs_review',
-            -$taxable_shipping
+            -$taxable_shipping,
+            -$gross_sales
         );
     }
 
@@ -2300,6 +2381,12 @@ class Tax_Report_Service
     {
         $rows = [];
         foreach ($totals as $row) {
+            $row['filing_code'] = class_exists('Tax_Report_Jurisdiction_Registry')
+                ? Tax_Report_Jurisdiction_Registry::state_filing_code(
+                    (string) ($row['country'] ?? ''),
+                    (string) ($row['state'] ?? '')
+                )
+                : '';
             $row['gross_sales'] = (int) ($row['taxable_sales'] ?? 0)
                 + (int) ($row['non_taxable_sales'] ?? 0)
                 + (int) ($row['needs_review_sales'] ?? 0);
@@ -2320,17 +2407,26 @@ class Tax_Report_Service
         foreach ($totals as $row) {
             $row['orders'] = count($row['order_ids']);
             unset($row['order_ids']);
+            $row['rate_percent'] = (int) $row['taxable_sales'] !== 0
+                ? number_format(((int) $row['calculated_tax'] / (int) $row['taxable_sales']) * 100, 4, '.', '')
+                : (string) ($row['rate_percent'] ?? '0.0000');
+            $row['source'] = implode(', ', array_keys((array) ($row['_sources'] ?? [])));
+            $row['allocation_method'] = implode(', ', array_keys((array) ($row['_methods'] ?? [])));
+            unset($row['_rates'], $row['_sources'], $row['_methods']);
             $row['over_under'] = (int) $row['net_tax'] - (int) $row['calculated_tax'];
             $row['filing_status'] = $row['filing_status'] === 'needs_review'
                 ? __('Needs review', 'ffl-funnels-addons')
                 : __('Ready', 'ffl-funnels-addons');
-            foreach (['taxable_sales', 'taxable_shipping', 'tax_collected', 'tax_refunded', 'net_tax', 'calculated_tax', 'over_under'] as $field) {
+            foreach (['gross_sales', 'taxable_sales', 'taxable_shipping', 'tax_collected', 'tax_refunded', 'net_tax', 'calculated_tax', 'over_under'] as $field) {
                 $row[$field] = $this->decimal($row[$field]);
             }
             $rows[] = $row;
         }
         usort($rows, function ($a, $b) {
-            return strcmp($a['country'] . $a['state'] . $a['jurisdiction_type'] . $a['jurisdiction_name'], $b['country'] . $b['state'] . $b['jurisdiction_type'] . $b['jurisdiction_name']);
+            return strcmp(
+                $a['country'] . $a['state'] . $a['jurisdiction_code'] . $a['jurisdiction_name'],
+                $b['country'] . $b['state'] . $b['jurisdiction_code'] . $b['jurisdiction_name']
+            );
         });
         return $rows;
     }
