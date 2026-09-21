@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' )) {
     exit;
 }
 
+require_once __DIR__ . '/includes/class-customer-operations-settings.php';
+require_once __DIR__ . '/includes/class-customer-operations.php';
+FFLA_Customer_Operations::lifecycle();
+
 class Customer_Notes_Module extends FFLA_Module {
 
     public function get_id(): string {
@@ -16,11 +20,11 @@ class Customer_Notes_Module extends FFLA_Module {
     }
 
     public function get_name(): string {
-        return __( 'Customer Notes', 'ffl-funnels-addons' );
+        return __( 'Customer & Order Management', 'ffl-funnels-addons' );
     }
 
     public function get_description(): string {
-        return __( 'Add specific notes for each customer that appear on their orders and profile.', 'ffl-funnels-addons' );
+        return __( 'Customer notes, optional pickup tracking, item serials, private follow-up cases and buyer updates.', 'ffl-funnels-addons' );
     }
 
     public function get_icon_svg(): string {
@@ -28,7 +32,14 @@ class Customer_Notes_Module extends FFLA_Module {
     }
 
     public function boot(): void {
-        if (is_admin()) {
+        foreach (['messages', 'documents', 'customer', 'admin'] as $component) {
+            require_once __DIR__ . '/includes/class-customer-operations-' . $component . '.php';
+        }
+        FFLA_Customer_Operations_Messages::boot();
+        FFLA_Customer_Operations_Documents::boot();
+        FFLA_Customer_Operations_Customer::boot();
+        if (is_admin()) { FFLA_Customer_Operations_Admin::boot(); }
+        if (is_admin() && FFLA_Customer_Operations_Settings::enabled('notes')) {
             // Order meta boxes.
             add_action( 'add_meta_boxes', array( $this, 'add_order_meta_box' ), 10, 2 );
 
@@ -52,12 +63,11 @@ class Customer_Notes_Module extends FFLA_Module {
     }
 
     public function get_admin_pages(): array {
-        // No custom settings page required.
-        return array();
+        return [['slug'=>'ffla-customer-operations', 'title'=>__('Customer & Order Management', 'ffl-funnels-addons')]];
     }
 
     public function render_admin_page( string $page_slug ): void {
-        // Not used.
+        if ($page_slug === 'ffla-customer-operations') { FFLA_Customer_Operations_Admin::settings(); }
     }
 
     /**
@@ -161,6 +171,7 @@ class Customer_Notes_Module extends FFLA_Module {
     public function render_order_meta_box( $post_or_order_object ): void {
         // In HPOS, this receives a WC_Order object. In legacy, it receives a WP_Post object.
         $order_id = is_a( $post_or_order_object, 'WC_Order' ) ? $post_or_order_object->get_id() : $post_or_order_object->ID;
+        if (!FFLA_Customer_Operations::staff(wc_get_order($order_id))) { return; }
         $data     = $this->get_customer_note_data( $order_id );
         $note     = $data['note'];
         $type     = $data['type'];
@@ -218,7 +229,7 @@ class Customer_Notes_Module extends FFLA_Module {
         }
 
         // Check capabilities.
-        if ( ! current_user_can( 'manage_woocommerce' ) ) {
+        if ( ! FFLA_Customer_Operations::staff(wc_get_order($post_id)) ) {
             return;
         }
 

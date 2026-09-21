@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.47.5-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.47.6-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -100,11 +100,16 @@ Find and safely remove media that nothing references, plus broken, orphaned, and
 *   **Data:** Uses two custom tables (`ffla_mclean_scan`, `ffla_mclean_refs`). Uninstalling drops them but **keeps** the trash folder on disk, since it holds real files you could still restore.
 *   **Always back up** your database and uploads before deleting media in bulk.
 
-### 10. Customer Notes
-Per-customer internal notes for staff (contributed by @adeelwebify).
+### 10. Customer & Order Management
+Extends the existing Customer Notes module (original notes contributed by @adeelwebify). The module ID and existing notes remain unchanged; all twenty new feature switches start **off**.
 *   **Order screen:** a "Customer Note" box on Edit Order (HPOS and legacy), colour-coded by note type (General, VIP, Fraud/Warning, High Returns, Requires Support).
 *   **Profile sync:** the same note is editable from the WordPress user profile; guest notes are keyed to the billing email and follow future orders.
 *   **Access:** requires `manage_woocommerce`; customers never see their own notes.
+*   **Pickup operations:** validated Ready for Pickup status, optional preparation checklist, partial collection and staff-confirmed collection. Does not capture payments or bypass the native FFL checkout.
+*   **Serial numbers:** per-firearm order-item serials and optional manufacturer/model/caliber snapshots, with separate invoice and packing-slip output switches for WP Overnight's PDF Invoices & Packing Slips for WooCommerce.
+*   **Follow-up cases:** private issue tracking with reason, priority, assigned employee, deadline, resolution/reopening, order-list filters and optional private evidence files. Cases do not change payment or fulfillment status.
+*   **Customer communication:** optional owner-only My Account progress, explicitly published updates, help requests, existing tracking/document links, configurable ready emails and bounded reminders. Internal notes remain private.
+*   **Setup and limits:** six settings sections with individual descriptions. Read the [full setup and testing guide](modules/customer-notes/README.md) before enabling features. Validate actual PDF templates, SMTP, cron and fulfillment integrations on staging. Tax Reports and Nexus are unchanged.
 
 ### 11. MonsterInsights Compatibility
 Optional GA4 compatibility for **MonsterInsights Pro + the eCommerce Addon** on stores using custom Bricks product templates and the Merchant AJAX side-cart.

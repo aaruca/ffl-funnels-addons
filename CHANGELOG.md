@@ -2,6 +2,21 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.47.6] - 2026-09-21
+
+### Added
+- Customer & Order Management inside the existing Customer Notes module, with six documented settings sections and twenty new switches disabled by default. Existing private customer notes and their storage remain unchanged.
+- Validated Ready for Pickup status and bulk action, optional preparation checklist, partial collection, and staff-confirmed completion. Payment, Split Payment and native fulfillment safeguards remain in place.
+- Per-firearm serial numbers and optional item detail snapshots, with independent invoice and packing-slip integration switches for PDF Invoices & Packing Slips for WooCommerce by WP Overnight.
+- Private customer-service follow-up cases with reason, priority, assignment, deadlines, resolution/reopening, order-list filters and optional access-controlled evidence files.
+- Optional signed-in owner progress, explicit public updates, help requests, existing tracking/document links, configurable email templates and bounded pickup/staff reminders.
+- Permission, nonce, concurrency, input-validation and notification-deduplication safeguards; 151 local domain, endpoint and browser-fixture checks. Domain and endpoint checks now gate release publication.
+
+### Deployment notes
+- Install the ZIP, then enable only the features the store needs under Customer & Order Management. Updating alone does not enable the new features.
+- Full setup, limitations and verification steps are documented in `modules/customer-notes/README.md`. Live end-to-end validation with each site's PDF template, SMTP, cron, WooCommerce storage mode and fulfillment plugins remains required before production activation.
+- Tax Reports, Nexus, checkout shipping rules and payment processing are not changed by this release.
+
 ## [1.47.5] - 2026-09-21
 
 ### Added

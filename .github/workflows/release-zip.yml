@@ -85,6 +85,14 @@ jobs:
           php tests/smoke/tax-report-jurisdiction-smoke.php
           php tests/smoke/tax-split-payment-smoke.php
 
+      - name: Validate customer and order management before publishing
+        if: ${{ steps.tag.outputs.skip != 'true' }}
+        run: |
+          set -e
+          find modules/customer-notes -name '*.php' -print0 | xargs -0 -n1 php -l
+          php tests/smoke/customer-operations-smoke.php
+          node tests/smoke/customer-operations-endpoints-smoke.js
+
       # This ZIP is what the built-in updater installs on every store, so it must
       # contain only runtime files. Everything below is developer tooling.
       - name: Build plugin ZIP
@@ -148,11 +156,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.tag.outputs.value }}
         run: |
+          awk -v version="${TAG#v}" 'index($0, "## [" version "]") == 1 { found=1; next } found && /^## / { exit } found { print }' CHANGELOG.md > /tmp/ffla-version-notes.md
+          test -s /tmp/ffla-version-notes.md
           gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "$TAG" \
-            --generate-notes
+            --notes-file /tmp/ffla-version-notes.md
 
       - name: Point existing release tag at rebuilt commit
         if: ${{ github.event_name == 'push' && steps.tag.outputs.existing == 'true' && steps.tag.outputs.skip != 'true' }}
