@@ -2,6 +2,14 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.47.5] - 2026-09-21
+
+### Added
+- Sales Tax Reports / Nexus: read-only Split Payment (FPPC) receipt-to-original-sale integration. Count one checkout at its captured-deposit date, retain each installment/additional/early-payoff collection and refund in its own period, and avoid repeating physical product quantities or COGS.
+- Grouped Split Payment sales table and CSV/XLSX dataset with original sale ID, receipt references, payment count, collected/refunded amounts and review status. Existing detail/audit tables remain available.
+- Review safeguards for missing relationships/dates, mismatched currencies/destinations, duplicate capture references and conflicting payment statuses. Authorizations are not treated as captures. Analytics reconciliation explicitly flags the different date/count basis.
+- Isolated regression fixtures for tax reporting, export datasets and nexus, plus CI execution. No payment-engine or checkout behavior changes.
+
 ## [1.47.4] - 2026-09-11
 
 ### Changed

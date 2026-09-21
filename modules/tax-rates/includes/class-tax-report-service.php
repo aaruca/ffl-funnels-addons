@@ -12,9 +12,11 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+require_once __DIR__ . '/class-tax-report-sale-identity.php';
+
 class Tax_Report_Service
 {
-    const SCHEMA_VERSION = '2.6.0';
+    const SCHEMA_VERSION = '2.7.0';
     const HISTORY_OPTION = 'ffla_tax_report_runs';
 
     /** @var int */
@@ -22,6 +24,7 @@ class Tax_Report_Service
 
     /** @var int */
     private $scale;
+    private $counted_sales = [];
 
     public function __construct()
     {
@@ -142,6 +145,7 @@ class Tax_Report_Service
         }
 
         $filters = self::normalize_filters($filters);
+        $this->counted_sales = [];
         $summary_only = !empty($options['summary_only']);
         $collect_advanced = !$summary_only && $filters['report_detail'] === 'advanced';
         $collect_order_rows = !$summary_only && ($collect_advanced || $filters['include_pii']);
@@ -165,6 +169,7 @@ class Tax_Report_Service
                 'filters'          => $filters,
                 'source_of_truth'  => 'WooCommerce final order, line-item, tax-line, refund, destination, and stored tax-quote values',
                 'calculation_note' => 'Collected tax is preserved as stored. Calculated tax is taxable sales multiplied by the effective rate stored with each order.',
+                'split_payment_basis' => Tax_Report_Sale_Identity::policy(),
                 'jurisdiction_registries' => class_exists('Tax_Report_Jurisdiction_Registry') ? [
                     'GA' => [
                         'source' => Tax_Report_Jurisdiction_Registry::GEORGIA_SOURCE,
@@ -178,6 +183,7 @@ class Tax_Report_Service
             ],
             'stats' => [
                 'orders'                    => 0,
+                'receipt_orders'            => 0,
                 'refunds'                   => 0,
                 'order_lines'               => 0,
                 'tax_lines'                 => 0,
@@ -199,6 +205,7 @@ class Tax_Report_Service
             'tax_lines'           => [],
             'refunds'             => [],
             'exceptions'          => [],
+            'split_payment_sales' => [],
             'summaries'           => [
                 'filing_master' => [],
                 'filing_totals' => [],
@@ -223,25 +230,10 @@ class Tax_Report_Service
         $from = new DateTimeImmutable($filters['date_from'] . ' 00:00:00', $timezone);
         $to = new DateTimeImmutable($filters['date_to'] . ' 23:59:59', $timezone);
 
-        $page = 1;
-        $pages = 1;
-        do {
-            $result = wc_get_orders([
-                'type'         => 'shop_order',
-                'status'       => $filters['statuses'],
-                'date_created' => $from->getTimestamp() . '...' . $to->getTimestamp(),
-                'orderby'      => 'date',
-                'order'        => 'ASC',
-                'limit'        => 200,
-                'page'         => $page,
-                'paginate'     => true,
-                'return'       => 'objects',
-            ]);
-
-            $orders = is_object($result) && isset($result->orders) ? $result->orders : (is_array($result) ? $result : []);
-            $pages = is_object($result) && isset($result->max_num_pages) ? max(1, (int) $result->max_num_pages) : 1;
-
-            foreach ($orders as $order) {
+        $sale_adapter = new Tax_Report_Sale_Identity();
+        foreach ($sale_adapter->orders($filters['statuses'], $from->getTimestamp(), $to->getTimestamp(), 200, $max_orders) as $receipt) {
+                $order = $receipt['order'];
+                $identity = $receipt['identity'];
                 if (!is_a($order, 'WC_Order')) {
                     continue;
                 }
@@ -256,7 +248,7 @@ class Tax_Report_Service
                     $report['stats']['orders_excluded_negative']++;
                     continue;
                 }
-                if ($report['stats']['orders'] >= $max_orders) {
+                if ($report['stats']['receipt_orders'] >= $max_orders) {
                     throw new RuntimeException(__('The report reached its order safety cap. Narrow the date range and run it again.', 'ffl-funnels-addons'));
                 }
                 $period_refunds = $this->get_refunds_in_period($order, $from->getTimestamp(), $to->getTimestamp());
@@ -265,11 +257,29 @@ class Tax_Report_Service
                 }
                 $refund_map = $this->get_line_refund_map($order, $period_refunds);
                 $order_row = $this->build_order_row($order, $quote, $tax_location, $filters['include_pii'], $period_refunds);
+                $order_row['sale_id'] = $identity['sale_id'];
+                $order_row['sale_count_id'] = $sale_adapter->counts_in_period($identity, $from->getTimestamp(), $to->getTimestamp()) ? $identity['sale_id'] : 0;
+                $order_row['payment_plan_id'] = $identity['plan_id'];
+                $order_row['split_payment_status'] = $identity['managed'] ? ($identity['issues'] ? 'Needs review' : 'Linked') : '';
                 $line_rows = $this->build_line_rows($order, $refund_map);
+                foreach ($line_rows as &$line) {
+                    $line['sale_id'] = $identity['sale_id'];
+                    $line['sale_count_id'] = $order_row['sale_count_id'];
+                    // Receipt quantities remain in the audit. Only original sale lines represent physical units/COGS.
+                    $line['sale_quantity'] = $identity['managed'] && ((int) $order->get_id() !== $identity['parent_id'] || !$order_row['sale_count_id']) ? 0 : $line['quantity'];
+                    $line['sale_cogs_value'] = $identity['managed'] && ((int) $order->get_id() !== $identity['parent_id'] || !$order_row['sale_count_id']) ? '' : $line['cogs_value'];
+                }
+                unset($line);
                 $tax_rows = $this->build_tax_rows($order, $period_refunds);
                 $refund_rows = $this->build_refund_rows($order, $period_refunds);
                 $filing_line_rows = $this->append_unallocated_refund_lines($line_rows, $period_refunds, $order, $quote, $tax_rows);
                 $exceptions = $this->detect_exceptions($order, $order_row, $line_rows, $tax_rows, $refund_rows, $quote, $tax_location);
+                foreach ($identity['issues'] as $issue) {
+                    $exceptions[] = ['severity' => 'warning', 'code' => $issue, 'order_id' => $order_row['order_id'],
+                        'order_number' => $order_row['order_number'], 'date_created_local' => $order_row['date_created_local'],
+                        'country' => $tax_location['country'], 'state' => $tax_location['state'], 'currency' => $order_row['currency'],
+                        'amount' => $order_row['order_total'], 'message' => 'Split Payment needs review. Receipt money is retained; unresolved sale identity/date is excluded from sale counts.', 'evidence' => ''];
+                }
                 if ($collect_advanced) {
                     $projected_detail_rows = count($report['orders']) + count($report['order_lines'])
                         + count($report['tax_lines']) + count($report['refunds']) + count($report['exceptions'])
@@ -281,7 +291,9 @@ class Tax_Report_Service
 
                 $currency = $order_row['currency'] !== '' ? $order_row['currency'] : '(none)';
                 $currencies[$currency] = true;
-                $report['stats']['orders']++;
+                $report['stats']['receipt_orders']++;
+                $report['stats']['orders'] += $this->count_sale('all', $order_row);
+                if ($identity['managed']) { $this->aggregate_split_sale($report['split_payment_sales'], $order_row); }
                 $report['stats']['refunds'] += count($refund_rows);
                 $report['stats']['order_lines'] += count($filing_line_rows);
                 $report['stats']['tax_lines'] += count($tax_rows);
@@ -324,10 +336,7 @@ class Tax_Report_Service
                 $this->aggregate_products($product_totals, $currency, $line_rows);
                 $this->aggregate_payment($payment_totals, $currency, $order_row);
                 $this->aggregate_exceptions($exception_totals, $exceptions);
-            }
-
-            $page++;
-        } while ($page <= $pages);
+        }
 
         // Refunds belong to the period in which they were created, even when
         // the original sale was in an earlier period or its current status was
@@ -351,6 +360,7 @@ class Tax_Report_Service
         );
 
         $report['totals_by_currency'] = $this->finalize_currency_totals($currency_totals);
+        $report['split_payment_sales'] = $this->finalize_split_sales($report['split_payment_sales']);
         $report['summaries']['jurisdictions'] = $this->finalize_jurisdiction_totals($jurisdiction_totals);
         $report['summaries']['states'] = $this->enrich_state_filing_totals(
             $this->finalize_state_totals($state_totals),
@@ -374,11 +384,11 @@ class Tax_Report_Service
         $report['manifest']['currencies'] = array_keys($currencies);
         $report['manifest']['totals_by_currency'] = $report['totals_by_currency'];
         $report['manifest']['data_quality'] = [
-            'snapshot_coverage_percent' => $report['stats']['orders'] > 0
-                ? round(($report['stats']['orders_with_snapshot'] / $report['stats']['orders']) * 100, 2)
+            'snapshot_coverage_percent' => $report['stats']['receipt_orders'] > 0
+                ? round(($report['stats']['orders_with_snapshot'] / $report['stats']['receipt_orders']) * 100, 2)
                 : 0,
-            'stored_quote_coverage_percent' => $report['stats']['orders'] > 0
-                ? round(($report['stats']['orders_with_stored_quote'] / $report['stats']['orders']) * 100, 2)
+            'stored_quote_coverage_percent' => $report['stats']['receipt_orders'] > 0
+                ? round(($report['stats']['orders_with_stored_quote'] / $report['stats']['receipt_orders']) * 100, 2)
                 : 0,
             'exception_count' => $report['stats']['exceptions'],
         ];
@@ -454,7 +464,9 @@ class Tax_Report_Service
         ][$dataset] ?? $dataset;
 
         $columns = [
+            'split-payment-sales' => ['sale_id', 'currency', 'receipt_ids', 'payments', 'new_sales', 'order_total', 'refunds', 'net_collected', 'tax_collected', 'tax_refunded', 'net_tax', 'status'],
             'orders' => [
+                'sale_id', 'payment_plan_id', 'split_payment_status',
                 'order_id', 'order_number', 'date_created_local', 'date_created_utc', 'date_paid_local',
                 'status', 'created_via', 'currency', 'customer_id', 'payment_method', 'payment_method_title',
                 'transaction_id', 'tax_address_source', 'tax_country', 'tax_state', 'tax_city', 'tax_postcode',
@@ -470,6 +482,7 @@ class Tax_Report_Service
                 'tax_quote_effective_date', 'tax_quote_evidence_json', 'snapshot_hash', 'customer_note',
             ],
             'order_lines' => [
+                'sale_id', 'sale_quantity',
                 'order_id', 'order_number', 'date_created_local', 'status', 'currency', 'tax_state', 'item_id',
                 'item_type', 'product_id', 'variation_id', 'sku', 'name', 'categories', 'quantity', 'tax_class',
                 'subtotal', 'subtotal_tax', 'discount', 'total_ex_tax', 'tax', 'total_inc_tax', 'refunded_quantity',
@@ -511,6 +524,7 @@ class Tax_Report_Service
                 'calculated_tax', 'over_under', 'filing_status',
             ],
             'order-audit' => [
+                'sale_id', 'payment_plan_id', 'split_payment_status', 'date_paid_local',
                 'order_number', 'date_created_local', 'status', 'currency', 'tax_address_source', 'tax_state',
                 'tax_city', 'tax_postcode', 'shipping_address_formatted', 'net_product_sales', 'shipping', 'fees',
                 'tax_collected', 'tax_refunded', 'net_tax', 'order_total', 'customer_tax_exempt',
@@ -912,7 +926,7 @@ class Tax_Report_Service
 
     private function empty_line_fields(): array
     {
-        return array_fill_keys(array_slice(self::get_columns('order_lines'), 6), '');
+        return array_fill_keys(array_diff(self::get_columns('order_lines'), ['order_id', 'order_number', 'date_created_local', 'status', 'currency', 'tax_state']), '');
     }
 
     private function build_tax_rows($order, ?array $refunds = null): array
@@ -1544,7 +1558,7 @@ class Tax_Report_Service
             $totals[$currency] = $this->new_money_bucket();
             $totals[$currency]['currency'] = $currency;
         }
-        $totals[$currency]['orders']++;
+        $totals[$currency]['orders'] += $this->count_sale('currency:' . $currency, $order);
         $this->add_order_money($totals[$currency], $order);
     }
 
@@ -1565,7 +1579,7 @@ class Tax_Report_Service
             $totals[$key]['non_taxable_sales'] = 0;
             $totals[$key]['needs_review_sales'] = 0;
         }
-        $totals[$key]['orders']++;
+        $totals[$key]['orders'] += $this->count_sale('state:' . $key, $order);
         $this->add_order_money($totals[$key], $order);
 
         $known_non_taxable = $order['customer_tax_exempt'] === 'yes'
@@ -1627,6 +1641,7 @@ class Tax_Report_Service
             $effective_rate = $rate_total * 100;
             $allocation_method = 'combined_stored_quote';
             $filing_status = (string) $jurisdiction['status'];
+            if (($order['split_payment_status'] ?? '') === 'Needs review') { $filing_status = 'needs_review'; }
 
             if (!empty($tax_rows)) {
                 $calculated_tax = 0;
@@ -1667,7 +1682,7 @@ class Tax_Report_Service
                 $collected,
                 $refunded,
                 $allocation_method,
-                (int) $order['order_id'],
+                (int) ($order['sale_count_id'] ?? $order['order_id']),
                 $taxable_sales,
                 $calculated_tax,
                 (string) $jurisdiction['code'],
@@ -1718,11 +1733,11 @@ class Tax_Report_Service
                 $collected,
                 $refunded,
                 'combined_woocommerce_tax_lines',
-                (int) $order['order_id'],
+                (int) ($order['sale_count_id'] ?? $order['order_id']),
                 $taxable_sales,
                 $calculated_tax,
                 (string) $jurisdiction['code'],
-                $all_rates_mapped ? (string) $jurisdiction['status'] : 'needs_review',
+                $all_rates_mapped && ($order['split_payment_status'] ?? '') !== 'Needs review' ? (string) $jurisdiction['status'] : 'needs_review',
                 $taxable_shipping,
                 $gross_sales
             );
@@ -1962,7 +1977,7 @@ class Tax_Report_Service
         if ($method !== '') {
             $totals[$key]['_methods'][$method] = true;
         }
-        $totals[$key]['order_ids'][$order_id] = true;
+        if ($order_id > 0) { $totals[$key]['order_ids'][$order_id] = true; }
         $totals[$key]['gross_sales'] += $gross_sales;
         $totals[$key]['tax_collected'] += $collected;
         $totals[$key]['tax_refunded'] += $refunded;
@@ -2001,15 +2016,17 @@ class Tax_Report_Service
                     'has_cogs' => false,
                 ];
             }
-            $totals[$key]['order_ids'][(int) $line['order_id']] = true;
-            $totals[$key]['quantity'] += (float) $line['quantity'];
+            $sale_id = (int) ($line['sale_count_id'] ?? $line['order_id']);
+            if ($sale_id > 0) { $totals[$key]['order_ids'][$sale_id] = true; }
+            $totals[$key]['quantity'] += (float) ($line['sale_quantity'] ?? $line['quantity']);
             $totals[$key]['gross_sales'] += $this->minor($line['subtotal']);
             $totals[$key]['discounts'] += $this->minor($line['discount']);
             $totals[$key]['net_sales'] += $this->minor($line['total_ex_tax']);
             $totals[$key]['tax'] += $this->minor($line['tax']);
             $totals[$key]['refunded_amount'] += $this->minor($line['refunded_amount']);
-            if ($line['cogs_value'] !== '') {
-                $totals[$key]['cogs_value'] += $this->minor($line['cogs_value']);
+            $cogs = $line['sale_cogs_value'] ?? $line['cogs_value'];
+            if ($cogs !== '') {
+                $totals[$key]['cogs_value'] += $this->minor($cogs);
                 $totals[$key]['has_cogs'] = true;
             }
         }
@@ -2116,6 +2133,15 @@ class Tax_Report_Service
                 $currency = (string) ($refund_row['currency'] ?: '(none)');
                 $amount = $this->minor($refund_row['amount']);
                 $tax = $this->minor($refund_row['tax_refunded']);
+                $identity = (new Tax_Report_Sale_Identity())->describe($order);
+                if ($identity['managed']) {
+                    $this->aggregate_split_sale($report['split_payment_sales'], [
+                        'sale_id' => $identity['sale_id'], 'sale_count_id' => 0, 'order_id' => (int) $order->get_id(),
+                        'currency' => $currency, 'split_payment_status' => $identity['issues'] ? 'Needs review' : 'Linked',
+                        'order_total' => '0', 'refunds' => $this->decimal($amount), 'net_collected' => $this->decimal(-$amount),
+                        'tax_collected' => '0', 'tax_refunded' => $this->decimal($tax), 'net_tax' => $this->decimal(-$tax),
+                    ], true);
+                }
                 $refund_sales = $this->get_refund_sales_breakdown($order, $refund, $quote);
                 $source_lines = $this->build_line_rows($order, []);
                 $with_adjustment = $this->append_unallocated_refund_lines(
@@ -2248,6 +2274,8 @@ class Tax_Report_Service
 
     private function add_refund_adjustment_to_jurisdiction(array &$totals, string $currency, array $location, $order, array $quote, int $tax, int $taxable_sales, int $taxable_shipping, int $gross_sales): void
     {
+        $sale_identity = (new Tax_Report_Sale_Identity())->describe($order);
+        $count_id = $sale_identity['managed'] ? 0 : (int) $order->get_id();
         if ($tax <= 0) {
             return;
         }
@@ -2271,7 +2299,7 @@ class Tax_Report_Service
                 0,
                 $tax,
                 'refund_net_tax_fallback_unallocated_rate_base',
-                (int) $order->get_id(),
+                $count_id,
                 -$taxable_sales,
                 -$tax,
                 (string) $jurisdiction['code'],
@@ -2303,7 +2331,7 @@ class Tax_Report_Service
             0,
             $tax,
             'refund_total_only',
-            (int) $order->get_id(),
+            $count_id,
             -$taxable_sales,
             -$tax,
             (string) $jurisdiction['code'],
@@ -2346,6 +2374,43 @@ class Tax_Report_Service
             $totals[$key]['order_ids'][(int) $order->get_id()] = true;
             $totals[$key]['refunded_amount'] += $this->minor(abs((float) $item->get_total()));
         }
+    }
+
+    private function count_sale(string $bucket, array $order): int
+    {
+        $id = (int) ($order['sale_count_id'] ?? $order['order_id']);
+        if (!$id || isset($this->counted_sales[$bucket][$id])) { return 0; }
+        $this->counted_sales[$bucket][$id] = true;
+        return 1;
+    }
+
+    private function aggregate_split_sale(array &$rows, array $order, bool $refund_only = false): void
+    {
+        $key = $order['sale_id'] . '|' . $order['currency'];
+        if (!isset($rows[$key])) {
+            $rows[$key] = ['sale_id' => $order['sale_id'], 'currency' => $order['currency'], 'receipt_ids' => [],
+                'payments' => 0, 'new_sales' => 0, 'order_total' => 0, 'refunds' => 0, 'net_collected' => 0,
+                'tax_collected' => 0, 'tax_refunded' => 0, 'net_tax' => 0, 'status' => 'Linked'];
+        }
+        $rows[$key]['receipt_ids'][(int) $order['order_id']] = true;
+        if (!$refund_only) { $rows[$key]['payments']++; }
+        if (!empty($order['sale_count_id'])) { $rows[$key]['new_sales'] = 1; }
+        if (($order['split_payment_status'] ?? '') === 'Needs review') { $rows[$key]['status'] = 'Needs review'; }
+        foreach (['order_total', 'refunds', 'net_collected', 'tax_collected', 'tax_refunded', 'net_tax'] as $field) {
+            $rows[$key][$field] += $this->minor($order[$field]);
+        }
+    }
+
+    private function finalize_split_sales(array $rows): array
+    {
+        foreach ($rows as &$row) {
+            $row['receipt_ids'] = implode(', ', array_keys($row['receipt_ids']));
+            foreach (['order_total', 'refunds', 'net_collected', 'tax_collected', 'tax_refunded', 'net_tax'] as $field) {
+                $row[$field] = $this->decimal($row[$field]);
+            }
+        }
+        unset($row);
+        return array_values($rows);
     }
 
     private function new_money_bucket(): array
@@ -2652,7 +2717,7 @@ class Tax_Report_Service
     {
         $limitations = [
             'This report helps prepare sales tax returns from this WooCommerce site; it is not a filed return or legal determination.',
-            'Sales are selected by order-created date; refunds are selected by refund-created date so prior-period sales refunded in this period remain visible.',
+            'Ordinary sales use order-created date. Split Payment receipts use payment date; sale and unit counts use the original captured deposit date. Refunds use refund-created date, including prior-period sales.',
             'It does not include sales from external marketplaces, POS systems, or other websites unless those transactions were imported as WooCommerce orders.',
             'Tax registrations, filing frequencies, exemption certificates, and marketplace-facilitator evidence are not reliably available from standard WooCommerce order data.',
             'Jurisdiction totals use the combined stored FFLA rate and its destination components when available; WooCommerce-only tax lines are marked Needs review.',

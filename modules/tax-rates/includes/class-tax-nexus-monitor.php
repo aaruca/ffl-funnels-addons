@@ -15,9 +15,11 @@ if (class_exists('Tax_Nexus_Monitor', false)) {
     return;
 }
 
+require_once __DIR__ . '/class-tax-report-sale-identity.php';
+
 final class Tax_Nexus_Monitor
 {
-    public const SCHEMA_VERSION = '1.0.0';
+    public const SCHEMA_VERSION = '1.1.0';
     public const DEFAULT_PAGE_SIZE = 200;
     public const DEFAULT_MAX_RECORDS = 50000;
     public const ABSOLUTE_MAX_RECORDS = 200000;
@@ -76,6 +78,9 @@ final class Tax_Nexus_Monitor
             ? max($page_size, min(self::ABSOLUTE_MAX_RECORDS, (int) $options['max_records']))
             : self::DEFAULT_MAX_RECORDS;
         $records_seen = 0;
+        $sale_adapter = new Tax_Report_Sale_Identity();
+        $counted_sales = [];
+        $identity_review = [];
 
         $period_days = ((int) $period_start->diff($period_end)->days) + 1;
         $observed_end = $as_of < $period_end ? $as_of : $period_end;
@@ -116,31 +121,12 @@ final class Tax_Nexus_Monitor
             $page = 1;
             $pages = 1;
 
-            do {
-                $result = wc_get_orders([
-                    'type'         => 'shop_order',
-                    'status'       => $filters['statuses'],
-                    'date_created' => $query_start->getTimestamp() . '...' . $query_end->getTimestamp(),
-                    'orderby'      => 'date',
-                    'order'        => 'ASC',
-                    'limit'        => $page_size,
-                    'page'         => $page,
-                    'paginate'     => true,
-                    'return'       => 'objects',
-                ]);
-
-                $orders = is_object($result) && isset($result->orders)
-                    ? $result->orders
-                    : (is_array($result) ? $result : []);
-                $pages = is_object($result) && isset($result->max_num_pages)
-                    ? max(1, (int) $result->max_num_pages)
-                    : 1;
-                $stats['pages_processed']++;
-
-                foreach ($orders as $order) {
+            foreach ($sale_adapter->orders($filters['statuses'], $query_start->getTimestamp(), $query_end->getTimestamp(), $page_size, $max_records) as $receipt) {
+                    $order = $receipt['order'];
+                    $identity = $receipt['identity'];
                     if ($records_seen >= $max_records) {
                         $stats['truncated'] = true;
-                        break 2;
+                        break;
                     }
                     $records_seen++;
                     if (!is_object($order) || !method_exists($order, 'get_total')) {
@@ -188,13 +174,18 @@ final class Tax_Nexus_Monitor
                         $buckets[$state]['sales_by_currency_minor'][$currency] = 0;
                     }
                     $buckets[$state]['sales_by_currency_minor'][$currency] += $amount_minor;
-                    $buckets[$state]['transactions']++;
+                    $sale_key = $state . '|' . $identity['sale_id'];
+                    if ($sale_adapter->counts_in_period($identity, $query_start->getTimestamp(), $query_end->getTimestamp()) && !isset($counted_sales[$sale_key])) {
+                        $buckets[$state]['transactions']++;
+                        $counted_sales[$sale_key] = true;
+                    }
+                    if ($identity['issues']) {
+                        $identity_review[$state][] = ['order_id' => (int) $order->get_id(), 'issues' => $identity['issues']];
+                    }
                     $stats['orders_processed']++;
-                }
+            }
 
-                $page++;
-            } while ($page <= $pages);
-
+            $stats['pages_processed'] = $sale_adapter->pages_processed;
             // Apply refunds by refund creation date, including refunds whose
             // original sale predates the selected period. This keeps historical
             // nexus reports stable when a later refund is created.
@@ -251,6 +242,10 @@ final class Tax_Nexus_Monitor
                     if (!isset($buckets[$state])) {
                         $buckets[$state] = $this->new_bucket($state, $this->unknown_threshold($state));
                     }
+                    $refund_identity = $sale_adapter->describe($parent);
+                    if ($refund_identity['issues']) {
+                        $identity_review[$state][] = ['order_id' => (int) $parent->get_id(), 'issues' => $refund_identity['issues']];
+                    }
                     $currency = method_exists($parent, 'get_currency')
                         ? strtoupper($this->clean_text($parent->get_currency()))
                         : '';
@@ -296,6 +291,20 @@ final class Tax_Nexus_Monitor
                 $observed_days,
                 $period_days
             );
+            if (!empty($identity_review[$state])) {
+                $row['split_payment_review'] = $identity_review[$state];
+                $row['advisory_status'] = 'review_split_payment_identity';
+                foreach (['actual_evaluation', 'forecast_evaluation'] as $evaluation) {
+                    if (is_array($row[$evaluation])) {
+                        $row[$evaluation]['status'] = 'indeterminate';
+                        $row[$evaluation]['threshold_met'] = null;
+                        $row[$evaluation]['revenue_threshold_met'] = null;
+                        $row[$evaluation]['transaction_threshold_met'] = null;
+                        $row[$evaluation]['combined_progress_percent'] = null;
+                        $row[$evaluation]['reason'] = 'Split Payment sale identity/date needs review; captured revenue is retained but sale counts are incomplete.';
+                    }
+                }
+            }
             $states[] = $row;
             $summary['states_reported']++;
             if ($row['actual_transactions'] > 0) {
@@ -348,6 +357,7 @@ final class Tax_Nexus_Monitor
             ],
             'dataset'          => $dataset['metadata'],
             'revenue_measure'  => [
+                'split_payment_basis' => Tax_Report_Sale_Identity::policy(),
                 'default_basis' => 'WooCommerce order total excluding collected tax and net of recorded refunds; shipping and fees remain included.',
                 'customization_filters' => ['ffla_tax_nexus_order_revenue', 'ffla_tax_nexus_refund_revenue'],
                 'warning'       => 'Each state may define threshold revenue differently. Customize and verify the basis before relying on it.',

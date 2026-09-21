@@ -89,7 +89,8 @@ class Tax_Report_Reconciliation
 
             $range_comparable = !empty($scope['report_range_matches']);
             $currency_comparable = empty($scope['currency_ambiguous']);
-            $date_basis_comparable = $scope['analytics_date_type'] === $scope['ffla_date_type'];
+            $split_payment = !empty($ffla_report['split_payment_sales']);
+            $date_basis_comparable = !$split_payment && $scope['analytics_date_type'] === $scope['ffla_date_type'];
             $woo_complete = !empty($woocommerce['available']) && empty($woocommerce['truncated']);
             $tax_comparable = !empty($ffla['tax_total_available'])
                 && $woo_complete
@@ -99,6 +100,12 @@ class Tax_Report_Reconciliation
 
             $result['checks']['date_range'] = $this->date_range_check($scope);
             $result['checks']['date_basis'] = $this->date_basis_check($scope, $woocommerce);
+            if ($split_payment) {
+                $result['checks']['date_basis']['status'] = 'warn';
+                $result['checks']['date_basis']['comparable'] = false;
+                $result['checks']['date_basis']['ffla'] = 'ordinary_created_split_payment_captured';
+                $result['checks']['date_basis']['message'] = 'Split Payment receipts use captured-payment dates and unique original sales. Analytics date/status/order-count rules are not directly comparable.';
+            }
             $result['checks']['tax_total'] = $this->money_check(
                 'tax_total',
                 'Total tax',
@@ -135,6 +142,9 @@ class Tax_Report_Reconciliation
             );
 
             $result['warnings'] = $this->build_warnings($scope, $ffla, $woocommerce);
+            if ($split_payment) {
+                $result['warnings'][] = 'Review split-payment-sales and receipt audit exports against individual captures and refunds. Analytics counts may represent payment orders rather than underlying sales.';
+            }
             $result['recommendations'] = $this->build_recommendations(
                 $result['checks'],
                 $scope,
@@ -1012,7 +1022,9 @@ class Tax_Report_Reconciliation
         if (empty($scope['report_range_matches'])) {
             $recommendations[] = 'Regenerate the FFLA report or rerun reconciliation using the exact report start and end dates.';
         }
-        if ($scope['analytics_date_type'] !== $scope['ffla_date_type']) {
+        if (!empty($report['split_payment_sales'])) {
+            $recommendations[] = 'Reconcile Split Payment by receipt ID and payment/refund date; changing Analytics to Date created does not align this mixed reporting basis.';
+        } elseif ($scope['analytics_date_type'] !== $scope['ffla_date_type']) {
             $recommendations[] = 'Align WooCommerce Analytics date type with Date created, or expect timing differences for orders paid or completed on another day.';
         }
         if (!empty($scope['currency_ambiguous'])) {

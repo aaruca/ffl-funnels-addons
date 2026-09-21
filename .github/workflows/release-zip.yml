@@ -77,6 +77,14 @@ jobs:
             -f context="release/$TAG" \
             -f description="Building release ZIP"
 
+      - name: Validate tax reporting before publishing
+        if: ${{ steps.tag.outputs.skip != 'true' }}
+        run: |
+          set -e
+          find modules/tax-rates -name '*.php' -print0 | xargs -0 -n1 php -l
+          php tests/smoke/tax-report-jurisdiction-smoke.php
+          php tests/smoke/tax-split-payment-smoke.php
+
       # This ZIP is what the built-in updater installs on every store, so it must
       # contain only runtime files. Everything below is developer tooling.
       - name: Build plugin ZIP

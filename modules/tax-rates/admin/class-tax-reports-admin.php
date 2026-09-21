@@ -866,12 +866,16 @@ class Tax_Reports_Admin
                 __('This first table combines every state total and every jurisdiction with activity. Taxable sales already includes taxed shipping. All detailed tables below and in the other tabs remain available.', 'ffl-funnels-addons')
             );
             echo '<div class="ffla-tax-report-kpis">';
-            self::render_kpi(__('Orders', 'ffl-funnels-addons'), (string) ($stats['orders'] ?? 0));
+            self::render_kpi(__('Sales counted', 'ffl-funnels-addons'), (string) ($stats['orders'] ?? 0));
+            self::render_kpi(__('Order / payment records', 'ffl-funnels-addons'), (string) ($stats['receipt_orders'] ?? $stats['orders'] ?? 0));
             self::render_kpi(__('States', 'ffl-funnels-addons'), (string) count($states));
             self::render_kpi(__('Tax jurisdictions', 'ffl-funnels-addons'), (string) count($jurisdictions));
             self::render_kpi(__('States to review', 'ffl-funnels-addons'), (string) $states_to_review);
             echo '</div>';
             self::render_dataset_card(__('Filing totals', 'ffl-funnels-addons'), 'filing-totals', (array) ($report['summaries']['filing_totals'] ?? []));
+            if (!empty($report['split_payment_sales'])) {
+                echo '<p class="ffla-tax-report-callout">' . esc_html(Tax_Report_Sale_Identity::policy()) . ' ' . esc_html__('Open Orders for the grouped sales and receipt references. Sales counted and payment records are different measures.', 'ffl-funnels-addons') . '</p>';
+            }
             if (!empty($review_items)) {
                 self::render_dataset_card(__('Items to review', 'ffl-funnels-addons'), ['severity', 'code', 'count', 'message'], $review_items);
             }
@@ -915,6 +919,9 @@ class Tax_Reports_Admin
 
     private static function render_orders_panel(array $report): void
     {
+        if (!empty($report['split_payment_sales'])) {
+            self::render_dataset_card(__('Split Payment — one row per sale', 'ffl-funnels-addons'), 'split-payment-sales', $report['split_payment_sales'], Tax_Report_Sale_Identity::policy());
+        }
         $orders = (array) ($report['orders'] ?? []);
         $filters = (array) ($report['manifest']['filters'] ?? []);
         if (empty($orders)) {
@@ -960,6 +967,11 @@ class Tax_Reports_Admin
             'tax_collected' => __('Tax collected total', 'ffl-funnels-addons'),
             'non_taxable_sales' => __('Exempt / non-taxable sales', 'ffl-funnels-addons'),
             'needs_review_sales' => __('Sales needing review', 'ffl-funnels-addons'),
+            'sale_id' => __('Original sale ID', 'ffl-funnels-addons'),
+            'receipt_ids' => __('Payment order IDs', 'ffl-funnels-addons'),
+            'payments' => __('Payments in period', 'ffl-funnels-addons'),
+            'new_sales' => __('New sales in period', 'ffl-funnels-addons'),
+            'sale_quantity' => __('Original units counted', 'ffl-funnels-addons'),
             'net_tax' => __('Net tax collected', 'ffl-funnels-addons'),
             'calculated_tax' => __('Tax calculated / owed', 'ffl-funnels-addons'),
             'over_under' => __('Over / under collected', 'ffl-funnels-addons'),
@@ -1004,7 +1016,7 @@ class Tax_Reports_Admin
     private static function render_reconciliation_panel(array $report): void
     {
         echo '<div class="wb-card"><div class="wb-card__header"><h3>' . esc_html__('WooCommerce Analytics reconciliation', 'ffl-funnels-addons') . '</h3></div><div class="wb-card__body">';
-        echo '<p class="wb-field__desc">' . esc_html__('The reconciliation uses the same date, status, state, and negative-order filters as this report.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('The reconciliation compares the selected scope with WooCommerce Analytics. Split Payment uses captured-payment dates and unique original sales; Analytics may use a different date, status or order-count basis. Such comparisons require receipt-level review.', 'ffl-funnels-addons') . '</p>';
         if (!class_exists('Tax_Report_Reconciliation')) {
             echo '<div class="notice notice-warning inline"><p>' . esc_html__('The reconciliation engine is unavailable.', 'ffl-funnels-addons') . '</p></div>';
         } else {
@@ -1084,6 +1096,7 @@ class Tax_Reports_Admin
 
         $summary = (array) ($result['summary'] ?? []);
         $dataset = (array) ($result['dataset'] ?? []);
+        echo '<p class="ffla-tax-report-callout">' . esc_html((string) ($result['revenue_measure']['split_payment_basis'] ?? '')) . '</p>';
         echo '<div class="ffla-tax-report-kpis">';
         self::render_kpi(__('States with sales', 'ffl-funnels-addons'), (string) ($summary['states_with_transactions'] ?? 0));
         self::render_kpi(__('Threshold exceeded', 'ffl-funnels-addons'), (string) ($summary['states_actual_threshold_exceeded'] ?? 0));
@@ -1092,7 +1105,8 @@ class Tax_Reports_Admin
         echo '</div>';
 
         $active_states = array_values(array_filter((array) ($result['states'] ?? []), function ($state) {
-            return (int) ($state['actual_transactions'] ?? 0) > 0 || !empty($state['physical_home_state']);
+            return (int) ($state['actual_transactions'] ?? 0) > 0 || !empty($state['physical_home_state'])
+                || (float) ($state['actual_revenue'] ?? 0) !== 0.0 || !empty($state['split_payment_review']);
         }));
         if (!empty($active_states)) {
             echo '<div class="ffla-tax-report-health-grid">';

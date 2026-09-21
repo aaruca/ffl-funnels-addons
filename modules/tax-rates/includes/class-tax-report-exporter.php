@@ -148,6 +148,9 @@ class Tax_Report_Exporter
             'state-summary'        => (array) ($report['summaries']['states'] ?? []),
             'jurisdiction-summary' => (array) ($report['summaries']['jurisdictions'] ?? []),
         ];
+        if (!empty($report['split_payment_sales'])) {
+            $datasets['split-payment-sales'] = $report['split_payment_sales'];
+        }
         if (!empty($report['manifest']['filters']['include_pii'])) {
             $datasets['order-audit'] = (array) ($report['orders'] ?? []);
         }
@@ -331,7 +334,7 @@ class Tax_Report_Exporter
         $html .= '<h1>WooCommerce Tax Report</h1><div class="meta">' . esc_html((string) ($manifest['site_name'] ?? '')) . ' · '
             . esc_html((string) ($filters['date_from'] ?? '')) . ' through ' . esc_html((string) ($filters['date_to'] ?? ''))
             . ' · Generated ' . esc_html((string) ($manifest['generated_at_utc'] ?? '')) . '</div>';
-        $html .= '<div class="cards"><div class="card">Orders<b>' . esc_html((string) ($stats['orders'] ?? 0)) . '</b></div>'
+        $html .= '<div class="cards"><div class="card">Sales counted<b>' . esc_html((string) ($stats['orders'] ?? 0)) . '</b></div>'
             . '<div class="card">Refunds<b>' . esc_html((string) ($stats['refunds'] ?? 0)) . '</b></div>'
             . '<div class="card">Exceptions<b>' . esc_html((string) ($stats['exceptions'] ?? 0)) . '</b></div>'
             . '<div class="card">Snapshot coverage<b>' . esc_html((string) ($manifest['data_quality']['snapshot_coverage_percent'] ?? 0)) . '%</b></div></div>';
@@ -347,6 +350,10 @@ class Tax_Report_Exporter
         $html .= '<h2>State summary</h2>' . self::html_table(Tax_Report_Service::get_columns('state-summary'), (array) ($report['summaries']['states'] ?? []));
         $html .= '<h2>Jurisdictions with activity</h2>' . self::html_table(Tax_Report_Service::get_columns('jurisdiction-summary'), (array) ($report['summaries']['jurisdictions'] ?? []));
         $html .= '<h2>Exception summary</h2>' . self::html_table(['severity', 'code', 'count', 'message'], (array) ($report['summaries']['exceptions'] ?? []));
+        if (!empty($report['split_payment_sales'])) {
+            $html .= '<h2>Split Payment sales</h2><p>' . esc_html(Tax_Report_Sale_Identity::policy()) . '</p>'
+                . self::html_table(Tax_Report_Service::get_columns('split-payment-sales'), $report['split_payment_sales']);
+        }
         $html .= '<h2>Scope and limitations</h2><div class="note"><ul>';
         foreach ((array) ($manifest['limitations'] ?? []) as $limitation) {
             $html .= '<li>' . esc_html((string) $limitation) . '</li>';
@@ -394,7 +401,7 @@ class Tax_Report_Exporter
             'Generated UTC: ' . ($manifest['generated_at_utc'] ?? ''),
             'Report ID: ' . ($manifest['report_id'] ?? ''),
             '',
-            'Orders: ' . ($stats['orders'] ?? 0) . '   Refunds: ' . ($stats['refunds'] ?? 0),
+            'Sales counted: ' . ($stats['orders'] ?? 0) . '   Payment/order records: ' . ($stats['receipt_orders'] ?? $stats['orders'] ?? 0) . '   Refunds: ' . ($stats['refunds'] ?? 0),
             '',
             'FILING TOTALS BY CURRENCY',
             'Cur Orders  Taxable incl. shipping  Non-taxable  Review sales  Net tax collected  Calculated tax  Over/(under)',
@@ -453,6 +460,10 @@ class Tax_Report_Exporter
         }
 
         $lines[] = '';
+        if (!empty($report['split_payment_sales'])) {
+            $lines[] = 'SPLIT PAYMENT: one sale at captured deposit; later installments add collections, not transactions.';
+            $lines[] = 'Payment/refund dates are retained. See split-payment-sales.csv for grouped totals and receipt IDs.';
+        }
         $lines[] = 'Total taxable sales includes all taxed product, fee, and shipping lines and is the single filing-base amount.';
         $lines[] = 'Calculated tax uses the effective rate stored with each WooCommerce order.';
         $lines[] = 'Review any state or jurisdiction marked Needs review before filing.';
@@ -529,6 +540,7 @@ class Tax_Report_Exporter
             . "2. filing-master.csv (state totals and every jurisdiction in one table)\r\n"
             . "3. filing-totals.csv, state-summary.csv and jurisdiction-summary.csv\r\n"
             . $detail_files . "\r\n"
+            . (!empty($report['split_payment_sales']) ? "Split Payment: split-payment-sales.csv / workbook sheet groups receipt IDs and actual collections under the original sale. new_sales is 1 only in the captured-deposit period; payments counts collected receipt orders in this period. order_total includes shipping, fees and tax; net_collected subtracts in-period refunds. Do not add grouped totals to filing totals again.\r\n\r\n" : '')
             . "The XLSX workbook contains the same tabular datasets in one file. The HTML summary can be opened in a browser and printed or saved as PDF.\r\n\r\n"
             . ($advanced
                 ? "Advanced mode includes order, line, tax, refund, product, payment and exception audit datasets. Filing mode intentionally omits these detailed datasets except for the optional PII-controlled order audit.\r\n\r\n"
@@ -598,7 +610,7 @@ class Tax_Report_Exporter
     private static function is_numeric_column(string $column): bool
     {
         return in_array($column, array_merge([
-            'orders', 'count', 'quantity', 'refunded_quantity', 'rate_percent', 'tax_quote_rate_percent',
+            'orders', 'count', 'quantity', 'sale_quantity', 'payments', 'new_sales', 'refunded_quantity', 'rate_percent', 'tax_quote_rate_percent',
         ], self::money_columns()), true);
     }
 
