@@ -2,6 +2,18 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.47.7] - 2026-09-22
+
+### Fixed
+- Pickup & Shipping retains an explicitly authorized, offered zero-cost internal payment-plan rate in both rate calculation and cached-package synchronization. FPPC 1.2.3 supplies its ownership/permission checks through the new `ffla_pickup_shipping_keep_internal_rate` filter (five arguments).
+- Final validation re-evaluates the current submitted FFL and checks the actual offered rate. Internal rates cannot bypass missing dealers, pickup/ship-only restrictions, invalid mixed packages, or zero-cost/object identity checks.
+- Delivery decisions expose an explicit `policy_permitted` flag. Shipping-item metadata preserves pickup/ship semantics even when the internal rate ID is shared.
+
+### Verification and deployment
+- Added 287 internal-rate compatibility checks and kept native pickup-conflict, transition and browser regression coverage. New compatibility tests gate release publication.
+- Install with FPPC 1.2.3 when using excluded payment-plan shipping; retire the old GGA whitelist patch only after staging verification. No tax/nexus aggregation or payment-processing behavior is changed.
+- Release archives exclude codebase graphs in addition to existing development tooling.
+
 ## [1.47.6] - 2026-09-21
 
 ### Added

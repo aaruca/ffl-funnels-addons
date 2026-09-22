@@ -2,12 +2,18 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.47.6-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.47.7-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
 
 ## Features
+
+### Payment-plan shipping compatibility (1.47.7)
+
+Pickup & Shipping now supports explicitly authorized, already-offered zero-cost internal plan rates through `ffla_pickup_shipping_keep_internal_rate`. FPPC 1.2.3 uses this hook for its deferred/included shipping rate. Missing FFL choices, disallowed pickup/ship modes, mixed invalid packages and nonzero/forged rates remain blocked. Rate calculation, cached packages and final validation use the same current server-side delivery decision; pickup remains pickup in order records.
+
+Install both plugin updates before retiring the GGA shipping hotfixes. No new customer feature is enabled automatically. Tax Reports/Nexus, one-original-sale grouping, payment capture, existing customer operations and ordinary shipping prices are unchanged. Verify remote FFL, store pickup, mixed carts and missing-address/dealer behavior on each store's staging checkout before production rollout.
 
 ### Google Merchant Policy — feed reconciliation
 

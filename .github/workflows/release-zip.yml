@@ -93,6 +93,15 @@ jobs:
           php tests/smoke/customer-operations-smoke.php
           node tests/smoke/customer-operations-endpoints-smoke.js
 
+      - name: Validate pickup and payment-plan shipping before publishing
+        if: ${{ steps.tag.outputs.skip != 'true' }}
+        run: |
+          set -e
+          php tests/smoke/pickup-shipping-smoke.php
+          php tests/smoke/pickup-shipping-internal-rates-smoke.php
+          php tests/smoke/pickup-shipping-native-conflict-smoke.php
+          php tests/smoke/pickup-shipping-transitions-smoke.php
+
       # This ZIP is what the built-in updater installs on every store, so it must
       # contain only runtime files. Everything below is developer tooling.
       - name: Build plugin ZIP
@@ -103,6 +112,7 @@ jobs:
           mkdir -p /tmp/ffl-funnels-addons
           rsync -a \
             --exclude='.git' \
+            --exclude='.codebase-memory' \
             --exclude='.gitignore' \
             --exclude='.gitattributes' \
             --exclude='.github' \
@@ -135,7 +145,7 @@ jobs:
         run: |
           cd /tmp
           if unzip -Z1 "ffl-funnels-addons-$TAG.zip" \
-              | grep -Ei '(^|/)(tests?/|composer\.(json|lock)|package(-lock)?\.json|phpstan|phpunit|\.phpcs|\.editorconfig|\.eslintrc|AUDIT_|CHANGELOG\.md|\.mailmap)'; then
+              | grep -Ei '(^|/)(\.codebase-memory/|tests?/|composer\.(json|lock)|package(-lock)?\.json|phpstan|phpunit|\.phpcs|\.editorconfig|\.eslintrc|AUDIT_|CHANGELOG\.md|\.mailmap)'; then
             echo "::error::Developer tooling leaked into the release ZIP"
             exit 1
           fi
