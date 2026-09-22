@@ -14,7 +14,7 @@ function disabled($a,$b=true,$echo=true){$s=$a==$b?'disabled':'';if($echo)echo $
 function add_action($n,$c,$p=10,$a=1){$GLOBALS['hooks'][$n][]=$c;}
 function add_filter($n,$c,$p=10,$a=1){$GLOBALS['hooks'][$n][]=$c;}
 function add_shortcode($n,$c){$GLOBALS['hooks'][$n][]=$c;}
-function apply_filters($n,$v,...$a){return $v;}
+function apply_filters($n,$v,...$a){foreach($GLOBALS['hooks'][$n]??[] as $callback){$v=$callback($v,...$a);}return $v;}
 function get_option($k,$d=false){return $GLOBALS['options'][$k]??$d;}
 function update_option($k,$v,$a=false){$GLOBALS['options'][$k]=$v;}
 function add_option($k,$v,...$a){if(!isset($GLOBALS['options'][$k]))$GLOBALS['options'][$k]=$v;}

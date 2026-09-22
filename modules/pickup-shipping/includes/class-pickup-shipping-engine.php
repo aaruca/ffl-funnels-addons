@@ -25,35 +25,57 @@ class Pickup_Shipping_Engine
     }
     public static function decision(array $s, string $scope, array $state): array
     {
-        if ($scope === 'mixed') { return ['mode'=>'blocked','methods'=>[], 'reason'=>'mixed']; }
+        if ($scope === 'mixed') { return ['mode'=>'blocked','methods'=>[], 'reason'=>'mixed', 'policy_permitted'=>false]; }
         if ($scope === 'ffl' && $s['ffl_enabled']) {
             $license = Pickup_Shipping_Settings::license($state['license'] ?? '');
-            if (!$license) { return ['mode'=>'pending','methods'=>[], 'reason'=>'dealer']; }
+            if (!$license) { return ['mode'=>'pending','methods'=>[], 'reason'=>'dealer', 'policy_permitted'=>false]; }
             $local = self::location($s, $license);
             $mode = $local ? 'pickup' : 'ship';
             $methods = $local ? $s['pickup_methods'] : $s['shipping_methods'];
             // FFL rules do not silently override a site's pickup-only/ship-only policy.
-            if ($s['delivery'] !== 'both' && $s['delivery'] !== $mode) { $methods = []; }
-            return ['mode'=>$mode, 'methods'=>$methods, 'reason'=>'ffl', 'location'=>$local];
+            $permitted = $s['delivery'] === 'both' || $s['delivery'] === $mode;
+            if (!$permitted) { $methods = []; }
+            return ['mode'=>$mode, 'methods'=>$methods, 'reason'=>'ffl', 'location'=>$local, 'policy_permitted'=>$permitted];
         }
         $mode = $s['delivery'] !== 'both' ? $s['delivery'] : ($state['mode'] ?? $s['default']);
         if (!in_array($mode, ['pickup','ship'], true)) { $mode = 'none'; }
-        return ['mode'=>$mode, 'methods'=>$mode === 'none' ? array_merge($s['pickup_methods'],$s['shipping_methods']) : $s[$mode === 'ship' ? 'shipping_methods' : 'pickup_methods'], 'reason'=>'customer'];
+        return ['mode'=>$mode, 'methods'=>$mode === 'none' ? array_merge($s['pickup_methods'],$s['shipping_methods']) : $s[$mode === 'ship' ? 'shipping_methods' : 'pickup_methods'], 'reason'=>'customer', 'policy_permitted'=>$mode !== 'none' && ($s['delivery'] === 'both' || $s['delivery'] === $mode)];
     }
-    public static function filter(array $rates, array $decision): array
+    public static function filter(array $rates, array $decision, array $package = []): array
     {
         $filtered = [];
-        foreach ($rates as $id=>$rate) { if (self::allows((string)$id,$decision['methods'])) { $filtered[$id] = $rate; } }
+        foreach ($rates as $id=>$rate) { if (self::allows((string)$id,$decision['methods'],$package,$decision,$rate)) { $filtered[$id] = $rate; } }
         return $filtered;
     }
-    public static function allows(string $rate_id, array $methods): bool
+    public static function allows(string $rate_id, array $methods, array $package = [], array $decision = [], $rate = null): bool
     {
         foreach ($methods as $method) {
             // Carriers can return method:instance:service IDs. Keep all actual
             // services belonging to the configured instance, never adjacent IDs.
             if ($rate_id === $method || strpos($rate_id,$method . ':') === 0) { return true; }
         }
-        return false;
+        // Optional context preserves the original whitelist-only API. No
+        // extension may turn an unresolved or forbidden mode into permission.
+        if (!$package || ($decision['policy_permitted'] ?? false) !== true
+            || !in_array($decision['mode'] ?? '', ['pickup','ship'], true)
+            || !is_object($rate) || !is_callable([$rate,'get_id']) || $rate->get_id() !== $rate_id
+            || !is_callable([$rate,'get_cost'])) { return false; }
+        $cost = $rate->get_cost();
+        if (!is_numeric($cost) || (float)$cost !== 0.0) { return false; }
+        /**
+         * Keep an offered internal zero-cost rate for this package and mode.
+         * The owning extension must verify its server-side package/plan and
+         * rate markers, including explicit plan permission for pickup. An ID
+         * alone is not authorization. Return true to retain the same object;
+         * this hook does not change its price, destination or semantic mode.
+         *
+         * @param bool   $keep     Defaults to false.
+         * @param string $rate_id  Offered rate ID.
+         * @param object $rate     Actual offered shipping rate.
+         * @param array  $package  Current package with server delivery context.
+         * @param array  $decision Current policy, including policy_permitted.
+         */
+        return true === apply_filters('ffla_pickup_shipping_keep_internal_rate', false, $rate_id, $rate, $package, $decision);
     }
     public static function product_requires_ffl($product): bool
     {

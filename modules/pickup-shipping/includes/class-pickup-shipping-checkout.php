@@ -164,32 +164,43 @@ class Pickup_Shipping_Checkout
         // transitions and after disabling this module's configuration.
         $active = self::active();
         $settings = Pickup_Shipping_Settings::get();
+        $state = self::state();
         foreach ($packages as $key=>&$package) {
-            $scope = $active ? self::scope($package) : 'regular';
-            $decision = $active ? Pickup_Shipping_Engine::decision($settings,$scope,self::state()) : [];
-            $package['ffla_delivery'] = [
-                'active'=>$active, 'scope'=>$scope, 'decision'=>$decision,
-                'version'=>md5(wp_json_encode($settings)), 'package_key'=>(string)$key,
-                'dealer'=>self::state()['license'] ?? '',
-            ];
+            $package['ffla_delivery'] = self::delivery_context($package,$key,$settings,$state,$active);
         }
         unset($package);
         return $packages;
+    }
+    /** Rebuild server-owned context before an extension sees a cached package. */
+    private static function delivery_context(array $package, $key, array $settings, array $state, bool $active = true): array
+    {
+        $scope = $active ? self::scope($package) : 'regular';
+        return [
+            'active'=>$active, 'scope'=>$scope,
+            'decision'=>$active ? Pickup_Shipping_Engine::decision($settings,$scope,$state) : [],
+            'version'=>md5(wp_json_encode($settings)), 'package_key'=>(string)$key,
+            'dealer'=>$state['license'] ?? '',
+        ];
     }
     public static function rates(array $rates, array $package): array
     {
         if (!self::active() || empty($package['ffla_delivery']['active'])) { return $rates; }
         $s = Pickup_Shipping_Settings::get();
         $key = $package['ffla_delivery']['package_key'];
+        $state = self::state();
+        $package['ffla_delivery'] = self::delivery_context($package,$key,$s,$state);
         $availability = WC()->session->get(self::AVAILABLE, []);
         $availability = is_array($availability) ? $availability : [];
-        // Store only method IDs, never another copy of customer addresses.
-        $availability[$key] = [
-            'pickup'=>(bool) Pickup_Shipping_Engine::filter($rates,['methods'=>$s['pickup_methods']]),
-            'ship'=>(bool) Pickup_Shipping_Engine::filter($rates,['methods'=>$s['shipping_methods']]),
-        ];
+        // Store availability flags, never another copy of customer addresses.
+        foreach (['pickup','ship'] as $mode) {
+            $candidate = $package;
+            $candidate['ffla_delivery'] = self::delivery_context($package,$key,$s,array_merge($state,['mode'=>$mode]));
+            $decision = $candidate['ffla_delivery']['decision'];
+            $availability[$key][$mode] = $decision['mode'] === $mode
+                && (bool) Pickup_Shipping_Engine::filter($rates,$decision,$candidate);
+        }
         WC()->session->set(self::AVAILABLE, $availability);
-        return Pickup_Shipping_Engine::filter($rates,$package['ffla_delivery']['decision']);
+        return Pickup_Shipping_Engine::filter($rates,$package['ffla_delivery']['decision'],$package);
     }
     /** Run before WC_Cart consumes rates to calculate shipping and tax totals. */
     public static function sync_packages(array $packages): array
@@ -198,14 +209,11 @@ class Pickup_Shipping_Checkout
         $settings = Pickup_Shipping_Settings::get();
         $state = self::state();
         foreach ($packages as $key=>&$package) {
-            $scope = self::scope($package);
-            $decision = Pickup_Shipping_Engine::decision($settings,$scope,$state);
+            $package['ffla_delivery'] = self::delivery_context($package,$key,$settings,$state);
+            $decision = $package['ffla_delivery']['decision'];
             // Reapply to cached packages too. Never create a rate, change its
             // price, or substitute pickup when this address has no pickup rate.
-            $package['rates'] = Pickup_Shipping_Engine::filter((array)($package['rates'] ?? []),$decision);
-            $package['ffla_delivery'] = array_merge($package['ffla_delivery'] ?? [],[
-                'active'=>true,'scope'=>$scope,'decision'=>$decision,'package_key'=>(string)$key,
-            ]);
+            $package['rates'] = Pickup_Shipping_Engine::filter((array)($package['rates'] ?? []),$decision,$package);
             // WooCommerce owns default selection (including free-shipping
             // coupons). It must see only valid rates before it stores a choice.
             wc_get_chosen_shipping_method_for_package($key,$package);
@@ -229,14 +237,16 @@ class Pickup_Shipping_Checkout
         $packages_valid = true;
         $has_ffl_pickup = false;
         foreach (WC()->shipping()->get_packages() as $key=>$package) {
-            $decision = Pickup_Shipping_Engine::decision($s,self::scope($package),$state);
+            $package['ffla_delivery'] = self::delivery_context($package,$key,$s,$state);
+            $decision = $package['ffla_delivery']['decision'];
             if (in_array($decision['mode'],['blocked','pending','none'],true)) {
                 $packages_valid = false;
                 $errors->add('ffla_delivery_' . $key, $decision['mode'] === 'none' ? __('Choose pickup or shipping before placing your order.', 'ffl-funnels-addons') : self::message($decision));
                 continue;
             }
             $selected = is_array($data['shipping_method'] ?? null) ? ($data['shipping_method'][$key] ?? '') : '';
-            if (!is_string($selected) || !Pickup_Shipping_Engine::allows($selected,$decision['methods']) || !isset($package['rates'][$selected])) {
+            if (!is_string($selected) || !isset($package['rates'][$selected])
+                || !Pickup_Shipping_Engine::allows($selected,$decision['methods'],$package,$decision,$package['rates'][$selected])) {
                 $packages_valid = false;
                 $errors->add('ffla_delivery_' . $key,self::message($decision));
             } elseif ($decision['mode'] === 'pickup' && $decision['reason'] === 'ffl') {
@@ -333,15 +343,17 @@ class Pickup_Shipping_Checkout
         $chosen = WC()->session->get('chosen_shipping_methods', []);
         $dealer = $s['ffl_enabled'] && self::requires_ffl() ? (self::state()['license'] ?? '') : '';
         foreach ($packages as $key=>$package) {
-            $scope = self::scope($package);
+            $package['ffla_delivery'] = self::delivery_context($package,$key,$s,self::state());
+            $scope = $package['ffla_delivery']['scope'];
             if ($scope === 'regular') { $regular = true; }
-            $decision = is_array($package['ffla_delivery']['decision'] ?? null)
-                ? $package['ffla_delivery']['decision']
-                : Pickup_Shipping_Engine::decision($s,$scope,self::state());
+            $decision = $package['ffla_delivery']['decision'];
+            $offered = Pickup_Shipping_Engine::filter((array)($package['rates'] ?? []),$decision,$package);
             $policy[(string)$key] = [
                 'mode'=>is_string($decision['mode'] ?? null) ? $decision['mode'] : '',
-                'methods'=>array_values(array_filter((array)($decision['methods'] ?? []),'is_string')),
-                'selected'=>is_string($chosen[$key] ?? null) && isset($package['rates'][$chosen[$key]]) ? $chosen[$key] : '',
+                // Include approved internal IDs only in this package's browser
+                // policy; the server decision retains its configured methods.
+                'methods'=>array_values(array_unique(array_merge(array_filter((array)($decision['methods'] ?? []),'is_string'),array_keys($offered)))),
+                'selected'=>is_string($chosen[$key] ?? null) && isset($offered[$chosen[$key]]) ? $chosen[$key] : '',
                 'dealer'=>$scope === 'ffl' ? $dealer : null,
             ];
         }
