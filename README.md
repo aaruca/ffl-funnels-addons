@@ -2,16 +2,18 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.47.8-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.47.9-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
 
 ## Features
 
-### Split Payment renewal taxes (1.47.8)
+### Split Payment renewal taxes and reporting (1.47.8, 1.47.9)
 
 Renewal orders, admin "Recalculate" and FPPC final-shipping/early-payoff orders are now taxed from the order itself instead of the checkout session. An order that carries the checkout's stored tax quote reuses it for the same address, so every payment of a plan uses the same "Sales Tax" rate as the deposit, including on stores without a native WooCommerce tax table. Checkout behavior is unchanged. Existing orders are not recalculated.
+
+Sales Tax Reports count FPPC's "Final shipping" fee as shipping (order-line `reporting_category`, filter `ffla_tax_report_shipping_fee_meta_keys`), and a resolver tax line saved at 0% uses the stored quote rate instead of forcing Needs review.
 
 ### Payment-plan shipping compatibility (1.47.7)
 

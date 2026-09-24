@@ -31,6 +31,7 @@ jobs:
           php tests/smoke/tax-report-jurisdiction-smoke.php
           php tests/smoke/tax-split-payment-smoke.php
           php tests/smoke/tax-order-context-smoke.php
+          php tests/smoke/tax-report-shipping-fee-smoke.php
 
       - name: Customer and order management regression checks
         run: |
