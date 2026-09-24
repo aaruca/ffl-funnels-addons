@@ -13,7 +13,7 @@
 
 Renewal orders, admin "Recalculate" and FPPC final-shipping/early-payoff orders are now taxed from the order itself instead of the checkout session. An order that carries the checkout's stored tax quote reuses it for the same address, so every payment of a plan uses the same "Sales Tax" rate as the deposit, including on stores without a native WooCommerce tax table. Checkout behavior is unchanged. Existing orders are not recalculated.
 
-Sales Tax Reports count FPPC's "Final shipping" fee as shipping (order-line `reporting_category`, filter `ffla_tax_report_shipping_fee_meta_keys`), and a resolver tax line saved at 0% uses the stored quote rate instead of forcing Needs review.
+Sales Tax Reports count FPPC's "Final shipping" fee as shipping, and the initial fee too when the order's plan includes shipping in that fee; a plan that charges regular WooCommerce shipping plus the fee keeps it as a fee (order-line `reporting_category`, filters `ffla_tax_report_shipping_fee_meta_keys` and `ffla_tax_report_layaway_fee_is_shipping`). A resolver tax line saved at 0% uses the stored quote rate instead of forcing Needs review.
 
 ### Payment-plan shipping compatibility (1.47.7)
 

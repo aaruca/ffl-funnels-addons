@@ -65,9 +65,10 @@ class WC_Order {
     }
 }
 class TestLine {
-    public $id; public $amount; public $tax; public $qty; public $meta = []; public $rate_id = 990000; public $name = 'Fixture product';
+    public $id; public $amount; public $tax; public $qty; public $meta = []; public $rate_id = 990000; public $name = 'Fixture product'; public $method_id = '';
     function __construct($id, $amount, $tax, $qty = 1) { $this->id = $id; $this->amount = $amount; $this->tax = $tax; $this->qty = $qty; }
     function get_id() { return $this->id; }
+    function get_method_id() { return $this->method_id; }
     function get_meta($key, $single = true) { return $this->meta[$key] ?? ''; }
     function get_product() { return null; }
     function get_product_id() { return 77; }
@@ -257,5 +258,62 @@ check($july['split_payment_sales'][0]['order_total'] === '361.80', 'Split sale c
 check($july['summaries']['states'][0]['taxable_shipping'] === '35.00' && $july['totals_by_currency'][0]['shipping'] === '35.00', 'Final shipping fee in the shipping column');
 check($july['totals_by_currency'][0]['fees'] === '0.00', 'No residual fee for the final shipping');
 check(harris($july)['calculated_tax'] === '26.80' && harris($july)['over_under'] === '0.00', 'Plan tax reconciles to the stored rate');
+
+// FPPC plan choice decides the initial fee per order: "Initial fee includes shipping"
+// (internal $0 line marked upfront_fee) versus regular WooCommerce shipping plus the fee.
+/** $100 product and a $50 taxed layaway fee, shipped under the given shipping line. */
+function fee_plan_order($id, $method, $charge_mode, $shipping_cost = 0.0, $shipping_tax = 0.0) {
+    $order = new WC_Order($id, '2026-08-03', '2026-08-03');
+    $shipping = new TestLine($id * 10 + 2, $shipping_cost, $shipping_tax); $shipping->method_id = $method; $shipping->name = 'Shipping';
+    if ($charge_mode !== '') { $shipping->meta['_fppc_shipping_charge_mode'] = $charge_mode; }
+    $fee = new TestLine($id * 10 + 3, 50.00, 4.00); $fee->name = 'Layaway Shipping (Non-Refundable)'; $fee->meta['_fppc_layaway_fee'] = 'yes';
+    $order->items = [
+        'line_item' => [$id * 10 + 1 => new TestLine($id * 10 + 1, 100.00, 8.00)],
+        'shipping'  => [$id * 10 + 2 => $shipping],
+        'fee'       => [$id * 10 + 3 => $fee],
+        'tax'       => [1 => new TestTax(12.00, $shipping_tax)],
+    ];
+    $order->meta = ['_ffla_tax_quote' => quote_json(), '_fppc_managed_plan' => 'yes'];
+    return $order;
+}
+function august() { return report('2026-08-01', '2026-08-31'); }
+
+$GLOBALS['orders'] = [4000 => fee_plan_order(4000, 'fppc_deferred_shipping', 'upfront_fee')];
+$included = august();
+check($included['orders'][0]['shipping'] === '50.00' && $included['orders'][0]['fees'] === '0.00', 'Fee that includes shipping is reported as shipping');
+check(line_by_id($included, 40003)['item_type'] === 'fee' && line_by_id($included, 40003)['reporting_category'] === 'shipping', 'Included-shipping fee keeps item_type fee');
+check($included['summaries']['states'][0]['taxable_shipping'] === '50.00' && harris($included)['taxable_shipping'] === '50.00', 'Taxed included-shipping fee is taxable shipping');
+check($included['orders'][0]['order_total'] === '162.00', 'Order total unchanged');
+
+$GLOBALS['orders'] = [4001 => fee_plan_order(4001, 'flat_rate', '', 10.00, 0.80)];
+$plus = august();
+check($plus['orders'][0]['shipping'] === '10.00' && $plus['orders'][0]['fees'] === '50.00', 'Regular shipping plus fee keeps the fee as a fee');
+check(line_by_id($plus, 40013)['reporting_category'] === 'fee' && $plus['summaries']['states'][0]['taxable_shipping'] === '10.00', 'Only the WooCommerce shipping line is taxable shipping');
+
+$GLOBALS['orders'] = [4002 => fee_plan_order(4002, 'local_pickup', 'upfront_fee')];
+check(august()['orders'][0]['fees'] === '50.00', 'Local pickup means the fee paid for no shipment');
+
+$GLOBALS['orders'] = [4003 => fee_plan_order(4003, 'fppc_deferred_shipping', 'no_charge')];
+check(august()['orders'][0]['fees'] === '50.00', 'No-shipping-charge plans keep the fee as a fee');
+
+// Refundable initial fee refunded at termination (FPPC fee-line refund with tax).
+$order = fee_plan_order(4000, 'fppc_deferred_shipping', 'upfront_fee');
+$fee_refund = new TestRefund(6001, '2026-08-20');
+$fee_refund->parent = 4000;
+$refunded_fee = new TestLine(60011, -50.00, -4.00); $refunded_fee->meta['_refunded_item_id'] = 40003;
+$fee_refund->items = ['fee' => [60011 => $refunded_fee]];
+$order->refunds = [$fee_refund];
+$GLOBALS['orders'] = [4000 => $order, 6001 => $fee_refund];
+$r = august();
+check($r['refunds'][0]['shipping_refund'] === '50.00' && $r['refunds'][0]['fee_refund'] === '0.00', 'Refunded included-shipping fee is a shipping refund');
+check($r['summaries']['states'][0]['taxable_shipping'] === '0.00', 'Refund removes the fee from taxable shipping');
+$fee_refund->created = new DateTimeImmutable('2026-09-02', wp_timezone());
+check(report('2026-09-01', '2026-09-30')['summaries']['states'][0]['taxable_shipping'] === '-50.00', 'Later-period fee refund reduces taxable shipping');
+
+// Stores can override the automatic decision per order.
+$GLOBALS['orders'] = [4000 => fee_plan_order(4000, 'fppc_deferred_shipping', 'upfront_fee')];
+$GLOBALS['test_filters'] = ['ffla_tax_report_layaway_fee_is_shipping' => function ($is_shipping, $order) { return false; }];
+check(august()['orders'][0]['fees'] === '50.00', 'ffla_tax_report_layaway_fee_is_shipping can keep the fee as a fee');
+$GLOBALS['test_filters'] = [];
 
 echo "$checks shipping-fee reporting checks passed.\n";
