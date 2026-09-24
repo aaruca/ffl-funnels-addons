@@ -16,8 +16,10 @@ require_once __DIR__ . '/class-tax-report-sale-identity.php';
 
 class Tax_Report_Service
 {
-    const SCHEMA_VERSION = '2.7.0';
+    const SCHEMA_VERSION = '2.8.0';
     const HISTORY_OPTION = 'ffla_tax_report_runs';
+    /** Synthetic WooCommerce rate ID written by the resolver's combined rate. */
+    const RESOLVER_RATE_ID = 990000;
 
     /** @var int */
     private $precision;
@@ -26,10 +28,34 @@ class Tax_Report_Service
     private $scale;
     private $counted_sales = [];
 
+    /** @var string[]|null */
+    private $shipping_fee_keys = null;
+
     public function __construct()
     {
         $this->precision = function_exists('wc_get_price_decimals') ? (int) wc_get_price_decimals() : 2;
         $this->scale = (int) pow(10, $this->precision);
+    }
+
+    /**
+     * Fee item meta keys that report a fee as shipping.
+     *
+     * FPPC collects its fixed layaway shipping as a "Final shipping" fee item on
+     * the final renewal or early-payoff order, not as a shipping line. Stores
+     * whose initial layaway fee is really shipping can add `_fppc_layaway_fee`.
+     *
+     * @return string[]
+     */
+    public static function shipping_fee_meta_keys(): array
+    {
+        $keys = apply_filters('ffla_tax_report_shipping_fee_meta_keys', ['_fppc_final_shipping_fee']);
+        $clean = [];
+        foreach (is_array($keys) ? $keys : [] as $key) {
+            if (is_scalar($key) && (string) $key !== '') {
+                $clean[(string) $key] = (string) $key;
+            }
+        }
+        return array_values($clean);
     }
 
     /**
@@ -146,6 +172,7 @@ class Tax_Report_Service
 
         $filters = self::normalize_filters($filters);
         $this->counted_sales = [];
+        $this->shipping_fee_keys = null;
         $summary_only = !empty($options['summary_only']);
         $collect_advanced = !$summary_only && $filters['report_detail'] === 'advanced';
         $collect_order_rows = !$summary_only && ($collect_advanced || $filters['include_pii']);
@@ -426,7 +453,7 @@ class Tax_Report_Service
                 'vendor_sku', 'tax_exempt', 'tax_exemption_rule_ids',
                 'tax_exemption_rules', 'tax_exemption_type', 'tax_exemption_snapshot_json',
                 'tax_holiday_rule_ids', 'tax_holiday_rules', 'tax_holiday_exempt_amount', 'tax_holiday_snapshot_json',
-                'taxes_json', 'cogs_value',
+                'taxes_json', 'cogs_value', 'reporting_category',
             ]));
         }
 
@@ -484,7 +511,7 @@ class Tax_Report_Service
             'order_lines' => [
                 'sale_id', 'sale_quantity',
                 'order_id', 'order_number', 'date_created_local', 'status', 'currency', 'tax_state', 'item_id',
-                'item_type', 'product_id', 'variation_id', 'sku', 'name', 'categories', 'quantity', 'tax_class',
+                'item_type', 'reporting_category', 'product_id', 'variation_id', 'sku', 'name', 'categories', 'quantity', 'tax_class',
                 'subtotal', 'subtotal_tax', 'discount', 'total_ex_tax', 'tax', 'total_inc_tax', 'refunded_quantity',
                 'refunded_amount', 'refunded_tax', 'vendor', 'vendor_sku', 'vendor_price', 'shipping_class',
                 'shipping_method_id', 'coupon_code', 'tax_exempt', 'tax_exemption_rule_ids',
@@ -664,9 +691,15 @@ class Tax_Report_Service
             }
         }
 
+        // Marked shipping fees move from fees to shipping; the order total is unchanged.
         $fees = 0;
+        $shipping_fees = 0;
         foreach ($order->get_items('fee') as $item) {
-            $fees += $this->minor($item->get_total());
+            if ($this->is_shipping_fee_item($item)) {
+                $shipping_fees += $this->minor($item->get_total());
+            } else {
+                $fees += $this->minor($item->get_total());
+            }
         }
 
         $refunded_amount = 0;
@@ -742,7 +775,7 @@ class Tax_Report_Service
             'gross_product_sales'     => $this->decimal($gross),
             'discounts'               => $this->decimal(max(0, $gross - $net_products)),
             'net_product_sales'       => $this->decimal($net_products),
-            'shipping'                => $this->decimal($this->minor($order->get_shipping_total())),
+            'shipping'                => $this->decimal($this->minor($order->get_shipping_total()) + $shipping_fees),
             'fees'                    => $this->decimal($fees),
             'tax_collected'           => $this->decimal($tax_collected),
             'tax_refunded'            => $this->decimal($refunded_tax),
@@ -803,6 +836,7 @@ class Tax_Report_Service
             $row = array_merge($base, [
                 'item_id'            => (int) $item_id,
                 'item_type'          => 'product',
+                'reporting_category' => 'product',
                 'product_id'         => $product_id,
                 'variation_id'       => $variation_id,
                 'sku'                => $product && method_exists($product, 'get_sku') ? (string) $product->get_sku() : (string) $item->get_meta('_SKU', true),
@@ -866,6 +900,7 @@ class Tax_Report_Service
             $row = array_merge($base, $this->empty_line_fields(), [
                 'item_id'            => (int) $item_id,
                 'item_type'          => 'shipping',
+                'reporting_category' => 'shipping',
                 'name'               => (string) $item->get_name(),
                 'quantity'           => '1',
                 'subtotal'           => $this->decimal($total),
@@ -889,9 +924,12 @@ class Tax_Report_Service
             $refund = $refund_map['fee:' . $item_id] ?? ['amount' => 0, 'tax' => 0, 'quantity' => 0];
             $total = $this->minor($item->get_total());
             $tax = $this->minor($item->get_total_tax());
+            // item_type stays the WooCommerce type for audit; reporting_category
+            // decides whether the amount counts as shipping.
             $row = array_merge($base, $this->empty_line_fields(), [
                 'item_id'           => (int) $item_id,
                 'item_type'         => 'fee',
+                'reporting_category'=> $this->is_shipping_fee_item($item) ? 'shipping' : 'fee',
                 'name'              => (string) $item->get_name(),
                 'quantity'          => '1',
                 'tax_class'         => method_exists($item, 'get_tax_class') ? (string) $item->get_tax_class() : '',
@@ -911,6 +949,7 @@ class Tax_Report_Service
             $row = array_merge($base, $this->empty_line_fields(), [
                 'item_id'      => (int) $item_id,
                 'item_type'    => 'coupon',
+                'reporting_category' => 'coupon',
                 'name'         => (string) $item->get_name(),
                 'coupon_code'  => method_exists($item, 'get_code') ? (string) $item->get_code() : (string) $item->get_name(),
                 'quantity'     => '1',
@@ -1008,15 +1047,17 @@ class Tax_Report_Service
             foreach (['line_item' => 'product', 'shipping' => 'shipping', 'fee' => 'fee'] as $item_type => $label) {
                 foreach ($refund->get_items($item_type) as $item) {
                     $amount = $this->minor(abs((float) $item->get_total()));
-                    if ($label === 'product') {
+                    $category = $label === 'fee' && $this->is_shipping_fee_refund_item($order, $item) ? 'shipping' : $label;
+                    if ($category === 'product') {
                         $product += $amount;
-                    } elseif ($label === 'shipping') {
+                    } elseif ($category === 'shipping') {
                         $shipping += $amount;
                     } else {
                         $fees += $amount;
                     }
                     $details[] = [
                         'type'             => $label,
+                        'reporting_category' => $category,
                         'refunded_item_id' => (int) $item->get_meta('_refunded_item_id', true),
                         'name'             => (string) $item->get_name(),
                         'quantity'         => abs((float) $item->get_quantity()),
@@ -1051,6 +1092,11 @@ class Tax_Report_Service
         return $rows;
     }
 
+    /**
+     * Refunded amounts keyed by WooCommerce item type and original item ID.
+     * Keys stay on the item type (a shipping fee is still "fee:ID") so they
+     * match build_line_rows(); reporting categories apply after matching.
+     */
     private function get_line_refund_map($order, ?array $refunds = null): array
     {
         $refunds = $refunds === null ? $order->get_refunds() : $refunds;
@@ -1141,6 +1187,7 @@ class Tax_Report_Service
                         : [];
                     $lines[] = array_merge($base, [
                         'item_type'             => $part['type'],
+                        'reporting_category'    => $part['type'],
                         'name'                  => $part['name'],
                         'refunded_amount'       => $this->decimal($part['amount']),
                         'refunded_tax'          => $this->decimal($part_tax),
@@ -1174,7 +1221,8 @@ class Tax_Report_Service
 
                 if ($was_taxed) {
                     $sales['taxable_sales'] += $amount;
-                    if ($item_type === 'shipping') {
+                    if ($item_type === 'shipping'
+                        || ($item_type === 'fee' && $this->is_shipping_fee_refund_item($order, $item))) {
                         $sales['taxable_shipping'] += $amount;
                     }
                 } elseif ($known_non_taxable || ($original && strtolower((string) $original->get_meta('_ffla_tax_exempt', true)) === 'yes')) {
@@ -1214,7 +1262,7 @@ class Tax_Report_Service
                 }
                 if ($this->minor($line['tax'] ?? 0) !== 0) {
                     $original['taxable_sales'] += $line_amount;
-                    if (($line['item_type'] ?? '') === 'shipping') {
+                    if ($this->line_category($line) === 'shipping') {
                         $original['taxable_shipping'] += $line_amount;
                     }
                 } elseif ($known_non_taxable || strtolower((string) ($line['tax_exempt'] ?? '')) === 'yes') {
@@ -1604,7 +1652,7 @@ class Tax_Report_Service
             if ($was_taxed) {
                 $totals[$key]['sales_with_tax'] += $net_sales;
                 $totals[$key]['taxable_sales'] += $net_sales;
-                if ($line['item_type'] === 'shipping') {
+                if ($this->line_category($line) === 'shipping') {
                     $totals[$key]['taxable_shipping'] += $net_sales;
                 }
             } elseif ($known_non_taxable || strtolower((string) ($line['tax_exempt'] ?? '')) === 'yes') {
@@ -1646,9 +1694,17 @@ class Tax_Report_Service
             if (!empty($tax_rows)) {
                 $calculated_tax = 0;
                 $all_rates_mapped = !$this->has_unallocated_refund_base($line_rows) || count($tax_rows) === 1;
+                $used_quote_rate = false;
                 foreach ($tax_rows as $tax) {
                     $rate_id = (int) ($tax['rate_id'] ?? 0);
                     $rate_percent = (float) ($tax['rate_percent'] ?? 0);
+                    // WooCommerce has no rate-percent filter, so a resolver line
+                    // saved by an order recalculation (Store API checkout, older
+                    // renewals) reads 0%. The stored quote is the rate it used.
+                    if ($rate_percent <= 0 && $this->is_resolver_tax_line($tax)) {
+                        $rate_percent = $rate_total * 100;
+                        $used_quote_rate = true;
+                    }
                     $matched = false;
                     $rate_taxable_sales = $this->calculate_taxable_sales_for_rate($line_rows, $rate_id, $matched);
                     if (!$matched || $rate_percent <= 0) {
@@ -1659,7 +1715,9 @@ class Tax_Report_Service
                 }
                 if ($all_rates_mapped) {
                     $effective_rate = $taxable_sales !== 0 ? ($calculated_tax / $taxable_sales) * 100 : 0;
-                    $allocation_method = 'stored_quote_with_line_rate_bases';
+                    $allocation_method = $used_quote_rate
+                        ? 'stored_quote_rate_for_unrated_resolver_line'
+                        : 'stored_quote_with_line_rate_bases';
                 } else {
                     // A manual refund or legacy order may not identify which
                     // rate owns the base. Avoid a false over/under amount and
@@ -1780,14 +1838,15 @@ class Tax_Report_Service
     }
 
     /**
-     * Return the net shipping amount already included in taxable sales.
+     * Return the net shipping amount already included in taxable sales,
+     * including fee items marked as shipping.
      * This is a component for reporting and must not be added to taxable_sales again.
      */
     private function calculate_taxable_shipping(array $lines): int
     {
         $taxable = 0;
         foreach ($lines as $line) {
-            if (($line['item_type'] ?? '') !== 'shipping') {
+            if ($this->line_category($line) !== 'shipping') {
                 continue;
             }
             if (($line['refund_classification'] ?? '') !== 'taxable_sales'
@@ -1832,6 +1891,53 @@ class Tax_Report_Service
 
         $matched_rate = $matched;
         return $matched ? $taxable : $this->calculate_taxable_sales($lines);
+    }
+
+    /**
+     * Reporting category of a line row; rows without one (custom rows added
+     * through ffla_tax_report_line_row) fall back to the WooCommerce type.
+     */
+    private function line_category(array $line): string
+    {
+        $category = (string) ($line['reporting_category'] ?? '');
+        return $category !== '' ? $category : (string) ($line['item_type'] ?? '');
+    }
+
+    private function is_shipping_fee_item($item): bool
+    {
+        if (!is_object($item) || !method_exists($item, 'get_meta')) {
+            return false;
+        }
+        if ($this->shipping_fee_keys === null) {
+            $this->shipping_fee_keys = self::shipping_fee_meta_keys();
+        }
+        foreach ($this->shipping_fee_keys as $key) {
+            if (in_array(strtolower((string) $item->get_meta($key, true)), ['yes', '1', 'true'], true)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * A refunded fee counts as shipping when it, or the fee it refunds, is marked.
+     */
+    private function is_shipping_fee_refund_item($order, $item): bool
+    {
+        if ($this->is_shipping_fee_item($item)) {
+            return true;
+        }
+        $original_id = (int) $item->get_meta('_refunded_item_id', true);
+        return $original_id > 0 && $this->is_shipping_fee_item($order->get_item($original_id));
+    }
+
+    /**
+     * The resolver's combined synthetic tax line (rate 990000 / US-XX-FFLA-TOTAL).
+     */
+    private function is_resolver_tax_line(array $tax): bool
+    {
+        return (int) ($tax['rate_id'] ?? 0) === self::RESOLVER_RATE_ID
+            || (bool) preg_match('/^US-[A-Z]{2}-FFLA-TOTAL$/', (string) ($tax['rate_code'] ?? ''));
     }
 
     private function has_unallocated_refund_base(array $lines): bool
@@ -2721,6 +2827,7 @@ class Tax_Report_Service
             'It does not include sales from external marketplaces, POS systems, or other websites unless those transactions were imported as WooCommerce orders.',
             'Tax registrations, filing frequencies, exemption certificates, and marketplace-facilitator evidence are not reliably available from standard WooCommerce order data.',
             'Jurisdiction totals use the combined stored FFLA rate and its destination components when available; WooCommerce-only tax lines are marked Needs review.',
+            'Fee items marked as shipping (by default the FPPC "Final shipping" fee; extend with the ffla_tax_report_shipping_fee_meta_keys filter) are reported as shipping and taxable shipping. Their order-line rows keep item_type "fee" with reporting_category "shipping".',
             'Rows marked Needs review require jurisdiction mapping or taxability review before filing.',
         ];
         if (count($report['manifest']['currencies'] ?? []) > 1) {
