@@ -2,6 +2,23 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.47.8] - 2026-09-24
+
+### Fixed
+- Sales tax on payment-plan renewals and other stored-order recalculations. Renewals built by cron/Action Scheduler, admin "Recalculate", and FPPC final-shipping and early-payoff sizing now resolve tax from the order itself: its taxable address (honoring `woocommerce_tax_based_on`), its customer and its shipping lines. They previously read the WooCommerce session, found none, and fell through to WooCommerce's native tax table, so stores without one collected $0 on installments and on the FPPC final shipping fee.
+- An order carrying a successful stored `_ffla_tax_quote` for the same normalized address reuses it with no live API call, so every payment of a plan uses the checkout rate (990000, "Sales Tax", `US-{STATE}-FFLA-TOTAL`). A changed address, or a payment-plan order without a quote, is quoted once and the new quote is stored the same way checkout stores it.
+- Checkout guards apply unchanged: US only, standard tax class only, coverage checks, the full-order role exemption (now evaluated for the order's customer through `Tax_Role_Gate::should_charge_for_order()`, with exemption evidence kept in step on the order), and local pickup (`local_pickup`, `pickup_location`, `legacy_local_pickup`) taxed at the store base address.
+- Recalculated synthetic tax lines keep their label, code, compound flag and rate percent. WooCommerce has no rate-percent filter, and older versions pass no rate key to the label/code filters. An administrator's own session metadata can no longer mislabel an order.
+- Lookups served from the `WC_Tax::find_rates()` object cache are covered through `woocommerce_find_rates`, and cache entries written during an order recalculation are dropped afterwards.
+
+### Unchanged
+- Classic and Store API checkout, including the Store API draft-order recalculation, behave exactly as before. Orders that neither carry a stored quote nor belong to a payment plan keep the previous behavior. Existing orders are not recalculated; the fix applies the next time WooCommerce calculates an order's taxes.
+
+### Added
+- Filters `ffla_tax_order_context_enabled` (bool, order) and `ffla_tax_exemption_order_customer_user_id` (user ID, order).
+- Unattended fallbacks to WooCommerce's own rates are written to the `ffla-tax` WooCommerce log.
+- `tests/smoke/tax-order-context-smoke.php` (58 checks) gates CI and release publication.
+
 ## [1.47.7] - 2026-09-22
 
 ### Fixed
