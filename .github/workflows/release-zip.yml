@@ -84,6 +84,7 @@ jobs:
           find modules/tax-rates -name '*.php' -print0 | xargs -0 -n1 php -l
           php tests/smoke/tax-report-jurisdiction-smoke.php
           php tests/smoke/tax-split-payment-smoke.php
+          php tests/smoke/tax-order-context-smoke.php
 
       - name: Validate customer and order management before publishing
         if: ${{ steps.tag.outputs.skip != 'true' }}

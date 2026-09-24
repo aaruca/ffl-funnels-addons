@@ -286,7 +286,65 @@ class Tax_Role_Gate
             return true;
         }
 
-        $context = self::get_current_customer_context();
+        return self::charge_decision(self::get_current_customer_context());
+    }
+
+    /**
+     * Legacy full-order exemption decision for a stored order's own customer.
+     *
+     * Order recalculations (subscription renewals built by cron or Action
+     * Scheduler, admin "Recalculate", REST updates) run without a customer
+     * session and usually as user 0, so the current request's customer says
+     * nothing about who the order belongs to.
+     *
+     * @param mixed $order WC_Order or subclass (renewal, subscription).
+     */
+    public static function should_charge_for_order($order): bool
+    {
+        if (!self::is_active()) {
+            return true;
+        }
+
+        return self::charge_decision(self::get_order_customer_context($order));
+    }
+
+    /**
+     * Customer context for the customer recorded on an order.
+     *
+     * @param mixed $order WC_Order or subclass.
+     * @return array{user_id:int,roles:array<int,string>}
+     */
+    public static function get_order_customer_context($order): array
+    {
+        $user_id = is_object($order) && method_exists($order, 'get_customer_id')
+            ? max(0, (int) $order->get_customer_id())
+            : 0;
+        $user_id = max(0, (int) apply_filters('ffla_tax_exemption_order_customer_user_id', $user_id, $order));
+
+        return self::build_customer_context($user_id);
+    }
+
+    /**
+     * Current customer context used by global and conditional rules.
+     *
+     * @return array{user_id:int,roles:array<int,string>}
+     */
+    public static function get_current_customer_context(): array
+    {
+        if (self::$customer_context_cache !== null) {
+            return self::$customer_context_cache;
+        }
+
+        self::$customer_context_cache = self::build_customer_context(self::resolve_customer_user_id());
+
+        return self::$customer_context_cache;
+    }
+
+    /**
+     * @param array{user_id:int,roles:array<int,string>} $context
+     */
+    private static function charge_decision(array $context): bool
+    {
         $user_id = (int) $context['user_id'];
 
         if (array_key_exists($user_id, self::$charge_decisions)) {
@@ -313,17 +371,10 @@ class Tax_Role_Gate
     }
 
     /**
-     * Current customer context used by global and conditional rules.
-     *
      * @return array{user_id:int,roles:array<int,string>}
      */
-    public static function get_current_customer_context(): array
+    private static function build_customer_context(int $user_id): array
     {
-        if (self::$customer_context_cache !== null) {
-            return self::$customer_context_cache;
-        }
-
-        $user_id = self::resolve_customer_user_id();
         $roles = [];
 
         if ($user_id > 0) {
@@ -337,12 +388,10 @@ class Tax_Role_Gate
             $roles = [self::GUEST_ROLE_KEY];
         }
 
-        self::$customer_context_cache = [
+        return [
             'user_id' => $user_id,
             'roles'   => $roles,
         ];
-
-        return self::$customer_context_cache;
     }
 
     /**
