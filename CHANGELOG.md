@@ -5,13 +5,14 @@ All notable changes to FFL Funnels Addons are documented in this file.
 ## [1.47.9] - 2026-09-24
 
 ### Fixed
+- Sales Tax Reports: the FPPC initial (layaway) fee is reported as shipping on orders whose plan uses "Initial fee includes shipping" (FPPC's internal $0 shipping line marked `upfront_fee`). Plans that charge regular WooCommerce shipping plus the fee, no-shipping-charge plans and local pickup keep it under fees. The decision is per order, with no store-wide setting; `ffla_tax_report_layaway_fee_is_shipping` (bool, order) can override it. Refunds of that fee follow the same classification.
 - Sales Tax Reports: FPPC's fixed layaway shipping, collected as a "Final shipping" fee item (`_fppc_final_shipping_fee = yes`) on the final renewal or early-payoff order, is now reported as shipping. Order rows move it from `fees` to `shipping`. State, jurisdiction, filing-master and filing-total taxable shipping include it when it was taxed. Itemized and unallocated refunds of the fee are classified the same way.
 - A resolver tax line (rate 990000 / `US-XX-FFLA-TOTAL`) saved at 0%, which WooCommerce does whenever it recalculates an order (for example the Store API checkout draft), no longer forces the jurisdiction to Needs review. The report uses the order's stored quote rate and discloses it as allocation method `stored_quote_rate_for_unrated_resolver_line`. Zero-percent native WooCommerce lines still need review.
 
 ### Added
 - Order-line column `reporting_category` (`product`, `shipping`, `fee`, `coupon`) next to `item_type`, which keeps the WooCommerce type for audit. Refund line details carry the same category.
 - Filter `ffla_tax_report_shipping_fee_meta_keys` (default `['_fppc_final_shipping_fee']`). FPPC's layaway fee (`_fppc_layaway_fee`) can be opted in where it represents shipping.
-- `tests/smoke/tax-report-shipping-fee-smoke.php` (54 checks) gates CI and release publication.
+- `tests/smoke/tax-report-shipping-fee-smoke.php` (66 checks) gates CI and release publication.
 
 ### Existing orders and snapshots
 - Order total, net collected, tax collected/refunded and taxable sales are unchanged for existing orders; only the shipping/fees split and taxable-shipping component move.

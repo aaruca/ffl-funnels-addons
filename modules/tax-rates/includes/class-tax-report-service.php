@@ -31,6 +31,9 @@ class Tax_Report_Service
     /** @var string[]|null */
     private $shipping_fee_keys = null;
 
+    /** @var array<int,bool> Per-order "layaway fee includes shipping" decisions. */
+    private $fee_shipping_orders = [];
+
     public function __construct()
     {
         $this->precision = function_exists('wc_get_price_decimals') ? (int) wc_get_price_decimals() : 2;
@@ -173,6 +176,7 @@ class Tax_Report_Service
         $filters = self::normalize_filters($filters);
         $this->counted_sales = [];
         $this->shipping_fee_keys = null;
+        $this->fee_shipping_orders = [];
         $summary_only = !empty($options['summary_only']);
         $collect_advanced = !$summary_only && $filters['report_detail'] === 'advanced';
         $collect_order_rows = !$summary_only && ($collect_advanced || $filters['include_pii']);
@@ -695,7 +699,7 @@ class Tax_Report_Service
         $fees = 0;
         $shipping_fees = 0;
         foreach ($order->get_items('fee') as $item) {
-            if ($this->is_shipping_fee_item($item)) {
+            if ($this->is_shipping_fee_item($item, $order)) {
                 $shipping_fees += $this->minor($item->get_total());
             } else {
                 $fees += $this->minor($item->get_total());
@@ -929,7 +933,7 @@ class Tax_Report_Service
             $row = array_merge($base, $this->empty_line_fields(), [
                 'item_id'           => (int) $item_id,
                 'item_type'         => 'fee',
-                'reporting_category'=> $this->is_shipping_fee_item($item) ? 'shipping' : 'fee',
+                'reporting_category'=> $this->is_shipping_fee_item($item, $order) ? 'shipping' : 'fee',
                 'name'              => (string) $item->get_name(),
                 'quantity'          => '1',
                 'tax_class'         => method_exists($item, 'get_tax_class') ? (string) $item->get_tax_class() : '',
@@ -1903,7 +1907,7 @@ class Tax_Report_Service
         return $category !== '' ? $category : (string) ($line['item_type'] ?? '');
     }
 
-    private function is_shipping_fee_item($item): bool
+    private function is_shipping_fee_item($item, $order = null): bool
     {
         if (!is_object($item) || !method_exists($item, 'get_meta')) {
             return false;
@@ -1916,7 +1920,42 @@ class Tax_Report_Service
                 return true;
             }
         }
-        return false;
+        return strtolower((string) $item->get_meta('_fppc_layaway_fee', true)) === 'yes'
+            && $this->order_fee_includes_shipping($order);
+    }
+
+    /**
+     * Whether FPPC shipped plan items under a plan whose initial fee includes
+     * shipping ("Initial fee includes shipping"). FPPC records that choice on
+     * its internal $0 shipping line; plans that charge regular WooCommerce
+     * shipping plus the fee, or items collected by local pickup, do not
+     * qualify, so their layaway fee stays a fee.
+     */
+    private function order_fee_includes_shipping($order): bool
+    {
+        if (!is_object($order) || !method_exists($order, 'get_items')) {
+            return false;
+        }
+        $order_id = method_exists($order, 'get_id') ? (int) $order->get_id() : 0;
+        if ($order_id > 0 && isset($this->fee_shipping_orders[$order_id])) {
+            return $this->fee_shipping_orders[$order_id];
+        }
+
+        $includes = false;
+        foreach ($order->get_items('shipping') as $shipping_item) {
+            $method = method_exists($shipping_item, 'get_method_id') ? (string) $shipping_item->get_method_id() : '';
+            if ($method === 'fppc_deferred_shipping'
+                && (string) $shipping_item->get_meta('_fppc_shipping_charge_mode', true) === 'upfront_fee') {
+                $includes = true;
+                break;
+            }
+        }
+        $includes = (bool) apply_filters('ffla_tax_report_layaway_fee_is_shipping', $includes, $order);
+
+        if ($order_id > 0) {
+            $this->fee_shipping_orders[$order_id] = $includes;
+        }
+        return $includes;
     }
 
     /**
@@ -1924,11 +1963,11 @@ class Tax_Report_Service
      */
     private function is_shipping_fee_refund_item($order, $item): bool
     {
-        if ($this->is_shipping_fee_item($item)) {
+        if ($this->is_shipping_fee_item($item, $order)) {
             return true;
         }
         $original_id = (int) $item->get_meta('_refunded_item_id', true);
-        return $original_id > 0 && $this->is_shipping_fee_item($order->get_item($original_id));
+        return $original_id > 0 && $this->is_shipping_fee_item($order->get_item($original_id), $order);
     }
 
     /**
@@ -2827,7 +2866,7 @@ class Tax_Report_Service
             'It does not include sales from external marketplaces, POS systems, or other websites unless those transactions were imported as WooCommerce orders.',
             'Tax registrations, filing frequencies, exemption certificates, and marketplace-facilitator evidence are not reliably available from standard WooCommerce order data.',
             'Jurisdiction totals use the combined stored FFLA rate and its destination components when available; WooCommerce-only tax lines are marked Needs review.',
-            'Fee items marked as shipping (by default the FPPC "Final shipping" fee; extend with the ffla_tax_report_shipping_fee_meta_keys filter) are reported as shipping and taxable shipping. Their order-line rows keep item_type "fee" with reporting_category "shipping".',
+            'Fee items that represent shipping are reported as shipping and taxable shipping: the FPPC "Final shipping" fee, and the FPPC initial layaway fee when the plan on that order includes shipping in the fee (extend with the ffla_tax_report_shipping_fee_meta_keys filter). Their order-line rows keep item_type "fee" with reporting_category "shipping".',
             'Rows marked Needs review require jurisdiction mapping or taxability review before filing.',
         ];
         if (count($report['manifest']['currencies'] ?? []) > 1) {
