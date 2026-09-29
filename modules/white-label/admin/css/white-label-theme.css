@@ -32,10 +32,15 @@ a,
 }
 
 /* ── Count badges in the sidebar ──────────────────────────────────── */
+/* Core badges plus plugin badges that paint their own colour (e.g. WS Form's
+   `.wsf-submit-unread > span`). The `#adminmenu` id out-specifies the plugins'
+   `.admin-color-* .class > span` rules; !important covers their !important. */
 #adminmenu .menu-counter,
 #adminmenu .awaiting-mod,
-#adminmenu .update-plugins {
+#adminmenu .update-plugins,
+#adminmenu .wsf-submit-unread > span {
     background: var(--ffla-wl-primaryColor, #2271b1) !important;
+    background-color: var(--ffla-wl-primaryColor, #2271b1) !important;
     color: var(--ffla-wl-primaryContrast, #ffffff) !important;
 }
 

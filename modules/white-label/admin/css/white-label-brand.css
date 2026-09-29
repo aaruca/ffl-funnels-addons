@@ -46,10 +46,9 @@
     text-overflow: ellipsis;
 }
 
-.ffla-wl-brand:hover .ffla-wl-brand__text,
-.ffla-wl-brand:focus .ffla-wl-brand__text {
-    color: var(--ffla-wl-sidebarHoverText, #fff);
-}
+/* No hover text-colour change: the brand keeps its resting background, so the
+   "item hover text" colour (often white, for hovered menu items that DO get a
+   coloured background) would be invisible here in light mode. */
 
 /* Manually collapsed menu (icons only) — show just the centred logo.
    WordPress keeps the `auto-fold` body class at every width and only collapses
