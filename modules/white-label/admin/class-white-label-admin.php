@@ -45,8 +45,11 @@ class White_Label_Admin
         add_action('admin_post_' . self::EXPORT_ACTION, [$this, 'handle_export']);
         add_action('admin_post_' . self::IMPORT_ACTION, [$this, 'handle_import']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_theme']);
-        // Capture the admin-bar node list where it is guaranteed populated.
-        add_action('admin_bar_menu', [$this, 'cache_admin_bar_nodes'], 99998);
+        // Capture the admin-bar node list after every plugin has added its nodes.
+        // Some plugins register very late — WP Rocket uses PHP_INT_MAX - 10 — so
+        // we run at PHP_INT_MAX to snapshot the fully-populated bar; otherwise
+        // those late nodes are missing from the Restrictions "Admin bar" list.
+        add_action('admin_bar_menu', [$this, 'cache_admin_bar_nodes'], PHP_INT_MAX);
     }
 
     /**

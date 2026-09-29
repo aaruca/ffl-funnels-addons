@@ -36,9 +36,11 @@ class White_Label_Restrictions
     {
         add_action('admin_menu', [$this, 'hide_menus'], 9999);
         add_action('admin_init', [$this, 'block_pages']);
-        // Late, so every plugin has added its admin-bar nodes first. Fires in
+        // Run at the very end so every plugin has added its admin-bar nodes
+        // first — some register extremely late (WP Rocket uses PHP_INT_MAX - 10),
+        // and removing before a node is added would silently fail. Fires in
         // wp-admin and on the front end.
-        add_action('admin_bar_menu', [$this, 'remove_admin_bar_nodes'], 9999);
+        add_action('admin_bar_menu', [$this, 'remove_admin_bar_nodes'], PHP_INT_MAX);
     }
 
     /**
