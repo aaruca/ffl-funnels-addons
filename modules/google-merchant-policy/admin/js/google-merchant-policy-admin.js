@@ -21,7 +21,7 @@
             }
         });
         form.addEventListener('submit', function (event) {
-            if (mode.value === 'enforce' && !window.confirm('Enforce excludes Blocked AND Pending products from eligible Google sync requests. Saving starts a NEW scan and resets its counters; existing exclusions remain. Google removals are not immediate. Save and start?')) {
+            if (mode.value === 'enforce' && !window.confirm('In Enforce this addon decides what reaches Google: Allowed products are uploaded and Blocked AND Pending products are removed through Google for WooCommerce. Products excluded in Google for WooCommerce before stay excluded. Saving starts a NEW scan and resets its counters. Google changes are not immediate. Save and start?')) {
                 event.preventDefault();
             }
         });

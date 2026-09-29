@@ -2,17 +2,25 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
-## [1.47.10] - 2026-09-29
+## [1.48.0] - 2026-09-29
+
+### Changed
+- Google Merchant Policy: in Enforce mode the addon now decides what reaches Google in both directions. Allowed products get Google for WooCommerce channel visibility `sync-and-show` and are uploaded; Blocked and Pending products get `dont-sync-and-show` and are removed. Uploads use Google for WooCommerce's own product update flow (`SyncerHooks::update_by_object`), so a product save, a category rule change, a per-product decision or a catalog scan syncs automatically. Previously exclusions were one-way and allowed products had to be restored by hand in Google for WooCommerce.
+- Exclusions this addon did not write (made in the Google for WooCommerce Channel visibility box or by another tool) are kept as a per-product "Always exclude" the first time Enforce evaluates the product, so nothing hidden on purpose is uploaded. Exclusions this addon wrote earlier are lifted once the product is Allowed. After updating, run Save policies & start catalog scan once to apply this to the whole catalog; the dashboard shows a reminder until then.
+- In Enforce mode the Google for WooCommerce Channel visibility box on the product page is replaced by this addon's Google Merchant Policy box, and bulk visibility edits on its Product Feed page (`POST /wc/gla/mc/product-visibility`) are refused with a message pointing here instead of being silently reverted. Audit mode leaves both alone.
+
+### Added
+- Google Merchant Policy per-product decisions: Follow policy rules, Always include (skips category rules and text checks; explicit firearm/ammunition flags still block) and Always exclude. Set them from the product page box, which also shows the decision, its reason and the Google for WooCommerce sync and Merchant Center status, or from the new Products list bulk actions. The Products list also gets a Google column and a Google decision filter; the dashboard links to Blocked, Pending, Always excluded and Always included products.
+- The dashboard and scan counters report Google upload requests next to removal requests.
+- `tests/smoke/google-merchant-gla-contract.php` (54 checks) reads a real Google for WooCommerce copy and fails if any hook, class, job name, meta key, meta box, REST route or priority this module relies on changes. CI downloads the latest wordpress.org release on every push, pull request and weekly, and runs the module's smoke suite (now 92 checks) against WordPress's real `WP_Hook`. The release gate runs the offline suite.
 
 ### Fixed
+- Google Merchant Policy: Google for WooCommerce's expiring-product resubmission and full-sync jobs load products by ID without its sync-ready pre-filter, so a variation blocked on its own under an allowed parent could be resubmitted. Those jobs now go through the same policy check as queued updates.
 - Google Merchant Policy: a failed Google removal request inside Google for WooCommerce's queued update job no longer aborts the batch. Allowed products in the same batch still sync, the excluded product stays out of the upload, and the problem is logged under the `ffla-google-merchant-policy` WooCommerce log source.
 - Google Merchant Policy: in Enforce mode, a variation blocked on its own (for example by a safety signal in its name) under an allowed parent is hidden from Google's pull API (WPCOM proxy, `gla_syncable=1`). List requests exclude it, and single requests receive the proxy's own 403 "Item not syncable". Google for WooCommerce applies channel visibility per parent product and does not filter proxy variations itself. Ordinary REST clients and Audit mode are unaffected.
 
 ### Verified
-- Every integration point with Google for WooCommerce 3.9.4 (wordpress.org release) was checked against its source: the sync-ready pre-filter, the `gla/jobs/update_products/process_item` job, `SyncerHooks` removal, the `_wc_gla_visibility`, `_wc_gla_google_ids` and `_wc_gla_synced_at` meta, the save priorities and the WPCOM proxy.
-
-### Added
-- `tests/smoke/google-merchant-gla-contract.php` (32 checks) reads a real Google for WooCommerce copy and fails if any of those hooks, classes, meta keys or priorities change. CI downloads the latest wordpress.org release on every push, pull request and weekly, and runs the module's smoke suite (now 56 checks) against WordPress's real `WP_Hook`. The release gate runs the offline suite.
+- Every integration point with Google for WooCommerce 3.9.4 (wordpress.org release) was checked against its source: the sync-ready pre-filter, the queued update, full-sync and expiring-resubmission jobs, `SyncerHooks` uploads and removals, the Channel visibility meta box and bulk visibility endpoint, the `_wc_gla_visibility`, `_wc_gla_google_ids`, `_wc_gla_synced_at` and status meta, the save priorities and the WPCOM proxy.
 
 ## [1.47.9] - 2026-09-24
 

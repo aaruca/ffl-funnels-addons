@@ -26,7 +26,7 @@ class Google_Merchant_Policy_Module extends FFLA_Module
 
     public function get_description(): string
     {
-        return __('Audit and protect the Google for WooCommerce product feed with inherited category policies, firearm/ammunition safety checks, and gradual background reconciliation.', 'ffl-funnels-addons');
+        return __('Decide which products reach Google for WooCommerce with inherited category policies, per-product decisions and firearm/ammunition safety checks. In Enforce, uploads and removals sync automatically.', 'ffl-funnels-addons');
     }
 
     public function get_icon_svg(): string
@@ -47,8 +47,10 @@ class Google_Merchant_Policy_Module extends FFLA_Module
 
         if (is_admin()) {
             require_once $base . 'admin/class-google-merchant-policy-admin.php';
+            require_once $base . 'admin/class-google-merchant-policy-product-admin.php';
             $this->admin = new Google_Merchant_Policy_Admin();
             $this->admin->init();
+            (new Google_Merchant_Policy_Product_Admin())->init();
         }
     }
 
