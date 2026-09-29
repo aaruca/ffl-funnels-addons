@@ -207,6 +207,32 @@ ul#adminmenu > li.current > a.current:after,
     color: var(--ffla-wl-sidebarCurrentIcon, #ffffff) !important;
 }
 
+/* ── Plugin menu icons shipped as <img> (Merchant, YITH, …) ──────────────
+   Some plugins render their sidebar icon as an <img> file (not a dashicon font
+   and not the .wp-menu-image.svg background data-URI that WordPress's own
+   svg-painter recolours). Those images are usually baked light for the dark
+   sidebar and shown at opacity .6, so they wash out on the light theme.
+   We can't repaint an external image by `fill`, so force it to a flat
+   silhouette that matches the current theme — the same monochrome treatment the
+   rest of the sidebar icons get. (Uses `filter` on the small icon only, never on
+   admin-chrome containers, so it can't trigger the content-blank paint bug.) */
+body.ffla-theme-light #adminmenu .wp-menu-image img {
+    filter: brightness(0) !important; /* dark silhouette on the light sidebar */
+}
+body.ffla-theme-dark #adminmenu .wp-menu-image img {
+    filter: brightness(0) invert(1) !important; /* light silhouette on the dark sidebar */
+}
+
+/* On hover / current the item gets the accent background, so flip the icon to a
+   light silhouette for contrast (mirrors the #fff hover/current icon default). */
+#adminmenu li.menu-top:hover .wp-menu-image img,
+#adminmenu li > a.menu-top:focus .wp-menu-image img,
+#adminmenu li.current .wp-menu-image img,
+#adminmenu li.wp-has-current-submenu .wp-menu-image img {
+    filter: brightness(0) invert(1) !important;
+    opacity: 1 !important;
+}
+
 /* "Collapse menu" button — a <button>, not a menu link. Its label and its
    dashicon arrow both follow the button's `color`, so theme that for the normal
    and hover/focus states. */
