@@ -130,8 +130,20 @@ class FakeDB {
     }
 }
 $wpdb = new FakeDB();
+class WP_REST_Response {
+    public $data, $status;
+    public function __construct($data = null, $status = 200) { $this->data = $data; $this->status = $status; }
+    public function get_status() { return $this->status; }
+}
+class FakeRequest {
+    public $params, $route;
+    public function __construct($params, $route) { $this->params = $params; $this->route = $route; }
+    public function get_param($key) { return $this->params[$key] ?? null; }
+    public function get_route() { return $this->route; }
+}
 class Product {
-    public $id, $name, $parent = 0, $description = '', $meta = [], $terms = [1], $type = 'simple', $on_save;
+    public $id, $name, $parent = 0, $description = '', $meta = [], $terms = [1], $type = 'simple', $on_save, $children = [];
+    public function get_children() { return $this->children; }
     public function __construct($id, $name = 'Range Bag') { $this->id = $id; $this->name = $name; }
     public function get_id() { return $this->id; }
     public function get_parent_id() { return $this->parent; }
@@ -237,6 +249,30 @@ $products[1]->type = 'simple'; unset($products[1]->meta['_wc_gla_synced_at']);
 $thrown = false;
 try { Sync::request_withdrawal($products[1]); } catch (\RuntimeException $e) { $thrown = true; }
 check($thrown, 'Inconsistent remote IDs need review, not false removal claim');
+$calls = [];
+Sync::process_update([1, 9], $original);
+check($calls === [[9]], 'A failed removal request never drops allowed items in the same Google batch');
+
+// Google reads variation visibility from the parent and its WPCOM pull proxy does
+// not filter variations: hide variations that are not allowed from proxy requests.
+Engine::reset_runtime_cache();
+$products[20] = new Product(20, 'Range Bag'); $products[20]->type = 'variable'; $products[20]->children = [21, 22];
+$products[21] = new Product(21, 'Range Bag Blue'); $products[21]->parent = 20;
+$products[22] = new Product(22, 'Range Bag with magazine pouch'); $products[22]->parent = 20;
+$proxy_list = new FakeRequest(['gla_syncable' => '1', 'product_id' => 20], '/wc/v3/products/20/variations');
+check(Sync::filter_proxy_variation_query(['post__not_in' => [5]], $proxy_list) === ['post__not_in' => [5, 22]], 'Proxy variation list hides a variation blocked under an allowed parent');
+$plain_list = new FakeRequest(['product_id' => 20], '/wc/v3/products/20/variations');
+check(Sync::filter_proxy_variation_query(['post__not_in' => []], $plain_list) === ['post__not_in' => []], 'Ordinary REST clients are unaffected');
+$proxy_single = new FakeRequest(['gla_syncable' => '1', 'product_id' => 20], '/wc/v3/products/20/variations/22');
+$response = new WP_REST_Response(['id' => 22]);
+check(Sync::filter_proxy_variation_response($response, $products[22], $proxy_single)->get_status() === 403, 'Single blocked variation gets the proxy 403');
+check(Sync::filter_proxy_variation_response($response, $products[21], $proxy_single) === $response, 'Allowed variation unchanged');
+check(Sync::filter_proxy_variation_response($response, $products[22], $proxy_list) === $response, 'List items are filtered by the query, not replaced');
+update_option(Engine::OPTION, ['mode' => 'audit']);
+check(Sync::filter_proxy_variation_query(['post__not_in' => []], $proxy_list) === ['post__not_in' => []], 'Audit never hides variations');
+update_option(Engine::OPTION, ['mode' => 'enforce', 'batch_size' => 10]);
+Sync::init();
+check(isset($wp_filter['woocommerce_rest_product_variation_object_query']->callbacks[20], $wp_filter['woocommerce_rest_prepare_product_variation_object']->callbacks[PHP_INT_MAX]), 'Proxy variation filters registered after Google proxy filters');
 
 $products = [];
 for ($i = 1; $i <= 35; $i++) { $products[$i] = new Product($i); }

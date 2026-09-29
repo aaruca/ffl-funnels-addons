@@ -5,6 +5,10 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  # Weekly: catch Google for WooCommerce releases that change the hooks the
+  # Google Merchant Policy module depends on, even without a commit here.
+  schedule:
+    - cron: '17 9 * * 1'
 
 jobs:
   lint:
@@ -32,6 +36,16 @@ jobs:
           php tests/smoke/tax-split-payment-smoke.php
           php tests/smoke/tax-order-context-smoke.php
           php tests/smoke/tax-report-shipping-fee-smoke.php
+
+      - name: Google Merchant policy and Google for WooCommerce compatibility
+        run: |
+          set -e
+          curl -fsSL -o /tmp/class-wp-hook.php https://raw.githubusercontent.com/WordPress/WordPress/master/wp-includes/class-wp-hook.php
+          php tests/smoke/google-merchant-policy-smoke.php /tmp/class-wp-hook.php
+          GLA_VERSION=$(curl -fsSL 'https://api.wordpress.org/plugins/info/1.2/?action=plugin_information&request%5Bslug%5D=google-listings-and-ads' | php -r 'echo json_decode(stream_get_contents(STDIN), true)["version"];')
+          curl -fsSL -o /tmp/gla.zip "https://downloads.wordpress.org/plugin/google-listings-and-ads.${GLA_VERSION}.zip"
+          unzip -q /tmp/gla.zip -d /tmp/gla
+          php tests/smoke/google-merchant-gla-contract.php /tmp/gla/google-listings-and-ads
 
       - name: Customer and order management regression checks
         run: |

@@ -16,6 +16,13 @@ class Google_Merchant_Policy_Google_Sync
         // Google initializes jobs only in admin/cron/AJAX/CLI. This also covers
         // jobs registered after wp_loaded, before their priority-10 callback.
         add_action(self::UPDATE_HOOK, [__CLASS__, 'protect_update_job'], -100, 0);
+
+        // Google for WooCommerce reads a variation's channel visibility from its
+        // parent, and its WPCOM proxy (Google's pull API) does not filter
+        // variations at all. Hide variations that are not allowed from proxy
+        // requests; list queries exclude them, single requests get Google's 403.
+        add_filter('woocommerce_rest_product_variation_object_query', [__CLASS__, 'filter_proxy_variation_query'], 20, 2);
+        add_filter('woocommerce_rest_prepare_product_variation_object', [__CLASS__, 'filter_proxy_variation_response'], PHP_INT_MAX, 3);
     }
 
     public static function protect_update_job(): void
@@ -59,7 +66,14 @@ class Google_Merchant_Policy_Google_Sync
                 continue;
             }
             Google_Merchant_Policy_Engine::apply_to_product($product);
-            self::request_withdrawal($product);
+            try {
+                self::request_withdrawal($product);
+            } catch (\Throwable $e) {
+                // The product still stays out of this upload. A failed removal
+                // request must not drop the allowed products in Google's batch;
+                // the catalog scan reports the product for review.
+                self::log_warning('Google removal could not be requested during a queued update', $product, $e);
+            }
             $excluded++;
         }
         if ($remaining || $excluded === 0) {
@@ -102,5 +116,85 @@ class Google_Merchant_Policy_Google_Sync
             }
         }
         throw new RuntimeException(__('Feed exclusion saved, but Google removal could not be requested. Check the Google for WooCommerce connection and resume the scan.', 'ffl-funnels-addons'));
+    }
+
+    /**
+     * Exclude variations that are not allowed from a WPCOM proxy variation list.
+     *
+     * WooCommerce applies this filter before it sets post_parent, so the parent
+     * comes from the request route.
+     *
+     * @param mixed $args    WP_Query arguments.
+     * @param mixed $request WP_REST_Request.
+     * @return mixed
+     */
+    public static function filter_proxy_variation_query($args, $request)
+    {
+        if (!is_array($args) || !self::is_enforced_proxy_request($request)) {
+            return $args;
+        }
+        $parent = wc_get_product((int) $request->get_param('product_id'));
+        if (!$parent || !method_exists($parent, 'get_children')) {
+            return $args;
+        }
+
+        $hidden = [];
+        foreach ((array) $parent->get_children() as $child_id) {
+            if (Google_Merchant_Policy_Engine::evaluate_product((int) $child_id)['status'] !== 'allowed') {
+                $hidden[] = (int) $child_id;
+            }
+        }
+        if ($hidden) {
+            $args['post__not_in'] = array_values(array_unique(array_merge(
+                array_map('intval', (array) ($args['post__not_in'] ?? [])),
+                $hidden
+            )));
+        }
+        return $args;
+    }
+
+    /**
+     * Answer a single WPCOM proxy variation request like Google's own proxy does
+     * for a product that is not syncable.
+     *
+     * @param mixed $response  WP_REST_Response.
+     * @param mixed $variation WC_Product_Variation.
+     * @param mixed $request   WP_REST_Request.
+     * @return mixed
+     */
+    public static function filter_proxy_variation_response($response, $variation, $request)
+    {
+        if (!$response instanceof WP_REST_Response || !self::is_enforced_proxy_request($request)
+            || !preg_match('#/variations/\d+$#', (string) $request->get_route())
+            || Google_Merchant_Policy_Engine::evaluate_product($variation)['status'] === 'allowed') {
+            return $response;
+        }
+
+        return new WP_REST_Response([
+            'code'    => 'gla_rest_item_no_syncable',
+            'message' => 'Item not syncable',
+            'data'    => ['status' => 403],
+        ], 403);
+    }
+
+    /** Google's pull API marks its requests with gla_syncable=1. */
+    private static function is_enforced_proxy_request($request): bool
+    {
+        return is_object($request) && method_exists($request, 'get_param')
+            && (string) $request->get_param('gla_syncable') === '1'
+            && (string) Google_Merchant_Policy_Engine::get_settings()['mode'] === 'enforce';
+    }
+
+    private static function log_warning(string $message, $product, \Throwable $e): void
+    {
+        if (!function_exists('wc_get_logger')) {
+            return;
+        }
+        wc_get_logger()->warning(sprintf(
+            '%s (product %d): %s',
+            $message,
+            method_exists($product, 'get_id') ? (int) $product->get_id() : 0,
+            $e->getMessage()
+        ), ['source' => 'ffla-google-merchant-policy']);
     }
 }

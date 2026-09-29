@@ -2,6 +2,18 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.47.10] - 2026-09-29
+
+### Fixed
+- Google Merchant Policy: a failed Google removal request inside Google for WooCommerce's queued update job no longer aborts the batch. Allowed products in the same batch still sync, the excluded product stays out of the upload, and the problem is logged under the `ffla-google-merchant-policy` WooCommerce log source.
+- Google Merchant Policy: in Enforce mode, a variation blocked on its own (for example by a safety signal in its name) under an allowed parent is hidden from Google's pull API (WPCOM proxy, `gla_syncable=1`). List requests exclude it, and single requests receive the proxy's own 403 "Item not syncable". Google for WooCommerce applies channel visibility per parent product and does not filter proxy variations itself. Ordinary REST clients and Audit mode are unaffected.
+
+### Verified
+- Every integration point with Google for WooCommerce 3.9.4 (wordpress.org release) was checked against its source: the sync-ready pre-filter, the `gla/jobs/update_products/process_item` job, `SyncerHooks` removal, the `_wc_gla_visibility`, `_wc_gla_google_ids` and `_wc_gla_synced_at` meta, the save priorities and the WPCOM proxy.
+
+### Added
+- `tests/smoke/google-merchant-gla-contract.php` (32 checks) reads a real Google for WooCommerce copy and fails if any of those hooks, classes, meta keys or priorities change. CI downloads the latest wordpress.org release on every push, pull request and weekly, and runs the module's smoke suite (now 56 checks) against WordPress's real `WP_Hook`. The release gate runs the offline suite.
+
 ## [1.47.9] - 2026-09-24
 
 ### Fixed
