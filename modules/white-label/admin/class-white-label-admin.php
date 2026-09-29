@@ -78,10 +78,11 @@ class White_Label_Admin
             __('General', 'ffl-funnels-addons') => [
                 'primaryColor'    => __('Primary colour', 'ffl-funnels-addons'),
                 'primaryContrast' => __('Primary contrast (button text)', 'ffl-funnels-addons'),
-                'borderColor'     => __('Borders & dividers', 'ffl-funnels-addons'),
+                'borderColor'     => __('Content borders (tables, cards)', 'ffl-funnels-addons'),
             ],
             __('Sidebar', 'ffl-funnels-addons') => [
                 'sidebarBg'          => __('Background', 'ffl-funnels-addons'),
+                'sidebarBorder'      => __('Border & dividers', 'ffl-funnels-addons'),
                 'sidebarText'        => __('Item text', 'ffl-funnels-addons'),
                 'sidebarIcon'        => __('Item icon', 'ffl-funnels-addons'),
                 'sidebarHoverBg'     => __('Item hover background', 'ffl-funnels-addons'),
@@ -99,6 +100,7 @@ class White_Label_Admin
             ],
             __('Admin bar', 'ffl-funnels-addons') => [
                 'adminbarBg'        => __('Background', 'ffl-funnels-addons'),
+                'adminbarBorder'    => __('Bottom border', 'ffl-funnels-addons'),
                 'adminbarText'      => __('Item text', 'ffl-funnels-addons'),
                 'adminbarIcon'      => __('Item icon', 'ffl-funnels-addons'),
                 'adminbarHoverBg'   => __('Item hover background', 'ffl-funnels-addons'),
@@ -144,21 +146,85 @@ class White_Label_Admin
         );
         wp_add_inline_style('ffla-wl-theme', $variables);
 
-        // Sidebar plugin icons that ship as a background-image SVG can't be
-        // recoloured by `color`, so a small helper rewrites their fill to the
-        // active sidebar-icon colour. Load it whenever the theme is active (the
-        // per-mode defaults always define a sidebar-icon colour), so it also
-        // re-tints on light/dark toggle. It sets background-image — never CSS
-        // `mask`, which promoted a GPU layer and blanked large pages until a
-        // reflow. Admin-bar inline-SVG icons are handled purely in CSS via
-        // `fill`.
+        // Plugin SVG menu icons (WooCommerce, SwiftSearch, Rank Math, WPCode…)
+        // are recoloured by WordPress core's own svg-painter.js, which reads the
+        // admin colour scheme's icon colours from window._wpColorScheme. Feed our
+        // sidebar-icon colours into it (before svg-painter runs) so those icons
+        // match the theme instead of the stock scheme colour.
+        $this->override_svg_icon_colours();
+    }
+
+    /**
+     * Override the icon colours WordPress's svg-painter.js paints plugin menu
+     * icons with, so they use our sidebar-icon palette for the current mode.
+     */
+    private function override_svg_icon_colours(): void
+    {
+        $styles = $this->get_styles();
+        if (empty($styles['light']) && empty($styles['dark'])) {
+            return; // Theme not configured — leave WordPress's scheme colours.
+        }
+
+        $light = $this->icon_colours_for_mode('light', $styles);
+        $dark  = $this->icon_colours_for_mode('dark', $styles);
+        $mode  = class_exists('White_Label_Theme_Mode') ? White_Label_Theme_Mode::current_mode() : 'dark';
+        $now   = 'light' === $mode ? $light : $dark;
+
+        wp_enqueue_script('svg-painter');
+
+        // Set the current mode's icon colours BEFORE svg-painter paints on load.
+        wp_add_inline_script(
+            'svg-painter',
+            'if(window._wpColorScheme){window._wpColorScheme.icons=' . wp_json_encode($now) . ';}',
+            'before'
+        );
+
+        // Repaint via WordPress's own painter when the light/dark toggle fires,
+        // so plugin icons re-tint instantly without a reload.
+        $repaint = 'window.fflaWlIconColours=' . wp_json_encode(['light' => $light, 'dark' => $dark]) . ';'
+            . 'document.addEventListener("ffla-wl-theme-changed",function(e){'
+            . 'var c=e.detail&&window.fflaWlIconColours[e.detail.mode];'
+            . 'if(c&&window._wpColorScheme&&window.wp&&wp.svgPainter){window._wpColorScheme.icons=c;wp.svgPainter.init();}'
+            . '});';
+        wp_add_inline_script('svg-painter', $repaint);
+
+        // Make plugin SVG icon hover instant (svg-painter adds a 100ms lag).
         wp_enqueue_script(
-            'ffla-wl-theme',
-            FFLA_URL . 'modules/white-label/admin/js/white-label-theme.js',
-            [],
+            'ffla-wl-icons',
+            FFLA_URL . 'modules/white-label/admin/js/white-label-icons.js',
+            ['jquery', 'svg-painter'],
             FFLA_VERSION,
             true
         );
+    }
+
+    /**
+     * The svg-painter icon colours (base/focus/current) for a mode, merging saved
+     * styles over the per-mode defaults.
+     *
+     * @param array{light: array<string,string>, dark: array<string,string>} $styles
+     * @return array{base: string, focus: string, current: string}
+     */
+    private function icon_colours_for_mode(string $mode, array $styles): array
+    {
+        $defaults = $this->get_style_defaults();
+        $merged   = array_merge(
+            isset($defaults[$mode]) ? $defaults[$mode] : [],
+            isset($styles[$mode]) ? $styles[$mode] : []
+        );
+
+        $hex = static function ($value, $fallback) {
+            $value = (string) $value;
+            return preg_match('/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/', $value) ? $value : $fallback;
+        };
+
+        $base = $hex($merged['sidebarIcon'] ?? '', '#a7aaad');
+
+        return [
+            'base'    => $base,
+            'focus'   => $hex($merged['sidebarHoverIcon'] ?? '', $base),
+            'current' => $hex($merged['sidebarCurrentIcon'] ?? '', '#ffffff'),
+        ];
     }
 
     /**
@@ -204,53 +270,57 @@ class White_Label_Admin
         return [
             'dark' => [
                 'primaryContrast'   => '#ffffff',
-                'borderColor'       => '#2c3338',
-                'sidebarBg'         => '#1d2327',
+                'borderColor'       => '#e2e4e9',
+                'sidebarBg'         => '#151a22',
+                'sidebarBorder'     => '#2c3338',
                 'sidebarText'       => '#e7edf7',
                 'sidebarIcon'       => '#a7aaad',
                 'sidebarHoverText'  => '#ffffff',
                 'sidebarHoverIcon'  => '#ffffff',
                 'sidebarCurrentText' => '#ffffff',
                 'sidebarCurrentIcon' => '#ffffff',
-                'submenuBg'         => '#2c3338',
+                'submenuBg'         => '#1f272d',
                 'submenuText'       => '#c3c4c7',
-                'adminbarBg'        => '#1d2327',
+                'adminbarBg'        => '#151a22',
+                'adminbarBorder'    => '#2c3338',
                 'adminbarText'      => '#e7edf7',
                 'adminbarIcon'      => '#a7aaad',
                 'adminbarHoverText' => '#ffffff',
-                'adminbarSubBg'     => '#2c3338',
+                'adminbarSubBg'     => '#1f272d',
                 'adminbarSubText'   => '#c3c4c7',
                 'adminbarSubHoverText' => '#ffffff',
-                'dashBg'            => '#0b1120',
-                'dashCard'          => '#121a2e',
-                'dashText'          => '#e7edf7',
-                'dashMuted'         => '#93a3bd',
-                'dashBorder'        => '#1e293b',
+                'dashBg'            => '#1f272d',
+                'dashCard'          => '#151a22',
+                'dashText'          => '#f8fafc',
+                'dashMuted'         => '#8c949d',
+                'dashBorder'        => '#2e363e',
             ],
             'light' => [
                 'primaryContrast'   => '#ffffff',
-                'borderColor'       => '#e2e4e9',
-                'sidebarBg'         => '#ffffff',
+                'borderColor'       => '#dee4e9',
+                'sidebarBg'         => '#fafcfe',
+                'sidebarBorder'     => '#e2e4e9',
                 'sidebarText'       => '#1d2327',
                 'sidebarIcon'       => '#50575e',
                 'sidebarHoverText'  => '#ffffff',
                 'sidebarHoverIcon'  => '#ffffff',
                 'sidebarCurrentText' => '#ffffff',
                 'sidebarCurrentIcon' => '#ffffff',
-                'submenuBg'         => '#f6f7f7',
+                'submenuBg'         => '#eff3f6',
                 'submenuText'       => '#3c434a',
-                'adminbarBg'        => '#ffffff',
+                'adminbarBg'        => '#fafcfe',
+                'adminbarBorder'    => '#e2e4e9',
                 'adminbarText'      => '#1d2327',
                 'adminbarIcon'      => '#50575e',
                 'adminbarHoverText' => '#ffffff',
                 'adminbarSubBg'     => '#ffffff',
                 'adminbarSubText'   => '#3c434a',
                 'adminbarSubHoverText' => '#ffffff',
-                'dashBg'            => '#f4f6fb',
+                'dashBg'            => '#eff3f6',
                 'dashCard'          => '#ffffff',
-                'dashText'          => '#0f172a',
-                'dashMuted'         => '#64748b',
-                'dashBorder'        => '#e6eaf1',
+                'dashText'          => '#0b1220',
+                'dashMuted'         => '#6c737c',
+                'dashBorder'        => '#dee4e9',
             ],
         ];
     }
@@ -263,10 +333,11 @@ class White_Label_Admin
     private function build_style_variables_css(): string
     {
         $styles = $this->get_styles();
+        $radius = $this->get_dash_radius();
 
-        // Theming is opt-in: only apply once the operator has configured at
-        // least one colour (in either mode). Otherwise leave the admin stock.
-        if (empty($styles['light']) && empty($styles['dark'])) {
+        // Theming is opt-in: only apply once the operator has configured at least
+        // one colour (in either mode) or a dashboard radius. Otherwise stock.
+        if (empty($styles['light']) && empty($styles['dark']) && null === $radius) {
             return '';
         }
 
@@ -293,7 +364,40 @@ class White_Label_Admin
             }
         }
 
+        // Mode-independent variables (applied in both light and dark):
+        //  - the dashboard base radius (a number of px);
+        //  - the LIGHT dashboard background, reused as the content-area background
+        //    on every admin page. Deliberately always the light value so the dark
+        //    theme never darkens third-party plugin pages (a contrast risk).
+        $shared = '';
+        if (null !== $radius) {
+            $shared .= '--ffla-wl-dashRadius:' . $radius . 'px;';
+        }
+        $lightBg = isset($defaults['light']['dashBg']) ? $defaults['light']['dashBg'] : '';
+        if (isset($styles['light']['dashBg'])) {
+            $lightBg = (string) $styles['light']['dashBg'];
+        }
+        if (preg_match('/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/', (string) $lightBg)) {
+            $shared .= '--ffla-wl-contentBg:' . $lightBg . ';';
+        }
+        if ('' !== $shared) {
+            $css = 'body.wp-admin.wp-core-ui{' . $shared . '}' . $css;
+        }
+
         return $css;
+    }
+
+    /**
+     * The saved dashboard base border-radius in px (0–40), or null when unset.
+     */
+    private function get_dash_radius(): ?int
+    {
+        $value = White_Label_Settings::get('styles.dashRadius', null);
+        if (null === $value || '' === $value) {
+            return null;
+        }
+
+        return max(0, min(40, (int) $value));
     }
 
     /* =====================================================================
@@ -318,8 +422,10 @@ class White_Label_Admin
             'active_tab'    => $this->get_active_tab(),
             'style_fields'  => $this->get_style_fields(),
             'style_values'  => $this->get_styles(),
+            'dash_radius'   => $this->get_dash_radius(),
             'menu_tree'     => $this->get_admin_menu_tree(),
-            'menu_items'    => $this->get_ordered_top_level(),
+            'menu_rows'     => $this->get_menu_rows(),
+            'divider_prefix' => White_Label_Menu_Order::DIVIDER_PREFIX,
             'adminbar_nodes' => $this->get_admin_bar_nodes(),
             'exempt_emails' => implode("\n", isset($restrictions['exempt_emails']) && is_array($restrictions['exempt_emails']) ? $restrictions['exempt_emails'] : []),
             'hidden_menu'   => isset($restrictions['hidden_menu']) && is_array($restrictions['hidden_menu']) ? $restrictions['hidden_menu'] : [],
@@ -395,13 +501,16 @@ class White_Label_Admin
     }
 
     /**
-     * Top-level menu items in the saved order, for the reorder UI:
-     * slug => label. Saved order first, then any new/unordered menus.
+     * Rows for the reorder UI, in the saved order: each row is a menu item
+     * (slug + label) or a custom divider (token). Saved order first (items that
+     * still exist, plus every divider), then any new/unordered menus.
      *
-     * @return array<string, string>
+     * @return array<int, array{type:string, slug:string, label?:string}>
      */
-    private function get_ordered_top_level(): array
+    private function get_menu_rows(): array
     {
+        require_once dirname(__DIR__) . '/includes/class-white-label-menu-order.php';
+
         $labels = [];
         foreach ($this->get_admin_menu_tree() as $item) {
             $labels[$item['slug']] = $item['label'];
@@ -410,19 +519,22 @@ class White_Label_Admin
         $saved = White_Label_Settings::get('menu.top', []);
         $saved = is_array($saved) ? $saved : [];
 
-        $ordered = [];
+        $rows = [];
         foreach ($saved as $slug) {
             $slug = (string) $slug;
-            if (isset($labels[$slug])) {
-                $ordered[$slug] = $labels[$slug];
+            if (White_Label_Menu_Order::is_divider($slug)) {
+                $rows[] = ['type' => 'divider', 'slug' => $slug];
+            } elseif (isset($labels[$slug])) {
+                $rows[] = ['type' => 'item', 'slug' => $slug, 'label' => $labels[$slug]];
                 unset($labels[$slug]);
             }
+            // Otherwise a stale slug (menu no longer present) — drop it.
         }
         foreach ($labels as $slug => $label) {
-            $ordered[$slug] = $label;
+            $rows[] = ['type' => 'item', 'slug' => $slug, 'label' => $label];
         }
 
-        return $ordered;
+        return $rows;
     }
 
     /**
@@ -537,6 +649,8 @@ class White_Label_Admin
         $settings['restrictions'] = $this->sanitize_restrictions($raw_restrictions);
         $settings['menu']         = $this->sanitize_menu($raw_menu);
         $settings['dashboard']    = $this->sanitize_dashboard($raw_dashboard);
+        // Never let an operator lock themselves out by editing the exempt list.
+        $settings                 = $this->keep_current_user_exempt($settings);
         White_Label_Settings::save($settings);
         White_Label_Access::flush_cache();
 
@@ -637,10 +751,68 @@ class White_Label_Admin
             $this->redirect_after_import('invalid');
         }
 
-        White_Label_Settings::save($this->sanitize_import_settings($incoming));
+        $settings = $this->sanitize_import_settings($incoming);
+        $settings = $this->keep_current_user_exempt($settings);
+
+        White_Label_Settings::save($settings);
         White_Label_Access::flush_cache();
 
         $this->redirect_after_import('success');
+    }
+
+    /**
+     * Self-protection: saving or importing settings must never lock the current
+     * user out of their own admin. If the resulting exempt-email patterns would
+     * activate restrictions but not cover the current user (e.g. editing the
+     * exempt list to exclude oneself, or importing another site's config), add
+     * the current user's email so they stay exempt.
+     *
+     * Runs on both the Save and Import paths. The FFLA_WL_SUPERUSERS constant is
+     * only treated as protection when it actually matches the current user — a
+     * constant that is defined but empty, or that lists other people, does not.
+     *
+     * @param array<string, mixed> $settings
+     * @return array<string, mixed>
+     */
+    private function keep_current_user_exempt(array $settings): array
+    {
+        $user = wp_get_current_user();
+        if (!$user || !$user->exists()) {
+            return $settings;
+        }
+
+        $emails = isset($settings['restrictions']['exempt_emails']) && is_array($settings['restrictions']['exempt_emails'])
+            ? $settings['restrictions']['exempt_emails']
+            : [];
+
+        // The tamper-proof superusers constant patterns, if any.
+        $constant_patterns = [];
+        if (defined(White_Label_Access::SUPERUSERS_CONSTANT)) {
+            $list = constant(White_Label_Access::SUPERUSERS_CONSTANT);
+            if (is_array($list)) {
+                $constant_patterns = array_filter(array_map('trim', $list));
+            }
+        }
+
+        // Restrictions only activate when there is at least one exempt pattern or
+        // a non-empty superusers constant. If neither, nobody is locked out.
+        if (empty($emails) && empty($constant_patterns)) {
+            return $settings;
+        }
+
+        // Already covered — by the saved patterns or by the constant? Then safe.
+        $email = (string) $user->user_email;
+        foreach (array_merge($emails, $constant_patterns) as $pattern) {
+            if (White_Label_Access::email_matches($email, (string) $pattern)) {
+                return $settings;
+            }
+        }
+
+        // Not covered: append the current user's email so they can't self-lock.
+        $emails[] = $email;
+        $settings['restrictions']['exempt_emails'] = array_values(array_unique($emails));
+
+        return $settings;
     }
 
     /**
@@ -757,6 +929,11 @@ class White_Label_Admin
                     }
                 }
             }
+        }
+
+        // Dashboard base border-radius: a single number (px), not a colour.
+        if (isset($raw['dashRadius']) && '' !== trim((string) $raw['dashRadius'])) {
+            $clean['dashRadius'] = max(0, min(40, (int) $raw['dashRadius']));
         }
 
         return $clean;

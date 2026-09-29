@@ -46,6 +46,11 @@ class White_Label_Module extends FFLA_Module
         require_once $this->get_path() . 'includes/class-white-label-settings.php';
         require_once $this->get_path() . 'includes/class-white-label-access.php';
 
+        // Admin-bar branding: swap the WordPress logo for the Site Icon. Applies
+        // everywhere the toolbar shows (wp-admin and front end), for all users.
+        require_once $this->get_path() . 'includes/class-white-label-branding.php';
+        (new White_Label_Branding())->register_hooks();
+
         // Enforce client restrictions for non-exempt, logged-in users — in
         // wp-admin AND on the front end (so the admin bar is cleaned there too).
         // Each hook only fires in its relevant context. Only once staff exemption
@@ -76,12 +81,14 @@ class White_Label_Module extends FFLA_Module
                 (new White_Label_Dashboard($dashboard))->register_hooks();
             }
 
-            // Sidebar menu ordering — applies to everyone (organisation, not a
-            // restriction), so it's outside the exemption gate above.
-            $menu = White_Label_Settings::get('menu', []);
-            if (is_array($menu) && !empty($menu['top'])) {
+            // Sidebar menu ordering + dividers — for clients only, never exempt
+            // staff, so developers always see the native menu order (and default
+            // separators) and don't get confused across sites. Applies whether or
+            // not a custom order is saved (it also removes default separators).
+            if (!White_Label_Access::current_user_is_exempt()) {
+                $menu = White_Label_Settings::get('menu', []);
                 require_once $this->get_path() . 'includes/class-white-label-menu-order.php';
-                (new White_Label_Menu_Order($menu))->register_hooks();
+                (new White_Label_Menu_Order(is_array($menu) ? $menu : []))->register_hooks();
             }
         }
     }

@@ -8,7 +8,7 @@
     'use strict';
 
     var cfg = window.fflaWlToggle;
-    if (!cfg) {
+    if (!cfg || !cfg.ajaxUrl || !cfg.action || !cfg.nonce) {
         return;
     }
 
@@ -30,14 +30,16 @@
             indicator.setAttribute('data-current', next);
         }
 
-        // Let the icon recolour helper re-tint sidebar SVG icons for the new
-        // mode (its --ffla-wl-sidebarIcon differs between light and dark).
+        // Let the svg-painter override re-tint plugin SVG icons for the new mode.
         document.dispatchEvent(new CustomEvent('ffla-wl-theme-changed', { detail: { mode: next } }));
 
         var data = new FormData();
         data.append('action', cfg.action);
         data.append('nonce', cfg.nonce);
         data.append('mode', next);
-        fetch(cfg.ajaxUrl, { method: 'POST', credentials: 'same-origin', body: data });
+        // Persist in the background; the UI already reflects the new mode, so a
+        // network failure just means the choice isn't remembered next load.
+        fetch(cfg.ajaxUrl, { method: 'POST', credentials: 'same-origin', body: data })
+            .catch(function () {});
     });
 })();
