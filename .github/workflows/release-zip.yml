@@ -95,6 +95,13 @@ jobs:
           php tests/smoke/customer-operations-smoke.php
           node tests/smoke/customer-operations-endpoints-smoke.js
 
+      - name: Validate Google Merchant policy before publishing
+        if: ${{ steps.tag.outputs.skip != 'true' }}
+        run: |
+          set -e
+          find modules/google-merchant-policy -name '*.php' -print0 | xargs -0 -n1 php -l
+          php tests/smoke/google-merchant-policy-smoke.php
+
       - name: Validate pickup and payment-plan shipping before publishing
         if: ${{ steps.tag.outputs.skip != 'true' }}
         run: |
