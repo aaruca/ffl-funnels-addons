@@ -20,6 +20,9 @@ class FFLA_Customer_Operations_Ready_Email
         // Classic "Order actions" box.
         add_filter('woocommerce_order_actions', [__CLASS__, 'order_actions'], 10, 2);
         add_action('woocommerce_order_action_' . self::ORDER_ACTION, [__CLASS__, 'order_action']);
+        // "Send order email" box of PDF Invoices & Packing Slips for WooCommerce (WP Overnight).
+        // It lists enabled emails by ID and sends them with trigger().
+        add_filter('wpo_wcpdf_resend_order_emails_available', [__CLASS__, 'wpo_emails'], 10, 2);
     }
 
     public static function available(): bool
@@ -85,6 +88,13 @@ class FFLA_Customer_Operations_Ready_Email
         if ($template_id !== self::ID) { return; }
         $order = wc_get_order($order_id); $email = self::email();
         if (self::ready($order) && $email) { $email->send_manually($order); }
+    }
+
+    public static function wpo_emails($emails, $order_id = 0): array
+    {
+        $emails = is_array($emails) ? $emails : [];
+        if ($order_id && self::ready(wc_get_order($order_id))) { $emails[] = self::ID; }
+        return array_values(array_unique($emails));
     }
 
     public static function order_actions($actions, $order = null): array

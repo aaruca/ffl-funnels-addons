@@ -2,6 +2,12 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.49.1] - 2026-09-29
+
+### Fixed
+- Customer & Order Management: the **Ready for pickup** email now appears in the order's **Send order email** box. That box is added by PDF Invoices & Packing Slips for WooCommerce (WP Overnight), not by WooCommerce, and it lists only the email IDs passed through its `wpo_wcpdf_resend_order_emails_available` filter, so 1.49.0's WooCommerce REST hooks did not reach it. The email is added for orders in Ready for Pickup while it is enabled, and the box sends it with `trigger()`. Verified against WP Overnight 5.16.3.
+- When a resend box such as WP Overnight's sends the email, the calling plugin's "manually sent" order note is the only note; the "sent automatically" note is kept for real automatic sends.
+
 ## [1.49.0] - 2026-09-29
 
 ### Added

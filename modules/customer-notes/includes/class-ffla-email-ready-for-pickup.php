@@ -17,7 +17,7 @@ class FFLA_Email_Ready_For_Pickup extends WC_Email
         $this->id = FFLA_Customer_Operations_Ready_Email::ID;
         $this->customer_email = true;
         $this->title = __('Ready for pickup', 'ffl-funnels-addons');
-        $this->description = __('Sent to customers when their order is marked Ready for Pickup. Staff can also send it from the order screen (Send order email or Order actions), even when automatic sending is disabled here.', 'ffl-funnels-addons');
+        $this->description = __('Sent to customers when their order is marked Ready for Pickup. Staff can also send it from a ready order: Order actions (even when this email is disabled) or the Send order email box of PDF Invoices & Packing Slips (while it is enabled).', 'ffl-funnels-addons');
         $this->template_html = 'emails/customer-ready-for-pickup.php';
         $this->template_plain = 'emails/plain/customer-ready-for-pickup.php';
         $this->template_base = dirname(__DIR__) . '/templates/';
@@ -29,13 +29,18 @@ class FFLA_Email_Ready_For_Pickup extends WC_Email
         parent::__construct();
     }
 
-    /** Automatic send when the order becomes Ready for Pickup. Respects the Enable setting. */
+    /**
+     * Send when the order becomes Ready for Pickup, or when a resend box (such as
+     * the WP Overnight "Send order email" box) triggers it. Respects the Enable setting.
+     */
     public function trigger($order_id, $order = false): bool
     {
         if (!$this->is_enabled()) { return false; }
         $order = $order instanceof WC_Order ? $order : wc_get_order($order_id);
         $sent = $this->send_for($order);
-        if ($order instanceof WC_Order) {
+        // A resend box records its own "manually sent" note; only note automatic sends.
+        $resend = did_action('woocommerce_before_resend_order_emails') > did_action('woocommerce_after_resend_order_email');
+        if ($order instanceof WC_Order && !$resend) {
             FFLA_Customer_Operations::audit($order, $sent
                 ? 'Ready for pickup email sent automatically to the billing email. Acceptance does not confirm delivery.'
                 : 'Ready for pickup email was not sent automatically. Review the billing email and mail logs.');
