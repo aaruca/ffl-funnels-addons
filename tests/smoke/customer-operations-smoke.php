@@ -93,6 +93,7 @@ class WC_Order {
     function get_items(){return $this->items;}function get_item($id){return $this->items[$id]??null;}
     function get_changes(){return $this->changes;}function get_qty_refunded_for_item($id){return $this->refund[$id]??0;}
     function get_order_number(){return (string)$this->id;}function get_billing_email(){return 'buyer@example.invalid';}
+    function get_billing_first_name(){return 'Pat';}function get_date_created(){return new DateTimeImmutable('2026-09-29');}
     function get_view_order_url(){return 'https://fixture.invalid/account/view-order/'.$this->id;}
     function get_edit_order_url(){return 'https://fixture.invalid/admin/order/'.$this->id;}
     function add_order_note($text,$public=false,$by_user=false){$this->notes[]=[$text,$public];if(isset($GLOBALS['orders'][$this->id]))$GLOBALS['orders'][$this->id]->notes=$this->notes;}
@@ -107,6 +108,24 @@ class WC_Order {
 function wc_get_order($id){return isset($GLOBALS['orders'][$id])?clone $GLOBALS['orders'][$id]:null;}
 class FPPC_Hold {static $settled=false;static function plan_is_settled($o){return self::$settled;}}
 class FPPC_Procurement {static $ready=false;static function customer_fulfillment_gate_satisfied($o){return self::$ready;}}
+// Minimal WooCommerce email runtime for the Ready for pickup email.
+function esc_html__($s,$d=null){return esc_html($s);} function esc_html_e($s,$d=null){echo esc_html($s);}
+function wp_kses_post($s){return (string)$s;} function wpautop($s){return '<p>'.$s.'</p>';} function wptexturize($s){return $s;}
+function wp_strip_all_tags($s){return strip_tags((string)$s);}
+function do_action($hook,...$args){foreach($GLOBALS['hooks'][$hook]??[] as $cb){$cb(...$args);}}
+function wc_format_datetime($date){return $date?$date->format('Y-m-d'):'';}
+function wc_get_template_html($name,$args=[],$path='',$default=''){extract($args);ob_start();include $default.$name;return ob_get_clean();}
+function WC(){return new class{function mailer(){return new class{function get_emails(){return $GLOBALS['wc_emails']??[];}};}};}
+class WC_Email {
+    public $id,$title,$description,$customer_email=false,$template_html,$template_plain,$template_base,$placeholders=[],$object,$recipient,$enabled='yes',$email_type='html',$sent=[];
+    function __construct(){}
+    function is_enabled(){return $this->enabled==='yes';} function get_recipient(){return $this->recipient;} function get_title(){return $this->title;}
+    function get_subject(){return strtr($this->get_default_subject(),$this->placeholders+['{site_title}'=>'Fixture Store']);}
+    function get_heading(){return $this->get_default_heading();} function get_additional_content(){return $this->get_default_additional_content();}
+    function get_content(){return $this->email_type==='plain'?$this->get_content_plain():$this->get_content_html();}
+    function get_headers(){return '';} function get_attachments(){return [];} function setup_locale(){} function restore_locale(){}
+    function send($to,$subject,$message,$headers,$attachments){$this->sent[]=compact('to','subject','message');return true;}
+}
 require_once __DIR__.'/../../includes/class-ffla-module.php';
 require_once __DIR__.'/../../modules/customer-notes/class-customer-notes-module.php';
 (new Customer_Notes_Module())->boot();
@@ -206,5 +225,50 @@ $html=output_of(static function(){FFLA_Customer_Operations_Customer::render(1);}
 $GLOBALS['uid']=8;check(output_of(static function(){FFLA_Customer_Operations_Customer::render(1);})==='','other customer gets no view');$GLOBALS['uid']=7;$GLOBALS['staff']=true;
 $_GET['ffla_followup']='overdue';$q=FFLA_Customer_Operations_Admin::hpos_query(['meta_query'=>[['key'=>'existing','value'=>'keep']]]);check($q['meta_query'][0][0]['key']==='existing'&&$q['meta_query'][1][1]['compare']==='BETWEEN','HPOS filter preserves existing clauses');$_GET=[];
 $GLOBALS['options']['_ffla_ops_lock_1']=(time()+50).':other';rejects(static function(){FFLA_Customer_Operations::locked(1,static function(){});},'concurrent update lease blocked');$GLOBALS['options']['_ffla_ops_lock_1']=(time()-50).':old';check(FFLA_Customer_Operations::locked(1,static function(){return 'ok';})==='ok','expired lease recovered');check(!isset($GLOBALS['options']['_ffla_ops_lock_1']),'lease released');
+// Ready for pickup: WooCommerce email, Send order email box, classic Order actions, no duplicate notice.
+all_on();$s=FFLA_Customer_Operations_Settings::get();$s['store_name']='Fixture Range';$s['store_address']="1 Main St\nTown";$s['store_hours']='Mon-Fri 9-5';$s['store_instructions']='Bring <b>photo ID</b>';switches($s);
+$GLOBALS['sent']=[];$GLOBALS['events']=[];
+$ready=fixture_order();$ready->items[11]->update_meta_data(FFLA_Customer_Operations::ITEM,['serials'=>['SN-A','SN-B']]);check($ready->update_status('ffla-ready'),'fixture order ready');
+$emails=FFLA_Customer_Operations_Ready_Email::register([]);$email=$emails['FFLA_Email_Ready_For_Pickup']??null;$GLOBALS['wc_emails']=$emails;
+check($email instanceof FFLA_Email_Ready_For_Pickup&&$email->id==='ffla_customer_ready_for_pickup'&&$email->customer_email,'ready email registered as a WooCommerce customer email');
+check(in_array('woocommerce_order_status_ffla-ready',FFLA_Customer_Operations_Ready_Email::email_actions(['woocommerce_order_status_completed']),true),'status change fires the WooCommerce notification');
+check(in_array([$email,'trigger'],$GLOBALS['hooks']['woocommerce_order_status_ffla-ready_notification']??[],true),'email listens to the ready notification');
+$processing=new WC_Order(2);
+check(FFLA_Customer_Operations_Ready_Email::rest_templates(['WC_Email_Customer_Invoice'],$processing)===['WC_Email_Customer_Invoice'],'not offered before the order is ready');
+check(in_array('FFLA_Email_Ready_For_Pickup',FFLA_Customer_Operations_Ready_Email::rest_templates(['WC_Email_Customer_Invoice'],$ready),true),'offered in Send order email for a ready order');
+check(FFLA_Customer_Operations_Ready_Email::rest_preferred(['customer_invoice'],$ready)[0]==='ffla_customer_ready_for_pickup','preselected in Send order email for a ready order');
+check(isset(FFLA_Customer_Operations_Ready_Email::order_actions([],$ready)['ffla_send_ready_pickup_email'])&&FFLA_Customer_Operations_Ready_Email::order_actions([],$processing)===[],'classic Order actions entry only for ready orders');
+$email->enabled='no';
+check(!$email->trigger(1,$ready)&&$email->sent===[],'automatic send respects the WooCommerce Enable setting');
+FFLA_Customer_Operations_Ready_Email::rest_send(1,'customer_invoice');check($email->sent===[],'other templates ignored');
+FFLA_Customer_Operations_Ready_Email::rest_send(1,'ffla_customer_ready_for_pickup');check(count($email->sent)===1&&$email->sent[0]['to']==='buyer@example.invalid','manual send works even when automatic sending is off');
+$html=$email->sent[0]['message'];
+check(strpos($html,'Your order #1 is ready for pickup.')!==false&&strpos($html,'Hi Pat,')!==false,'HTML email greets the customer');
+check(strpos($html,'Fixture Range')!==false&&strpos($html,"1 Main St<br />\nTown")!==false&&strpos($html,'Mon-Fri 9-5')!==false,'HTML email shows the pickup location saved with the ready cycle');
+check(strpos($html,'&lt;b&gt;photo ID&lt;/b&gt;')!==false&&strpos($html,'<b>')===false,'pickup instructions escaped');
+check(strpos($email->sent[0]['subject'],'order #1 is ready for pickup')!==false,'subject names the order');
+$email->email_type='plain';$email->enabled='yes';
+check($email->trigger(1,$ready)&&strpos(end($email->sent)['message'],'Pickup location')!==false,'automatic plain-text email');
+check(strpos(end($ready->notes)[0],'sent automatically')!==false,'automatic send recorded in order notes');
+check(!$email->trigger(2,$processing)&&count($email->sent)===2,'never sent for an order that is not ready');
+FFLA_Customer_Operations_Ready_Email::order_action($ready);check(count($email->sent)===3&&strpos(end($ready->notes)[0],'Order actions')!==false,'classic Order actions send recorded');
+$cycle=FFLA_Customer_Operations::data(wc_get_order(1))['ready_cycle'];$GLOBALS['events']=[];
+FFLA_Customer_Operations_Messages::ready_job(1,$cycle,0);
+check($GLOBALS['sent']===[],'module plain-text ready notice skipped while the WooCommerce email is enabled');
+check(count($GLOBALS['events'])===1,'pickup reminders still scheduled');
+FFLA_Customer_Operations_Messages::send_ready(wc_get_order(1),'manual:fixture');$log=wc_get_order(1)->get_meta('_ffla_ops_mail');
+check(count($email->sent)===4&&$GLOBALS['sent']===[]&&$log['manual:fixture']['status']==='accepted'&&strpos($log['manual:fixture']['subject'],'WooCommerce email')!==false,'module resend button sends and logs the WooCommerce email');
+$email->enabled='no';
+FFLA_Customer_Operations_Messages::send_ready(wc_get_order(1),'manual:plain');check(count($GLOBALS['sent'])===1&&strpos($GLOBALS['sent'][0]['body'],'ready for pickup')!==false,'plain-text template used while the WooCommerce email is disabled');
+$s['pickup']=false;switches($s);check(FFLA_Customer_Operations_Ready_Email::register([])===[]&&FFLA_Customer_Operations_Ready_Email::rest_templates([],$ready)===[],'nothing registered while Ready for Pickup is off');
+all_on();$GLOBALS['wc_emails']=[];
+
+// Order Management panel: serial numbers, then checklist, then Ready for Pickup.
+$panel=output_of(static function(){FFLA_Customer_Operations_Admin::render(fixture_order());});
+$at=static function($needle)use($panel){$p=strpos($panel,$needle);check($p!==false,'panel shows '.$needle);return $p;};
+check($at('ops[items][11][serials]')<$at('ops[checklist][]')&&$at('ops[checklist][]')<$at('data-ops-action="save"')&&$at('data-ops-action="save"')<$at('<h3>Pickup</h3>')&&$at('<h3>Pickup</h3>')<$at('<h3>Internal follow-up case</h3>'),'serial numbers, then checklist, then save, then Pickup');
+check(substr_count($panel,'data-ops-action="save"')===2,'follow-up case keeps its own save button below Pickup');
+$s=FFLA_Customer_Operations_Settings::get();$s['followup']=false;switches($s);
+check(substr_count(output_of(static function(){FFLA_Customer_Operations_Admin::render(fixture_order());}),'data-ops-action="save"')===1,'one save button without follow-up');all_on();
 $GLOBALS['options']['ffla_active_modules']=[];check(!FFLA_Customer_Operations_Settings::enabled('notes')&&!FFLA_Customer_Operations_Settings::enabled('pickup'),'module master respected');$n=count($GLOBALS['sent']);FFLA_Customer_Operations_Messages::ready_job(1,'old',0);check(count($GLOBALS['sent'])===$n,'disabled module sends no mail');
 echo "Customer operations: $checks checks passed.\n";

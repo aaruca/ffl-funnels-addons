@@ -32,10 +32,11 @@ class Customer_Notes_Module extends FFLA_Module {
     }
 
     public function boot(): void {
-        foreach (['messages', 'documents', 'customer', 'admin'] as $component) {
+        foreach (['messages', 'ready-email', 'documents', 'customer', 'admin'] as $component) {
             require_once __DIR__ . '/includes/class-customer-operations-' . $component . '.php';
         }
         FFLA_Customer_Operations_Messages::boot();
+        FFLA_Customer_Operations_Ready_Email::boot();
         FFLA_Customer_Operations_Documents::boot();
         FFLA_Customer_Operations_Customer::boot();
         if (is_admin()) { FFLA_Customer_Operations_Admin::boot(); }
