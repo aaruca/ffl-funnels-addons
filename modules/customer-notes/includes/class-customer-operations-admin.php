@@ -58,7 +58,7 @@ class FFLA_Customer_Operations_Admin
             echo '</div></details>';
         }
         echo '<p><button type="submit" class="button button-primary">Save settings</button></p></form>';
-        echo '<section class="ffla-ops-section"><h2>Preview and test saved email templates</h2><p>Save settings first. Preview uses sample order information. Tests go only to your own staff email; the email master switch must be enabled.</p><div data-ffla-template data-nonce="' . esc_attr(wp_create_nonce('ffla_ops_template')) . '"><label>Template <select name="kind"><option value="ready">Ready for Pickup</option><option value="reminder">Pickup reminder</option></select></label> <button type="button" class="button" data-template-action="preview">Preview</button> <button type="button" class="button" data-template-action="test">Send test to me</button><pre role="status" class="ffla-ops-result"></pre></div></section>';
+        echo '<section class="ffla-ops-section"><h2>Preview and test saved email templates</h2><p>Save settings first. Preview uses sample order information. Tests go only to your own staff email; the email master switch must be enabled. The formatted customer email is configured in WooCommerce → Settings → Emails → Ready for pickup; staff can also send it from an order’s Send order email box.</p><div data-ffla-template data-nonce="' . esc_attr(wp_create_nonce('ffla_ops_template')) . '"><label>Template <select name="kind"><option value="ready">Ready for Pickup</option><option value="reminder">Pickup reminder</option></select></label> <button type="button" class="button" data-template-action="preview">Preview</button> <button type="button" class="button" data-template-action="test">Send test to me</button><pre role="status" class="ffla-ops-result"></pre></div></section>';
         echo '<p>Workflow: configure switches → open a WooCommerce order → save Order Management → mark eligible pickup orders ready. Save serials before marking ready. Confirm physical collection before completing the order. Use the separate public-update action only for information the buyer may see.</p></div>';
     }
 
@@ -104,20 +104,8 @@ class FFLA_Customer_Operations_Admin
         $d = FFLA_Customer_Operations::data($order); $id = $order->get_id();
         echo '<div class="ffla-ops" data-ffla-order="' . absint($id) . '" data-nonce="' . esc_attr(wp_create_nonce('ffla_ops_' . $id)) . '" data-intent="' . esc_attr(wp_generate_uuid4()) . '"><input type="hidden" name="ops[revision]" value="' . esc_attr($d['revision']) . '">';
         echo '<p>These records belong only to this order. Save changes here separately from the main WooCommerce Update button. Internal audit entries appear in Order notes.</p>';
-        if (FFLA_Customer_Operations_Settings::enabled('pickup')) {
-            echo '<section class="ffla-ops-section"><h3>Pickup</h3>';
-            $error = FFLA_Customer_Operations::ready_error($order);
-            echo '<p>' . esc_html($error ?: 'Payment and pickup checks passed. Confirm staff preparation before marking ready.') . '</p>';
-            if ($order->get_status() === FFLA_Customer_Operations::STATUS) { self::button('collect', 'Confirm all remaining units collected', 'Confirm the customer has physically collected every remaining unit? This completes the order.'); }
-            elseif ($error === '') { self::button('ready', 'Mark Ready for Pickup', 'Save item changes first. Mark this order Ready for Pickup?'); }
-            if ($d['collected_at']) { echo '<p>Collected ' . esc_html(wp_date('Y-m-d H:i', $d['collected_at'])) . ' by staff #' . absint($d['collected_by'] ?? 0) . '</p>'; }
-            echo '</section>';
-        }
-        if (FFLA_Customer_Operations_Settings::enabled('checklist')) {
-            echo '<fieldset class="ffla-ops-section"><legend>Preparation checklist (internal)</legend>';
-            foreach (['items_checked'=>'Items inspected','serials_checked'=>'Serial numbers reviewed','documents_ready'=>'Documents prepared'] as $value=>$label) { echo '<label class="ffla-ops-check"><input type="checkbox" name="ops[checklist][]" value="' . esc_attr($value) . '" ' . checked(in_array($value, $d['checklist'], true), true, false) . '> ' . esc_html($label) . '</label>'; }
-            echo '</fieldset>';
-        }
+        // Staff work top to bottom: serial numbers, preparation checklist, save, then Ready for Pickup.
+        $preparation = false;
         foreach ($order->get_items() as $item_id=>$item) {
             $firearm = FFLA_Customer_Operations::firearm($item); $v = FFLA_Customer_Operations::item($item);
             if (!($firearm && (FFLA_Customer_Operations_Settings::enabled('serials') || FFLA_Customer_Operations_Settings::enabled('item_details'))) && !FFLA_Customer_Operations_Settings::enabled('partial_pickup')) { continue; }
@@ -137,6 +125,23 @@ class FFLA_Customer_Operations_Admin
             }
             if (FFLA_Customer_Operations_Settings::enabled('partial_pickup')) { self::input('ops[items][' . $item_id . '][collected]', 'Cumulative units physically collected (cannot decrease)', $v['collected'], 'number'); }
             echo '</div></details>';
+            $preparation = true;
+        }
+        if (FFLA_Customer_Operations_Settings::enabled('checklist')) {
+            echo '<fieldset class="ffla-ops-section"><legend>Preparation checklist (internal)</legend>';
+            foreach (['items_checked'=>'Items inspected','serials_checked'=>'Serial numbers reviewed','documents_ready'=>'Documents prepared'] as $value=>$label) { echo '<label class="ffla-ops-check"><input type="checkbox" name="ops[checklist][]" value="' . esc_attr($value) . '" ' . checked(in_array($value, $d['checklist'], true), true, false) . '> ' . esc_html($label) . '</label>'; }
+            echo '</fieldset>';
+            $preparation = true;
+        }
+        if ($preparation) { self::button('save', 'Save Order Management'); }
+        if (FFLA_Customer_Operations_Settings::enabled('pickup')) {
+            echo '<section class="ffla-ops-section"><h3>Pickup</h3>';
+            $error = FFLA_Customer_Operations::ready_error($order);
+            echo '<p>' . esc_html($error ?: 'Payment and pickup checks passed. Confirm staff preparation before marking ready.') . '</p>';
+            if ($order->get_status() === FFLA_Customer_Operations::STATUS) { self::button('collect', 'Confirm all remaining units collected', 'Confirm the customer has physically collected every remaining unit? This completes the order.'); }
+            elseif ($error === '') { self::button('ready', 'Mark Ready for Pickup', 'Save item changes first. Mark this order Ready for Pickup?'); }
+            if ($d['collected_at']) { echo '<p>Collected ' . esc_html(wp_date('Y-m-d H:i', $d['collected_at'])) . ' by staff #' . absint($d['collected_by'] ?? 0) . '</p>'; }
+            echo '</section>';
         }
         if (FFLA_Customer_Operations_Settings::enabled('followup')) {
             $c = FFLA_Customer_Operations::case_data($order);
@@ -155,7 +160,8 @@ class FFLA_Customer_Operations_Admin
             self::input('ops[case][note]', 'Add private case note — never sent to customer', '', 'textarea');
             echo '</div></section>';
         }
-        self::button('save', 'Save Order Management');
+        // Follow-up fields sit below Pickup, so they get their own copy of the (same) save action.
+        if (FFLA_Customer_Operations_Settings::enabled('followup') || !$preparation) { self::button('save', 'Save Order Management'); }
         if (FFLA_Customer_Operations_Settings::enabled('attachments')) {
             echo '<section class="ffla-ops-section"><h3>Private evidence</h3><p>Staff only. JPEG, PNG or PDF, 2 MB maximum each, up to 8 per order. Upload separately after saving changes.</p><label>Evidence file <input type="file" name="evidence" accept="image/jpeg,image/png,application/pdf"></label> ';
             self::button('upload', 'Upload private file');
@@ -223,8 +229,7 @@ class FFLA_Customer_Operations_Admin
                 }
                 elseif ($op === 'mail') {
                     if ($order->get_status() !== FFLA_Customer_Operations::STATUS || FFLA_Customer_Operations::ready_error($order) !== '') { throw new RuntimeException('Only an eligible ready order can send a ready email.'); }
-                    [$subject,$body] = FFLA_Customer_Operations_Messages::template($order, 'ready');
-                    return FFLA_Customer_Operations_Messages::send($order, 'manual:' . self::intent($input), $order->get_billing_email(), $subject, $body);
+                    return FFLA_Customer_Operations_Messages::send_ready($order, 'manual:' . self::intent($input));
                 }
                 else { throw new InvalidArgumentException('Unknown operation.'); }
                 return 'Saved. Reload the order to view the updated record.';

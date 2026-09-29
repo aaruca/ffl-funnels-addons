@@ -45,6 +45,29 @@ class FFLA_Customer_Operations_Messages
     /** Caller holds the order lease. Persist intent BEFORE wp_mail; uncertain sends are never retried automatically. */
     public static function send($order, string $key, string $to, string $subject, string $body): string
     {
+        return self::deliver($order, $key, $to, $subject, static function () use ($to, $subject, $body) {
+            return wp_mail($to, sanitize_text_field($subject), $body, ['Content-Type: text/plain; charset=UTF-8']);
+        });
+    }
+
+    /**
+     * The ready email: WooCommerce's "Ready for pickup" email when it is enabled,
+     * this module's plain-text template otherwise. Same logging and deduplication.
+     */
+    public static function send_ready($order, string $key): string
+    {
+        $email = class_exists('FFLA_Customer_Operations_Ready_Email') ? FFLA_Customer_Operations_Ready_Email::enabled_email() : null;
+        if (!$email) {
+            [$subject,$body] = self::template($order, 'ready');
+            return self::send($order, $key, $order->get_billing_email(), $subject, $body);
+        }
+        return self::deliver($order, $key, $order->get_billing_email(), $email->get_title() . ' (WooCommerce email)', static function () use ($email, $order) {
+            return $email->send_manually($order);
+        });
+    }
+
+    private static function deliver($order, string $key, string $to, string $subject, callable $transport): string
+    {
         if (!FFLA_Customer_Operations_Settings::enabled('notifications')) { throw new RuntimeException('Email communications are disabled.'); }
         if (!is_email($to)) { throw new RuntimeException('No valid recipient email is available.'); }
         $log = $order->get_meta('_ffla_ops_mail', true); $log = is_array($log) ? $log : [];
@@ -56,7 +79,7 @@ class FFLA_Customer_Operations_Messages
         $capture = static function ($e) use (&$error) { $error = sanitize_text_field($e->get_error_code()); };
         add_action('wp_mail_failed', $capture);
         try {
-            $ok = wp_mail($to, sanitize_text_field($subject), $body, ['Content-Type: text/plain; charset=UTF-8']);
+            $ok = $transport();
             $log[$key]['status'] = $ok ? 'accepted' : 'failed';
             $log[$key]['error'] = $ok ? '' : ($error ?: 'wp_mail_failed');
         } catch (Throwable $e) {
@@ -77,8 +100,13 @@ class FFLA_Customer_Operations_Messages
                 if (!$cycle || $data['ready_cycle'] !== $cycle || $order->get_status() !== FFLA_Customer_Operations::STATUS
                     || FFLA_Customer_Operations::ready_error($order) !== '' || $number < 0 || $number > (int) $s['reminder_max']) { return; }
                 if ($number && !FFLA_Customer_Operations_Settings::enabled('pickup_reminders')) { return; }
-                [$subject,$body] = self::template($order, $number ? 'reminder' : 'ready');
-                self::send($order, 'ready:' . $cycle . ':' . $number, $order->get_billing_email(), $subject, $body);
+                // When WooCommerce's Ready for pickup email is enabled it already went out on
+                // the status change: skip this plain-text notice, keep the reminders.
+                $woocommerce_sent = !$number && class_exists('FFLA_Customer_Operations_Ready_Email') && FFLA_Customer_Operations_Ready_Email::enabled_email();
+                if (!$woocommerce_sent) {
+                    [$subject,$body] = self::template($order, $number ? 'reminder' : 'ready');
+                    self::send($order, 'ready:' . $cycle . ':' . $number, $order->get_billing_email(), $subject, $body);
+                }
                 if (FFLA_Customer_Operations_Settings::enabled('pickup_reminders') && $number < (int) $s['reminder_max']) {
                     self::schedule('ffla_ops_ready_mail', [$order->get_id(), $cycle, $number + 1], time() + (int) $s['reminder_days'] * DAY_IN_SECONDS);
                 }

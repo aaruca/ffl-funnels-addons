@@ -45,14 +45,14 @@ function check(value, label) { assert.ok(value, label); checks++; }
                     await page.locator('[name="ops[items][11][serials]"]').dispatchEvent('change');
                     await page.locator('[data-ops-action=upload]').click();
                     check(await page.evaluate(()=>window.calls.length===0),'dirty changes protected before separate action');
-                    await page.locator('[data-ops-action=save]').click();
+                    await page.locator('[data-ops-action=save]').first().click();
                     await page.waitForFunction(()=>document.querySelector('.ffla-ops-result').textContent==='Fixture saved');
                     check(await page.evaluate(()=>window.calls[0].some(([k,v])=>k==='ops[items][11][serials]'&&v==='SN-ONE\nSN-TWO')),'serial payload '+width);
                     check(await page.evaluate(()=>window.calls[0].some(([k,v])=>k==='nonce'&&v==='fixture-nonce')),'nonce bound payload '+width);
                     await page.evaluate(()=> { window.fetch=async()=>({json:async()=>({success:false,data:{message:'Session expired'}})}); });
-                    await page.locator('[data-ops-action=save]').click();
+                    await page.locator('[data-ops-action=save]').first().click();
                     await page.waitForFunction(()=>document.querySelector('.ffla-ops-result').textContent==='Session expired');
-                    check(await page.locator('[data-ops-action=save]').isEnabled(),'error restores actionable controls '+width);
+                    check(await page.locator('[data-ops-action=save]').first().isEnabled(),'error restores actionable controls '+width);
                 }
                 if(process.argv[2]) {
                     const out=path.resolve(process.argv[2]);fs.mkdirSync(out,{recursive:true});
