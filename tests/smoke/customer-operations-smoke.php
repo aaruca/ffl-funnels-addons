@@ -112,7 +112,8 @@ class FPPC_Procurement {static $ready=false;static function customer_fulfillment
 function esc_html__($s,$d=null){return esc_html($s);} function esc_html_e($s,$d=null){echo esc_html($s);}
 function wp_kses_post($s){return (string)$s;} function wpautop($s){return '<p>'.$s.'</p>';} function wptexturize($s){return $s;}
 function wp_strip_all_tags($s){return strip_tags((string)$s);}
-function do_action($hook,...$args){foreach($GLOBALS['hooks'][$hook]??[] as $cb){$cb(...$args);}}
+function do_action($hook,...$args){$GLOBALS['did'][$hook]=($GLOBALS['did'][$hook]??0)+1;foreach($GLOBALS['hooks'][$hook]??[] as $cb){$cb(...$args);}}
+function did_action($hook){return $GLOBALS['did'][$hook]??0;}
 function wc_format_datetime($date){return $date?$date->format('Y-m-d'):'';}
 function wc_get_template_html($name,$args=[],$path='',$default=''){extract($args);ob_start();include $default.$name;return ob_get_clean();}
 function WC(){return new class{function mailer(){return new class{function get_emails(){return $GLOBALS['wc_emails']??[];}};}};}
@@ -252,6 +253,16 @@ check($email->trigger(1,$ready)&&strpos(end($email->sent)['message'],'Pickup loc
 check(strpos(end($ready->notes)[0],'sent automatically')!==false,'automatic send recorded in order notes');
 check(!$email->trigger(2,$processing)&&count($email->sent)===2,'never sent for an order that is not ready');
 FFLA_Customer_Operations_Ready_Email::order_action($ready);check(count($email->sent)===3&&strpos(end($ready->notes)[0],'Order actions')!==false,'classic Order actions send recorded');
+// PDF Invoices & Packing Slips (WP Overnight) "Send order email" box: listed by ID, sent with trigger().
+$wpo=['new_order','customer_invoice'];
+check(in_array('ffla_customer_ready_for_pickup',FFLA_Customer_Operations_Ready_Email::wpo_emails($wpo,1),true),'listed in the WP Overnight Send order email box for a ready order');
+$GLOBALS['orders'][2]=new WC_Order(2);
+check(FFLA_Customer_Operations_Ready_Email::wpo_emails($wpo,2)===$wpo&&FFLA_Customer_Operations_Ready_Email::wpo_emails($wpo,0)===$wpo&&FFLA_Customer_Operations_Ready_Email::wpo_emails($wpo,404)===$wpo,'not listed for other or unknown orders');
+unset($GLOBALS['orders'][2]);
+$notes=count($ready->notes);do_action('woocommerce_before_resend_order_emails',$ready,'ffla_customer_ready_for_pickup');
+check($email->trigger(1,$ready)&&count($email->sent)===4&&count($ready->notes)===$notes,'resend box send leaves the note to the calling plugin');
+do_action('woocommerce_after_resend_order_email',$ready,'ffla_customer_ready_for_pickup');
+array_pop($email->sent);
 $cycle=FFLA_Customer_Operations::data(wc_get_order(1))['ready_cycle'];$GLOBALS['events']=[];
 FFLA_Customer_Operations_Messages::ready_job(1,$cycle,0);
 check($GLOBALS['sent']===[],'module plain-text ready notice skipped while the WooCommerce email is enabled');

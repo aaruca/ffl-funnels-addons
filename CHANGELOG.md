@@ -5,11 +5,14 @@ All notable changes to FFL Funnels Addons are documented in this file.
 ## [1.49.0] - 2026-09-29
 
 ### Added
-- Customer & Order Management: a WooCommerce **Ready for pickup** customer email (WooCommerce → Settings → Emails, enabled by default). It is sent when an order is marked Ready for Pickup and shows the pickup location, hours and instructions saved with that ready cycle, followed by the standard order details. Staff can send it again from the order's **Send order email** box, where it is preselected for ready orders (WooCommerce 9.8+ `woocommerce_rest_order_actions_email_*` hooks), or from the classic **Order actions** box, even while automatic sending is disabled. HTML and plain-text templates can be overridden in `yourtheme/woocommerce/emails/customer-ready-for-pickup.php`. Registered only while Ready for Pickup is enabled.
+- Customer & Order Management: a WooCommerce **Ready for pickup** customer email (WooCommerce → Settings → Emails, enabled by default). It is sent when an order is marked Ready for Pickup and shows the pickup location, hours and instructions saved with that ready cycle, followed by the standard order details. Staff can send it again from a ready order: the **Send order email** box added by PDF Invoices & Packing Slips for WooCommerce (WP Overnight, through its `wpo_wcpdf_resend_order_emails_available` filter; listed while the email is enabled), the classic **Order actions** box (even while automatic sending is disabled), or WooCommerce's REST order-email API (9.8+ `woocommerce_rest_order_actions_email_*` hooks, where it is also preselected). HTML and plain-text templates can be overridden in `yourtheme/woocommerce/emails/customer-ready-for-pickup.php`. Registered only while Ready for Pickup is enabled.
 
 ### Changed
 - Customer & Order Management: the Order Management panel now follows the preparation order: serial numbers and item details, then the preparation checklist, then **Save Order Management**, then the Pickup section with **Mark Ready for Pickup** / collection. The follow-up case moved below Pickup and keeps its own copy of the same save button.
 - While the WooCommerce Ready for pickup email is enabled, the module's plain-text automatic ready notice is skipped so the customer never receives both, and the Communication log's **Send / resend ready email** sends the WooCommerce email (same logging and deduplication). Pickup reminders are unchanged. With the WooCommerce email disabled, the previous plain-text behavior applies. Automatic and Order-actions sends are recorded in private order notes.
+
+### Fixed
+- Rebuilt in place before wider rollout: the email is now listed in WP Overnight's **Send order email** box (verified against WP Overnight 5.16.3), and when a resend box sends it, that plugin's “manually sent” order note is the only note (the “sent automatically” note is kept for real automatic sends). Changes under `modules/customer-notes/` now rebuild the release ZIP.
 
 ## [1.48.0] - 2026-09-29
 
