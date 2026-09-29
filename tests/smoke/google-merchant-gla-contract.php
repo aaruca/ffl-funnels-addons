@@ -74,7 +74,7 @@ expect_source('src/Product/ProductHelper.php', "/function is_sync_ready\(.*?Chan
 expect_source('src/Product/ProductHelper.php', "/function is_product_synced\(.*?get_synced_at\(.*?get_google_ids\(/s", 'Synced means synced_at plus Google IDs');
 expect_source('src/Product/BatchProductHelper.php', "/!\s*\\\$this->product_helper->is_sync_ready\(\s*\\\$product\s*\)/", 'Every push re-checks sync readiness');
 
-// Removal is delegated to Google's own lifecycle; our save hook runs before it.
+// Uploads and removals are delegated to Google's own lifecycle; our save hook runs before it.
 expect_source('src/Product/SyncerHooks.php', "/namespace Automattic\\\\WooCommerce\\\\GoogleListingsAndAds\\\\Product;/", 'SyncerHooks namespace');
 expect_source('src/Product/SyncerHooks.php', "/add_action\(\s*'woocommerce_update_product'\s*,\s*\[\s*\\\$this\s*,\s*'update_by_object'\s*\]\s*,\s*90\s*,\s*2\s*\)/", 'SyncerHooks::update_by_object on woocommerce_update_product at 90 (after our 80)');
 expect_source('src/Product/SyncerHooks.php', "/public function pre_delete\(\s*int \\\$product_id\s*\)/", 'SyncerHooks::pre_delete(int)');
@@ -84,6 +84,35 @@ $checks++;
 if ($metabox !== null && (int) $metabox[1] >= 80) {
     $failures[] = 'Channel visibility field must save before our priority-80 enforcement (found ' . $metabox[1] . ')';
 }
+
+// Two-way sync: an allowed product is uploaded through SyncerHooks' own update flow.
+expect_source('src/Product/SyncerHooks.php', "/public function update_by_object\(\s*int \\\$product_id\s*,\s*WC_Product \\\$product\s*\)/", 'SyncerHooks::update_by_object(int, WC_Product)');
+expect_source('src/Product/SyncerHooks.php', "/if \(\s*\\\$this->product_helper->is_sync_ready\(\s*\\\$product\s*\)\s*\)\s*\{.*?elseif \(\s*\\\$this->product_helper->is_product_synced\(\s*\\\$product\s*\)\s*\).*?get\(\s*UpdateProducts::class\s*\)->schedule\(.*?get\(\s*DeleteProducts::class\s*\)->schedule\(/s", 'update_by_object uploads sync-ready products and removes synced ones');
+expect_source('src/Product/ProductHelper.php', "/function get_channel_visibility\(.*?get_visibility\(\s*\\\$this->maybe_swap_for_parent\(\s*\\\$wc_product\s*\)\s*\)/s", 'Variation visibility is read from the parent');
+
+// Every product upload job is wrapped by class and hook name.
+foreach (['UpdateAllProducts' => 'update_all_products', 'ResubmitExpiringProducts' => 'resubmit_expiring_products'] as $class => $name) {
+    expect_source("src/Jobs/$class.php", "/namespace Automattic\\\\WooCommerce\\\\GoogleListingsAndAds\\\\Jobs;/", "$class namespace");
+    expect_source("src/Jobs/$class.php", "/class $class extends AbstractProductSyncerBatchedJob\b/", "$class class");
+    expect_source("src/Jobs/$class.php", "/function get_name\(\)\s*:\s*string\s*\{\s*return '$name';/", "Job name $name");
+}
+expect_source('src/Jobs/AbstractProductSyncerBatchedJob.php', "/abstract class AbstractProductSyncerBatchedJob extends AbstractBatchedActionSchedulerJob\b/", 'Batched product jobs use the batched base job');
+expect_source('src/Jobs/AbstractBatchedActionSchedulerJob.php', "/public function init\(\)\s*:\s*void\s*\{[^}]*parent::init\(\);/", 'Batched jobs register the same process hook');
+
+// In Enforce this module replaces the product Channel visibility box.
+expect_source('src/Admin/MetaBox/ChannelVisibilityMetaBox.php', "/public const ID\s*=\s*'channel_visibility';/", 'Channel visibility box ID');
+expect_source('src/Admin/MetaBox/ChannelVisibilityMetaBox.php', "/function get_screen\(\)\s*:\s*string\s*\{\s*return self::SCREEN_PRODUCT;/", 'Channel visibility box on the product screen');
+expect_source('src/Admin/MetaBox/ChannelVisibilityMetaBox.php', "/function get_context\(\)\s*:\s*string\s*\{\s*return self::CONTEXT_SIDE;/", 'Channel visibility box in the side context');
+expect_source('src/Admin/MetaBox/MetaBoxInterface.php', "/SCREEN_PRODUCT\s*=\s*'product';.*?CONTEXT_SIDE\s*=\s*'side';/s", 'Meta box screen and context values');
+expect_source('src/Admin/MetaBox/MetaBoxInitializer.php', "/add_action\(\s*'add_meta_boxes'\s*,\s*\[\s*\\\$this\s*,\s*'register_meta_boxes'\s*\]\s*\)/", 'Google meta boxes registered at default priority (ours removes at 100)');
+expect_source('src/Admin/Admin.php', "/add_meta_box\(\s*\\\$meta_box->get_id\(\)/", 'Meta box registered under its own ID');
+expect_source('src/Admin/MetaBox/ChannelVisibilityMetaBox.php', "/!\s*isset\(\s*\\\$_POST\[\s*\\\$field_id\s*\]\s*\)/", 'Visibility is only saved when its field is posted');
+expect_source('js/build/channel-visibility-meta-box.js', "/querySelector\(\s*[\"']#gla-channel-visibility-box[\"']\s*\)\s*;?\s*if\s*\(\s*!\s*[\w$]+\s*\)\s*return/", 'Channel visibility script exits when its box is removed');
+
+// In Enforce this module refuses the Product Feed bulk visibility edit.
+expect_source('src/API/Site/Controllers/BaseController.php', "/function get_namespace\(\)\s*:\s*string\s*\{\s*return \"wc\/\{\\\$this->get_slug\(\)\}\";/", 'Google REST namespace wc/gla');
+expect_source('src/API/Site/Controllers/MerchantCenter/ProductVisibilityController.php', "/register_route\(\s*'mc\/product-visibility'\s*,\s*\[\s*\[\s*'methods'\s*=>\s*TransportMethods::EDITABLE/", 'Bulk visibility route mc/product-visibility');
+expect_source('src/API/TransportMethods.php', "/const EDITABLE\s*=\s*'POST, PUT, PATCH';/", 'Bulk visibility accepts POST, PUT and PATCH');
 
 // Google's pull proxy: product lists honour _wc_gla_visibility, variations are
 // covered by this module's own filters on the same request marker.

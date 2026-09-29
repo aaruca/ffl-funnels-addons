@@ -96,6 +96,10 @@ class Google_Merchant_Policy_Admin
 
         $settings = Google_Merchant_Policy_Engine::get_settings();
         $state = Google_Merchant_Policy_Reconciler::get_state();
+        // Scans saved before two-way sync have no upload counter.
+        if ($settings['mode'] === 'enforce' && !array_key_exists('upload_requests', (array) get_option(Google_Merchant_Policy_Reconciler::STATE_OPTION, []))) {
+            FFLA_Admin::render_notice('info', __('Run Save policies & start catalog scan once to apply two-way sync to the whole catalog: Allowed products that this addon excluded earlier are uploaded, and exclusions made in Google for WooCommerce are kept as Always exclude.', 'ffl-funnels-addons'));
+        }
         $terms = get_terms([
             'taxonomy' => 'product_cat',
             'hide_empty' => false,
@@ -107,14 +111,23 @@ class Google_Merchant_Policy_Admin
         $this->summary_card(__('Catalog scan', 'ffl-funnels-addons'), ucfirst((string) $state['status']), (string) $state['status']);
         $this->summary_card(__('Processed', 'ffl-funnels-addons'), number_format_i18n((int) $state['processed']), 'neutral');
         $this->summary_card(__('Allowed / Blocked / Pending', 'ffl-funnels-addons'), sprintf('%d / %d / %d', (int) $state['allowed'], (int) $state['blocked'], (int) $state['pending']), 'neutral');
+        $this->summary_card(__('Google uploads / removals requested', 'ffl-funnels-addons'), sprintf('%d / %d', (int) $state['upload_requests'], (int) $state['withdrawal_requests']), 'neutral');
         echo '</div>';
 
         echo '<div class="wb-card ffla-gmp-intro"><div class="wb-card__body">';
         if (!empty($state['updated_at'])) {
-            echo '<p>' . esc_html(sprintf(__('Last progress (UTC): %1$s. Google withdrawal requests delegated: %2$d. Unavailable products skipped: %3$d.', 'ffl-funnels-addons'), $state['updated_at'], $state['withdrawal_requests'], $state['skipped'])) . '</p>';
+            echo '<p>' . esc_html(sprintf(__('Last progress (UTC): %1$s. Google upload requests delegated: %2$d. Google removal requests delegated: %3$d. Unavailable products skipped: %4$d.', 'ffl-funnels-addons'), $state['updated_at'], $state['upload_requests'], $state['withdrawal_requests'], $state['skipped'])) . '</p>';
         }
-        echo '<p><strong>' . esc_html__('Local scan completion is not Google approval.', 'ffl-funnels-addons') . '</strong> ' . esc_html__('Removal requests are processed asynchronously by Google for WooCommerce. Verify its scheduled actions and the remaining products in Merchant Center before requesting an account review. Keyword checks assist your category policies; they cannot certify every product as compliant.', 'ffl-funnels-addons') . '</p>';
+        echo '<p><strong>' . esc_html__('Local scan completion is not Google approval.', 'ffl-funnels-addons') . '</strong> ' . esc_html__('Uploads and removals are processed asynchronously by Google for WooCommerce. Verify its scheduled actions and the products in Merchant Center before requesting an account review. Keyword checks assist your category policies; they cannot certify every product as compliant.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
+
+        echo '<div class="wb-card"><div class="wb-card__header"><h3>' . esc_html__('Individual products', 'ffl-funnels-addons') . '</h3></div><div class="wb-card__body">';
+        echo '<p>' . esc_html__('Decide single products from WooCommerce: use the Google Merchant Policy box on the product page, or the Google column, filter and bulk actions (Always include, Always exclude, Follow policy rules) in Products. In Enforce, each change reaches Google automatically, and the Channel visibility controls of Google for WooCommerce are managed from here.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="ffla-gmp-links">';
+        foreach (['blocked' => __('Blocked products', 'ffl-funnels-addons'), 'pending' => __('Pending products', 'ffl-funnels-addons'), 'exclude' => __('Always excluded', 'ffl-funnels-addons'), 'include' => __('Always included', 'ffl-funnels-addons')] as $filter => $label) {
+            echo '<a class="wb-btn" href="' . esc_url(admin_url('edit.php?post_type=product&ffla_gmp_filter=' . $filter)) . '">' . esc_html($label) . '</a>';
+        }
+        echo '</p></div></div>';
         require __DIR__ . '/views/usage-guide.php';
 
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" class="ffla-gmp-form">';
@@ -125,9 +138,9 @@ class Google_Merchant_Policy_Admin
         echo '<div class="wb-card"><div class="wb-card__header"><h3>' . esc_html__('Policy settings', 'ffl-funnels-addons') . '</h3></div><div class="wb-card__body ffla-gmp-settings">';
         echo '<div class="wb-field"><label for="ffla-gmp-mode"><strong>' . esc_html__('Operating mode', 'ffl-funnels-addons') . '</strong></label><select id="ffla-gmp-mode" name="mode" aria-describedby="ffla-gmp-mode-help">';
         echo '<option value="audit"' . selected($settings['mode'], 'audit', false) . '>' . esc_html__('Audit only — no feed changes', 'ffl-funnels-addons') . '</option>';
-        echo '<option value="enforce"' . selected($settings['mode'], 'enforce', false) . '>' . esc_html__('Enforce — protect the feed', 'ffl-funnels-addons') . '</option></select><p id="ffla-gmp-mode-help" class="wb-field__desc">' . esc_html__('Audit records decisions only. Enforce excludes Blocked AND Pending products. Neither mode automatically restores an existing exclusion. Mode changes apply when you save.', 'ffl-funnels-addons') . '</p></div>';
+        echo '<option value="enforce"' . selected($settings['mode'], 'enforce', false) . '>' . esc_html__('Enforce — this addon decides what reaches Google', 'ffl-funnels-addons') . '</option></select><p id="ffla-gmp-mode-help" class="wb-field__desc">' . esc_html__('Audit records decisions only; Google is not changed. Enforce uploads Allowed products and removes Blocked AND Pending ones through Google for WooCommerce, then keeps Google in sync after every change. Mode changes apply when you save.', 'ffl-funnels-addons') . '</p></div>';
         echo '<div class="wb-field"><label for="ffla-gmp-batch"><strong>' . esc_html__('Products per batch', 'ffl-funnels-addons') . '</strong></label><input id="ffla-gmp-batch" name="batch_size" type="number" min="10" max="250" step="10" aria-describedby="ffla-gmp-batch-help" value="' . esc_attr((string) $settings['batch_size']) . '"><p id="ffla-gmp-batch-help" class="wb-field__desc">' . esc_html__('Start at 50; allowed range: 10–250. Smaller batches reduce work per request, not the catalog size. Saving changes restarts the scan.', 'ffl-funnels-addons') . '</p></div>';
-        echo '<label class="ffla-gmp-checkbox"><input type="checkbox" name="content_safety" value="1"' . checked((string) $settings['content_safety'], '1', false) . '><span><strong>' . esc_html__('Restricted-content safety scan', 'ffl-funnels-addons') . '</strong><small>' . esc_html__('Keep enabled to check names, descriptions and category names for restricted-content patterns, even in Allow categories. Turning it off does not bypass firearm/ammunition flags or remove existing exclusions. Pattern matching is not a guarantee of Google compliance.', 'ffl-funnels-addons') . '</small></span></label>';
+        echo '<label class="ffla-gmp-checkbox"><input type="checkbox" name="content_safety" value="1"' . checked((string) $settings['content_safety'], '1', false) . '><span><strong>' . esc_html__('Restricted-content safety scan', 'ffl-funnels-addons') . '</strong><small>' . esc_html__('Keep enabled to check names, descriptions and category names for restricted-content patterns, even in Allow categories. Turning it off never bypasses firearm/ammunition flags; in Enforce, products that only failed these text checks are uploaded after the next scan. Pattern matching is not a guarantee of Google compliance.', 'ffl-funnels-addons') . '</small></span></label>';
         echo '</div></div>';
 
         echo '<div class="wb-card"><div class="wb-card__header ffla-gmp-category-header"><div><h3>' . esc_html__('Category policies', 'ffl-funnels-addons') . '</h3><p>' . esc_html__('Children inherit their parent unless they have an explicit policy. New root categories start Pending; new child categories start Inherit.', 'ffl-funnels-addons') . '</p></div><input type="search" id="ffla-gmp-category-search" placeholder="' . esc_attr__('Search categories…', 'ffl-funnels-addons') . '"></div><div class="wb-card__body">';
@@ -152,7 +165,7 @@ class Google_Merchant_Policy_Admin
         }
         echo '</tbody></table></div></div></div>';
 
-        echo '<div class="ffla-gmp-actions"><button type="submit" class="wb-btn wb-btn--primary">' . esc_html__('Save policies & start catalog scan', 'ffl-funnels-addons') . '</button><span>' . esc_html__('Saves all edits and starts a NEW scan with reset counters. Existing exclusions remain. Use Resume to continue a paused scan without restarting it.', 'ffl-funnels-addons') . '</span></div></form>';
+        echo '<div class="ffla-gmp-actions"><button type="submit" class="wb-btn wb-btn--primary">' . esc_html__('Save policies & start catalog scan', 'ffl-funnels-addons') . '</button><span>' . esc_html__('Saves all edits and starts a NEW scan with reset counters. In Enforce, the scan uploads or removes products to match. Use Resume to continue a paused scan without restarting it.', 'ffl-funnels-addons') . '</span></div></form>';
 
         echo '<div class="ffla-gmp-secondary-actions">';
         $this->action_form('ffla_gmp_run_batch', 'ffla_gmp_run_batch', __('Resume / run next batch', 'ffl-funnels-addons'), 'wb-btn wb-btn--secondary');

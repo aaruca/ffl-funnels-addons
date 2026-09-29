@@ -5,12 +5,15 @@ namespace Automattic\WooCommerce\GoogleListingsAndAds\Jobs {
         public $calls = [];
         public function handle_process_items_action(array $items = []) { $this->calls[] = $items; }
     }
+    class UpdateAllProducts extends UpdateProducts {}
+    class ResubmitExpiringProducts extends UpdateProducts {}
 }
 namespace Automattic\WooCommerce\GoogleListingsAndAds\Product {
     class SyncerHooks {
         public $prepared = [];
         public $deleted = [];
-        public function update_by_object($id, $product) {}
+        public $updated = [];
+        public function update_by_object($id, $product) { $this->updated[] = $id; }
         public function pre_delete($id) { $this->prepared[] = $id; }
         public function delete($id) { $this->deleted[] = $id; }
     }
@@ -77,6 +80,21 @@ function apply_filters($hook, $value, ...$args) {
     foreach ($groups as $entries) { foreach ($entries as $entry) { $value = ($entry['function'])($value, ...$args); } }
     return $value;
 }
+function do_action($hook, ...$args) {
+    $groups = $GLOBALS['wp_filter'][$hook]->callbacks ?? [];
+    ksort($groups);
+    foreach ($groups as $entries) { foreach ($entries as $entry) { ($entry['function'])(...array_slice($args, 0, $entry['accepted_args'])); } }
+}
+// Admin stubs for the Products list and product edit box.
+$meta_boxes = [];
+$can_edit = true;
+function current_user_can($cap, $id = 0) { return $GLOBALS['can_edit']; }
+function wp_unslash($v) { return $v; }
+function wp_verify_nonce($nonce, $action) { return $nonce === 'valid-' . $action; }
+function add_meta_box($id, ...$args) { $GLOBALS['meta_boxes'][$id] = true; }
+function remove_meta_box($id, ...$args) { unset($GLOBALS['meta_boxes'][$id]); }
+function add_query_arg($args, $url) { return $url . '?' . http_build_query($args); }
+function remove_query_arg($keys, $url) { return $url; }
 function as_get_scheduled_actions($query, $format = '') {
     return array_keys(array_filter($GLOBALS['jobs'], function ($job) use ($query) {
         return $job['hook'] === $query['hook'] && $job['args'] === $query['args'] && $job['status'] === $query['status'];
@@ -135,15 +153,23 @@ class WP_REST_Response {
     public function __construct($data = null, $status = 200) { $this->data = $data; $this->status = $status; }
     public function get_status() { return $this->status; }
 }
+class WP_Error {
+    public $code, $message, $data;
+    public function __construct($code = '', $message = '', $data = null) { $this->code = $code; $this->message = $message; $this->data = $data; }
+}
 class FakeRequest {
-    public $params, $route;
-    public function __construct($params, $route) { $this->params = $params; $this->route = $route; }
+    public $params, $route, $method;
+    public function __construct($params, $route, $method = 'GET') { $this->params = $params; $this->route = $route; $this->method = $method; }
     public function get_param($key) { return $this->params[$key] ?? null; }
     public function get_route() { return $this->route; }
+    public function get_method() { return $this->method; }
 }
 class Product {
     public $id, $name, $parent = 0, $description = '', $meta = [], $terms = [1], $type = 'simple', $on_save, $children = [];
     public function get_children() { return $this->children; }
+    public function delete_meta_data($key) { unset($this->meta[$key]); }
+    // A WooCommerce save runs the product update hooks: this addon (80), Google (90).
+    public function save() { do_action('woocommerce_update_product', $this->id, $this); }
     public function __construct($id, $name = 'Range Bag') { $this->id = $id; $this->name = $name; }
     public function get_id() { return $this->id; }
     public function get_parent_id() { return $this->parent; }
@@ -186,9 +212,36 @@ check(decision(9) === 'allowed', 'Child category inherits allow');
 $products[2]->meta[Engine::VISIBILITY_META] = 'dont-sync-and-show';
 Engine::apply_to_product($products[2]);
 check($products[2]->get_meta(Engine::VISIBILITY_META) === 'dont-sync-and-show', 'Manual exclusion never removed');
+check($products[2]->get_meta(Engine::OVERRIDE_META) === 'exclude' && $products[2]->get_meta(Engine::OVERRIDE_SOURCE_META) === 'google-for-woocommerce', 'A Channel visibility exclusion made outside this addon is kept as Always exclude');
+check(decision(2) === 'blocked', 'The kept exclusion decides the product');
+// Two-way enforcement: this addon decides, in both directions.
+$products[9]->meta[Engine::VISIBILITY_META] = 'dont-sync-and-show';
+$products[9]->meta[Engine::APPLIED_META] = 'yes';
+$result = Engine::apply_to_product($products[9]);
+check($result['visibility_change'] === 'included' && $products[9]->get_meta(Engine::VISIBILITY_META) === 'sync-and-show', 'An exclusion written by this addon (legacy marker) is lifted once the product is allowed');
+check(Engine::apply_to_product($products[9])['visibility_change'] === '', 'Re-applying an unchanged decision changes nothing');
+$result = Engine::apply_to_product($products[8]);
+check($result['visibility_change'] === 'excluded' && $products[8]->get_meta(Engine::VISIBILITY_META) === 'dont-sync-and-show' && $products[8]->get_meta(Engine::APPLIED_META) === 'dont-sync-and-show', 'Pending product excluded and the exclusion recorded as written by this addon');
+Engine::set_override($products[8], 'include');
+check(Engine::apply_to_product($products[8])['visibility_change'] === 'included', 'Always include uploads a product the rules keep pending');
+Engine::set_override($products[8], '');
+Engine::set_override($products[4], 'include');
+check(decision(4) === 'allowed', 'Always include skips the text checks');
+$products[10] = new Product(10); $products[10]->meta['_firearm_product'] = 'yes';
+Engine::set_override($products[10], 'include');
+check(decision(10) === 'blocked', 'Always include never beats a firearm flag');
+Engine::set_override($products[9], 'exclude');
+check(Engine::apply_to_product($products[9])['visibility_change'] === 'excluded', 'Always exclude removes an allowed product');
+Engine::set_override($products[9], '');
+check(Engine::apply_to_product($products[9])['visibility_change'] === 'included', 'Follow policy rules re-includes it; an exclusion chosen in this addon is never kept as manual');
+Engine::set_override($products[2], '');
+check(Engine::apply_to_product($products[2])['visibility_change'] === 'included', 'Choosing Follow policy rules releases a kept Google for WooCommerce exclusion');
 update_option(Engine::OPTION, ['mode' => 'audit']);
 Engine::apply_to_product($products[1]);
 check($products[1]->get_meta(Engine::VISIBILITY_META) === '', 'Audit has no visibility writes');
+$products[11] = new Product(11); $products[11]->meta[Engine::VISIBILITY_META] = 'dont-sync-and-show';
+Engine::apply_to_product($products[11]);
+check($products[11]->get_meta(Engine::OVERRIDE_META) === '' && $products[11]->get_meta(Engine::VISIBILITY_META) === 'dont-sync-and-show', 'Audit neither keeps nor lifts Google exclusions');
 update_option(Engine::OPTION, ['mode' => 'enforce', 'batch_size' => 10]);
 Engine::init();
 check(!isset($wp_filter['save_post_product']), 'No premature save_post enforcement');
@@ -219,10 +272,19 @@ $job = new \Automattic\WooCommerce\GoogleListingsAndAds\Jobs\UpdateProducts();
 add_action(Sync::UPDATE_HOOK, [$job, 'handle_process_items_action']);
 $unrelated = function () {};
 add_action(Sync::UPDATE_HOOK, $unrelated);
-Sync::protect_update_job(); Sync::protect_update_job();
+Sync::protect_upload_jobs(); Sync::protect_upload_jobs();
 check(count($wp_filter[Sync::UPDATE_HOOK]->callbacks[10]) === 2, 'Wrap only official callback once; preserve unrelated callbacks');
 foreach ($wp_filter[Sync::UPDATE_HOOK]->callbacks[10] as $entry) { ($entry['function'])([1, 9]); }
 check($job->calls === [[9]], 'Registered wrapper delegates filtered job');
+// Resubmission and full-sync jobs load products by ID, without Google's pre-filter.
+foreach (['UpdateAllProducts' => 'gla/jobs/update_all_products/process_item', 'ResubmitExpiringProducts' => 'gla/jobs/resubmit_expiring_products/process_item'] as $class => $hook) {
+    $class = '\\Automattic\\WooCommerce\\GoogleListingsAndAds\\Jobs\\' . $class;
+    $batch_job = new $class();
+    add_action($hook, [$batch_job, 'handle_process_items_action']);
+    Sync::protect_upload_jobs();
+    foreach ($wp_filter[$hook]->callbacks[10] as $entry) { ($entry['function'])([1, 9]); }
+    check($batch_job->calls === [[9]], "$hook sends only allowed items");
+}
 if (class_exists('WP_Hook')) {
     unset($wp_filter[Sync::UPDATE_HOOK]);
     $late_job = new \Automattic\WooCommerce\GoogleListingsAndAds\Jobs\UpdateProducts();
@@ -239,10 +301,15 @@ $products[1]->meta['_wc_gla_synced_at'] = time();
 $thrown = false;
 try { Sync::request_withdrawal($products[1]); } catch (\RuntimeException $e) { $thrown = true; }
 check($thrown, 'Disconnected Google removal is not reported as successful');
+check(!Sync::request_upload($products[9]), 'No upload request while Google for WooCommerce is not connected');
 $syncer = new \Automattic\WooCommerce\GoogleListingsAndAds\Product\SyncerHooks();
 add_action('woocommerce_update_product', [$syncer, 'update_by_object'], 90, 2);
 check(Sync::request_withdrawal($products[1]), 'Existing excluded product delegated for removal');
 check($syncer->prepared === [1] && $syncer->deleted === [1], 'Use Google deletion lifecycle only');
+check(Sync::request_upload($products[9]) && $syncer->updated === [9], 'Allowed product uploaded through the Google for WooCommerce product update flow');
+update_option(Engine::OPTION, ['mode' => 'audit']);
+check(!Sync::request_upload($products[9]), 'Audit never requests uploads');
+update_option(Engine::OPTION, ['mode' => 'enforce', 'batch_size' => 10]);
 $products[1]->type = 'variable';
 check(!Sync::request_withdrawal($products[1]), 'No unbounded child expansion from variable parent');
 $products[1]->type = 'simple'; unset($products[1]->meta['_wc_gla_synced_at']);
@@ -273,6 +340,64 @@ check(Sync::filter_proxy_variation_query(['post__not_in' => []], $proxy_list) ==
 update_option(Engine::OPTION, ['mode' => 'enforce', 'batch_size' => 10]);
 Sync::init();
 check(isset($wp_filter['woocommerce_rest_product_variation_object_query']->callbacks[20], $wp_filter['woocommerce_rest_prepare_product_variation_object']->callbacks[PHP_INT_MAX]), 'Proxy variation filters registered after Google proxy filters');
+check(isset($wp_filter['gla/jobs/resubmit_expiring_products/process_item']->callbacks[-100], $wp_filter['gla/jobs/update_all_products/process_item']->callbacks[-100], $wp_filter['rest_pre_dispatch']->callbacks[10]), 'Every Google upload job and the bulk visibility endpoint are guarded');
+$products[21]->meta[Engine::VISIBILITY_META] = 'dont-sync-and-show';
+Engine::apply_to_product($products[21]);
+check($products[21]->get_meta(Engine::OVERRIDE_META) === '' && $products[21]->get_meta(Engine::VISIBILITY_META) === 'sync-and-show', 'Variations are never kept as manual exclusions; Google reads visibility from the parent');
+Engine::set_override($products[20], 'exclude');
+check(decision(21) === 'blocked', 'Variations follow the decision made on their parent');
+Engine::set_override($products[20], '');
+
+// In Enforce, Google's bulk Channel visibility edit is refused with a reason.
+$bulk = new FakeRequest(['ids' => [9], 'visible' => false], '/wc/gla/mc/product-visibility', 'POST');
+$refused = Sync::guard_visibility_endpoint(null, null, $bulk);
+check($refused instanceof WP_Error && $refused->data['status'] === 409 && strpos($refused->message, 'Enforce') !== false, 'Google bulk visibility edits are refused with an explanation in Enforce');
+check(Sync::guard_visibility_endpoint(null, null, new FakeRequest([], '/wc/gla/mc/product-feed', 'POST')) === null, 'Other Google endpoints untouched');
+check(Sync::guard_visibility_endpoint('earlier', null, $bulk) === 'earlier', 'An earlier short-circuit is respected');
+update_option(Engine::OPTION, ['mode' => 'audit']);
+check(Sync::guard_visibility_endpoint(null, null, $bulk) === null, 'Audit leaves Google bulk visibility edits alone');
+update_option(Engine::OPTION, ['mode' => 'enforce', 'batch_size' => 10]);
+
+// Product edit box and Products list bulk actions.
+require __DIR__ . '/../../modules/google-merchant-policy/admin/class-google-merchant-policy-product-admin.php';
+$admin = new Google_Merchant_Policy_Product_Admin();
+define('WC_GLA_VERSION', '3.9.4');
+$meta_boxes = ['channel_visibility' => true];
+$admin->register_meta_box('product');
+check(!isset($meta_boxes['channel_visibility']) && isset($meta_boxes['ffla_google_merchant_policy']), 'Enforce replaces the Google Channel visibility box with this addon box');
+update_option(Engine::OPTION, ['mode' => 'audit']);
+$meta_boxes = ['channel_visibility' => true];
+$admin->register_meta_box('product');
+check(isset($meta_boxes['channel_visibility'], $meta_boxes['ffla_google_merchant_policy']), 'Audit keeps the Google Channel visibility box');
+update_option(Engine::OPTION, ['mode' => 'enforce', 'batch_size' => 10]);
+$products[30] = new Product(30, 'Range Bag');
+$products[30]->meta[Engine::OVERRIDE_META] = 'exclude';
+$products[30]->meta[Engine::OVERRIDE_SOURCE_META] = 'google-for-woocommerce';
+$nonce_field = Google_Merchant_Policy_Product_Admin::NONCE . '_nonce';
+$_POST = [Google_Merchant_Policy_Product_Admin::FIELD => 'exclude', $nonce_field => 'valid-' . Google_Merchant_Policy_Product_Admin::NONCE];
+$admin->save_meta_box($products[30]);
+check($products[30]->get_meta(Engine::OVERRIDE_SOURCE_META) === 'google-for-woocommerce', 'Saving a product with an unchanged choice leaves a kept exclusion as it is');
+$_POST[Google_Merchant_Policy_Product_Admin::FIELD] = 'include';
+$admin->save_meta_box($products[30]);
+check(Engine::get_override($products[30]) === 'include', 'Product box saves a new decision');
+$_POST = [Google_Merchant_Policy_Product_Admin::FIELD => 'exclude', $nonce_field => 'forged'];
+$admin->save_meta_box($products[30]);
+check(Engine::get_override($products[30]) === 'include', 'Product box ignores a request without a valid nonce');
+$_POST = [];
+$products[31] = new Product(31, 'Stun Gun');
+$products[32] = new Product(32, 'Variant'); $products[32]->parent = 31;
+$syncer->updated = [];
+$url = $admin->handle_bulk_action('edit.php', 'ffla_gmp_include', [31, 32, 999]);
+check(strpos($url, 'ffla_gmp_bulk=1') !== false, 'Bulk actions count parent products only');
+check(Engine::get_override($products[31]) === 'include' && $products[31]->get_meta(Engine::STATUS_META) === 'allowed', 'Bulk Always include is applied when the product is saved');
+check($syncer->updated === [31], 'Google for WooCommerce receives the saved product in the same request');
+$admin->handle_bulk_action('edit.php', 'ffla_gmp_follow', [31]);
+check(Engine::get_override($products[31]) === '' && $products[31]->get_meta(Engine::VISIBILITY_META) === 'dont-sync-and-show', 'Bulk Follow policy rules applies the rules again');
+$can_edit = false;
+$admin->handle_bulk_action('edit.php', 'ffla_gmp_exclude', [31]);
+check(Engine::get_override($products[31]) === '', 'Bulk actions respect edit permissions');
+$can_edit = true;
+check($admin->handle_bulk_action('edit.php', 'trash', [31]) === 'edit.php', 'Other bulk actions untouched');
 
 $products = [];
 for ($i = 1; $i <= 35; $i++) { $products[$i] = new Product($i); }
@@ -286,6 +411,10 @@ function run_next() {
     }
     return false;
 }
+// An exclusion this addon wrote earlier: the scan lifts it and asks Google to upload.
+$products[3]->meta[Engine::VISIBILITY_META] = 'dont-sync-and-show';
+$products[3]->meta[Engine::APPLIED_META] = 'dont-sync-and-show';
+$syncer->updated = [];
 $state = Scan::start(); $generation = $state['scan_id'];
 run_next();
 check(Scan::get_state()['processed'] === 10, 'First full batch');
@@ -301,6 +430,7 @@ $products[100] = new Product(100); // Outside original scan snapshot.
 for ($i = 0; $i < 10 && run_next(); $i++) {}
 $state = Scan::get_state();
 check($state['status'] === 'complete' && $state['processed'] === 35 && $state['last_id'] === 35, 'Multiple batches complete with stable cursor despite catalog edits');
+check($state['upload_requests'] === 1 && $syncer->updated === [3] && $products[3]->get_meta(Engine::VISIBILITY_META) === 'sync-and-show', 'Scan uploads a product this addon excluded once it is allowed, and only that one');
 check($products[11]->get_meta(Engine::STATUS_META) === 'allowed', 'No skipped row after deletion');
 check($products[100]->get_meta(Engine::STATUS_META) === '', 'New IDs excluded from fixed scan snapshot');
 

@@ -32,7 +32,7 @@ class Google_Merchant_Policy_Engine {
 }
 class Google_Merchant_Policy_Reconciler {
     public static function get_state() {
-        return ['status' => 'paused', 'processed' => 40, 'allowed' => 10, 'blocked' => 10, 'pending' => 20, 'updated_at' => '2026-09-10 12:00:00', 'withdrawal_requests' => 0, 'skipped' => 0, 'last_error' => ''];
+        return ['status' => 'paused', 'processed' => 40, 'allowed' => 10, 'blocked' => 10, 'pending' => 20, 'updated_at' => '2026-09-10 12:00:00', 'withdrawal_requests' => 0, 'upload_requests' => 0, 'skipped' => 0, 'last_error' => ''];
     }
 }
 require dirname(__DIR__, 2) . '/modules/google-merchant-policy/admin/class-google-merchant-policy-admin.php';

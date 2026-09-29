@@ -18,7 +18,13 @@ class Google_Merchant_Policy_Engine
     const VERSION_META = '_ffla_gmp_version';
     const CHECKED_META = '_ffla_gmp_checked_at';
     const VISIBILITY_META = '_wc_gla_visibility';
-    const ENGINE_VERSION = '1.1';
+    /** Google visibility value this addon last wrote ('yes' = legacy exclusion). */
+    const APPLIED_META = '_ffla_gmp_visibility_applied';
+    /** Per-product decision: '' follows the rules, 'include' or 'exclude'. */
+    const OVERRIDE_META = '_ffla_gmp_override';
+    /** 'manual', or 'google-for-woocommerce' for a kept Channel visibility exclusion. */
+    const OVERRIDE_SOURCE_META = '_ffla_gmp_override_source';
+    const ENGINE_VERSION = '1.2';
 
     /** @var array<int,array> */
     private static $decision_cache = [];
@@ -126,9 +132,31 @@ class Google_Merchant_Policy_Engine
             }
         }
 
-        $hard_reasons = self::get_hard_block_reasons($policy_product, $policy_product_id);
+        // Explicit firearm/ammunition flags always block, even a manual Include.
+        $hard_reasons = self::get_flag_block_reasons($policy_product_id);
         if ($parent_id > 0) {
-            $hard_reasons = array_values(array_unique(array_merge($hard_reasons, self::get_hard_block_reasons($product, $product_id))));
+            $hard_reasons = array_values(array_unique(array_merge($hard_reasons, self::get_flag_block_reasons($product_id))));
+        }
+        $override = empty($hard_reasons) ? self::get_override($policy_product) : '';
+        if ($override !== '') {
+            $reason = $override === 'include'
+                ? __('Included manually: category rules and text checks are skipped.', 'ffl-funnels-addons')
+                : __('Excluded manually.', 'ffl-funnels-addons');
+            $decision = [
+                'status' => $override === 'include' ? 'allowed' : 'blocked',
+                'reason' => $reason,
+                'reasons' => [$reason],
+                'product_id' => $product_id,
+                'parent_id' => $parent_id,
+            ];
+            self::$decision_cache[$product_id] = $decision;
+            return $decision;
+        }
+        if (empty($hard_reasons)) {
+            $hard_reasons = self::get_content_block_reasons($policy_product, $policy_product_id);
+            if ($parent_id > 0) {
+                $hard_reasons = array_values(array_unique(array_merge($hard_reasons, self::get_content_block_reasons($product, $product_id))));
+            }
         }
         if (!empty($hard_reasons)) {
             $decision = [
@@ -187,36 +215,87 @@ class Google_Merchant_Policy_Engine
     }
 
     /**
-     * Persist an audit decision and, in enforce mode, a one-way feed exclusion.
+     * Persist the decision and, in enforce mode, make Google for WooCommerce's
+     * channel visibility match it in both directions.
+     *
+     * 'visibility_change' reports what changed: 'included', 'excluded' or ''.
      */
     public static function apply_to_product($product): array
     {
-        $decision = self::evaluate_product($product);
         if (!is_object($product) && function_exists('wc_get_product')) {
-            $product = wc_get_product((int) ($decision['product_id'] ?? 0));
+            $product = wc_get_product((int) $product);
         }
         if (!is_object($product) || !method_exists($product, 'update_meta_data')) {
-            return $decision;
+            return self::evaluate_product($product) + ['visibility_change' => ''];
         }
 
+        $enforce = (string) (self::get_settings()['mode'] ?? 'audit') === 'enforce';
+        $visibility = (string) $product->get_meta(self::VISIBILITY_META, true);
+        $is_variation = method_exists($product, 'get_parent_id') && (int) $product->get_parent_id() > 0;
+        // Google for WooCommerce stores exclusions on the parent product. One this
+        // addon did not write was made by someone on purpose: keep it as a manual
+        // exclusion so Enforce never uploads it behind their back.
+        if ($enforce && !$is_variation && $visibility === 'dont-sync-and-show'
+            && !self::visibility_written_by_addon($product, $visibility) && self::get_override($product) === '') {
+            $product->update_meta_data(self::OVERRIDE_META, 'exclude');
+            $product->update_meta_data(self::OVERRIDE_SOURCE_META, 'google-for-woocommerce');
+            self::reset_runtime_cache();
+        }
+
+        $decision = self::evaluate_product($product) + ['visibility_change' => ''];
         $product->update_meta_data(self::STATUS_META, (string) $decision['status']);
         $product->update_meta_data(self::REASON_META, (string) $decision['reason']);
         $product->update_meta_data(self::VERSION_META, self::ENGINE_VERSION);
         $product->update_meta_data(self::CHECKED_META, gmdate('c'));
 
-        $settings = self::get_settings();
-        if ((string) ($settings['mode'] ?? 'audit') === 'enforce'
-            && in_array($decision['status'], ['blocked', 'pending'], true)) {
-            // Only add exclusions. We never remove an existing manual or plugin
-            // exclusion when a later scan decides the product is allowed.
-            if ((string) $product->get_meta(self::VISIBILITY_META, true) !== 'dont-sync-and-show') {
-                $product->update_meta_data(self::VISIBILITY_META, 'dont-sync-and-show');
-                $product->update_meta_data('_ffla_gmp_visibility_applied', 'yes');
+        if ($enforce) {
+            $target = $decision['status'] === 'allowed' ? 'sync-and-show' : 'dont-sync-and-show';
+            // Google for WooCommerce treats a missing value as sync-and-show.
+            if (($visibility === '' ? 'sync-and-show' : $visibility) !== $target) {
+                $product->update_meta_data(self::VISIBILITY_META, $target);
+                $product->update_meta_data(self::APPLIED_META, $target);
+                $decision['visibility_change'] = $target === 'sync-and-show' ? 'included' : 'excluded';
             }
         }
 
         $product->save_meta_data();
         return $decision;
+    }
+
+    public static function get_override($product): string
+    {
+        $value = is_object($product) && method_exists($product, 'get_meta')
+            ? sanitize_key((string) $product->get_meta(self::OVERRIDE_META, true))
+            : '';
+        return in_array($value, ['include', 'exclude'], true) ? $value : '';
+    }
+
+    /**
+     * Record a merchant decision made in this addon. The product's current Google
+     * visibility becomes managed by this addon, so it is never kept as a manual
+     * exclusion afterwards. Callers save the product.
+     */
+    public static function set_override($product, string $override): void
+    {
+        $override = sanitize_key($override);
+        if (in_array($override, ['include', 'exclude'], true)) {
+            $product->update_meta_data(self::OVERRIDE_META, $override);
+            $product->update_meta_data(self::OVERRIDE_SOURCE_META, 'manual');
+        } else {
+            $product->delete_meta_data(self::OVERRIDE_META);
+            $product->delete_meta_data(self::OVERRIDE_SOURCE_META);
+        }
+        $visibility = (string) $product->get_meta(self::VISIBILITY_META, true);
+        if ($visibility !== '') {
+            $product->update_meta_data(self::APPLIED_META, $visibility);
+        }
+        self::reset_runtime_cache();
+    }
+
+    private static function visibility_written_by_addon($product, string $visibility): bool
+    {
+        $applied = (string) $product->get_meta(self::APPLIED_META, true);
+        return $applied === $visibility || ($applied === 'yes' && $visibility === 'dont-sync-and-show');
     }
 
     public static function set_category_policy(int $term_id, string $policy): bool
@@ -312,7 +391,7 @@ class Google_Merchant_Policy_Engine
         }
     }
 
-    private static function get_hard_block_reasons($product, int $product_id): array
+    private static function get_flag_block_reasons(int $product_id): array
     {
         $reasons = [];
         foreach (['_firearm_product' => 'firearm', '_ammunition_product' => 'ammunition'] as $meta_key => $label) {
@@ -321,7 +400,12 @@ class Google_Merchant_Policy_Engine
                 $reasons[] = sprintf(__('Hard block: product is marked as %s.', 'ffl-funnels-addons'), $label);
             }
         }
+        return $reasons;
+    }
 
+    private static function get_content_block_reasons($product, int $product_id): array
+    {
+        $reasons = [];
         $settings = self::get_settings();
         if ((string) ($settings['content_safety'] ?? '1') !== '1') {
             return $reasons;

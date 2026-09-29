@@ -1,5 +1,5 @@
 <?php
-/** Resumable, bounded catalog reconciliation; no remote Google calls here. */
+/** Resumable, bounded catalog reconciliation. Google uploads and removals are delegated to Google for WooCommerce jobs. */
 if (!defined('ABSPATH')) {
     exit;
 }
@@ -65,7 +65,7 @@ class Google_Merchant_Policy_Reconciler
         return [
             'status' => 'idle', 'scan_id' => '', 'last_id' => 0, 'max_id' => 0,
             'offset' => 0, 'processed' => 0, 'allowed' => 0, 'blocked' => 0,
-            'pending' => 0, 'skipped' => 0, 'withdrawal_requests' => 0,
+            'pending' => 0, 'skipped' => 0, 'withdrawal_requests' => 0, 'upload_requests' => 0,
             'started_at' => '', 'updated_at' => '', 'finished_at' => '', 'last_error' => '',
         ];
     }
@@ -139,9 +139,13 @@ class Google_Merchant_Policy_Reconciler
                 $product = wc_get_product((int) $id);
                 if ($product) {
                     $decision = Google_Merchant_Policy_Engine::apply_to_product($product);
-                    if ($decision['status'] !== 'allowed'
-                        && Google_Merchant_Policy_Google_Sync::request_withdrawal($product)) {
-                        $state['withdrawal_requests']++;
+                    if ($decision['status'] !== 'allowed') {
+                        if (Google_Merchant_Policy_Google_Sync::request_withdrawal($product)) {
+                            $state['withdrawal_requests']++;
+                        }
+                    } elseif ($decision['visibility_change'] === 'included'
+                        && Google_Merchant_Policy_Google_Sync::request_upload($product)) {
+                        $state['upload_requests']++;
                     }
                     $state[$decision['status']]++;
                     $state['processed']++;
