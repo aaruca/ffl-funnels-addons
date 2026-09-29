@@ -2,6 +2,24 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.48] - 2026-09-29
+
+### Added
+- **White Label module** — brand and lock down wp-admin per client:
+  - Per-client admin styling with Light and Dark palettes (sidebar, top bar, submenus, buttons, list tables, dashboard) driven by CSS variables, plus a top-bar sun/moon toggle persisted per user and a configurable base corner radius.
+  - Agency branding: an FFL Funnels logo + wordmark at the top of the admin sidebar (links to fflfunnels.com) and an admin footer credit that replaces the default WordPress text on every page.
+  - Custom dashboard takeover with WooCommerce, SnapFind and MonsterInsights cards — each guarded (`class_exists` + try/catch) and cached.
+  - Sidebar menu reordering and custom dividers, applied to clients only so exempt staff keep the native order.
+  - Access restrictions: hide sidebar menu items and admin-bar nodes, block hidden pages by direct URL, with email-pattern staff exemption and a `FFLA_WL_SUPERUSERS` wp-config safety net.
+  - Import / Export of all module settings, tolerant of configs from sites with a different plugin set.
+
+### Fixed
+- White Label: plugin menu icons delivered as `<img>` (e.g. Merchant, YITH) are themed for both light and dark modes instead of washing out.
+- White Label: admin-bar nodes registered at very late priority (e.g. WP Rocket at `PHP_INT_MAX - 10`) are now captured in the Restrictions list and can be removed for clients.
+
+### Security
+- White Label: self-lockout protection runs on both Save and Import, and treats the superusers constant as protection only when it actually covers the current user; the analytics AJAX endpoint requires `edit_theme_options`.
+
 ## [1.47.9] - 2026-09-24
 
 ### Fixed
