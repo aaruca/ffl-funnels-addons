@@ -14,6 +14,7 @@ on:
       - 'modules/woo-sheets-sync/**'
       - 'modules/pickup-shipping/**'
       - 'modules/google-merchant-policy/**'
+      - 'modules/customer-notes/**'
       - '.github/workflows/release-zip.yml'
   workflow_dispatch:
     inputs:
