@@ -24,7 +24,7 @@ class Customer_Notes_Module extends FFLA_Module {
     }
 
     public function get_description(): string {
-        return __( 'Customer notes, optional pickup tracking, item serials, private follow-up cases and buyer updates.', 'ffl-funnels-addons' );
+        return __( 'Customer notes, issue & return requests with tracking, optional pickup tracking, item serials, private follow-up cases and buyer updates.', 'ffl-funnels-addons' );
     }
 
     public function get_icon_svg(): string {
@@ -40,6 +40,19 @@ class Customer_Notes_Module extends FFLA_Module {
         FFLA_Customer_Operations_Documents::boot();
         FFLA_Customer_Operations_Customer::boot();
         if (is_admin()) { FFLA_Customer_Operations_Admin::boot(); }
+
+        // Customer requests (issues & returns). Hooks stay inert until enabled.
+        foreach (['', '-files', '-mail', '-public', '-abilities'] as $part) {
+            require_once __DIR__ . '/includes/requests/class-ffla-requests' . $part . '.php';
+        }
+        FFLA_Requests::boot();
+        FFLA_Requests_Mail::boot();
+        FFLA_Requests_Public::boot();
+        FFLA_Requests_Abilities::boot();
+        if (is_admin()) {
+            require_once __DIR__ . '/includes/requests/class-ffla-requests-admin.php';
+            FFLA_Requests_Admin::boot();
+        }
         if (is_admin() && FFLA_Customer_Operations_Settings::enabled('notes')) {
             // Order meta boxes.
             add_action( 'add_meta_boxes', array( $this, 'add_order_meta_box' ), 10, 2 );

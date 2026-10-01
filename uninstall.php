@@ -249,6 +249,19 @@ if (in_array('customer-notes', $ffla_active_modules, true)) {
     );
 }
 
+// ── Customer requests (issues & returns) ───────────────────────────
+// Kept unless the store opted in to deletion in Customer & Order Management →
+// Customer Requests, whether or not the module is currently active.
+$ffla_ops_settings = get_option('ffla_customer_operations', []);
+if (is_array($ffla_ops_settings) && !empty($ffla_ops_settings['requests_delete_data'])) {
+    // phpcs:disable WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+    $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}ffla_request_files");
+    $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}ffla_request_events");
+    $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}ffla_requests");
+    // phpcs:enable
+    delete_option('ffla_requests_db_version');
+}
+
 // ── Order Badges cleanup ───────────────────────────────────────────
 // Badges are derived live from product tags; the only stored data is this
 // settings option, so it is removed whether or not the module is active.

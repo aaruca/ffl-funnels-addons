@@ -33,6 +33,17 @@ function set_transient($k,$v,$ttl) { $GLOBALS['options'][$k]=$v; }
 function delete_transient($k) { unset($GLOBALS['options'][$k]); }
 function add_action($hook,$cb,$priority=10,$args=1) { $GLOBALS['hooks'][$hook][]=$cb; }
 function add_filter(...$args) { add_action(...$args); }
+function add_shortcode($tag, $cb) { $GLOBALS['shortcodes'][$tag] = $cb; }
+// Customer requests setup panel / settings page helpers.
+function wp_dropdown_pages($a) { return '<select name="' . $a['name'] . '" id="' . $a['id'] . '"><option value="0">' . $a['show_option_none'] . '</option></select>'; }
+function get_post($id = null) { return null; }
+function get_permalink($id = 0) { return 'https://fixture.invalid/page/' . (int) $id; }
+function get_the_title($id = 0) { return 'Page ' . (int) $id; }
+function get_post_status($id = 0) { return 'publish'; }
+function has_shortcode($content, $tag) { return false !== strpos((string) $content, '[' . $tag); }
+function get_post_meta($id, $key = '', $single = false) { return ''; }
+function wp_kses($html, $allowed) { return $html; }
+function home_url($path = '') { return 'https://fixture.invalid' . $path; }
 function remove_action($hook,$cb) { $GLOBALS['hooks'][$hook]=array_filter($GLOBALS['hooks'][$hook] ?? [],static function($x)use($cb){return $x!==$cb;}); }
 function apply_filters($hook,$value,...$args) { return isset($GLOBALS['filters'][$hook]) ? $GLOBALS['filters'][$hook]($value,...$args) : $value; }
 function wp_next_scheduled($hook,$args) { return $GLOBALS['events'][$hook.json_encode($args)]['at'] ?? false; }
@@ -165,7 +176,9 @@ if (($argv[1]??'')==='fixture') {
     echo json_encode(['settings'=>output_of([FFLA_Customer_Operations_Admin::class,'settings']), 'order'=>output_of(static function()use($o){FFLA_Customer_Operations_Admin::render($o);})]);exit;
 }
 $defaults=FFLA_Customer_Operations_Settings::get();check($defaults['notes']===true,'old notes remain enabled');
-foreach(FFLA_Customer_Operations_Settings::fields() as $k=>$f){if($f[3]==='switch'&&$k!=='notes')check($defaults[$k]===false,'new feature off: '.$k);}
+// Request sub-options default on but stay inert until the Customer requests master switch (off) is enabled.
+foreach(FFLA_Customer_Operations_Settings::fields() as $k=>$f){if($f[3]==='switch'&&$k!=='notes')check($defaults[$k]===false||(strpos($k,'requests_')===0&&$defaults['requests']===false&&!FFLA_Customer_Operations_Settings::enabled($k)),'new feature off: '.$k);}
+check($defaults['requests_delete_data']===false,'request data is kept on uninstall by default');
 check(FFLA_Customer_Operations::statuses([])===[],'disabled unused status not added');
 switches(['invoice_serials'=>true]);check(!FFLA_Customer_Operations_Settings::enabled('invoice_serials'),'PDF depends on serials');
 $clean=FFLA_Customer_Operations_Settings::sanitize(['reminder_days'=>'900','reminder_max'=>'-1','store_name'=>['bad'],'pickup'=>'1']);

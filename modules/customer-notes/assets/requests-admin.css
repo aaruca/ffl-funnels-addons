@@ -1,0 +1,74 @@
+/* Customer requests — staff screens. */
+.ffla-req-admin .ffla-req-add { display: inline-block; vertical-align: top; }
+.ffla-req-admin .ffla-req-add summary { list-style: none; cursor: pointer; }
+.ffla-req-admin .ffla-req-add summary::-webkit-details-marker { display: none; }
+.ffla-req-admin .ffla-req-add[open] form { margin: 12px 0; padding: 12px; background: #fff; border: 1px solid #c3c4c7; border-radius: 4px; }
+.ffla-req-cols { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; margin-top: 12px; }
+.ffla-req-box { background: #fff; border: 1px solid #c3c4c7; border-radius: 4px; padding: 14px 16px; margin: 0 0 16px; }
+.ffla-req-box h2 { margin: 0 0 10px; font-size: 14px; }
+.ffla-req-box--accent { border-left: 4px solid #2271b1; }
+.ffla-req-box label { display: block; font-weight: 600; margin: 8px 0 4px; }
+.ffla-req-box label:has(input[type=checkbox]), .ffla-req-box label:has(input[type=radio]), .ffla-req-inline { font-weight: 400; display: inline-flex; align-items: center; gap: 6px; margin-right: 14px; }
+.ffla-req-box select, .ffla-req-box textarea, .ffla-req-box input[type=text], .ffla-req-box input[type=date] { width: 100%; max-width: 100%; }
+.ffla-req-box .description { display: block; margin: 4px 0; }
+.ffla-req-new { max-width: 900px; }
+.ffla-req-new .ffla-req-field { margin: 12px 0; }
+.ffla-req-new table input[type=number] { width: 80px; }
+.ffla-req-summary th { width: 160px; }
+.ffla-req-items { margin: 0; }
+.ffla-req-quote { margin: 8px 0; padding: 8px 12px; border-left: 3px solid #c3c4c7; background: #f6f7f7; }
+.ffla-req-copy { display: flex; gap: 6px; }
+.ffla-req-copy input { flex: 1; min-width: 0; font-size: 12px; }
+.ffla-req-danger summary { cursor: pointer; color: #b32d2e; font-weight: 600; }
+.ffla-req-ok { color: #1a7f37; font-weight: 600; }
+
+.ffla-req-badge { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: 12px; font-weight: 600; line-height: 1.6; background: #e7f0fa; color: #134d80; white-space: nowrap; vertical-align: middle; }
+.ffla-req-badge--new { background: #fcf0e3; color: #8a4a00; }
+.ffla-req-badge--waiting_customer, .ffla-req-badge--waiting_carrier { background: #f0f0f1; color: #50575e; }
+.ffla-req-badge--approved, .ffla-req-badge--item_received { background: #e3f4e8; color: #135c28; }
+.ffla-req-badge--closed { background: #dcdcde; color: #3c434a; }
+.ffla-req-type { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; background: #f0f0f1; color: #50575e; }
+.ffla-req-type--return { background: #f3eefc; color: #5b2ea6; }
+.ffla-req-priority { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; font-weight: 600; }
+.ffla-req-priority--high { background: #fcf9e8; color: #8a6100; }
+.ffla-req-priority--urgent { background: #fcf0f1; color: #b32d2e; }
+.ffla-req-priority--low { background: #f0f0f1; color: #646970; }
+.ffla-req-firearm { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; font-weight: 600; background: #fff4d6; color: #6b4a00; }
+.ffla-req-firearm-note { background: #fcf9e8; border-left: 3px solid #996800; padding: 8px 10px; }
+.ffla-req-needs { color: #b32d2e; font-weight: 600; font-size: 12px; }
+.ffla-req-overdue { color: #b32d2e; font-weight: 600; }
+.ffla-req-private { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; background: #fcf9e8; color: #8a6100; }
+
+.ffla-req-timeline { list-style: none; margin: 0; padding: 0 0 0 14px; border-left: 2px solid #dcdcde; }
+.ffla-req-event { position: relative; margin: 0 0 14px; padding-left: 12px; }
+.ffla-req-event::before { content: ""; position: absolute; left: -21px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: #c3c4c7; }
+.ffla-req-event--customer::before { background: #2271b1; }
+.ffla-req-event--staff::before { background: #1a7f37; }
+.ffla-req-event--email { margin-bottom: 6px; color: #646970; font-size: 12px; }
+.ffla-req-event--email::before { width: 8px; height: 8px; left: -19px; top: 5px; }
+.ffla-req-event--email strong { font-weight: 400; }
+.ffla-req-event-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.ffla-req-event-head time { color: #646970; font-size: 12px; }
+.ffla-req-event-body { margin-top: 6px; padding: 10px 12px; background: #f6f7f7; border-radius: 4px; overflow-wrap: anywhere; }
+.ffla-req-event--customer .ffla-req-event-body { background: #f0f6fc; }
+.ffla-req-event.is-private .ffla-req-event-body { background: #fcf9e8; }
+.ffla-req-files { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 0; list-style: none; padding: 0; }
+.ffla-req-files a { display: inline-flex; flex-direction: column; gap: 4px; max-width: 150px; font-size: 12px; overflow-wrap: anywhere; }
+.ffla-req-files img { width: 150px; height: 100px; object-fit: cover; border: 1px solid #dcdcde; border-radius: 4px; }
+
+.ffla-req-tabs { display: flex; gap: 4px; margin-bottom: 10px; border-bottom: 1px solid #dcdcde; }
+.ffla-req-tabs button { border: 0; background: none; padding: 8px 12px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; font-weight: 600; color: #50575e; }
+.ffla-req-tabs button.is-active { border-bottom-color: #2271b1; color: #1d2327; }
+.ffla-req-compose textarea { width: 100%; }
+
+.ffla-req-metabox { margin: 0; }
+.ffla-req-metabox li { padding: 6px 0; border-bottom: 1px solid #f0f0f1; }
+.ffla-req-count { font-weight: 600; color: #50575e; }
+.ffla-req-count.is-open { color: #b32d2e; }
+.column-ffla_requests { width: 8%; }
+.ffla-req-admin .column-number { width: 22%; }
+.ffla-req-admin .column-status { width: 13%; }
+
+@media (max-width: 1100px) {
+	.ffla-req-cols { grid-template-columns: minmax(0, 1fr); }
+}

@@ -46,7 +46,8 @@ class FFLA_Customer_Operations_Customer
                 if (!empty($actions[$key]['url'])) { echo '<p><a href="' . esc_url($actions[$key]['url']) . '">' . esc_html($actions[$key]['name'] ?? $key) . '</a></p>'; }
             }
         }
-        if (FFLA_Customer_Operations_Settings::enabled('customer_help')) {
+        // Customer requests replace this simpler form when they are enabled.
+        if (FFLA_Customer_Operations_Settings::enabled('customer_help') && !(class_exists('FFLA_Requests') && FFLA_Requests::enabled())) {
             if (isset($_GET['ffla_help_sent'])) { echo '<p role="status">Your request was sent to the store.</p>'; }
             echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '"><input type="hidden" name="action" value="ffla_ops_help"><input type="hidden" name="order" value="' . absint($id) . '">';
             wp_nonce_field('ffla_ops_help_' . $id);

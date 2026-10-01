@@ -52,13 +52,17 @@ class FFLA_Customer_Operations_Admin
                 if ($f[3] === 'switch') { echo '<input type="checkbox" role="switch" id="' . esc_attr($id) . '" name="settings[' . esc_attr($key) . ']" value="1" ' . checked((bool) $s[$key], true, false) . ' aria-describedby="' . esc_attr($id) . '-help"> '; }
                 echo esc_html($f[1]) . '</label>';
                 if ($f[3] === 'textarea') { echo '<textarea rows="4" id="' . esc_attr($id) . '" name="settings[' . esc_attr($key) . ']" aria-describedby="' . esc_attr($id) . '-help">' . esc_textarea(str_replace('\\n', "\n", $s[$key])) . '</textarea>'; }
-                elseif ($f[3] !== 'switch') { echo '<input type="' . esc_attr($f[3]) . '" id="' . esc_attr($id) . '" name="settings[' . esc_attr($key) . ']" value="' . esc_attr($s[$key]) . '" ' . ($f[3] === 'number' ? 'min="1" max="' . ($key === 'reminder_max' ? '5' : '30') . '"' : '') . ' aria-describedby="' . esc_attr($id) . '-help">'; }
+                elseif ($f[3] === 'page') {
+                    echo wp_dropdown_pages(['name'=>'settings[' . $key . ']', 'id'=>$id, 'selected'=>absint($s[$key]), 'show_option_none'=>'— Home page —', 'option_none_value'=>'0', 'echo'=>0]); // phpcs:ignore WordPress.Security.EscapeOutput
+                }
+                elseif ($f[3] !== 'switch') { [$min, $max] = FFLA_Customer_Operations_Settings::range($key); echo '<input type="' . esc_attr($f[3]) . '" id="' . esc_attr($id) . '" name="settings[' . esc_attr($key) . ']" value="' . esc_attr($s[$key]) . '" ' . ($f[3] === 'number' ? 'min="' . absint($min) . '" max="' . absint($max) . '"' : '') . ' aria-describedby="' . esc_attr($id) . '-help">'; }
                 echo '<p id="' . esc_attr($id) . '-help" class="description">' . esc_html($f[2]) . '</p></div>';
             }
             echo '</div></details>';
         }
         echo '<p><button type="submit" class="button button-primary">Save settings</button></p></form>';
         echo '<section class="ffla-ops-section"><h2>Preview and test saved email templates</h2><p>Save settings first. Preview uses sample order information. Tests go only to your own staff email; the email master switch must be enabled. The formatted customer email is configured in WooCommerce → Settings → Emails → Ready for pickup; staff can also send it from an order’s Send order email box.</p><div data-ffla-template data-nonce="' . esc_attr(wp_create_nonce('ffla_ops_template')) . '"><label>Template <select name="kind"><option value="ready">Ready for Pickup</option><option value="reminder">Pickup reminder</option></select></label> <button type="button" class="button" data-template-action="preview">Preview</button> <button type="button" class="button" data-template-action="test">Send test to me</button><pre role="status" class="ffla-ops-result"></pre></div></section>';
+        if (class_exists('FFLA_Requests_Admin')) { FFLA_Requests_Admin::setup_panel(); }
         echo '<p>Workflow: configure switches → open a WooCommerce order → save Order Management → mark eligible pickup orders ready. Save serials before marking ready. Confirm physical collection before completing the order. Use the separate public-update action only for information the buyer may see.</p></div>';
     }
 
@@ -66,7 +70,12 @@ class FFLA_Customer_Operations_Admin
     {
         if (!current_user_can('manage_woocommerce')) { wp_die('Access denied.', '', ['response'=>403]); }
         check_admin_referer('ffla_ops_settings');
-        update_option(FFLA_Customer_Operations_Settings::OPTION, FFLA_Customer_Operations_Settings::sanitize((array) wp_unslash($_POST['settings'] ?? [])), false);
+        $previous = get_option(FFLA_Customer_Operations_Settings::OPTION, []);
+        $settings = FFLA_Customer_Operations_Settings::sanitize((array) wp_unslash($_POST['settings'] ?? []));
+        // The requests page is chosen in the form; keep one set by "Create page" if the form predates it.
+        if (empty($settings['requests_page']) && is_array($previous) && !empty($previous['requests_page']) && !isset($_POST['settings']['requests_page'])) { $settings['requests_page'] = absint($previous['requests_page']); }
+        update_option(FFLA_Customer_Operations_Settings::OPTION, $settings, false);
+        if (class_exists('FFLA_Requests')) { FFLA_Requests::maybe_install(); }
         wp_safe_redirect(admin_url('admin.php?page=ffla-customer-operations&saved=1')); exit;
     }
 

@@ -4,7 +4,7 @@ This extends the existing **Customer Notes** module; its module ID remains `cust
 
 ## Enable only what the store needs
 
-Open **FFL Funnels → Customer & Order Management**. The six collapsible settings sections submit together with **Save settings**. Every switch includes a description. Customer Notes remains enabled by default; the twenty new feature switches start **off**. Enabling a dependent switch alone does not activate its prerequisite.
+Open **FFL Funnels → Customer & Order Management**. The seven collapsible settings sections submit together with **Save settings**. Every switch includes a description. Customer Notes remains enabled by default; the twenty new feature switches start **off**. Enabling a dependent switch alone does not activate its prerequisite.
 
 1. **General:** internal notes follow the customer across orders. They do not become customer messages, invoice text or packing-slip text.
 2. **Pickup:** enable Ready for Pickup, optionally the preparation checklist and partial collection. Enter the actual collection location, address, hours and instructions. These texts do not change shipping zones, the FFL selector, prices or tax addresses. There is one configured communication location per store; verify it matches the order's pickup location.
@@ -12,6 +12,8 @@ Open **FFL Funnels → Customer & Order Management**. The six collapsible settin
 4. **Follow-up:** enable private cases and optionally private evidence files.
 5. **Notifications:** the formatted customer email is WooCommerce's **Ready for pickup** email (WooCommerce → Settings → Emails): enabled by default, it is sent when an order is marked Ready for Pickup and can be edited like any WooCommerce email. For this module's own plain-text messages, enable the email master switch first. Automatic ready notices also require Pickup. Pickup reminders additionally require automatic ready notices. Assigned follow-up reminders require Follow-up. Save templates before using Preview / Send test to me. Test messages go only to the current employee's email and are limited to one per minute.
 6. **Customer Visibility:** enable Customer progress to display this module's section on the signed-in owner's My Account → View order screen. Then choose serial visibility, tracking summary, authorized document links and Request help. Public updates are written explicitly by staff; they are shown when both Public order updates and Customer progress are enabled. Their optional email delivery also requires the email master switch.
+
+7. **Customer Requests:** customer-facing issue reports and return requests with tracking. Turn on the master switch, review the sub-options (they start on, but do nothing until the master switch is on), then place the form — see [Customer requests](#customer-requests-issues--returns).
 
 Disabling a feature stops its writes / display / messages, not historical record retention. A previously used Ready for Pickup status remains registered so old orders are readable. Standard order notes and previously issued PDF documents remain in their original systems.
 
@@ -71,6 +73,50 @@ Document links reuse the existing WP Overnight My Account actions and authorizat
 Email statuses distinguish `sending`, `accepted`, `failed` and `uncertain`. Acceptance by `wp_mail` is not delivery confirmation; inspect SMTP/mail-provider logs. Each automatic ready/reminder/due event has a deduplication key saved before sending. Failed or uncertain events are not blindly retried. Manual ready-email resend requires explicit confirmation and may duplicate an already-delivered email; review logs first. Maximum 250 logged delivery attempts per order.
 
 Pickup reminders are limited to 1–5 per ready cycle, spaced 1–30 days apart. WP-Cron must run reliably; event timing is not a guaranteed delivery SLA. Every event rechecks switches, order status, cycle, payment eligibility, case resolution and/or assignment as appropriate. No full-order-table polling is used. Job failures are reported in WooCommerce logs under `ffla-order-management`.
+
+## Customer requests (issues & returns)
+
+A customer-facing way to report a problem with an order or request a return, follow its status and get a closing resolution. Separate from the private follow-up case above (which stays staff-only); while requests are on, they replace the simpler **Request help** form in My Account.
+
+### Setup
+
+1. **Customer Requests → Customer requests (issues & returns)** on, then save. Choose issue reports and/or returns, guest access (order number + checkout email), customer uploads and customer emails. Set the issue window (days after the order date, default 90) and return window (days after completion or payment, default 30).
+2. Put `[ffla_order_requests]` on a page — the home page works. Options: `type="issue"` or `type="return"` to show one type, `title="Need help with an order?"` for a heading. Page builders: use their Shortcode element. The **Customer requests setup** panel at the bottom of the settings page tells you whether the form was found and can create an **Order Help** page.
+3. Set **Requests page** to the page with the form (empty = home page). Links in emails open requests there.
+4. Edit the **Return instructions** (sent when you approve a return) and **Firearm return notice**. Variables: `{request_number}`, `{order_number}`, `{customer_name}`, `{store_name}`.
+5. Optionally list **Staff notification emails**; otherwise new requests and replies go to the assignee or the site admin email.
+
+### Customer flow
+
+- **Find the order:** order number (a `#` is fine) and the billing email. Failures always say the same thing, so the form cannot be used to discover orders or emails. A request number plus email opens that request directly. Signed-in customers see their recent orders and requests and never need the email; on **My Account → View order** the form opens on that order, and the Orders list has a **Get help** action.
+- **Report a problem** (not received, delay, damaged, missing or wrong item, defective, billing, FFL transfer/pickup, other) or **Request a return** (no longer needed, ordered by mistake, not as described, doesn't fit, defective, damaged, wrong item, other). Returns need items and quantities: each line offers the units not yet refunded and not already in an open return. Firearm lines are flagged and show the firearm notice.
+- Optional preferred outcome, a required description and up to 3 JPEG/PNG/PDF files (10 MB each; 20 per request).
+- After sending, the customer sees the request with its number, a step tracker and history, gets a confirmation email with a private link, and the address bar holds the same link so the page can be bookmarked.
+- The customer can reply with files at any time while open; a reply within 14 days of closing reopens the request. They can cancel a request until the returned item is received.
+
+The step tracker follows the type: issues go **Received → Under review → Resolved**; returns **Received → Under review → Approved → Item received → Resolved**. "Waiting for your reply" and "Waiting on the carrier" show as Under review with that status label. Return steps that were never reached show as skipped when a return is declined or cancelled.
+
+### Staff workflow — WooCommerce → Requests
+
+- **Inbox:** Open, **Needs reply** (the customer wrote last), New, Assigned to me, Overdue, Closed and All, with type and status filters, search (request or order number, customer name or email) and bulk **Assign to me / Unassign / Mark in review**. The menu bubble counts requests that need a reply.
+- **Request screen:** summary (customer, order with refunded total, reason, preference, items with firearm flags, source), the full history — customer messages, replies, internal notes, status changes, assignments and every email attempt — and files.
+  - **Reply to customer** (optionally emailed; optionally sets *Waiting for customer*) or add an **Internal note**; both accept files. Internal notes and their files are never shown or emailed to the customer.
+  - **Approve return** sends the return instructions (and the firearm notice for firearms); **Mark item received** when it arrives. Any status can be set with an optional message; status changes always appear on the customer's page, the email is optional.
+  - **Assignment:** assignee (store managers), priority and due date; the assignee is emailed.
+  - **Close with resolution** requires an outcome and a note for the customer: refunded, partially refunded, replacement sent, order re-shipped, exchanged, repaired, store credit issued, resolved, request declined or duplicate. **Closing does not refund or ship anything** — do that in the WooCommerce order first. A refund on the order adds a reminder to its open requests.
+  - **Customer link:** copy it to share by phone or email, **Email a new link**, or **Disable current link** (both replace the link; old ones stop working).
+  - **Delete** permanently (spam or test data only).
+- **Orders:** the **Customer requests** box on Edit Order lists the order's requests and opens **New request** — for customers who call or email. Staff requests skip the time windows; the confirmation email is optional. The orders list gets a **Requests** column.
+
+### Security, storage and privacy
+
+- The shortcode HTML holds no customer data, so full-page caching is safe; everything loads through `admin-ajax.php`.
+- Access: a signed order ticket (2 hours) after the number + email check, the request's key from the emailed link (HMAC of a per-request secret with the site's auth salt), or being the signed-in order customer (nonce fetched over AJAX).
+- Abuse limits: honeypot and minimum fill time; lookups 10 per 15 minutes per visitor and 15 per hour per order; 6 new requests and 30 attempts per hour per visitor; 30 replies per hour; at most 5 open and 25 total requests per order. Behind a proxy that hides visitor IPs, return the real IP with the `ffla_requests_client_ip` filter.
+- Uploads must be real JPEG, PNG or PDF matching the extension. Photos are re-encoded (max 2000 px), which removes location and device data. Files are stored in private database tables (not the Media Library) and served with `nosniff`; PDFs download as attachments.
+- Data lives in `wp_ffla_requests`, `wp_ffla_request_events` and `wp_ffla_request_files`. **Tools → Export Personal Data** includes requests; **Erase Personal Data** anonymizes closed requests (name, email, customer messages and files) and keeps open ones. Tables are dropped on plugin deletion only if **Delete requests on uninstall** is on.
+- Hooks: `ffla_request_created`, `ffla_request_status_changed`, `ffla_request_closed`, `ffla_request_assigned`; filters `ffla_requests_reasons`, `ffla_requests_resolutions`, `ffla_requests_preferences`, `ffla_requests_find_order` (custom order numbers; `_order_number` meta is supported) and `ffla_requests_client_ip`.
+- MCP (WordPress 6.9+ with the MCP Adapter): `ffla-requests/list`, `ffla-requests/get` and `ffla-requests/add-note` for staff with `manage_woocommerce`. Replies, status changes and closing stay in the admin screen.
 
 ## Verification
 

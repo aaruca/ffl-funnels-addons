@@ -2,6 +2,22 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.52.0] - 2026-10-01
+
+### Added
+- Customer & Order Management: **customer requests — issue reports and return requests with real tracking and a closing resolution.**
+  - **Storefront:** place `[ffla_order_requests]` on any page, such as the home page (`type="issue"` / `type="return"` to show one type, `title="…"` for a heading). Customers find their order with the order number and checkout email — guests included — or pick it from their orders when signed in. They choose a reason, the items and quantities to return (units already refunded or in an open return are excluded), a preferred outcome, a description and up to 3 photos or PDFs. Firearms are flagged and the customer is told they return through an FFL.
+  - **Tracking:** every request has its own number (`{order}-{n}`), a step tracker (Received → Under review → Approved → Item received → Resolved for returns), the status history, a reply thread with files, return instructions once approved, and the outcome and note when closed. Customers can reply (a reply within 14 days reopens a closed request) or cancel an open request. A private link in their emails opens the request without signing in.
+  - **My Account:** the same app appears on View order, and the Orders list gets a **Get help** action. It replaces the simpler Request help form while requests are on.
+  - **Staff:** **WooCommerce → Requests** inbox with Open / Needs reply / New / Assigned to me / Overdue / Closed views, type and status filters, search and bulk assign. Each request screen shows the full timeline with internal notes and email log, replies (optionally emailed, optionally setting "Waiting for customer"), internal notes and files, status, assignee / priority / due date, **Approve return** (sends the return instructions) and **Mark item received**, **Close with resolution** (refunded, partial refund, replacement, re-shipped, exchanged, repaired, store credit, resolved, declined, duplicate) with a note for the customer, reopen, copy / email a new customer link, and delete for spam. Orders get a **Customer requests** box with **New request** (for phone or email requests) and a Requests column on the orders list. A refund on the order is noted on its open requests.
+  - **Emails:** the customer receives a confirmation with their link, staff replies, status updates staff choose to send, return approval with instructions and the closing outcome; staff get new requests, customer replies and assignments (assignee, else the configured addresses, else the admin email). Uses WooCommerce's email template; every attempt is logged on the request.
+  - **Settings** (new Customer Requests section, off by default): issue and return types, guest access, uploads, customer emails, issue window (90 days) and return window (30 days), requests page for links, staff emails, form introduction, return instructions, firearm notice and delete-on-uninstall. The settings page shows whether the form was found on the page and can create an **Order Help** page with it.
+  - **Security and privacy:** the shortcode output is cache-safe and all data loads through admin-ajax; order lookups fail with one generic message, are rate limited per visitor and per order, and use a honeypot and minimum fill time; access uses signed, expiring order tickets, per-request keys (HMAC with the site salt; replaceable from the admin) or the signed-in owner. Uploads must be real JPEG/PNG/PDF; photos are resized to 2000 px and stripped of location data; files live in private database tables and stream with `nosniff`. WordPress privacy export includes requests; erasure anonymizes closed ones and keeps open ones. Data is kept on uninstall unless the store opts in.
+  - **MCP:** on WordPress 6.9+ `ffla-requests/list`, `ffla-requests/get` and `ffla-requests/add-note` (internal notes only) abilities for staff AI clients.
+
+### Changed
+- Customer & Order Management: number settings use per-field ranges, and the settings page supports page selectors.
+
 ## [1.51.0] - 2026-10-01
 
 ### Added

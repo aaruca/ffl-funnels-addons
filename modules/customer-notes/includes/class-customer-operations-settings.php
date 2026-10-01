@@ -41,7 +41,28 @@ class FFLA_Customer_Operations_Settings
             'customer_help' => ['Customer Visibility', 'Request help', 'Signed-in order owners can submit a bounded, rate-limited help request from My Account. Opens or reopens the internal case.', 'switch', false],
             'customer_tracking' => ['Customer Visibility', 'Shipment tracking summary', 'Read tracking information already stored by Advanced Shipment Tracking / WooCommerce Shipment Tracking. Does not contact carriers or create shipments.', 'switch', false],
             'customer_documents' => ['Customer Visibility', 'Document access', 'Show existing WP Overnight customer-authorized document actions. This does not expose staff-only PDFs or generate invoices automatically.', 'switch', false],
+            'requests' => ['Customer Requests', 'Customer requests (issues & returns)', 'Customers report issues and request returns from any page with the [ffla_order_requests] shortcode (for example your home page) or from My Account, then follow the status and reply. Staff work them in WooCommerce → Requests. Never changes the order status, refunds or ships anything by itself.', 'switch', false],
+            'requests_issues' => ['Customer Requests', 'Issue reports', 'Problems such as a package not received, damage, missing or wrong items, billing or transfer questions.', 'switch', true],
+            'requests_returns' => ['Customer Requests', 'Return requests', 'Customers pick the items and quantities to return. Firearms are flagged for an FFL-to-FFL return.', 'switch', true],
+            'requests_guests' => ['Customer Requests', 'Guest access', 'Customers verify with the order number and billing email, so guest checkouts can use the form too. When off, customers must sign in.', 'switch', true],
+            'requests_uploads' => ['Customer Requests', 'Customer photos and documents', 'Up to 3 JPEG, PNG or PDF files per message (20 per request). Photos are resized and their location data removed. Stored in private database tables, never in the Media Library.', 'switch', true],
+            'requests_emails' => ['Customer Requests', 'Customer emails', 'Confirmation with a private tracking link, staff replies, return approval with instructions, the status updates you choose to announce and the closing resolution. Staff are notified of new requests and customer replies either way.', 'switch', true],
+            'requests_issue_days' => ['Customer Requests', 'Issue window (days)', 'How many days after the order date customers can report an issue (1–365). Staff can always open one.', 'number', 90],
+            'requests_return_days' => ['Customer Requests', 'Return window (days)', 'How many days after the order was completed (or paid) customers can request a return (1–365).', 'number', 30],
+            'requests_page' => ['Customer Requests', 'Requests page', 'The page that shows the [ffla_order_requests] shortcode. Tracking links in emails point here. Leave empty to use the home page (the shortcode must be on it).', 'page', 0],
+            'requests_staff_emails' => ['Customer Requests', 'Staff notification emails', 'Comma-separated addresses notified of new requests and replies when a request has no assignee. Empty uses the site admin email.', 'text', ''],
+            'requests_intro' => ['Customer Requests', 'Form introduction', 'Short text shown above the request form.', 'textarea', 'Problem with an order or need to return something? Enter your order number and the email you used at checkout.'],
+            'requests_return_instructions' => ['Customer Requests', 'Return instructions', 'Included when you approve a return. Variables: {request_number}, {order_number}, {customer_name}, {store_name}.', 'textarea', 'Your return {request_number} is approved.\nPack the item(s) securely, write {request_number} on the outside of the box and ship it back to us. Reply to this request with your tracking number.'],
+            'requests_firearm_notice' => ['Customer Requests', 'Firearm return notice', 'Shown to the customer when a request includes a firearm.', 'textarea', 'Firearms can only be returned through a licensed dealer (FFL). Do not ship a firearm yourself — we will contact you with transfer instructions.'],
+            'requests_delete_data' => ['Customer Requests', 'Delete requests on uninstall', 'Removes all requests, messages and files when the plugin is deleted. Leave off to keep the history.', 'switch', false],
         ];
+    }
+
+    /** Allowed range for number fields. */
+    public static function range(string $key): array
+    {
+        $ranges = ['reminder_max' => [1, 5], 'reminder_days' => [1, 30], 'requests_issue_days' => [1, 365], 'requests_return_days' => [1, 365]];
+        return $ranges[$key] ?? [1, 30];
     }
 
     public static function get(): array
@@ -59,7 +80,8 @@ class FFLA_Customer_Operations_Settings
         if (empty($s[$key]) || !in_array('customer-notes', (array) get_option('ffla_active_modules', []), true)) { return false; }
         $dependencies = ['partial_pickup'=>['pickup'], 'require_serials'=>['serials'], 'invoice_serials'=>['serials'], 'packing_serials'=>['serials'],
             'attachments'=>['followup'], 'auto_ready'=>['pickup','notifications'], 'pickup_reminders'=>['auto_ready'], 'staff_reminders'=>['followup','notifications'],
-            'customer_serials'=>['serials','customer_progress'], 'customer_help'=>['followup','customer_progress'], 'customer_tracking'=>['customer_progress'], 'customer_documents'=>['customer_progress']];
+            'customer_serials'=>['serials','customer_progress'], 'customer_help'=>['followup','customer_progress'], 'customer_tracking'=>['customer_progress'], 'customer_documents'=>['customer_progress'],
+            'requests_issues'=>['requests'], 'requests_returns'=>['requests'], 'requests_guests'=>['requests'], 'requests_uploads'=>['requests'], 'requests_emails'=>['requests']];
         foreach ($dependencies[$key] ?? [] as $dependency) { if (!self::enabled($dependency)) { return false; } }
         return true;
     }
@@ -71,7 +93,8 @@ class FFLA_Customer_Operations_Settings
             $v = $input[$key] ?? '';
             if (!is_scalar($v)) { $v = ''; }
             if ($f[3] === 'switch') { $out[$key] = $v === '1' || $v === true; }
-            elseif ($f[3] === 'number') { $out[$key] = max(1, min($key === 'reminder_max' ? 5 : 30, (int) $v)); }
+            elseif ($f[3] === 'number') { [$min, $max] = self::range($key); $out[$key] = max($min, min($max, (int) $v)); }
+            elseif ($f[3] === 'page') { $out[$key] = absint($v); }
             else { $out[$key] = substr($f[3] === 'textarea' ? sanitize_textarea_field($v) : sanitize_text_field($v), 0, 5000); }
         }
         return $out;
