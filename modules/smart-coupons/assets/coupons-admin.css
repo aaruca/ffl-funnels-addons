@@ -1,0 +1,21 @@
+/* Smart Coupons — admin. */
+.ffla-cpn-cat { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: 12px; font-weight: 600; line-height: 1.6; white-space: nowrap;
+	color: var(--c, #475569); background: color-mix(in srgb, var(--c, #475569) 14%, #fff); border: 1px solid color-mix(in srgb, var(--c, #475569) 35%, #fff); }
+.column-ffla_cat { width: 14%; }
+.ffla-cpn-panel h4 { margin: 12px 12px 4px; font-size: 13px; }
+.ffla-cpn-panel .options_group { padding-bottom: 6px; }
+.ffla-cpn-panel select[multiple] { min-height: 32px; }
+.ffla-cpn-form label { font-weight: 600; }
+.ffla-cpn-form p > label:first-child + input, .ffla-cpn-form p > label:first-child + select, .ffla-cpn-form p > label:first-child + textarea { display: block; margin-top: 4px; }
+.ffla-cpn-muted { color: #646970; font-size: 12px; }
+.ffla-cpn-notice { margin: 0 0 16px; }
+.ffla-cpn-periods a, .ffla-cpn-periods strong { margin-right: 12px; }
+.ffla-cpn-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 12px; }
+.ffla-cpn-kpi { border: 1px solid #dcdcde; border-radius: 6px; padding: 12px 14px; background: #fff; }
+.ffla-cpn-kpi .label { display: block; color: #50575e; font-size: 12px; }
+.ffla-cpn-kpi .value { display: block; font-size: 22px; font-weight: 600; line-height: 1.3; margin-top: 2px; }
+.ffla-cpn-kpi .sub { display: block; color: #646970; font-size: 12px; }
+.ffla-cpn-report .num { text-align: right; font-variant-numeric: tabular-nums; }
+.ffla-cpn-meter { display: inline-block; vertical-align: middle; position: relative; width: 90px; height: 8px; border-radius: 4px; background: #dce8f5; margin-right: 6px; }
+.ffla-cpn-meter span { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: #2271b1; }
+.ffla-cpn-meter.is-full span { background: #d63638; }

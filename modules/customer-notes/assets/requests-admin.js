@@ -113,6 +113,17 @@
 		update();
 	});
 
+	// Store credit amount appears with the "Store credit issued" outcome.
+	var outcome = document.getElementById('ffla-req-resolution');
+	var credit = document.querySelector('[data-ffla-credit]');
+	if (outcome && credit) {
+		var syncCredit = function () {
+			credit.hidden = outcome.value !== 'store_credit';
+		};
+		outcome.addEventListener('change', syncCredit);
+		syncCredit();
+	}
+
 	var radios = document.querySelectorAll('[data-ffla-type]');
 	function syncType() {
 		var current = document.querySelector('[data-ffla-type]:checked');

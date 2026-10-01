@@ -268,6 +268,15 @@ delete_option('ffla_requests_digest_day');
 
 delete_option('ffla_requests_endpoint'); // My Account tab permalink flag.
 
+// ── Smart Coupons cleanup ──────────────────────────────────────────
+// Settings and caches only. Coupons, store credits (customers still hold
+// them), coupon categories and the per-coupon options stay with WooCommerce.
+delete_option('ffla_coupons_settings');
+delete_option('ffla_coupon_batches');
+delete_option('ffla_coupon_cats_seeded');
+// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+$wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_ffla\\_cpn\\_%' OR option_name LIKE '\\_transient\\_timeout\\_ffla\\_cpn\\_%'");
+
 // ── Order Badges cleanup ───────────────────────────────────────────
 // Badges are derived live from product tags; the only stored data is this
 // settings option, so it is removed whether or not the module is active.

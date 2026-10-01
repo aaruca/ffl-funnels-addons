@@ -14,12 +14,23 @@ All notable changes to FFL Funnels Addons are documented in this file.
 - Customer requests: **automation** (new Request Automation settings, off by default) — one reminder after N days waiting for the customer, auto-close with "Closed — no reply from customer", and a daily staff digest of overdue and waiting requests.
 - Customer requests: **ratings** after closing (1–5 stars and a comment), low ratings emailed to staff.
 - Customer requests: **report** (Requests → Report) with volume, median first reply and time to close, refunds, ratings, top reasons, outcomes and product return rates, plus CSV export.
+- **Smart Coupons** module (off until switched on) — see `modules/smart-coupons/README.md`:
+  - **Guardrails:** firearms (`_firearm_product`) and any extra categories or tags are left out of every coupon, fixed-cart coupons included, unless the coupon or its category allows them (on by default); no coupon takes a product below its new **Minimum price (MAP)** field (products and variations); a maximum discount per coupon.
+  - **Conditions** on a new Smart Coupons coupon tab: start date, first order only, customer roles (guests included), uses per person (by email with Gmail dots and +tags ignored, phone and shipping address), minimum quantity from categories, pickup or shipping only, states, payment methods (checked when the order is placed).
+  - **Discount types:** spend tiers (`500=25`, `2000=10%`, with a "spend $X more" message) and buy X get Y (cheapest units, optional repeat); a free gift product with any coupon.
+  - **Combining:** per-coupon "no other coupon" / "only these coupons", checked only against coupons applied earlier, and an optional **Best discount wins** that keeps the bigger discount instead of an error.
+  - **Coupon categories** (Marketing → Coupon categories): nine seeded categories, colour badges, list filter, quick and bulk edit, and per-category rules — one per order, cannot be combined with other categories (both ways), maximum discount, firearms allowed, customer roles, default expiry and a **monthly discount budget**.
+  - **Store credit** with a running balance tied to the customer's email: issued from Smart Coupons → Store Credit or when closing a customer request as Store credit, deducted per order and given back on cancelled, failed or refunded orders, never limited by guardrails; balance on the My Account dashboard and an **Apply it** reminder in the cart and checkout (classic and blocks).
+  - **Bulk codes** (up to 500 single-use codes from a template, optional category, CSV with usage), **coupon links** (`?coupon=CODE`, applied when the first product is added) and **guessing protection** (too many unknown codes locks coupon entry for 10 minutes).
+  - **Coupon report:** orders, discount, revenue, average order with and without a coupon and new customers, by category (with budget use) and by coupon, for 30 / 90 / 365 days.
+- Customer requests: closing a request as **Store credit** can issue the credit (amount field) when Smart Coupons is on; the code is added to the resolution note and the customer's email.
 
 ### Changed
 - Customer requests: database schema version 2 (upgrades automatically).
 
 ### Fixed
 - Customer requests: text with a plain `%s` or `%%` placeholder rendered literally in the storefront form.
+- Customer requests: order lookup by a custom order number (sequential-number plugins) on stores using the posts order storage; it also no longer logs a `meta_query` notice there.
 
 ## [1.53.0] - 2026-10-01
 

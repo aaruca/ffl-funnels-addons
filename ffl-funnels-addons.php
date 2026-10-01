@@ -94,6 +94,7 @@ if (!class_exists('FFL_Funnels_Addons')):
             require_once FFLA_PATH . 'modules/google-merchant-policy/class-google-merchant-policy-module.php';
             require_once FFLA_PATH . 'modules/white-label/class-white-label-module.php';
             require_once FFLA_PATH . 'modules/order-badges/class-order-badges-module.php';
+            require_once FFLA_PATH . 'modules/smart-coupons/class-smart-coupons-module.php';
         }
 
         /**
@@ -117,6 +118,7 @@ if (!class_exists('FFL_Funnels_Addons')):
             $this->registry->register(new Google_Merchant_Policy_Module());
             $this->registry->register(new White_Label_Module());
             $this->registry->register(new Order_Badges_Module());
+            $this->registry->register(new Smart_Coupons_Module());
         }
 
         /**

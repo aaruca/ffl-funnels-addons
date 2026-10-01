@@ -550,7 +550,13 @@ class FFLA_Requests_Admin
                     echo '<option value="' . esc_attr($key) . '">' . esc_html($label) . '</option>';
                 }
             }
-            echo '</select><label for="ffla-req-resolution-note">' . esc_html__('Resolution note for the customer', 'ffl-funnels-addons') . '</label>';
+            echo '</select>';
+            if (class_exists('FFLA_Store_Credit')) {
+                echo '<div class="ffla-req-credit" data-ffla-credit hidden><label for="ffla-req-credit-amount">' . esc_html__('Store credit amount', 'ffl-funnels-addons') . '</label>'
+                    . '<input type="number" id="ffla-req-credit-amount" name="credit_amount" min="0" step="0.01">'
+                    . '<span class="description">' . esc_html__('Creates a store credit code for this customer (Smart Coupons) and adds it to the resolution note.', 'ffl-funnels-addons') . '</span></div>';
+            }
+            echo '<label for="ffla-req-resolution-note">' . esc_html__('Resolution note for the customer', 'ffl-funnels-addons') . '</label>';
             self::replies_picker('ffla-req-resolution-note', $r);
             echo ''
                 . '<textarea id="ffla-req-resolution-note" name="note" rows="3" required placeholder="' . esc_attr__('What was done, e.g. refund amount and when it appears, or replacement tracking number.', 'ffl-funnels-addons') . '"></textarea>';
@@ -785,7 +791,17 @@ class FFLA_Requests_Admin
                     break;
 
                 case 'close':
-                    FFLA_Requests::close($r, sanitize_key(wp_unslash($_POST['resolution'] ?? '')), $text, $actor);
+                    $resolution = sanitize_key(wp_unslash($_POST['resolution'] ?? ''));
+                    $credit_amount = (float) wp_unslash($_POST['credit_amount'] ?? 0);
+                    if ('store_credit' === $resolution && $credit_amount > 0 && class_exists('FFLA_Store_Credit')) {
+                        if (!FFLA_Requests::is_open($r->status)) {
+                            throw new InvalidArgumentException(__('This request is already closed.', 'ffl-funnels-addons'));
+                        }
+                        $credit = FFLA_Store_Credit::from_request($r, $credit_amount);
+                        $text = trim($text . "\n\n" . FFLA_Store_Credit::describe($credit));
+                        FFLA_Requests::add_event($r, 'note', $actor, false, sprintf('Store credit %s issued (%s).', strtoupper($credit->get_code()), FFLA_Store_Credit::money($credit_amount)));
+                    }
+                    FFLA_Requests::close($r, $resolution, $text, $actor);
                     if ($notify) {
                         FFLA_Requests_Mail::customer_closed(FFLA_Requests::get($id));
                     }

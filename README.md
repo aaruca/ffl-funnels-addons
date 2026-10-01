@@ -160,6 +160,13 @@ Colour-coded product-tag badges on WooCommerce orders, so staff see at a glance 
 *   **In-store tags:** products carrying none of them show an **Online Only** badge (colour configurable). Leave empty to turn Online Only off.
 *   **Live:** badges follow each product's current tags, so retagging a product re-labels its past orders. Lines whose product was deleted show no badge.
 
+### 15. Smart Coupons
+Coupon rules built for FFL stores, on the regular WooCommerce coupon screens, classic checkout and the Cart / Checkout blocks. Off until switched on.
+*   **Guardrails:** firearms (and any categories/tags you add) are never discounted unless a coupon or its category allows it; no coupon goes below a product's **Minimum price (MAP)**; a cap per coupon.
+*   **Conditions & types:** start date, first order, roles, uses per person (email, phone and address), minimum quantity, pickup/shipping, states, payment method; spend tiers, buy X get Y, free gift; stacking rules with optional best-discount-wins.
+*   **Coupon categories:** colour badges, filter, bulk assign and per-category rules — one per order, no-combine, cap, firearms allowed, roles, default expiry and a monthly budget.
+*   **Store credit, codes & links:** running-balance credit (also from customer requests), up to 500 single-use codes with CSV, `?coupon=CODE` links, guessing protection, and a coupon report by coupon and category. See the [Smart Coupons guide](modules/smart-coupons/README.md).
+
 ## Installation
 
 1.  Download the versioned `ffl-funnels-addons-vX.Y.Z.zip` file from the [Releases](https://github.com/aaruca/ffl-funnels-addons/releases) page.

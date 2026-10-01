@@ -310,14 +310,26 @@ class FFLA_Requests
         if (ctype_digit($number)) {
             $candidates[] = wc_get_order((int) $number);
         }
-        if (function_exists('wc_get_orders')) {
+        // Custom order numbers (sequential-number plugins store them in _order_number).
+        $hpos = class_exists('Automattic\WooCommerce\Utilities\OrderUtil') && \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled();
+        if ($hpos) {
             try {
-                $found = wc_get_orders(['limit' => 1, 'type' => 'shop_order', 'meta_query' => [['key' => '_order_number', 'value' => $number]]]);
+                $found = wc_get_orders(['limit' => 1, 'type' => 'shop_order', 'meta_query' => [['key' => '_order_number', 'value' => $number]]]); // phpcs:ignore WordPress.DB.SlowDBQuery
                 if (!empty($found)) {
                     $candidates[] = $found[0];
                 }
             } catch (Throwable $e) {
-                // Older stores without meta_query support: numeric IDs still work.
+                // Numeric IDs still work.
+            }
+        } else {
+            // The posts order store ignores meta_query, so look the number up directly.
+            global $wpdb;
+            $id = (int) $wpdb->get_var($wpdb->prepare( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+                "SELECT pm.post_id FROM {$wpdb->postmeta} pm JOIN {$wpdb->posts} p ON p.ID = pm.post_id AND p.post_type = 'shop_order' WHERE pm.meta_key = '_order_number' AND pm.meta_value = %s LIMIT 1",
+                $number
+            ));
+            if ($id) {
+                $candidates[] = wc_get_order($id);
             }
         }
 
