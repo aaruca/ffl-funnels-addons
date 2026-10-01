@@ -93,19 +93,33 @@ class FFLA_Coupon_Discounts
         return $caps ? min($caps) : 0.0;
     }
 
+    /** Whether the coupon may discount this product: guardrails plus the coupon's category / tag filters. */
+    public static function covers(WC_Coupon $coupon, $product): bool
+    {
+        if (!$product instanceof WC_Product) {
+            return true;
+        }
+        if (!self::allows_protected($coupon) && FFLA_Coupon_Settings::is_protected($product)) {
+            return false;
+        }
+        $o = FFLA_Coupon_Settings::coupon($coupon);
+        return !FFLA_Coupon_Settings::has_product_filters($o) || FFLA_Coupon_Settings::product_matches($o, $product);
+    }
+
+    /** Items a coupon spreads over (all types, fixed cart included). */
     public static function items_to_apply($items, $coupon, $discounts = null)
     {
-        if (!is_array($items) || !$coupon instanceof WC_Coupon || self::allows_protected($coupon)) {
+        if (!is_array($items) || !$coupon instanceof WC_Coupon) {
             return $items;
         }
-        return array_values(array_filter($items, static function ($item) {
-            return !(isset($item->product) && FFLA_Coupon_Settings::is_protected($item->product));
+        return array_values(array_filter($items, static function ($item) use ($coupon) {
+            return !isset($item->product) || self::covers($coupon, $item->product);
         }));
     }
 
     public static function valid_for_product($valid, $product, $coupon, $values = [])
     {
-        if ($valid && $coupon instanceof WC_Coupon && !self::allows_protected($coupon) && FFLA_Coupon_Settings::is_protected($product)) {
+        if ($valid && $coupon instanceof WC_Coupon && !self::covers($coupon, $product)) {
             return false;
         }
         return $valid;
@@ -172,7 +186,7 @@ class FFLA_Coupon_Discounts
             if (!$product instanceof WC_Product || !empty($item['ffla_gift']) || (float) $product->get_price() <= 0) {
                 continue;
             }
-            if (!self::allows_protected($coupon) && FFLA_Coupon_Settings::is_protected($product)) {
+            if (!self::covers($coupon, $product)) {
                 continue;
             }
             if (!$coupon->is_valid_for_product($product, $item)) {

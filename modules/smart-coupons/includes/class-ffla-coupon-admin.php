@@ -162,6 +162,19 @@ class FFLA_Coupon_Admin
         return $html . '</select>';
     }
 
+    /** Product tags, searched as you type (stores can have thousands). */
+    private static function tag_select(string $key, array $ids): string
+    {
+        $html = '<select id="ffla_' . esc_attr($key) . '" name="ffla[' . esc_attr($key) . '][]" multiple class="wc-taxonomy-term-search" style="width:50%" data-taxonomy="product_tag" data-return_id="1" data-minimum_input_length="1" data-limit="50" data-placeholder="' . esc_attr__('Search for a tag…', 'ffl-funnels-addons') . '">';
+        foreach ($ids as $id) {
+            $term = get_term((int) $id, 'product_tag');
+            if ($term && !is_wp_error($term)) {
+                $html .= '<option value="' . esc_attr((string) $term->term_id) . '" selected>' . esc_html($term->name) . '</option>';
+            }
+        }
+        return $html . '</select>';
+    }
+
     private static function row(string $label, string $control, string $help = '', string $class = ''): void
     {
         echo '<p class="form-field ' . esc_attr($class) . '"><label>' . esc_html($label) . '</label>' . $control // phpcs:ignore WordPress.Security.EscapeOutput
@@ -189,6 +202,13 @@ class FFLA_Coupon_Admin
         echo '<div class="options_group"><h4>' . esc_html__('Guardrails', 'ffl-funnels-addons') . '</h4>';
         self::row(__('Firearms & protected', 'ffl-funnels-addons'), '<input type="checkbox" name="ffla[allow_protected]" value="1"' . checked($o['allow_protected'], true, false) . '> ' . esc_html__('This coupon may discount firearms and protected items', 'ffl-funnels-addons'), __('Only if your manufacturer and distributor agreements allow it. MAP prices still apply.', 'ffl-funnels-addons'));
         self::row(__('Maximum discount', 'ffl-funnels-addons'), $num('max_discount', $o['max_discount'] ?: '', '0.01'), __('Caps the total this coupon takes off, e.g. 20% off up to $100. Empty = no cap.', 'ffl-funnels-addons'));
+        echo '</div>';
+
+        echo '<div class="options_group"><h4>' . esc_html__('Which products', 'ffl-funnels-addons') . '</h4>';
+        self::row(__('In all of these categories', 'ffl-funnels-addons'), self::select('all_cats', $cats, $o['all_cats'], true), __('The product must be in every one of these categories, e.g. Rifles and Used Guns for used rifles only. Subcategories count. Usage restriction → Product categories still works and matches any of its categories.', 'ffl-funnels-addons'));
+        self::row(__('With tags', 'ffl-funnels-addons'), self::tag_select('tags', $o['tags']));
+        self::row(__('Tag match', 'ffl-funnels-addons'), self::select('tags_match', ['any' => __('Any of these tags', 'ffl-funnels-addons'), 'all' => __('All of these tags', 'ffl-funnels-addons')], $o['tags_match'], false, ''), __('Empty tags = any product.', 'ffl-funnels-addons'));
+        self::row(__('Without tags', 'ffl-funnels-addons'), self::tag_select('exclude_tags', $o['exclude_tags']), __('Products with any of these tags are left out, e.g. "no-discount" or "consignment".', 'ffl-funnels-addons'));
         echo '</div>';
 
         echo '<div class="options_group"><h4>' . esc_html__('When it works', 'ffl-funnels-addons') . '</h4>';

@@ -91,23 +91,11 @@ class FFLA_Coupon_Rules
             }
         }
 
-        // Nothing left to discount once firearms / protected items are set aside.
-        if (!FFLA_Coupon_Discounts::allows_protected($coupon)) {
-            $other = false;
-            $protected = false;
-            foreach ($cart->get_cart() as $item) {
-                if (!empty($item['ffla_gift'])) {
-                    continue;
-                }
-                if (FFLA_Coupon_Settings::is_protected($item['data'])) {
-                    $protected = true;
-                } else {
-                    $other = true;
-                }
-            }
-            if ($protected && !$other) {
-                throw new Exception(esc_html__('Coupons cannot be used on firearms or the other items in your cart.', 'ffl-funnels-addons'), 100);
-            }
+        // Nothing left to discount once firearms / protected items and the
+        // coupon's category / tag filters are applied.
+        $reason = self::nothing_to_discount($coupon, $cart);
+        if ('' !== $reason) {
+            throw new Exception(esc_html($reason), 100);
         }
 
         if ($coupon->is_type(FFLA_Coupon_Discounts::TIERED)) {
@@ -463,24 +451,53 @@ class FFLA_Coupon_Rules
      * Count unknown codes; once throttled every coupon error reads the same,
      * so a guesser cannot tell a real code from a fake one.
      */
+    /**
+     * Why the coupon has nothing to discount in this cart, or '' when it has.
+     * Firearms first (clearest for the customer), then the product filters.
+     */
+    public static function nothing_to_discount(WC_Coupon $coupon, WC_Cart $cart): string
+    {
+        $o = FFLA_Coupon_Settings::coupon($coupon);
+        $filters = FFLA_Coupon_Settings::has_product_filters($o);
+        $guard = !FFLA_Coupon_Discounts::allows_protected($coupon);
+        if (!$filters && !$guard) {
+            return '';
+        }
+        $items = 0;
+        $matching = 0;
+        $protected = 0;
+        foreach ($cart->get_cart() as $item) {
+            if (!empty($item['ffla_gift']) || !($item['data'] ?? null) instanceof WC_Product) {
+                continue;
+            }
+            $items++;
+            if ($filters && !FFLA_Coupon_Settings::product_matches($o, $item['data'])) {
+                continue;
+            }
+            $matching++;
+            if ($guard && FFLA_Coupon_Settings::is_protected($item['data'])) {
+                $protected++;
+            }
+        }
+        if (!$items || $matching > $protected) {
+            return '';
+        }
+        if ($matching > 0) {
+            return __('Coupons cannot be used on firearms or the other items in your cart.', 'ffl-funnels-addons');
+        }
+        if (!$filters) {
+            return '';
+        }
+        return FFLA_Coupon_Settings::product_filter_message($o);
+    }
+
     public static function coupon_error($message, $code, $coupon)
     {
-        // WooCommerce's "not applicable" when only firearms / protected items are in the cart.
-        if (WC_Coupon::E_WC_COUPON_NOT_APPLICABLE === (int) $code && $coupon instanceof WC_Coupon && function_exists('WC') && WC()->cart
-            && !FFLA_Coupon_Discounts::allows_protected($coupon)) {
-            $protected = false;
-            foreach (WC()->cart->get_cart() as $item) {
-                if (!empty($item['ffla_gift'])) {
-                    continue;
-                }
-                if (!FFLA_Coupon_Settings::is_protected($item['data'])) {
-                    $protected = false;
-                    break;
-                }
-                $protected = true;
-            }
-            if ($protected) {
-                return __('Coupons cannot be used on firearms or the other items in your cart.', 'ffl-funnels-addons');
+        // WooCommerce's generic "not applicable": say why (firearms, or the coupon's category / tag filters).
+        if (WC_Coupon::E_WC_COUPON_NOT_APPLICABLE === (int) $code && $coupon instanceof WC_Coupon && function_exists('WC') && WC()->cart) {
+            $reason = self::nothing_to_discount($coupon, WC()->cart);
+            if ('' !== $reason) {
+                return $reason;
             }
         }
         if (!FFLA_Coupon_Settings::value('throttle')) {

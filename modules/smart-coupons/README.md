@@ -24,6 +24,19 @@ Extends WooCommerce coupons for FFL stores. It works on the regular WooCommerce 
 - **Respect minimum (MAP) prices** (on by default). No coupon, or several coupons together, takes a product below its *Minimum price (MAP)*; the rest of that line's discount is dropped. Fixed spend-tier amounts move what MAP holds back onto other qualifying items.
 - **Maximum discount** per coupon (e.g. 20% off up to $100), and per category. The smaller one applies.
 
+## Which products (Smart Coupons tab)
+
+WooCommerce's own **Usage restriction → Product categories** matches *any* listed category, and it has no tag restriction. These fields narrow the coupon further; a product must pass WooCommerce's restrictions **and** these:
+
+| Option | Behaviour |
+|---|---|
+| In all of these categories | The product must be in **every** category listed. *Rifles* + *Used Guns* = used rifles only: a new rifle or a used pistol is left out. Subcategories count (a used rifle in *Bolt Action* under *Rifles* qualifies). |
+| With tags + Tag match | Only products with **any** (default) or **all** of these tags, e.g. *Sale*. Tags are searched as you type. |
+| Without tags | Products with any of these tags are left out, e.g. *consignment* or *no-discount*. |
+
+- Applies to every discount type: percentage and fixed product per line, fixed cart spread only over matching items, spend tiers counted only on matching items, buy X get Y.
+- If nothing in the cart matches, the customer is told why: "This coupon is only for products in Rifles and Used Guns, tagged Sale." Matching items that are firearms still need the coupon (or its category) to allow firearms — otherwise the firearm message is shown.
+
 ## Conditions (Smart Coupons tab → When it works)
 
 | Option | Behaviour |
@@ -96,4 +109,4 @@ A fixed-cart coupon tied to the customer's email, with a running balance:
 
 ## Verification
 
-Tested on WordPress 7.1 + WooCommerce 10.2 (posts order storage) with Store API cart/checkout and the classic screens: guardrails and MAP, every condition, both custom types, gifts, stacking and best-wins, per-person limits, categories (one per order, no-combine both ways, monthly budget), store credit (partial use, restore on cancel, email lock, request close), bulk codes, links, throttling, the report, and the admin screens in a browser.
+Tested on WordPress 7.1 + WooCommerce 10.2 (posts order storage) with Store API cart/checkout and the classic screens: guardrails and MAP, all-categories and tag filters, every condition, both custom types, gifts, stacking and best-wins, per-person limits, categories (one per order, no-combine both ways, monthly budget), store credit (partial use, restore on cancel, email lock, request close), bulk codes, links, throttling, the report, and the admin screens in a browser.

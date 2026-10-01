@@ -73,6 +73,10 @@ class FFLA_Coupon_Settings
     {
         return [
             'allow_protected' => false,
+            'all_cats'        => [],      // Product must be in every one of these categories (subcategories count).
+            'tags'            => [],      // Product tags, matched by tags_match.
+            'tags_match'      => 'any',   // any, all
+            'exclude_tags'    => [],      // Products with any of these tags are left out.
             'starts'          => '',      // Y-m-d, store time.
             'first_order'     => false,
             'roles'           => [],      // WP roles, plus "guest".
@@ -124,6 +128,10 @@ class FFLA_Coupon_Settings
 
         return [
             'allow_protected' => !empty($in['allow_protected']),
+            'all_cats'        => $ids($in['all_cats'] ?? []),
+            'tags'            => $ids($in['tags'] ?? []),
+            'tags_match'      => 'all' === ($in['tags_match'] ?? '') ? 'all' : 'any',
+            'exclude_tags'    => $ids($in['exclude_tags'] ?? []),
             'starts'          => preg_match('/^\d{4}-\d{2}-\d{2}$/', $starts) ? $starts : '',
             'first_order'     => !empty($in['first_order']),
             'roles'           => $roles,
@@ -215,6 +223,79 @@ class FFLA_Coupon_Settings
     public static function in_categories($product, array $cat_ids): bool
     {
         return (bool) array_intersect(self::product_terms($product)['product_cat'], array_map('intval', $cat_ids));
+    }
+
+    /** Whether the coupon limits products by "all categories" or tags. */
+    public static function has_product_filters(array $o): bool
+    {
+        return (bool) ($o['all_cats'] || $o['tags'] || $o['exclude_tags']);
+    }
+
+    /**
+     * The coupon's "all of these categories" and tag filters. These narrow
+     * WooCommerce's own restrictions (its Product categories match any).
+     */
+    public static function product_matches(array $o, $product): bool
+    {
+        if (!$product instanceof WC_Product) {
+            return false;
+        }
+        $terms = self::product_terms($product);
+        $need = array_map('intval', (array) $o['all_cats']);
+        if ($need && array_diff($need, $terms['product_cat'])) {
+            return false;
+        }
+        $tags = array_values(array_unique(array_map('intval', (array) $o['tags'])));
+        if ($tags) {
+            $hit = array_intersect($tags, $terms['product_tag']);
+            if ('all' === $o['tags_match'] ? count($hit) < count($tags) : !$hit) {
+                return false;
+            }
+        }
+        if ($o['exclude_tags'] && array_intersect(array_map('intval', (array) $o['exclude_tags']), $terms['product_tag'])) {
+            return false;
+        }
+        return true;
+    }
+
+    /** "This coupon is only for products in Rifles and Used Guns, tagged Sale." */
+    public static function product_filter_message(array $o): string
+    {
+        $names = static function (array $ids, string $taxonomy): array {
+            return array_values(array_filter(array_map(static function ($id) use ($taxonomy) {
+                $term = get_term((int) $id, $taxonomy);
+                return $term && !is_wp_error($term) ? $term->name : '';
+            }, $ids)));
+        };
+        $and = static function (array $list): string {
+            /* translators: list separator between the last two items, e.g. "Rifles and Used Guns" */
+            return count($list) > 1 ? implode(', ', array_slice($list, 0, -1)) . __(' and ', 'ffl-funnels-addons') . end($list) : implode('', $list);
+        };
+        $or = static function (array $list): string {
+            /* translators: list separator between the last two items, e.g. "Sale or Clearance" */
+            return count($list) > 1 ? implode(', ', array_slice($list, 0, -1)) . __(' or ', 'ffl-funnels-addons') . end($list) : implode('', $list);
+        };
+        $parts = [];
+        $cats = $names((array) $o['all_cats'], 'product_cat');
+        $tags = $names((array) $o['tags'], 'product_tag');
+        $without = $names((array) $o['exclude_tags'], 'product_tag');
+        if ($cats) {
+            /* translators: %s: categories */
+            $parts[] = sprintf(__('in %s', 'ffl-funnels-addons'), $and($cats));
+        }
+        if ($tags) {
+            /* translators: %s: tags */
+            $parts[] = sprintf(__('tagged %s', 'ffl-funnels-addons'), 'all' === $o['tags_match'] ? $and($tags) : $or($tags));
+        }
+        if ($without) {
+            /* translators: %s: tags */
+            $parts[] = sprintf(__('not tagged %s', 'ffl-funnels-addons'), $or($without));
+        }
+        if (!$parts) {
+            return __('This coupon does not apply to the items in your cart.', 'ffl-funnels-addons');
+        }
+        /* translators: %s: e.g. "in Rifles and Used Guns, tagged Sale" */
+        return sprintf(__('This coupon is only for products %s.', 'ffl-funnels-addons'), implode(', ', $parts));
     }
 
     /** Firearms and protected categories / tags. */

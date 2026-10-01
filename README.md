@@ -163,6 +163,7 @@ Colour-coded product-tag badges on WooCommerce orders, so staff see at a glance 
 ### 15. Smart Coupons
 Coupon rules built for FFL stores, on the regular WooCommerce coupon screens, classic checkout and the Cart / Checkout blocks. Off until switched on.
 *   **Guardrails:** firearms (and any categories/tags you add) are never discounted unless a coupon or its category allows it; no coupon goes below a product's **Minimum price (MAP)**; a cap per coupon.
+*   **Which products:** require all of several categories (e.g. Rifles + Used Guns), match or exclude product tags.
 *   **Conditions & types:** start date, first order, roles, uses per person (email, phone and address), minimum quantity, pickup/shipping, states, payment method; spend tiers, buy X get Y, free gift; stacking rules with optional best-discount-wins.
 *   **Coupon categories:** colour badges, filter, bulk assign and per-category rules — one per order, no-combine, cap, firearms allowed, roles, default expiry and a monthly budget.
 *   **Store credit, codes & links:** running-balance credit (also from customer requests), up to 500 single-use codes with CSV, `?coupon=CODE` links, guessing protection, and a coupon report by coupon and category. See the [Smart Coupons guide](modules/smart-coupons/README.md).
