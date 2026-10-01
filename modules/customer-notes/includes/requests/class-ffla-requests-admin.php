@@ -1000,11 +1000,13 @@ class FFLA_Requests_Admin
 
     /* ── Setup panel on the settings page ──────────────────────────────── */
 
-    public static function setup_panel(): void
+    /** @param bool $embedded Inside the settings screen's own panel (no outer box or heading). */
+    public static function setup_panel(bool $embedded = false): void
     {
-        echo '<section class="ffla-ops-section ffla-req-setup"><h2>' . esc_html__('Customer requests setup', 'ffl-funnels-addons') . '</h2>';
+        $close = $embedded ? '</div>' : '</section>';
+        echo $embedded ? '<div class="ffla-req-setup">' : '<section class="ffla-ops-section ffla-req-setup"><h2>' . esc_html__('Customer requests setup', 'ffl-funnels-addons') . '</h2>';
         if (!FFLA_Requests::enabled()) {
-            echo '<p>' . esc_html__('Turn on “Customer requests (issues & returns)” in the Customer Requests section above and save. Then place the form on your site.', 'ffl-funnels-addons') . '</p></section>';
+            echo '<p>' . esc_html__('Turn on “Customer requests (issues & returns)” in Customer requests and save. Then place the form on your site.', 'ffl-funnels-addons') . '</p>' . $close; // phpcs:ignore WordPress.Security.EscapeOutput
             return;
         }
 
@@ -1035,7 +1037,7 @@ class FFLA_Requests_Admin
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '"><input type="hidden" name="action" value="ffla_req_setup_page">';
         wp_nonce_field('ffla_req_setup_page');
         self::button(__('Create an “Order Help” page with the form', 'ffl-funnels-addons'), 'secondary');
-        echo ' <a class="button" href="' . esc_url(admin_url('admin.php?page=' . self::SLUG)) . '">' . esc_html__('Open the requests inbox', 'ffl-funnels-addons') . '</a></form></section>';
+        echo ' <a class="button" href="' . esc_url(admin_url('admin.php?page=' . self::SLUG)) . '">' . esc_html__('Open the requests inbox', 'ffl-funnels-addons') . '</a></form>' . $close; // phpcs:ignore WordPress.Security.EscapeOutput
     }
 
     private static function page_has_shortcode(int $page_id): bool

@@ -86,14 +86,36 @@ class FFLA_Customer_Operations_Settings
         return $values;
     }
 
+    /** Switches that only work while other switches are on (enforced by enabled()). */
+    public static function dependencies(): array
+    {
+        return ['partial_pickup'=>['pickup'], 'require_serials'=>['serials'], 'invoice_serials'=>['serials'], 'packing_serials'=>['serials'],
+            'attachments'=>['followup'], 'auto_ready'=>['pickup','notifications'], 'pickup_reminders'=>['auto_ready'], 'staff_reminders'=>['followup','notifications'],
+            'customer_serials'=>['serials','customer_progress'], 'customer_help'=>['followup','customer_progress'], 'customer_tracking'=>['customer_progress'], 'customer_documents'=>['customer_progress'],
+            'requests_issues'=>['requests'], 'requests_returns'=>['requests'], 'requests_guests'=>['requests'], 'requests_account_tab'=>['requests'], 'requests_uploads'=>['requests'], 'requests_photo_required'=>['requests','requests_uploads'], 'requests_ffl_required'=>['requests'], 'requests_ratings'=>['requests'], 'requests_auto_remind'=>['requests','requests_emails'], 'requests_auto_close'=>['requests'], 'requests_staff_digest'=>['requests'], 'requests_emails'=>['requests']];
+    }
+
+    /**
+     * What each setting needs before it has any effect, for the settings
+     * screen: the switch dependencies above plus the switch a text, number or
+     * page setting belongs to.
+     */
+    public static function requires(string $key): array
+    {
+        $values = ['store_name'=>['pickup'], 'store_address'=>['pickup'], 'store_hours'=>['pickup'], 'store_instructions'=>['pickup'],
+            'reminder_days'=>['pickup_reminders'], 'reminder_max'=>['pickup_reminders'], 'ready_subject'=>['auto_ready'], 'ready_body'=>['auto_ready'],
+            'reminder_subject'=>['pickup_reminders'], 'reminder_body'=>['pickup_reminders'], 'public_subject'=>['public_messages','notifications'],
+            'requests_account_label'=>['requests_account_tab'], 'requests_restocking_fee'=>['requests'], 'requests_remind_days'=>['requests_auto_remind'], 'requests_close_days'=>['requests_auto_close'],
+            'requests_issue_days'=>['requests'], 'requests_return_days'=>['requests'], 'requests_page'=>['requests'], 'requests_staff_emails'=>['requests'], 'requests_intro'=>['requests'],
+            'requests_return_instructions'=>['requests'], 'requests_firearm_notice'=>['requests']];
+        return self::dependencies()[$key] ?? $values[$key] ?? [];
+    }
+
     public static function enabled(string $key): bool
     {
         $s = self::get();
         if (empty($s[$key]) || !in_array('customer-notes', (array) get_option('ffla_active_modules', []), true)) { return false; }
-        $dependencies = ['partial_pickup'=>['pickup'], 'require_serials'=>['serials'], 'invoice_serials'=>['serials'], 'packing_serials'=>['serials'],
-            'attachments'=>['followup'], 'auto_ready'=>['pickup','notifications'], 'pickup_reminders'=>['auto_ready'], 'staff_reminders'=>['followup','notifications'],
-            'customer_serials'=>['serials','customer_progress'], 'customer_help'=>['followup','customer_progress'], 'customer_tracking'=>['customer_progress'], 'customer_documents'=>['customer_progress'],
-            'requests_issues'=>['requests'], 'requests_returns'=>['requests'], 'requests_guests'=>['requests'], 'requests_account_tab'=>['requests'], 'requests_uploads'=>['requests'], 'requests_photo_required'=>['requests','requests_uploads'], 'requests_ffl_required'=>['requests'], 'requests_ratings'=>['requests'], 'requests_auto_remind'=>['requests','requests_emails'], 'requests_auto_close'=>['requests'], 'requests_staff_digest'=>['requests'], 'requests_emails'=>['requests']];
+        $dependencies = self::dependencies();
         foreach ($dependencies[$key] ?? [] as $dependency) { if (!self::enabled($dependency)) { return false; } }
         return true;
     }

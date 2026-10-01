@@ -4,7 +4,7 @@ This extends the existing **Customer Notes** module; its module ID remains `cust
 
 ## Enable only what the store needs
 
-Open **FFL Funnels → Customer & Order Management**. The eight collapsible settings sections submit together with **Save settings**. Every switch includes a description. Customer Notes remains enabled by default; the twenty new feature switches start **off**. Enabling a dependent switch alone does not activate its prerequisite.
+Open **FFL Funnels → Customer & Order Management**. The section list on the left shows each section's status (On, Off or how many of its tools are on) and opens one section at a time; **Email preview** and **Request form setup** are under Tools. Settings that need another switch are dimmed and say which one. All sections save together from the **Save settings** bar, which shows when there are unsaved changes and returns you to the same section. Every switch includes a description. Customer Notes remains enabled by default; the twenty new feature switches start **off**. Enabling a dependent switch alone does not activate its prerequisite.
 
 1. **General:** internal notes follow the customer across orders. They do not become customer messages, invoice text or packing-slip text.
 2. **Pickup:** enable Ready for Pickup, optionally the preparation checklist and partial collection. Enter the actual collection location, address, hours and instructions. These texts do not change shipping zones, the FFL selector, prices or tax addresses. There is one configured communication location per store; verify it matches the order's pickup location.

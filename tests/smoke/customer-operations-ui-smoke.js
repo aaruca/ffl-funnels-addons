@@ -32,10 +32,26 @@ function check(value, label) { assert.ok(value, label); checks++; }
                 });
                 await page.addScriptTag({path:path.join(root,'modules/customer-notes/assets/operations.js')});
                 check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'no horizontal overflow '+kind+' '+width);
-                check(await page.locator('.ffla-ops input[type=checkbox]:visible').evaluateAll(items=>items.every(x=>x.getBoundingClientRect().width===16)),'checkbox not stretched '+kind+' '+width);
+                check(await page.locator('.ffla-ops input[type=checkbox]:not(.ffla-set-switch):visible').evaluateAll(items=>items.every(x=>x.getBoundingClientRect().width===16)),'checkbox not stretched '+kind+' '+width);
                 if (kind==='settings') {
                     check(await page.locator('input[role=switch]').count()===35,'all independent switches rendered (21 + 14 customer request switches)');
-                    check(await page.locator('form:has(input[name=action][value=ffla_ops_settings])').count()===1&&await page.locator('form:has(input[name=action][value=ffla_ops_settings]) details.ffla-ops-section').count()===8,'one settings form keeps every group');
+                    check(await page.locator('input.ffla-set-switch:visible').evaluateAll(items=>items.length>0&&items.every(x=>x.getBoundingClientRect().width===38)),'switches render as 38px toggles '+width);
+                    check(await page.locator('form:has(input[name=action][value=ffla_ops_settings])').count()===1&&await page.locator('form:has(input[name=action][value=ffla_ops_settings]) section.ffla-set-panel').count()===8,'one settings form keeps every section');
+                    check(await page.locator('section.ffla-set-panel:visible').count()===1&&await page.locator('#general').isVisible(),'one section at a time, General first '+width);
+                    await page.locator('[data-section-link=pickup]').click();
+                    check(await page.locator('#pickup').isVisible()&&!(await page.locator('#general').isVisible())&&await page.locator('[data-section-field]').inputValue()==='pickup','section switch remembers where to return after saving '+width);
+                    const pickupOn=await page.locator('#ffla-ops-pickup').isChecked();
+                    if (pickupOn) { await page.locator('label[for=ffla-ops-pickup]').click(); }
+                    check(await page.locator('[data-key=partial_pickup]').evaluate(r=>r.classList.contains('is-waiting'))&&await page.locator('[data-key=pickup] [data-main-hint]').isVisible(),'settings that need the main switch are dimmed with one hint '+width);
+                    await page.locator('label[for=ffla-ops-pickup]').click();
+                    check(!(await page.locator('[data-key=partial_pickup]').evaluate(r=>r.classList.contains('is-waiting')))&&(await page.locator('[data-state-for=pickup]').textContent())!=='Off','turning the main switch on updates the section status '+width);
+                    if (!pickupOn) { await page.locator('label[for=ffla-ops-pickup]').click(); } // Back to the saved value.
+                    check(await page.locator('[data-savebar]').getAttribute('data-state')!=='dirty','back to saved values is clean '+width);
+                    const name=await page.locator('#ffla-ops-store_name').inputValue();
+                    await page.locator('#ffla-ops-store_name').fill(name+' X');
+                    check(await page.locator('[data-savebar]').getAttribute('data-state')==='dirty'&&(await page.locator('[data-save-status]').textContent()).includes('unsaved'),'unsaved changes are announced '+width);
+                    await page.locator('#ffla-ops-store_name').fill(name);
+                    await page.locator('[data-section-link="email-preview"]').click();
                     await page.locator('[data-template-action=preview]').click();
                     await page.waitForFunction(()=>document.querySelector('.ffla-ops-result').textContent==='Fixture saved');
                     check(await page.evaluate(()=>window.calls[0].some(([k,v])=>k==='operation'&&v==='preview')),'preview payload '+width);

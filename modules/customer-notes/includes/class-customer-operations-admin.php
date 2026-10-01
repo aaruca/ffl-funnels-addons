@@ -34,36 +34,123 @@ class FFLA_Customer_Operations_Admin
         wp_localize_script('ffla-ops', 'fflaOps', ['ajax'=>admin_url('admin-ajax.php')]);
     }
 
+    /** Settings sections: slug => [group name in fields(), title, what it is for, main switch]. */
+    private static function sections(): array
+    {
+        return [
+            'general'       => ['General', 'General', 'Staff notes that follow each customer across orders.', 'notes'],
+            'pickup'        => ['Pickup', 'Pickup', 'Mark paid pickup orders ready, track preparation and partial collection, and set the pickup details customers see.', 'pickup'],
+            'serials'       => ['Serial Numbers', 'Serial numbers', 'Record serials and item details on firearm order lines and print them on invoices and packing slips.', 'serials'],
+            'followup'      => ['Follow-up', 'Follow-up', 'Track an internal case on any order, separate from its status.', 'followup'],
+            'notifications' => ['Notifications', 'Notifications', 'The emails this module sends: ready notices, pickup reminders, public updates and follow-up reminders.', 'notifications'],
+            'visibility'    => ['Customer Visibility', 'Customer visibility', 'What signed-in customers see on their orders in My Account.', ''],
+            'requests'      => ['Customer Requests', 'Customer requests', 'Issue reports and returns that customers start themselves and follow until they are closed.', 'requests'],
+            'automation'    => ['Request Automation', 'Request automation', 'Reminders, auto-close and a daily digest for open customer requests.', ''],
+        ];
+    }
+
+    /** "Off", "On" or "3 of 5 on" for a section, from saved settings. */
+    private static function section_state(array $fields, string $main, array $s): array
+    {
+        $switches = array_keys(array_filter($fields, static function ($f) { return 'switch' === $f[3]; }));
+        if ($main && empty($s[$main])) {
+            return ['off', 'Off'];
+        }
+        $on = count(array_filter($switches, static function ($k) use ($s) { return !empty($s[$k]); }));
+        if (!$on) {
+            return ['off', 'Off'];
+        }
+        return $on === count($switches) ? ['on', 'On'] : ['on', sprintf('%d of %d on', $on, count($switches))];
+    }
+
     public static function settings(): void
     {
         if (!current_user_can('manage_woocommerce')) { return; }
-        $s = FFLA_Customer_Operations_Settings::get(); $groups = [];
-        foreach (FFLA_Customer_Operations_Settings::fields() as $key=>$f) { $groups[$f[0]][$key] = $f; }
-        echo '<div class="ffla-ops"><h1>Customer &amp; Order Management</h1><p>Enable only the tools your store needs. Customer Notes stays in this same module. All new tools start disabled; saved information is retained when a switch is turned off.</p>';
-        echo '<p class="ffla-ops-notice">Internal customer notes and case evidence are staff-only. Public updates are written separately. No checkout, payment or tax settings are changed here.</p>';
-        if (isset($_GET['saved'])) { echo '<p role="status">Settings saved.</p>'; }
-        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '"><input type="hidden" name="action" value="ffla_ops_settings">';
-        wp_nonce_field('ffla_ops_settings');
-        foreach ($groups as $group=>$fields) {
-            echo '<details class="ffla-ops-section"' . ($group === 'General' ? ' open' : '') . '><summary>' . esc_html($group) . '</summary><div class="ffla-ops-grid">';
-            foreach ($fields as $key=>$f) {
-                $id = 'ffla-ops-' . $key;
-                echo '<div class="ffla-ops-field"><label for="' . esc_attr($id) . '">';
-                if ($f[3] === 'switch') { echo '<input type="checkbox" role="switch" id="' . esc_attr($id) . '" name="settings[' . esc_attr($key) . ']" value="1" ' . checked((bool) $s[$key], true, false) . ' aria-describedby="' . esc_attr($id) . '-help"> '; }
-                echo esc_html($f[1]) . '</label>';
-                if ($f[3] === 'textarea') { echo '<textarea rows="4" id="' . esc_attr($id) . '" name="settings[' . esc_attr($key) . ']" aria-describedby="' . esc_attr($id) . '-help">' . esc_textarea(str_replace('\\n', "\n", $s[$key])) . '</textarea>'; }
-                elseif ($f[3] === 'page') {
-                    echo wp_dropdown_pages(['name'=>'settings[' . $key . ']', 'id'=>$id, 'selected'=>absint($s[$key]), 'show_option_none'=>'— Home page —', 'option_none_value'=>'0', 'echo'=>0]); // phpcs:ignore WordPress.Security.EscapeOutput
-                }
-                elseif ($f[3] !== 'switch') { [$min, $max] = FFLA_Customer_Operations_Settings::range($key); echo '<input type="' . esc_attr($f[3]) . '" id="' . esc_attr($id) . '" name="settings[' . esc_attr($key) . ']" value="' . esc_attr($s[$key]) . '" ' . ($f[3] === 'number' ? 'min="' . absint($min) . '" max="' . absint($max) . '"' : '') . ' aria-describedby="' . esc_attr($id) . '-help">'; }
-                echo '<p id="' . esc_attr($id) . '-help" class="description">' . esc_html($f[2]) . '</p></div>';
-            }
-            echo '</div></details>';
+        $s = FFLA_Customer_Operations_Settings::get();
+        $all = FFLA_Customer_Operations_Settings::fields();
+        $sections = self::sections();
+        $labels = array_map(static function ($f) { return $f[1]; }, $all);
+        $tools = ['email-preview' => 'Email preview'];
+        if (class_exists('FFLA_Requests_Admin')) { $tools['request-form'] = 'Request form setup'; }
+
+        echo '<div class="ffla-ops ffla-set" data-ffla-settings>';
+        echo '<header class="ffla-set-head"><h1>Customer &amp; Order Management</h1>'
+            . '<p>Turn on the tools your store uses. Turning a tool off keeps everything it saved.</p>'
+            . '<p class="ffla-set-privacy">Staff notes and case files are never shown to customers. Nothing here changes checkout, payments or taxes.</p></header>';
+
+        echo '<div class="ffla-set-layout"><nav class="ffla-set-nav" aria-label="Settings sections"><ul>';
+        foreach ($sections as $slug => [$group, $title, $about, $main]) {
+            $fields = array_filter($all, static function ($f) use ($group) { return $f[0] === $group; });
+            [$state, $text] = self::section_state($fields, $main, $s);
+            echo '<li><a href="#' . esc_attr($slug) . '" data-section-link="' . esc_attr($slug) . '"><span class="ffla-set-dot" data-dot="' . esc_attr($state) . '" aria-hidden="true"></span>'
+                . '<span class="ffla-set-nav-name">' . esc_html($title) . '</span><span class="ffla-set-nav-state" data-state-for="' . esc_attr($slug) . '">' . esc_html($text) . '</span></a></li>';
         }
-        echo '<p><button type="submit" class="button button-primary">Save settings</button></p></form>';
-        echo '<section class="ffla-ops-section"><h2>Preview and test saved email templates</h2><p>Save settings first. Preview uses sample order information. Tests go only to your own staff email; the email master switch must be enabled. The formatted customer email is configured in WooCommerce → Settings → Emails → Ready for pickup; staff can also send it from an order’s Send order email box.</p><div data-ffla-template data-nonce="' . esc_attr(wp_create_nonce('ffla_ops_template')) . '"><label>Template <select name="kind"><option value="ready">Ready for Pickup</option><option value="reminder">Pickup reminder</option></select></label> <button type="button" class="button" data-template-action="preview">Preview</button> <button type="button" class="button" data-template-action="test">Send test to me</button><pre role="status" class="ffla-ops-result"></pre></div></section>';
-        if (class_exists('FFLA_Requests_Admin')) { FFLA_Requests_Admin::setup_panel(); }
-        echo '<p>Workflow: configure switches → open a WooCommerce order → save Order Management → mark eligible pickup orders ready. Save serials before marking ready. Confirm physical collection before completing the order. Use the separate public-update action only for information the buyer may see.</p></div>';
+        echo '</ul><p class="ffla-set-nav-group">Tools</p><ul>';
+        foreach ($tools as $slug => $title) {
+            echo '<li><a href="#' . esc_attr($slug) . '" data-section-link="' . esc_attr($slug) . '"><span class="ffla-set-nav-name">' . esc_html($title) . '</span></a></li>';
+        }
+        echo '</ul></nav><div class="ffla-set-main">';
+
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" class="ffla-set-form" data-ffla-settings-form><input type="hidden" name="action" value="ffla_ops_settings"><input type="hidden" name="ffla_section" value="general" data-section-field>';
+        wp_nonce_field('ffla_ops_settings');
+        foreach ($sections as $slug => [$group, $title, $about, $main]) {
+            $fields = array_filter($all, static function ($f) use ($group) { return $f[0] === $group; });
+            if ($main && isset($fields[$main])) { $fields = [$main => $fields[$main]] + $fields; } // Main switch first.
+            echo '<section class="ffla-set-panel ffla-ops-section" id="' . esc_attr($slug) . '" data-section="' . esc_attr($slug) . '" data-main="' . esc_attr($main) . '" aria-labelledby="ffla-set-title-' . esc_attr($slug) . '">';
+            echo '<header class="ffla-set-panel-head"><h2 id="ffla-set-title-' . esc_attr($slug) . '">' . esc_html($title) . '</h2><p>' . esc_html($about) . '</p></header>';
+            foreach ($fields as $key => $f) { self::setting_row($key, $f, $s, $key === $main, $labels); }
+            if ('general' === $slug) {
+                echo '<div class="ffla-set-row ffla-set-note ffla-set-stack"><div class="ffla-set-text"><p class="ffla-set-label">How pickup orders flow</p><ol>'
+                    . '<li>Turn on the tools you need and save.</li><li>Open a WooCommerce order and save its Order Management panel, serial numbers included.</li>'
+                    . '<li>Mark the paid pickup order ready.</li><li>Confirm the customer collected it, then complete the order.</li></ol>'
+                    . '<p class="description">Use public updates only for information the buyer may see.</p></div></div>';
+            }
+            echo '</section>';
+        }
+        $saved = isset($_GET['saved']); // phpcs:ignore WordPress.Security.NonceVerification
+        echo '<div class="ffla-set-savebar" data-savebar data-state="' . ($saved ? 'saved' : 'clean') . '"><p class="ffla-set-status" role="status" data-save-status>' . ($saved ? 'Settings saved.' : 'No unsaved changes.') . '</p>'
+            . '<button type="submit" class="button button-primary">Save settings</button></div>';
+        echo '</form>';
+
+        echo '<section class="ffla-set-panel ffla-set-tool ffla-ops-section" id="email-preview" data-section="email-preview" aria-labelledby="ffla-set-title-email-preview">'
+            . '<header class="ffla-set-panel-head"><h2 id="ffla-set-title-email-preview">Email preview</h2><p>Preview the saved ready and reminder emails with sample order details, or send a test to your own email. Save settings first; tests need Email communications turned on.</p></header>'
+            . '<div class="ffla-set-row ffla-set-stack" data-ffla-template data-nonce="' . esc_attr(wp_create_nonce('ffla_ops_template')) . '"><div class="ffla-set-tool-controls"><label for="ffla-ops-template-kind" class="ffla-set-label">Email</label><select id="ffla-ops-template-kind" name="kind"><option value="ready">Ready for pickup</option><option value="reminder">Pickup reminder</option></select>'
+            . '<button type="button" class="button" data-template-action="preview">Preview</button> <button type="button" class="button" data-template-action="test">Send test to me</button></div><pre role="status" class="ffla-ops-result"></pre>'
+            . '<p class="description">The formatted customer email is set in WooCommerce → Settings → Emails → Ready for pickup. Staff can also send it from an order’s Send order email box.</p></div></section>';
+        if (class_exists('FFLA_Requests_Admin')) {
+            echo '<section class="ffla-set-panel ffla-set-tool ffla-ops-section" id="request-form" data-section="request-form" aria-labelledby="ffla-set-title-request-form">'
+                . '<header class="ffla-set-panel-head"><h2 id="ffla-set-title-request-form">Request form setup</h2><p>Where customers find the issue and return form, and whether it is in place.</p></header><div class="ffla-set-row ffla-set-stack">';
+            FFLA_Requests_Admin::setup_panel(true);
+            echo '</div></section>';
+        }
+        echo '</div></div></div>';
+    }
+
+    /** One setting: label and help on the left, the control on the right (stacked for long text). */
+    private static function setting_row(string $key, array $f, array $s, bool $main, array $labels): void
+    {
+        $id = 'ffla-ops-' . $key;
+        $type = $f[3];
+        $requires = FFLA_Customer_Operations_Settings::requires($key);
+        $needs = implode(', ', array_map(static function ($k) use ($labels) { return $labels[$k] ?? $k; }, $requires));
+        $classes = 'ffla-set-row ffla-ops-field' . ('switch' === $type ? ' is-switch' : '') . (in_array($type, ['textarea', 'text'], true) ? ' ffla-set-stack' : '') . ($main ? ' is-main' : '');
+        echo '<div class="' . esc_attr($classes) . '" data-key="' . esc_attr($key) . '"' . ($requires ? ' data-requires="' . esc_attr(implode(' ', $requires)) . '" data-needs="' . esc_attr($needs) . '"' : '') . '>';
+        echo '<div class="ffla-set-text"><label class="ffla-set-label" for="' . esc_attr($id) . '">' . esc_html($f[1]) . '</label>'
+            . '<p id="' . esc_attr($id) . '-help" class="description">' . esc_html($f[2]) . '</p>'
+            . ($requires ? '<p class="ffla-set-needs" data-needs-text hidden></p>' : '')
+            . ($main ? '<p class="ffla-set-needs" data-main-hint hidden>Turn this on to use the settings below.</p>' : '') . '</div><div class="ffla-set-control">';
+        if ('switch' === $type) {
+            echo '<input type="checkbox" role="switch" class="ffla-set-switch" id="' . esc_attr($id) . '" name="settings[' . esc_attr($key) . ']" value="1" ' . checked((bool) $s[$key], true, false) . ' aria-describedby="' . esc_attr($id) . '-help">';
+            if ($main) { echo '<span class="ffla-set-switch-state" aria-hidden="true" data-switch-state>' . ($s[$key] ? 'On' : 'Off') . '</span>'; }
+        } elseif ('textarea' === $type) {
+            echo '<textarea rows="4" id="' . esc_attr($id) . '" name="settings[' . esc_attr($key) . ']" aria-describedby="' . esc_attr($id) . '-help">' . esc_textarea(str_replace('\\n', "\n", $s[$key])) . '</textarea>';
+        } elseif ('page' === $type) {
+            echo wp_dropdown_pages(['name' => 'settings[' . $key . ']', 'id' => $id, 'selected' => absint($s[$key]), 'show_option_none' => '— Home page —', 'option_none_value' => '0', 'echo' => 0]); // phpcs:ignore WordPress.Security.EscapeOutput
+        } else {
+            [$min, $max] = FFLA_Customer_Operations_Settings::range($key);
+            echo '<input type="' . esc_attr($type) . '" id="' . esc_attr($id) . '" name="settings[' . esc_attr($key) . ']" value="' . esc_attr($s[$key]) . '" ' . ('number' === $type ? 'min="' . absint($min) . '" max="' . absint($max) . '" class="small-text"' : '') . ' aria-describedby="' . esc_attr($id) . '-help">';
+        }
+        echo '</div></div>';
     }
 
     public static function save_settings(): void
@@ -76,7 +163,8 @@ class FFLA_Customer_Operations_Admin
         if (empty($settings['requests_page']) && is_array($previous) && !empty($previous['requests_page']) && !isset($_POST['settings']['requests_page'])) { $settings['requests_page'] = absint($previous['requests_page']); }
         update_option(FFLA_Customer_Operations_Settings::OPTION, $settings, false);
         if (class_exists('FFLA_Requests')) { FFLA_Requests::maybe_install(); }
-        wp_safe_redirect(admin_url('admin.php?page=ffla-customer-operations&saved=1')); exit;
+        $section = sanitize_key(wp_unslash($_POST['ffla_section'] ?? ''));
+        wp_safe_redirect(admin_url('admin.php?page=ffla-customer-operations&saved=1') . ($section ? '#' . $section : '')); exit;
     }
 
     public static function metabox(): void

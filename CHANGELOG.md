@@ -2,6 +2,11 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [Unreleased]
+
+### Changed
+- Customer & Order Management settings: redesigned. A section list shows each section's status (On, Off or "3 of 5 on") and opens one section at a time; each section starts with its main switch, settings that need another switch are dimmed with the switch they need, switches are real toggles, and a sticky save bar shows unsaved changes and returns to the same section after saving. Email preview and the request form setup moved under Tools.
+
 ## [1.54.0] - 2026-10-01
 
 ### Added

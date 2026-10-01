@@ -16,3 +16,92 @@
 .ffla-ops :is(button,input,textarea,select,summary):focus-visible { outline:2px solid #2271b1; outline-offset:2px; }
 .ffla-ops [aria-busy="true"] { opacity:.7; }
 @media(max-width:800px) { .ffla-ops .ffla-ops-grid { grid-template-columns:minmax(0,1fr); } .ffla-ops .ffla-ops-section { padding:14px; } }
+
+/* ── Settings screen ─────────────────────────────────────────────────── */
+.ffla-set { --set-ink:#1a202c; --set-muted:#4a5568; --set-faint:#718096; --set-line:#e2e8f0; --set-line-soft:#edf2f7; --set-brand:#0f6cbd; --set-band:#f6f9fc; --set-on:#2f855a; --set-wait:#8a5a00;
+	max-width:1180px; color:var(--set-ink); }
+.ffla-set-head h1 { margin:0 0 6px; padding:0; font-size:24px; line-height:1.25; font-weight:650; color:var(--set-ink); }
+.ffla-set-head p { margin:0; max-width:68ch; color:var(--set-muted); font-size:14px; line-height:1.55; }
+.ffla-set-head .ffla-set-privacy { margin-top:2px; color:var(--set-faint); font-size:13px; }
+.ffla-set-layout { display:grid; grid-template-columns:240px minmax(0,1fr); gap:28px; align-items:start; margin-top:24px; }
+
+.ffla-set-nav { position:sticky; top:48px; }
+.ffla-set-nav ul { display:grid; gap:2px; margin:0; padding:0; list-style:none; }
+.ffla-set-nav li { margin:0; }
+.ffla-set-nav a { display:grid; grid-template-columns:8px minmax(0,1fr) auto; align-items:center; gap:10px; padding:9px 12px; border-radius:8px; color:var(--set-ink); font-size:14px; line-height:1.3; text-decoration:none; }
+.ffla-set-nav a:hover { background:#fff; color:var(--set-ink); }
+.ffla-set-nav a[aria-current="true"] { background:#fff; font-weight:600; box-shadow:inset 3px 0 0 var(--set-brand), 0 0 0 1px var(--set-line); }
+.ffla-set-nav a:focus-visible { outline:2px solid var(--set-brand); outline-offset:1px; box-shadow:none; }
+.ffla-set-nav-group + ul a { grid-template-columns:minmax(0,1fr); padding-left:30px; }
+.ffla-set-nav-state { color:var(--set-faint); font-size:12px; font-weight:400; white-space:nowrap; }
+.ffla-set-dot { width:8px; height:8px; border:1.5px solid #a0aec0; border-radius:50%; }
+.ffla-set-dot[data-dot="on"] { background:var(--set-on); border-color:var(--set-on); }
+.ffla-set .ffla-set-nav-group { margin:22px 0 6px 30px; color:var(--set-faint); font-size:12px; line-height:1.4; }
+
+.ffla-set-main { min-width:0; }
+.ffla-set.is-js .ffla-set-panel:not(.is-active) { display:none; }
+.ffla-ops.ffla-set .ffla-set-panel { margin:0 0 16px; padding:0; border:1px solid var(--set-line); border-radius:12px; background:#fff; overflow:hidden; }
+.ffla-set-panel-head { padding:22px 24px 18px; border-bottom:1px solid var(--set-line-soft); }
+.ffla-set-panel-head h2 { margin:0 0 4px; font-size:18px; line-height:1.3; font-weight:600; color:var(--set-ink); }
+.ffla-set-panel-head h2:focus { outline:none; }
+.ffla-set-panel-head p { margin:0; max-width:70ch; color:var(--set-muted); font-size:14px; line-height:1.55; }
+
+.ffla-ops .ffla-set-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(180px,280px); gap:10px 32px; align-items:start; padding:18px 24px; border-top:1px solid var(--set-line-soft); font-weight:400; }
+.ffla-set-panel-head + .ffla-set-row { border-top:0; }
+.ffla-ops .ffla-set-row.is-switch { grid-template-columns:minmax(0,1fr) auto; }
+.ffla-ops .ffla-set-row.ffla-set-stack { grid-template-columns:minmax(0,1fr); }
+.ffla-set-row.is-main { padding-block:20px; background:var(--set-band); }
+.ffla-set-row.is-main .ffla-set-label { font-size:15px; }
+.ffla-set .ffla-set-label { display:block; margin:0 0 3px; color:var(--set-ink); font-size:14px; line-height:1.4; font-weight:600; }
+.ffla-set .description { max-width:72ch; margin:0; color:var(--set-muted); font-size:13px; line-height:1.55; }
+.ffla-set-control { display:flex; align-items:center; gap:10px; min-width:0; }
+.ffla-set-row.is-switch .ffla-set-control { justify-content:flex-end; padding-top:1px; }
+.ffla-ops.ffla-set .ffla-set-control input:not([type=checkbox]), .ffla-ops.ffla-set .ffla-set-control select, .ffla-ops.ffla-set .ffla-set-control textarea { width:100%; }
+.ffla-ops.ffla-set .ffla-set-control input.small-text { width:96px; }
+.ffla-ops.ffla-set .ffla-set-stack .ffla-set-control input:not([type=checkbox]) { max-width:560px; }
+.ffla-ops.ffla-set .ffla-set-stack .ffla-set-control textarea { max-width:720px; }
+.ffla-set-row.is-main .ffla-set-needs { color:var(--set-muted); }
+.ffla-set-row.is-waiting .ffla-set-label, .ffla-set-row.is-waiting .description { color:var(--set-faint); }
+.ffla-set .ffla-set-needs { margin:8px 0 0; color:var(--set-wait); font-size:12.5px; line-height:1.45; }
+.ffla-set-note ol { margin:8px 0 8px 18px; color:var(--set-muted); font-size:13px; line-height:1.6; }
+.ffla-set-note li { margin:0 0 2px; }
+
+/* Switch: the checkbox itself, so keyboard, label clicks and form posts behave like any checkbox. */
+.ffla-ops.ffla-set input[type=checkbox].ffla-set-switch { -webkit-appearance:none; appearance:none; position:relative; flex:0 0 38px; width:38px!important; min-width:38px!important; max-width:38px!important; height:22px!important; margin:0; border:0; border-radius:999px; background:#cbd5e0; box-shadow:none; cursor:pointer; transition:background-color .15s ease; }
+.ffla-ops.ffla-set input[type=checkbox].ffla-set-switch::before { content:""; position:absolute; top:3px; left:3px; width:16px; height:16px; margin:0; border-radius:50%; background:#fff; box-shadow:0 1px 2px rgba(26,32,44,.3); transition:transform .15s ease; }
+.ffla-ops.ffla-set input[type=checkbox].ffla-set-switch:checked { background:var(--set-brand); }
+.ffla-ops.ffla-set input[type=checkbox].ffla-set-switch:checked::before { content:""; width:16px; height:16px; margin:0; transform:translateX(16px); }
+.ffla-ops.ffla-set input[type=checkbox].ffla-set-switch:focus-visible { outline:2px solid var(--set-brand); outline-offset:2px; }
+.ffla-set-switch-state { min-width:24px; color:var(--set-muted); font-size:13px; }
+
+.ffla-set-savebar { position:sticky; bottom:0; z-index:5; display:flex; align-items:center; justify-content:space-between; gap:16px; margin:4px 0 16px; padding:12px 14px 12px 20px; border:1px solid var(--set-line); border-radius:12px; background:#fff; box-shadow:0 -8px 18px -14px rgba(26,32,44,.45); }
+.ffla-set .ffla-set-status { display:flex; align-items:center; gap:8px; margin:0; color:var(--set-muted); font-size:13px; }
+.ffla-set-savebar[data-state="dirty"] .ffla-set-status { color:var(--set-wait); font-weight:600; }
+.ffla-set-savebar[data-state="dirty"] .ffla-set-status::before, .ffla-set-savebar[data-state="saved"] .ffla-set-status::before { content:""; width:8px; height:8px; border-radius:50%; background:#d69e2e; }
+.ffla-set-savebar[data-state="saved"] .ffla-set-status { color:var(--set-on); }
+.ffla-set-savebar[data-state="saved"] .ffla-set-status::before { background:var(--set-on); }
+.ffla-ops.ffla-set .ffla-set-savebar button { margin:0; }
+.ffla-set[data-tool-active] .ffla-set-savebar:not([data-state="dirty"]) { display:none; }
+
+.ffla-set-tool-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.ffla-set-tool-controls .ffla-set-label { margin:0 4px 0 0; }
+.ffla-ops.ffla-set .ffla-set-tool-controls select { width:auto; min-width:200px; }
+.ffla-set .ffla-ops-result { margin:12px 0; padding:12px 14px; border-radius:8px; background:var(--set-band); font-size:13px; }
+.ffla-set .ffla-ops-result:empty { display:none; }
+.ffla-set .ffla-req-setup p { max-width:72ch; }
+.ffla-set .ffla-req-setup code { font-size:12px; }
+
+@media (prefers-reduced-motion:reduce) { .ffla-ops.ffla-set input[type=checkbox].ffla-set-switch, .ffla-ops.ffla-set input[type=checkbox].ffla-set-switch::before { transition:none; } }
+@media (max-width:1100px) {
+	.ffla-set-layout { grid-template-columns:minmax(0,1fr); gap:16px; margin-top:16px; }
+	.ffla-set-nav { position:static; display:flex; gap:6px; overflow-x:auto; padding-bottom:4px; }
+	.ffla-set-nav ul { display:flex; gap:6px; }
+	.ffla-set-nav a { grid-template-columns:8px auto; padding:8px 12px; border:1px solid var(--set-line); background:#fff; white-space:nowrap; }
+	.ffla-set-nav-group + ul a { grid-template-columns:auto; padding-left:12px; }
+	.ffla-set-nav-state, .ffla-set .ffla-set-nav-group { display:none; }
+}
+@media (max-width:600px) {
+	.ffla-ops .ffla-set-row { grid-template-columns:minmax(0,1fr); gap:10px; padding:16px; }
+	.ffla-set-panel-head { padding:18px 16px 14px; }
+	.ffla-set-savebar { padding:10px 10px 10px 14px; }
+}
