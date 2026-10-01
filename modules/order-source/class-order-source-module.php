@@ -644,6 +644,7 @@ class Order_Source_Module extends FFLA_Module {
 				border-radius: 4px;
 				border-bottom: 1px solid rgba(0, 0, 0, 0.05);
 				font-weight: 400;
+				text-transform: capitalize;
 				white-space: nowrap;
 				max-width: 100%;
 				/* Fallback for browsers without color-mix. */
