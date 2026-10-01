@@ -49,10 +49,15 @@
 		return h('div', { class: 'ffla-req-notice ffla-req-notice--' + (kind || 'info'), role: kind === 'error' ? 'alert' : 'status' }, message);
 	}
 
+	/** sprintf-style: %s / %d in order, %1$s numbered, %% a literal percent. */
 	function format(str) {
 		var args = [].slice.call(arguments, 1);
-		return String(str).replace(/%(\d)\$[ds]/g, function (m, n) {
-			return args[n - 1];
+		var next = 0;
+		return String(str).replace(/%(?:(\d)\$)?([ds%])/g, function (m, n, type) {
+			if (type === '%') {
+				return '%';
+			}
+			return String(n ? args[n - 1] : args[next++]);
 		});
 	}
 
@@ -349,10 +354,12 @@
 		var t = this.t;
 		var cfg = this.cfg;
 		var order = this.order;
+		var money = this.moneyFormatter(order.currency);
 		var uid = Math.random().toString(36).slice(2, 8);
 		var shownAt = Date.now();
 		var error = h('div', { class: 'ffla-req-error' });
 		var firearm = h('div', { class: 'ffla-req-notice ffla-req-notice--warn', hidden: true }, text(cfg.firearmNotice));
+		var feeBox = h('div', { class: 'ffla-req-notice ffla-req-notice--info', hidden: true, 'aria-live': 'polite' });
 
 		var reasons = cfg.reasons[type] || {};
 		var reason = h('select', { id: 'ffla-r-' + uid, name: 'reason', required: true }, [h('option', { value: '', text: t.chooseReason })].concat(
@@ -363,28 +370,80 @@
 
 		var qtySelects = [];
 		var rows = order.order.items.map(function (item) {
-			var max = type === 'return' ? item.available : item.ordered;
-			var select = h('select', { name: 'items[' + item.id + ']', 'aria-label': t.qty + ': ' + item.name, disabled: max < 1, 'data-firearm': item.firearm ? '1' : '' });
+			var blocked = type === 'return' && item.blocked;
+			var max = type === 'return' ? (blocked ? 0 : item.available) : item.ordered;
+			var select = h('select', { name: 'items[' + item.id + ']', 'aria-label': t.qty + ': ' + item.name, disabled: max < 1 });
 			for (var q = 0; q <= max; q++) {
 				select.appendChild(h('option', { value: q, text: String(q) }));
 			}
-			select.addEventListener('change', updateFirearm);
+			select.fflaItem = item;
+			select.addEventListener('change', update);
 			qtySelects.push(select);
+			var why = blocked ? t.cannotReturn + ': ' + item.blocked : (max < 1 ? t.notAvailable : '');
 			return h('li', { class: 'ffla-req-item' + (max < 1 ? ' is-disabled' : '') }, [
 				h('span', { class: 'ffla-req-item-name' }, [
 					item.name,
 					item.firearm ? h('span', { class: 'ffla-req-tag', text: t.firearm }) : null,
-					max < 1 ? h('span', { class: 'ffla-req-muted', text: ' — ' + t.notAvailable }) : null
+					type === 'return' && !blocked && item.fee > 0 ? h('span', { class: 'ffla-req-tag ffla-req-tag--fee', text: format(t.feeLine, item.fee) }) : null,
+					why ? h('span', { class: 'ffla-req-muted ffla-req-why', text: why }) : null,
+					type === 'return' && !blocked && item.note ? h('span', { class: 'ffla-req-muted ffla-req-why', text: item.note }) : null
 				]),
 				h('label', { class: 'ffla-req-qty' }, [h('span', { text: t.qty }), select])
 			]);
 		});
 
-		function updateFirearm() {
-			firearm.hidden = type !== 'return' || !qtySelects.some(function (s) {
-				return s.dataset.firearm && +s.value > 0;
-			});
+		var ffl = type === 'return' && cfg.fflRequired ? this.fflFields(uid, order.order.dealer) : null;
+		var files = cfg.uploads ? this.fileInput(uid) : null;
+
+		function photoNeeded() {
+			return !!files && (cfg.photoReasons || []).indexOf(reason.value) !== -1;
 		}
+
+		function update() {
+			var chosen = qtySelects.filter(function (s) {
+				return +s.value > 0;
+			});
+			var guns = chosen.some(function (s) {
+				return s.fflaItem.firearm;
+			});
+			firearm.hidden = type !== 'return' || !guns;
+			if (ffl) {
+				ffl.node.hidden = !guns;
+			}
+			if (files) {
+				files.setRequired(photoNeeded());
+			}
+
+			// Restocking fee preview (returns only).
+			feeBox.textContent = '';
+			feeBox.hidden = true;
+			if (type !== 'return') {
+				return;
+			}
+			var withFee = chosen.filter(function (s) {
+				return s.fflaItem.fee > 0;
+			});
+			if (!withFee.length || !reason.value) {
+				return;
+			}
+			if ((cfg.feeWaived || []).indexOf(reason.value) !== -1) {
+				feeBox.appendChild(h('strong', { text: t.feeTitle + ': ' }));
+				feeBox.appendChild(document.createTextNode(t.feeWaivedNote));
+				feeBox.hidden = false;
+				return;
+			}
+			var gross = 0;
+			var fee = 0;
+			chosen.forEach(function (s) {
+				var line = s.fflaItem.price * s.value;
+				gross += line;
+				fee += line * s.fflaItem.fee / 100;
+			});
+			feeBox.appendChild(h('strong', { text: t.feeTitle + ': ' }));
+			feeBox.appendChild(document.createTextNode(format(t.feeEstimate, money(fee), money(gross - fee))));
+			feeBox.hidden = false;
+		}
+		reason.addEventListener('change', update);
 
 		var prefs = cfg.preferences || {};
 		var preferred = h('select', { id: 'ffla-p-' + uid, name: 'preferred' }, [h('option', { value: '', text: t.noPreference })].concat(
@@ -400,8 +459,6 @@
 			counter.textContent = left < 500 ? left + ' ' + t.charsLeft : '';
 		});
 
-		var files = cfg.uploads ? this.fileInput(uid) : null;
-
 		var form = h('form', { class: 'ffla-req-form', novalidate: true }, [
 			h('h3', { class: 'ffla-req-h', 'data-focus': true, text: t[type] + ' — ' + t.order + ' #' + order.order.number }),
 			error,
@@ -410,7 +467,9 @@
 				h('legend', { text: type === 'return' ? t.itemsReturn + ' *' : t.itemsIssue }),
 				h('ul', { class: 'ffla-req-items' }, rows)
 			]),
+			feeBox,
 			firearm,
+			ffl ? ffl.node : null,
 			h('p', { class: 'ffla-req-field' }, [h('label', { for: 'ffla-p-' + uid, text: t.preferred }), preferred]),
 			h('p', { class: 'ffla-req-field' }, [
 				h('label', { for: 'ffla-m-' + uid, text: t.message + ' *' }),
@@ -439,8 +498,13 @@
 			var chosen = qtySelects.filter(function (s) {
 				return +s.value > 0;
 			});
+			var guns = chosen.some(function (s) {
+				return s.fflaItem.firearm;
+			});
 			var problem = !reason.value || !message.value.trim() ? t.required
-				: (type === 'return' && !chosen.length ? t.chooseItems : (files ? files.problem() : ''));
+				: (type === 'return' && !chosen.length ? t.chooseItems
+					: (photoNeeded() && !files.count() ? t.photoNeeded
+						: (ffl && guns ? ffl.problem() : '') || (files ? files.problem() : '')));
 			if (problem) {
 				error.appendChild(notice(problem, 'error'));
 				error.scrollIntoView({ block: 'nearest' });
@@ -461,6 +525,9 @@
 			chosen.forEach(function (s) {
 				fd.append(s.name, s.value);
 			});
+			if (ffl && guns) {
+				ffl.append(fd);
+			}
 			if (files) {
 				files.append(fd);
 			}
@@ -480,11 +547,88 @@
 		this.render(form);
 	};
 
+	/** Format a number as money in the order's currency. */
+	App.prototype.moneyFormatter = function (c) {
+		c = c || { symbol: '$', decimals: 2, dec: '.', thou: ',', format: '%1$s%2$s' };
+		return function (n) {
+			var parts = (Math.round(n * Math.pow(10, c.decimals)) / Math.pow(10, c.decimals)).toFixed(c.decimals).split('.');
+			parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, c.thou);
+			return format(c.format, c.symbol, parts.join(c.dec));
+		};
+	};
+
+	/** FFL dealer for a firearm return: the order's dealer or another one. */
+	App.prototype.fflFields = function (uid, orderDealer) {
+		var t = this.t;
+		function field(key, label, attrs) {
+			var input = h('input', Object.assign({ id: 'ffla-ffl-' + key + '-' + uid, type: 'text', name: 'ffl[' + key + ']', maxlength: 120 }, attrs || {}));
+			return { input: input, node: h('p', { class: 'ffla-req-field ffla-req-field--' + key }, [h('label', { for: input.id, text: label }), input]) };
+		}
+		var f = {
+			name: field('name', t.fflName + ' *', { autocomplete: 'organization' }),
+			license: field('license', t.fflLicense + ' *', { 'aria-describedby': 'ffla-ffl-lh-' + uid, maxlength: 25 }),
+			address: field('address', t.fflAddress, { autocomplete: 'street-address', maxlength: 200 }),
+			city: field('city', t.fflCity + ' *', { maxlength: 80 }),
+			state: field('state', t.fflState + ' *', { maxlength: 40 }),
+			postcode: field('postcode', t.fflZip, { maxlength: 20, inputmode: 'numeric' }),
+			phone: field('phone', t.fflPhone, { type: 'tel', maxlength: 40 }),
+			email: field('email', t.fflEmail, { type: 'email', maxlength: 120 })
+		};
+		f.license.node.appendChild(h('span', { id: 'ffla-ffl-lh-' + uid, class: 'ffla-req-muted', text: t.fflLicenseHint }));
+		var manual = h('div', { class: 'ffla-req-ffl-grid', hidden: !!orderDealer }, Object.keys(f).map(function (k) {
+			return f[k].node;
+		}));
+		var useOrder = null;
+		var choice = null;
+		if (orderDealer) {
+			useOrder = h('input', { type: 'radio', name: 'ffla-ffl-src-' + uid, value: 'order', checked: true });
+			var other = h('input', { type: 'radio', name: 'ffla-ffl-src-' + uid, value: 'customer' });
+			var sync = function () {
+				manual.hidden = useOrder.checked;
+			};
+			useOrder.addEventListener('change', sync);
+			other.addEventListener('change', sync);
+			choice = h('div', { class: 'ffla-req-ffl-choice' }, [
+				h('label', { class: 'ffla-req-radio' }, [useOrder, h('span', {}, [h('strong', { text: t.fflUseOrder }), h('span', { class: 'ffla-req-muted ffla-req-why', text: orderDealer })])]),
+				h('label', { class: 'ffla-req-radio' }, [other, h('span', { text: t.fflOther })])
+			]);
+		}
+		var node = h('fieldset', { class: 'ffla-req-fieldset ffla-req-ffl', hidden: true }, [
+			h('legend', { text: t.fflTitle + ' *' }),
+			h('p', { class: 'ffla-req-muted', text: t.fflHint }),
+			choice,
+			manual
+		]);
+		function fromOrder() {
+			return !!useOrder && useOrder.checked;
+		}
+		return {
+			node: node,
+			problem: function () {
+				if (fromOrder()) {
+					return '';
+				}
+				var license = f.license.input.value.replace(/[\s-]/g, '').toUpperCase();
+				return !f.name.input.value.trim() || !/^[0-9]{9}[A-Z][0-9]{5}$/.test(license) || !f.city.input.value.trim() || !f.state.input.value.trim() ? t.fflMissing : '';
+			},
+			append: function (fd) {
+				fd.append('ffl[source]', fromOrder() ? 'order' : 'customer');
+				if (!fromOrder()) {
+					Object.keys(f).forEach(function (k) {
+						fd.append('ffl[' + k + ']', f[k].input.value);
+					});
+				}
+			}
+		};
+	};
+
 	App.prototype.fileInput = function (uid) {
 		var cfg = this.cfg;
 		var t = this.t;
 		var input = h('input', { id: 'ffla-f-' + uid, type: 'file', name: 'files[]', multiple: true, accept: cfg.accept, 'aria-describedby': 'ffla-fh-' + uid });
 		var status = h('span', { class: 'ffla-req-error' });
+		var label = h('label', { for: 'ffla-f-' + uid, text: t.files });
+		var need = h('span', { class: 'ffla-req-need', hidden: true, text: t.photoHint });
 		function problem() {
 			var list = [].slice.call(input.files || []);
 			if (list.length > cfg.maxFiles) {
@@ -499,12 +643,23 @@
 		});
 		return {
 			node: h('p', { class: 'ffla-req-field' }, [
-				h('label', { for: 'ffla-f-' + uid, text: t.files }),
+				label,
+				need,
 				input,
 				h('span', { id: 'ffla-fh-' + uid, class: 'ffla-req-muted', text: format(t.filesHint, cfg.maxFiles, Math.round(cfg.maxFileBytes / 1048576)) }),
 				status
 			]),
 			problem: problem,
+			count: function () {
+				return (input.files || []).length;
+			},
+			setRequired: function (on) {
+				need.hidden = !on;
+				label.textContent = t.files.replace(/\s*\(.*\)$/, '') + (on ? ' *' : '');
+				if (!on) {
+					label.textContent = t.files;
+				}
+			},
 			append: function (fd) {
 				[].forEach.call(input.files || [], function (f) {
 					fd.append('files[]', f, f.name);
@@ -545,12 +700,16 @@
 				h('h3', { class: 'ffla-req-h', 'data-focus': true, text: r.typeLabel + ' ' + r.number }),
 				h('span', { class: 'ffla-req-badge ffla-req-badge--' + (r.open ? r.status : 'closed'), text: r.statusLabel })
 			]),
-			this.meta([[t.order, '#' + r.orderNumber], [t.reason, r.reason], [t.prefers, r.preferred], [t.opened, r.created], [t.updated, r.updated]]),
+			this.meta([[t.order, '#' + r.orderNumber], [t.reason, r.reason], [t.prefers, r.preferred], [t.opened, r.created], [t.updated, r.updated], [t.refunded, r.refunded], [t.fflLabel, r.ffl]]),
 			this.tracker(r.steps),
 			r.items.length ? h('div', { class: 'ffla-req-sub' }, [
 				h('h4', { class: 'ffla-req-h', text: t.items }),
 				h('ul', { class: 'ffla-req-plain' }, r.items.map(function (i) {
-					return h('li', {}, [i.name + ' × ' + i.qty, i.firearm ? h('span', { class: 'ffla-req-tag', text: t.firearm }) : null]);
+					return h('li', {}, [
+						i.name + ' × ' + i.qty,
+						i.firearm ? h('span', { class: 'ffla-req-tag', text: t.firearm }) : null,
+						i.fee > 0 ? h('span', { class: 'ffla-req-tag ffla-req-tag--fee', text: format(t.feeLine, i.fee) }) : null
+					]);
 				}))
 			]) : null
 		]));
@@ -562,8 +721,31 @@
 				r.resolution.note ? text(r.resolution.note) : null
 			]));
 		}
-		if (r.instructions) {
-			nodes.push(h('div', { class: 'ffla-req-notice ffla-req-notice--info' }, [h('strong', { text: t.instructions }), text(r.instructions)]));
+		if (r.instructions || r.labels.length) {
+			nodes.push(h('div', { class: 'ffla-req-notice ffla-req-notice--info' }, [
+				r.instructions ? h('strong', { text: t.instructions }) : null,
+				r.instructions ? text(r.instructions) : null,
+				r.labels.length ? h('div', { class: 'ffla-req-labels' }, [
+					h('strong', { text: t.label }),
+					h('span', { class: 'ffla-req-muted', text: ' ' + t.labelHint }),
+					h('ul', { class: 'ffla-req-plain' }, r.labels.map(function (f) {
+						return h('li', {}, h('a', { href: f.url, target: '_blank', rel: 'noopener', class: 'ffla-req-download' }, '⬇ ' + f.name + ' (' + f.size + ')'));
+					}))
+				]) : null
+			]));
+		}
+		if (r.shipment) {
+			nodes.push(h('div', { class: 'ffla-req-notice ffla-req-notice--success' }, [
+				h('strong', { text: t.shipment + ': ' }),
+				r.shipment.carrier + ' ' + r.shipment.tracking + ' ',
+				r.shipment.link ? h('a', { href: r.shipment.link, target: '_blank', rel: 'noopener', text: t.trackPackage }) : null
+			]));
+		}
+		if (r.canTrack) {
+			nodes.push(this.trackingForm(r));
+		}
+		if (r.canRate) {
+			nodes.push(this.ratingBox(r));
 		}
 		if (r.firearmNotice) {
 			nodes.push(h('div', { class: 'ffla-req-notice ffla-req-notice--warn' }, text(r.firearmNotice)));
@@ -606,6 +788,122 @@
 		nodes.push(tools);
 
 		this.render(nodes, focus);
+	};
+
+	App.prototype.trackingForm = function (r) {
+		var self = this;
+		var t = this.t;
+		var uid = Math.random().toString(36).slice(2, 8);
+		var error = h('div', { class: 'ffla-req-error' });
+		var carriers = this.cfg.carriers || {};
+		var carrier = h('select', { id: 'ffla-c-' + uid, name: 'carrier' }, Object.keys(carriers).map(function (k) {
+			return h('option', { value: k, text: carriers[k], selected: r.shipment && r.shipment.carrier === carriers[k] });
+		}));
+		var tracking = h('input', { id: 'ffla-tn-' + uid, type: 'text', name: 'tracking', maxlength: 60, autocomplete: 'off', value: r.shipment ? r.shipment.tracking : '' });
+		var form = h('form', { class: 'ffla-req-form ffla-req-ship', novalidate: true }, [
+			h('h4', { class: 'ffla-req-h', text: t.shipTitle }),
+			h('p', { class: 'ffla-req-muted', text: t.shipHint }),
+			error,
+			h('div', { class: 'ffla-req-inline' }, [
+				h('p', { class: 'ffla-req-field' }, [h('label', { for: 'ffla-c-' + uid, text: t.carrier }), carrier]),
+				h('p', { class: 'ffla-req-field' }, [h('label', { for: 'ffla-tn-' + uid, text: t.trackingNumber }), tracking])
+			]),
+			this.honeypot(),
+			h('p', {}, h('button', { type: 'submit', class: 'button ffla-req-btn ffla-req-btn--primary', text: t.saveTracking }))
+		]);
+		form.addEventListener('submit', function (e) {
+			e.preventDefault();
+			error.textContent = '';
+			if (tracking.value.replace(/[\s-]/g, '').length < 6) {
+				error.appendChild(notice(t.required, 'error'));
+				return;
+			}
+			self.busy(form, true);
+			self.post('tracking', { number: r.number, key: r.key, carrier: carrier.value, tracking: tracking.value, website: form.website.value }).then(function (data) {
+				self.showRequest(data, { message: t.saveTracking + ' ✓' });
+			}, function (err) {
+				self.busy(form, false);
+				error.appendChild(notice(err.message, 'error'));
+			});
+		});
+		return form;
+	};
+
+	App.prototype.ratingBox = function (r) {
+		var self = this;
+		var t = this.t;
+		var box = h('div', { class: 'ffla-req-rate', id: 'ffla-rate' });
+		function stars(n) {
+			return '★★★★★'.slice(0, n) + '☆☆☆☆☆'.slice(0, 5 - n);
+		}
+		function showDone() {
+			box.textContent = '';
+			box.appendChild(h('h4', { class: 'ffla-req-h', text: t.rateTitle }));
+			box.appendChild(h('p', {}, [
+				h('span', { class: 'ffla-req-stars', 'aria-hidden': 'true', text: stars(r.rating) }),
+				' ' + format(t.rateStars, r.rating) + ' — ' + t.rateThanks
+			]));
+			if (r.ratingComment) {
+				box.appendChild(text(r.ratingComment, 'ffla-req-text ffla-req-quote'));
+			}
+			box.appendChild(h('button', { type: 'button', class: 'button ffla-req-btn ffla-req-btn--link', text: t.rateChange, onclick: showForm }));
+		}
+		function showForm() {
+			box.textContent = '';
+			var uid = Math.random().toString(36).slice(2, 8);
+			var error = h('div', { class: 'ffla-req-error' });
+			var radios = [1, 2, 3, 4, 5].map(function (n) {
+				var input = h('input', { type: 'radio', name: 'rating', value: n, id: 'ffla-s' + n + '-' + uid, checked: r.rating === n });
+				return h('span', { class: 'ffla-req-star' }, [input, h('label', { for: input.id, title: format(t.rateStars, n) }, [
+					h('span', { 'aria-hidden': 'true', text: '★' }),
+					h('span', { class: 'screen-reader-text', text: format(t.rateStars, n) })
+				])]);
+			});
+			function paint() {
+				var picked = box.querySelector('input[name=rating]:checked');
+				var value = picked ? +picked.value : 0;
+				radios.forEach(function (star, i) {
+					star.classList.toggle('is-on', i < value);
+				});
+			}
+			radios.forEach(function (star) {
+				star.querySelector('input').addEventListener('change', paint);
+			});
+			var comment = h('textarea', { id: 'ffla-rc-' + uid, rows: 2, maxlength: 1000 }, r.ratingComment || '');
+			var form = h('form', { class: 'ffla-req-form', novalidate: true }, [
+				h('h4', { class: 'ffla-req-h', text: t.rateTitle }),
+				error,
+				h('fieldset', { class: 'ffla-req-stars-input' }, [h('legend', { class: 'screen-reader-text', text: t.rateTitle })].concat(radios)),
+				h('p', { class: 'ffla-req-field' }, [h('label', { for: 'ffla-rc-' + uid, text: t.rateComment }), comment]),
+				h('p', {}, h('button', { type: 'submit', class: 'button ffla-req-btn ffla-req-btn--primary', text: t.rateSend }))
+			]);
+			form.addEventListener('submit', function (e) {
+				e.preventDefault();
+				error.textContent = '';
+				var picked = form.querySelector('input[name=rating]:checked');
+				if (!picked) {
+					error.appendChild(notice(t.rateChoose, 'error'));
+					return;
+				}
+				self.busy(form, true);
+				self.post('rate', { number: r.number, key: r.key, rating: picked.value, comment: comment.value }).then(function (data) {
+					r.rating = data.request.rating;
+					r.ratingComment = data.request.ratingComment;
+					showDone();
+				}, function (err) {
+					self.busy(form, false);
+					error.appendChild(notice(err.message, 'error'));
+				});
+			});
+			box.appendChild(form);
+			paint();
+		}
+		if (r.rating) {
+			showDone();
+		} else {
+			showForm();
+		}
+		return box;
 	};
 
 	App.prototype.replyForm = function (r) {

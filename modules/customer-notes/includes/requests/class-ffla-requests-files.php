@@ -154,7 +154,7 @@ class FFLA_Requests_Files
      * @param int    $event_id Timeline event they belong to.
      * @return array<int, array{token:string, name:string}>
      */
-    public static function store($request, array $prepared, array $actor, bool $public, int $event_id = 0): array
+    public static function store($request, array $prepared, array $actor, bool $public, int $event_id = 0, string $kind = ''): array
     {
         global $wpdb;
         $t = FFLA_Requests::tables();
@@ -170,6 +170,7 @@ class FFLA_Requests_Files
                 'size'       => strlen($file['bytes']),
                 'data'       => $file['bytes'],
                 'is_public'  => $public ? 1 : 0,
+                'kind'       => sanitize_key($kind),
                 'actor_type' => $actor['type'],
                 'actor_id'   => (int) ($actor['id'] ?? 0),
                 'created_at' => current_time('mysql', true),
@@ -188,7 +189,7 @@ class FFLA_Requests_Files
     {
         global $wpdb;
         $t = FFLA_Requests::tables();
-        $sql = "SELECT id, request_id, event_id, token, name, mime, size, is_public, actor_type, actor_id, created_at FROM {$t['files']} WHERE request_id = %d"
+        $sql = "SELECT id, request_id, event_id, token, name, mime, size, is_public, kind, actor_type, actor_id, created_at FROM {$t['files']} WHERE request_id = %d"
             . ($public_only ? ' AND is_public = 1' : '') . ' ORDER BY id ASC';
         return (array) $wpdb->get_results($wpdb->prepare($sql, $request_id)); // phpcs:ignore
     }

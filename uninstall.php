@@ -260,7 +260,11 @@ if (is_array($ffla_ops_settings) && !empty($ffla_ops_settings['requests_delete_d
     $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}ffla_requests");
     // phpcs:enable
     delete_option('ffla_requests_db_version');
+    delete_option('ffla_requests_rules');
+    delete_option('ffla_requests_replies');
 }
+wp_clear_scheduled_hook('ffla_requests_hourly');
+delete_option('ffla_requests_digest_day');
 
 delete_option('ffla_requests_endpoint'); // My Account tab permalink flag.
 

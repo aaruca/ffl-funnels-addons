@@ -178,6 +178,12 @@ class FFLA_Requests_List_Table extends WP_List_Table
         } elseif (!FFLA_Requests::is_open($item->status) && $item->resolution) {
             $out .= '<br><span class="description">' . esc_html(FFLA_Requests::resolutions()[$item->resolution] ?? $item->resolution) . '</span>';
         }
+        if ('approved' === $item->status && '' !== (string) $item->return_tracking) {
+            $out .= '<br><span class="ffla-req-shipped">' . esc_html__('Shipped back', 'ffl-funnels-addons') . '</span>';
+        }
+        if ((int) $item->rating) {
+            $out .= '<br><span class="ffla-req-stars" title="' . esc_attr((int) $item->rating . '/5') . '">' . esc_html(str_repeat('★', (int) $item->rating) . str_repeat('☆', 5 - (int) $item->rating)) . '</span>';
+        }
         return $out;
     }
 

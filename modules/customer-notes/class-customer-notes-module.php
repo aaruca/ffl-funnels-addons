@@ -42,13 +42,14 @@ class Customer_Notes_Module extends FFLA_Module {
         if (is_admin()) { FFLA_Customer_Operations_Admin::boot(); }
 
         // Customer requests (issues & returns). Hooks stay inert until enabled.
-        foreach (['', '-files', '-mail', '-public', '-abilities'] as $part) {
+        foreach (['', '-rules', '-files', '-mail', '-refunds', '-replies', '-automation', '-public', '-abilities'] as $part) {
             require_once __DIR__ . '/includes/requests/class-ffla-requests' . $part . '.php';
         }
         FFLA_Requests::boot();
         FFLA_Requests_Mail::boot();
         FFLA_Requests_Public::boot();
         FFLA_Requests_Abilities::boot();
+        FFLA_Requests_Automation::boot();
         if (is_admin()) {
             require_once __DIR__ . '/includes/requests/class-ffla-requests-admin.php';
             FFLA_Requests_Admin::boot();

@@ -25,6 +25,8 @@ class FFLA_Requests_Admin
         add_action('admin_post_ffla_req_action', [__CLASS__, 'handle']);
         add_action('admin_post_ffla_req_create', [__CLASS__, 'handle_create']);
         add_action('admin_post_ffla_req_setup_page', [__CLASS__, 'create_page']);
+        add_action('admin_post_ffla_req_setup_save', [__CLASS__, 'save_setup']);
+        add_action('admin_post_ffla_req_export', [__CLASS__, 'export_csv']);
         add_action('wp_ajax_ffla_req_admin_file', [__CLASS__, 'file']);
         add_action('add_meta_boxes', [__CLASS__, 'metabox'], 30);
         add_action('admin_enqueue_scripts', [__CLASS__, 'assets']);
@@ -140,6 +142,16 @@ class FFLA_Requests_Admin
             }
             self::flash('error', __('That request no longer exists.', 'ffl-funnels-addons'));
         }
+        $screen = isset($_GET['screen']) ? sanitize_key(wp_unslash($_GET['screen'])) : '';
+        if ('setup' === $screen) {
+            self::render_setup();
+            return;
+        }
+        if ('report' === $screen) {
+            require_once __DIR__ . '/class-ffla-requests-report.php';
+            FFLA_Requests_Report::render();
+            return;
+        }
         if (isset($_GET['new'])) {
             $order = wc_get_order(absint($_GET['new']));
             if ($order && 'shop_order' === $order->get_type()) {
@@ -159,7 +171,9 @@ class FFLA_Requests_Admin
         $table = new FFLA_Requests_List_Table();
         $table->prepare_items();
 
-        echo '<div class="wrap ffla-req-admin"><h1 class="wp-heading-inline">' . esc_html__('Customer requests', 'ffl-funnels-addons') . '</h1> ';
+        echo '<div class="wrap ffla-req-admin"><h1 class="wp-heading-inline">' . esc_html__('Customer requests', 'ffl-funnels-addons') . '</h1> '
+            . '<a class="page-title-action" href="' . esc_url(admin_url('admin.php?page=' . self::SLUG . '&screen=report')) . '">' . esc_html__('Report', 'ffl-funnels-addons') . '</a> '
+            . '<a class="page-title-action" href="' . esc_url(admin_url('admin.php?page=' . self::SLUG . '&screen=setup')) . '">' . esc_html__('Rules & replies', 'ffl-funnels-addons') . '</a> ';
         echo '<details class="ffla-req-add"><summary class="page-title-action">' . esc_html__('Add request', 'ffl-funnels-addons') . '</summary>'
             . '<form method="get" action="' . esc_url(admin_url('admin.php')) . '"><input type="hidden" name="page" value="' . esc_attr(self::SLUG) . '">';
         wp_nonce_field('ffla_req_find_order', '_wpnonce', false);
@@ -222,6 +236,25 @@ class FFLA_Requests_Admin
             __('Customer prefers', 'ffl-funnels-addons') => esc_html($r->preferred ? (FFLA_Requests::preferences()[$r->preferred] ?? $r->preferred) : '—'),
             __('Opened', 'ffl-funnels-addons') => esc_html(FFLA_Requests::local_time($r->created_at)) . ' · ' . esc_html(self::source_label($r->source)),
         ];
+        if ('' !== (string) $r->return_tracking) {
+            $link = FFLA_Requests::tracking_link((string) $r->return_carrier, (string) $r->return_tracking);
+            $rows[__('Return shipment', 'ffl-funnels-addons')] = esc_html((FFLA_Requests::carriers()[$r->return_carrier] ?? $r->return_carrier) . ' ' . $r->return_tracking)
+                . ($link ? ' · <a href="' . esc_url($link) . '" target="_blank" rel="noopener">' . esc_html__('Track', 'ffl-funnels-addons') . '</a>' : '');
+        }
+        $ffl = FFLA_Requests::ffl($r);
+        if ($ffl) {
+            $rows[__('FFL dealer', 'ffl-funnels-addons')] = '<strong>' . esc_html($ffl['name']) . '</strong> · ' . esc_html(FFLA_Requests::format_license((string) $ffl['license']))
+                . '<br>' . esc_html(trim(implode(', ', array_filter([$ffl['address'] ?? '', $ffl['city'] ?? '', trim(($ffl['state'] ?? '') . ' ' . ($ffl['postcode'] ?? ''))]))))
+                . (!empty($ffl['phone']) ? ' · ' . esc_html($ffl['phone']) : '') . (!empty($ffl['email']) ? ' · ' . esc_html($ffl['email']) : '')
+                . ' <span class="description">(' . esc_html('order' === ($ffl['source'] ?? '') ? __('dealer from the order', 'ffl-funnels-addons') : __('entered by the customer', 'ffl-funnels-addons')) . ')</span>';
+        }
+        if ((float) $r->refund_total > 0) {
+            $rows[__('Refunded from this request', 'ffl-funnels-addons')] = wp_kses_post(wc_price((float) $r->refund_total, ['currency' => $order ? $order->get_currency() : get_woocommerce_currency()]));
+        }
+        if ((int) $r->rating) {
+            $rows[__('Customer rating', 'ffl-funnels-addons')] = '<span class="ffla-req-stars" aria-hidden="true">' . esc_html(str_repeat('★', (int) $r->rating) . str_repeat('☆', 5 - (int) $r->rating)) . '</span> '
+                . esc_html((int) $r->rating . '/5') . ('' !== (string) $r->rating_comment ? ' — ' . esc_html((string) $r->rating_comment) : '');
+        }
         if (!$open) {
             $rows[__('Resolution', 'ffl-funnels-addons')] = '<strong>' . esc_html(FFLA_Requests::resolutions()[$r->resolution] ?? $r->resolution) . '</strong> · ' . esc_html(FFLA_Requests::local_time($r->closed_at));
         }
@@ -232,7 +265,13 @@ class FFLA_Requests_Admin
         if ($items) {
             echo '<tr><th scope="row">' . esc_html('return' === $r->type ? __('Items to return', 'ffl-funnels-addons') : __('Items affected', 'ffl-funnels-addons')) . '</th><td><ul class="ffla-req-items">';
             foreach ($items as $line) {
-                echo '<li>' . esc_html($line['name'] . ' × ' . (int) $line['qty']) . (!empty($line['firearm']) ? ' <span class="ffla-req-firearm">' . esc_html__('Firearm — FFL-to-FFL return', 'ffl-funnels-addons') . '</span>' : '') . '</li>';
+                echo '<li>' . esc_html($line['name'] . ' × ' . (int) $line['qty']) . (!empty($line['firearm']) ? ' <span class="ffla-req-firearm">' . esc_html__('Firearm — FFL-to-FFL return', 'ffl-funnels-addons') . '</span>' : '')
+                    . (!empty($line['fee']) ? ' <span class="ffla-req-type">' . esc_html(sprintf(
+                        /* translators: %s: percent */
+                        __('Restocking fee %s%%', 'ffl-funnels-addons'),
+                        wc_format_decimal($line['fee'], 2, true)
+                    )) . '</span>' : '')
+                    . (!empty($line['exception']) ? ' <span class="ffla-req-priority ffla-req-priority--high">' . esc_html__('Outside return rules (staff exception)', 'ffl-funnels-addons') . '</span>' : '') . '</li>';
             }
             echo '</ul></td></tr>';
         }
@@ -257,6 +296,7 @@ class FFLA_Requests_Admin
         echo '<div id="ffla-req-reply" role="tabpanel" aria-labelledby="ffla-req-tab-reply">';
         self::form_open($r, 'reply', true);
         echo '<label class="screen-reader-text" for="ffla-req-reply-text">' . esc_html__('Reply', 'ffl-funnels-addons') . '</label>';
+        self::replies_picker('ffla-req-reply-text', $r);
         echo '<textarea id="ffla-req-reply-text" name="message" rows="6" required maxlength="' . (int) FFLA_Requests::MAX_TEXT . '" placeholder="' . esc_attr__('Visible to the customer on their request page.', 'ffl-funnels-addons') . '"></textarea>';
         self::file_field('reply');
         echo '<p><label><input type="checkbox" name="notify" value="1"' . checked($emails_on, true, false) . disabled(!$emails_on, true, false) . '> ' . esc_html__('Email the reply to the customer', 'ffl-funnels-addons') . '</label>'
@@ -331,6 +371,18 @@ class FFLA_Requests_Admin
             case 'email':
                 $title = (string) $event->body;
                 break;
+            case 'tracking':
+                /* translators: %s: person */
+                $title = sprintf(__('%s added the return tracking', 'ffl-funnels-addons'), $who);
+                break;
+            case 'refund':
+                /* translators: %s: person */
+                $title = sprintf(__('%s issued a refund', 'ffl-funnels-addons'), $who);
+                break;
+            case 'rating':
+                /* translators: %d: stars */
+                $title = sprintf(__('Customer rated this request %d/5', 'ffl-funnels-addons'), (int) ($meta['rating'] ?? 0));
+                break;
             default:
                 $title = $event->kind;
         }
@@ -391,13 +443,18 @@ class FFLA_Requests_Admin
             // Return shortcuts.
             if ('return' === $r->type && in_array($r->status, ['new', 'in_review', 'waiting_customer', 'waiting_carrier'], true)) {
                 echo '<div class="ffla-req-box ffla-req-box--accent"><h2>' . esc_html__('Approve return', 'ffl-funnels-addons') . '</h2>';
-                self::form_open($r, 'status');
+                self::form_open($r, 'status', true);
                 echo '<input type="hidden" name="status" value="approved">';
                 echo '<p class="description">' . esc_html__('The customer gets the return instructions from settings:', 'ffl-funnels-addons') . '</p>';
                 echo '<blockquote class="ffla-req-quote">' . nl2br(esc_html(FFLA_Requests_Mail::fill((string) FFLA_Requests::setting('requests_return_instructions'), $r))) . '</blockquote>';
                 if ((int) $r->has_firearm) {
                     echo '<p class="ffla-req-firearm-note">' . esc_html__('Includes a firearm: arrange an FFL-to-FFL transfer. The firearm notice from settings is added for the customer.', 'ffl-funnels-addons') . '</p>';
                 }
+                echo '<label for="ffla-req-label">' . esc_html__('Prepaid return label (optional)', 'ffl-funnels-addons') . '</label>'
+                    . '<input type="file" id="ffla-req-label" name="label" accept=".pdf,.jpg,.jpeg,.png">'
+                    . '<span class="description">' . esc_html__('PDF or image. The customer sees it as “Your return label”.', 'ffl-funnels-addons') . '</span>';
+                echo '<div class="ffla-req-two"><span><label for="ffla-req-label-carrier">' . esc_html__('Carrier', 'ffl-funnels-addons') . '</label>' . self::carrier_select('ffla-req-label-carrier', '') . '</span>'
+                    . '<span><label for="ffla-req-label-tracking">' . esc_html__('Label tracking no. (optional)', 'ffl-funnels-addons') . '</label><input type="text" id="ffla-req-label-tracking" name="tracking" maxlength="60"></span></div>';
                 echo '<label for="ffla-req-approve-note">' . esc_html__('Extra note for the customer (optional)', 'ffl-funnels-addons') . '</label><textarea id="ffla-req-approve-note" name="note" rows="3"></textarea>';
                 $notify(true);
                 self::button(__('Approve return', 'ffl-funnels-addons'), 'primary');
@@ -424,6 +481,44 @@ class FFLA_Requests_Admin
             echo '<p class="description">' . esc_html__('Status changes always appear on the customer’s request page.', 'ffl-funnels-addons') . '</p>';
             self::button(__('Update status', 'ffl-funnels-addons'), 'secondary');
             echo '</form></div>';
+
+            if ($order) {
+                self::render_refund($r, $order, $emails_on);
+            }
+        }
+
+        // Return shipment.
+        if ('return' === $r->type) {
+            echo '<details class="ffla-req-box"' . ('' === (string) $r->return_tracking && 'approved' === $r->status ? ' open' : '') . '><summary><strong>' . esc_html__('Return shipment', 'ffl-funnels-addons') . '</strong>'
+                . ('' !== (string) $r->return_tracking ? ' — ' . esc_html((FFLA_Requests::carriers()[$r->return_carrier] ?? '') . ' ' . $r->return_tracking) : '') . '</summary>';
+            self::form_open($r, 'tracking');
+            echo '<div class="ffla-req-two"><span><label for="ffla-req-ship-carrier">' . esc_html__('Carrier', 'ffl-funnels-addons') . '</label>' . self::carrier_select('ffla-req-ship-carrier', (string) $r->return_carrier) . '</span>'
+                . '<span><label for="ffla-req-ship-tracking">' . esc_html__('Tracking number', 'ffl-funnels-addons') . '</label><input type="text" id="ffla-req-ship-tracking" name="tracking" maxlength="60" value="' . esc_attr((string) $r->return_tracking) . '"></span></div>'
+                . '<p class="description">' . esc_html__('Customers add this themselves once the return is approved; staff can add or correct it here. It shows on the customer’s page.', 'ffl-funnels-addons') . '</p>';
+            self::button(__('Save tracking', 'ffl-funnels-addons'), 'secondary');
+            echo '</form></details>';
+        }
+
+        // FFL dealer.
+        $ffl = FFLA_Requests::ffl($r);
+        if ((int) $r->has_firearm || $ffl) {
+            echo '<details class="ffla-req-box"' . (!$ffl ? ' open' : '') . '><summary><strong>' . esc_html__('FFL dealer for the return', 'ffl-funnels-addons') . '</strong>'
+                . ($ffl ? ' — ' . esc_html($ffl['name']) : ' — <span class="ffla-req-needs">' . esc_html__('missing', 'ffl-funnels-addons') . '</span>') . '</summary>';
+            self::form_open($r, 'ffl');
+            $dealer = $order ? FFLA_Requests::order_dealer($order) : null;
+            if ($dealer) {
+                echo '<p><label><input type="checkbox" name="ffl[source]" value="order"> ' . esc_html(sprintf(
+                    /* translators: %s: dealer */
+                    __('Use the dealer from the order: %s', 'ffl-funnels-addons'),
+                    $dealer['name'] . ' · ' . FFLA_Requests::format_license($dealer['license'])
+                )) . '</label></p>';
+            }
+            foreach (['name' => __('Dealer name', 'ffl-funnels-addons'), 'license' => __('FFL license number', 'ffl-funnels-addons'), 'address' => __('Street address', 'ffl-funnels-addons'), 'city' => __('City', 'ffl-funnels-addons'), 'state' => __('State', 'ffl-funnels-addons'), 'postcode' => __('ZIP code', 'ffl-funnels-addons'), 'phone' => __('Phone', 'ffl-funnels-addons'), 'email' => __('Email', 'ffl-funnels-addons')] as $key => $label) {
+                $value = 'license' === $key && !empty($ffl['license']) ? FFLA_Requests::format_license($ffl['license']) : (string) ($ffl[$key] ?? '');
+                echo '<label for="ffla-req-ffl-' . esc_attr($key) . '">' . esc_html($label) . '</label><input type="text" id="ffla-req-ffl-' . esc_attr($key) . '" name="ffl[' . esc_attr($key) . ']" value="' . esc_attr($value) . '">';
+            }
+            self::button(__('Save dealer', 'ffl-funnels-addons'), 'secondary');
+            echo '</form></details>';
         }
 
         // Assignment.
@@ -455,7 +550,9 @@ class FFLA_Requests_Admin
                     echo '<option value="' . esc_attr($key) . '">' . esc_html($label) . '</option>';
                 }
             }
-            echo '</select><label for="ffla-req-resolution-note">' . esc_html__('Resolution note for the customer', 'ffl-funnels-addons') . '</label>'
+            echo '</select><label for="ffla-req-resolution-note">' . esc_html__('Resolution note for the customer', 'ffl-funnels-addons') . '</label>';
+            self::replies_picker('ffla-req-resolution-note', $r);
+            echo ''
                 . '<textarea id="ffla-req-resolution-note" name="note" rows="3" required placeholder="' . esc_attr__('What was done, e.g. refund amount and when it appears, or replacement tracking number.', 'ffl-funnels-addons') . '"></textarea>';
             if ($order && $order->get_total_refunded() > 0) {
                 echo '<p class="description">' . esc_html(sprintf(
@@ -655,7 +752,16 @@ class FFLA_Requests_Admin
 
                 case 'status':
                     $to = sanitize_key(wp_unslash($_POST['status'] ?? ''));
-                    FFLA_Requests::set_status($r, $to, $actor, true, $text);
+                    $label = 'approved' === $to ? array_slice(FFLA_Requests_Files::from_request('label'), 0, 1) : [];
+                    $prepared = $label ? FFLA_Requests_Files::prepare($label, FFLA_Requests_Files::count($id)) : [];
+                    $event_id = FFLA_Requests::set_status($r, $to, $actor, true, $text);
+                    if ($prepared && $event_id) {
+                        FFLA_Requests_Files::store($r, $prepared, $actor, true, $event_id, 'label');
+                    }
+                    $tracking = sanitize_text_field(wp_unslash($_POST['tracking'] ?? ''));
+                    if ('approved' === $to && '' !== $tracking) {
+                        FFLA_Requests::set_return_tracking(FFLA_Requests::get($id), sanitize_key(wp_unslash($_POST['carrier'] ?? '')), $tracking, $actor);
+                    }
                     if ($notify) {
                         FFLA_Requests_Mail::customer_status(FFLA_Requests::get($id), $text);
                     }
@@ -712,6 +818,58 @@ class FFLA_Requests_Admin
                     self::flash('success', __('The old link no longer works. Copy the new one to share it.', 'ffl-funnels-addons'));
                     break;
 
+                case 'tracking':
+                    FFLA_Requests::set_return_tracking($r, sanitize_key(wp_unslash($_POST['carrier'] ?? '')), sanitize_text_field(wp_unslash($_POST['tracking'] ?? '')), $actor);
+                    self::flash('success', __('Return tracking saved.', 'ffl-funnels-addons'));
+                    break;
+
+                case 'ffl':
+                    $input = isset($_POST['ffl']) && is_array($_POST['ffl']) ? array_map(static function ($v) { return is_scalar($v) ? (string) $v : ''; }, (array) wp_unslash($_POST['ffl'])) : [];
+                    $ffl = FFLA_Requests::clean_ffl($input, $order);
+                    if (!$ffl) {
+                        throw new InvalidArgumentException(__('Enter the dealer name, a valid 15-character FFL license number, city and state.', 'ffl-funnels-addons'));
+                    }
+                    FFLA_Requests::set_ffl($r, $ffl, $actor);
+                    self::flash('success', __('FFL dealer saved.', 'ffl-funnels-addons'));
+                    break;
+
+                case 'refund':
+                    if (!$order) {
+                        throw new InvalidArgumentException(__('The order no longer exists.', 'ffl-funnels-addons'));
+                    }
+                    if (empty($_POST['confirm_refund'])) {
+                        throw new InvalidArgumentException(__('Tick the confirmation box to issue the refund.', 'ffl-funnels-addons'));
+                    }
+                    $intent = sanitize_text_field(wp_unslash($_POST['intent'] ?? ''));
+                    if (FFLA_Requests_Refunds::already_done($r, $intent)) {
+                        self::flash('success', __('This refund was already issued.', 'ffl-funnels-addons'));
+                        break;
+                    }
+                    $result = FFLA_Requests_Refunds::issue($r, $order, [
+                        'qty'     => array_map('absint', (array) wp_unslash($_POST['qty'] ?? [])),
+                        'fee'     => (float) wp_unslash($_POST['fee'] ?? 0),
+                        'extra'   => (float) wp_unslash($_POST['extra'] ?? 0),
+                        'restock' => !empty($_POST['restock']),
+                        'method'  => sanitize_key(wp_unslash($_POST['method'] ?? 'manual')),
+                        'intent'  => $intent,
+                    ], $actor);
+                    $fresh = FFLA_Requests::get($id);
+                    $message = trim($result['text'] . ('' !== $text ? "\n\n" . $text : ''));
+                    if (!empty($_POST['close']) && FFLA_Requests::is_open($fresh->status)) {
+                        FFLA_Requests::close($fresh, $result['resolution'], $message, $actor);
+                        if ($notify) {
+                            FFLA_Requests_Mail::customer_closed(FFLA_Requests::get($id));
+                        }
+                    } elseif ($notify) {
+                        FFLA_Requests_Mail::customer_message(FFLA_Requests::get($id), $message);
+                    }
+                    self::flash('success', sprintf(
+                        /* translators: %s: amount */
+                        __('Refund of %s issued.', 'ffl-funnels-addons'),
+                        FFLA_Requests_Refunds::money($result['amount'], $order)
+                    ));
+                    break;
+
                 case 'delete':
                     if (empty($_POST['confirm_delete'])) {
                         throw new InvalidArgumentException(__('Tick the confirmation box to delete.', 'ffl-funnels-addons'));
@@ -726,6 +884,8 @@ class FFLA_Requests_Admin
                     throw new InvalidArgumentException(__('Unknown action.', 'ffl-funnels-addons'));
             }
         } catch (InvalidArgumentException $e) {
+            self::flash('error', $e->getMessage());
+        } catch (RuntimeException $e) {
             self::flash('error', $e->getMessage());
         } catch (Throwable $e) {
             self::flash('error', __('The change could not be saved.', 'ffl-funnels-addons'));
@@ -1016,6 +1176,191 @@ class FFLA_Requests_Admin
             'staff'       => __('by staff', 'ffl-funnels-addons'),
         ];
         return $labels[$source] ?? $source;
+    }
+
+    private static function render_refund($r, $order, bool $emails_on): void
+    {
+        $remaining = (float) $order->get_remaining_refund_amount();
+        $money = static function ($amount) use ($order) {
+            return FFLA_Requests_Refunds::money((float) $amount, $order);
+        };
+        if ($remaining <= 0) {
+            echo '<div class="ffla-req-box"><h2>' . esc_html__('Refund', 'ffl-funnels-addons') . '</h2><p class="description">' . esc_html__('Nothing left to refund on this order.', 'ffl-funnels-addons') . '</p></div>';
+            return;
+        }
+        $lines = FFLA_Requests_Refunds::lines($r, $order);
+        $gateway = FFLA_Requests_Refunds::gateway_refunds($order);
+        $currency = [
+            'symbol'   => html_entity_decode(get_woocommerce_currency_symbol($order->get_currency()), ENT_QUOTES, 'UTF-8'),
+            'decimals' => wc_get_price_decimals(),
+            'format'   => html_entity_decode(get_woocommerce_price_format(), ENT_QUOTES, 'UTF-8'),
+        ];
+
+        echo '<details class="ffla-req-box ffla-req-refund"' . ('item_received' === $r->status ? ' open' : '') . '><summary><strong>' . esc_html__('Refund', 'ffl-funnels-addons') . '</strong></summary>';
+        self::form_open($r, 'refund');
+        echo '<input type="hidden" name="intent" value="' . esc_attr(wp_generate_uuid4()) . '">';
+        echo '<div data-ffla-refund data-currency="' . esc_attr((string) wp_json_encode($currency)) . '" data-remaining="' . esc_attr((string) $remaining) . '">';
+        echo '<table class="widefat striped"><thead><tr><th>' . esc_html__('Item', 'ffl-funnels-addons') . '</th><th>' . esc_html__('Qty', 'ffl-funnels-addons') . '</th></tr></thead><tbody>';
+        foreach ($lines as $line) {
+            if (!$line['max'] && !$line['in_request']) {
+                continue;
+            }
+            echo '<tr' . ($line['in_request'] ? ' class="is-requested"' : '') . '><td>' . esc_html($line['name']) . '<br><span class="description">' . esc_html($money($line['unit_gross']) . ' × ' . $line['ordered'] . ($line['max'] < $line['ordered'] ? ' · ' . sprintf(
+                /* translators: %d: units */
+                __('%d already refunded', 'ffl-funnels-addons'),
+                $line['ordered'] - $line['max']
+            ) : '')) . '</span></td>'
+                . '<td><input type="number" min="0" max="' . (int) $line['max'] . '" step="1" name="qty[' . (int) $line['item_id'] . ']" value="' . (int) $line['qty'] . '" data-unit="' . esc_attr((string) $line['unit_gross']) . '" aria-label="' . esc_attr(sprintf(
+                    /* translators: %s: product */
+                    __('Quantity of %s to refund', 'ffl-funnels-addons'),
+                    $line['name']
+                )) . '"' . ($line['max'] ? '' : ' disabled') . '></td></tr>';
+        }
+        echo '</tbody></table>';
+        echo '<div class="ffla-req-two"><span><label for="ffla-req-fee">' . esc_html__('Restocking fee (%)', 'ffl-funnels-addons') . '</label><input type="number" id="ffla-req-fee" name="fee" min="0" max="100" step="0.01" value="' . esc_attr(wc_format_decimal(FFLA_Requests_Refunds::suggested_fee($r), 2, true)) . '"></span>'
+            . '<span><label for="ffla-req-extra">' . esc_html__('Extra amount (e.g. shipping)', 'ffl-funnels-addons') . '</label><input type="number" id="ffla-req-extra" name="extra" min="0" step="0.01" value="0"></span></div>';
+        echo '<p class="ffla-req-refund-total">' . esc_html__('Refund total:', 'ffl-funnels-addons') . ' <strong data-ffla-refund-total>—</strong> <span class="description" data-ffla-refund-fee></span></p>';
+        echo '<p class="description">' . esc_html(sprintf(
+            /* translators: %s: amount */
+            __('Left to refund on the order: %s', 'ffl-funnels-addons'),
+            $money($remaining)
+        )) . '</p></div>';
+
+        echo '<fieldset><legend class="screen-reader-text">' . esc_html__('Refund method', 'ffl-funnels-addons') . '</legend>';
+        if ($gateway) {
+            echo '<p><label><input type="radio" name="method" value="gateway" checked> ' . esc_html(sprintf(
+                /* translators: %s: payment method */
+                __('Refund automatically via %s', 'ffl-funnels-addons'),
+                $order->get_payment_method_title() ?: __('the payment gateway', 'ffl-funnels-addons')
+            )) . '</label></p>';
+        }
+        echo '<p><label><input type="radio" name="method" value="manual"' . checked(!$gateway, true, false) . '> ' . esc_html__('Manual refund (record it; return the money another way)', 'ffl-funnels-addons') . '</label></p></fieldset>';
+        echo '<p><label><input type="checkbox" name="restock" value="1"' . checked('return' === $r->type, true, false) . '> ' . esc_html__('Put the items back in stock', 'ffl-funnels-addons') . '</label></p>';
+        echo '<p><label><input type="checkbox" name="close" value="1" checked> ' . esc_html__('Close the request as refunded', 'ffl-funnels-addons') . '</label></p>';
+        echo '<label for="ffla-req-refund-note">' . esc_html__('Extra note for the customer (optional)', 'ffl-funnels-addons') . '</label><textarea id="ffla-req-refund-note" name="note" rows="2"></textarea>';
+        echo '<p><label><input type="checkbox" name="notify" value="1"' . checked($emails_on, true, false) . disabled(!$emails_on, true, false) . '> ' . esc_html__('Email the customer', 'ffl-funnels-addons') . '</label></p>';
+        echo '<p class="ffla-req-confirm-box"><label><input type="checkbox" name="confirm_refund" value="1" required> <strong>' . esc_html__('I confirm this refund', 'ffl-funnels-addons') . '</strong></label></p>';
+        self::button(__('Issue refund', 'ffl-funnels-addons'), 'primary');
+        echo '<p class="description">' . esc_html__('Creates a normal WooCommerce refund on the order. It cannot be undone from here.', 'ffl-funnels-addons') . '</p>';
+        echo '</form></details>';
+    }
+
+    private static function carrier_select(string $id, string $current): string
+    {
+        $html = '<select id="' . esc_attr($id) . '" name="carrier">';
+        foreach (FFLA_Requests::carriers() as $key => $label) {
+            $html .= '<option value="' . esc_attr($key) . '"' . selected($current, $key, false) . '>' . esc_html($label) . '</option>';
+        }
+        return $html . '</select>';
+    }
+
+    private static function replies_picker(string $target, $r): void
+    {
+        $replies = FFLA_Requests_Replies::all();
+        if (!$replies) {
+            return;
+        }
+        echo '<p class="ffla-req-replies"><label class="screen-reader-text" for="' . esc_attr($target) . '-pick">' . esc_html__('Insert a saved reply', 'ffl-funnels-addons') . '</label>'
+            . '<select id="' . esc_attr($target) . '-pick" data-ffla-insert="' . esc_attr($target) . '"><option value="">' . esc_html__('Insert a saved reply…', 'ffl-funnels-addons') . '</option>';
+        foreach ($replies as $reply) {
+            echo '<option value="' . esc_attr(FFLA_Requests_Replies::fill($reply['body'], $r)) . '">' . esc_html($reply['title']) . '</option>';
+        }
+        echo '</select> <a href="' . esc_url(admin_url('admin.php?page=' . self::SLUG . '&screen=setup#ffla-replies')) . '">' . esc_html__('Manage', 'ffl-funnels-addons') . '</a></p>';
+    }
+
+    /* ── Rules & saved replies screen ──────────────────────────────────── */
+
+    private static function render_setup(): void
+    {
+        $terms = [
+            'product_cat' => get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false, 'number' => 1000, 'orderby' => 'name']),
+            'product_tag' => get_terms(['taxonomy' => 'product_tag', 'hide_empty' => false, 'number' => 1000, 'orderby' => 'name']),
+        ];
+        $target_select = static function (string $name, string $current) use ($terms): string {
+            $html = '<select name="' . esc_attr($name) . '" required><option value="">' . esc_html__('— Choose —', 'ffl-funnels-addons') . '</option>';
+            foreach (['product_cat' => __('Categories (includes subcategories)', 'ffl-funnels-addons'), 'product_tag' => __('Tags', 'ffl-funnels-addons')] as $taxonomy => $label) {
+                if (is_wp_error($terms[$taxonomy]) || !$terms[$taxonomy]) {
+                    continue;
+                }
+                $html .= '<optgroup label="' . esc_attr($label) . '">';
+                foreach ($terms[$taxonomy] as $term) {
+                    $value = $taxonomy . ':' . $term->term_id;
+                    $html .= '<option value="' . esc_attr($value) . '"' . selected($current, $value, false) . '>' . esc_html($term->name) . '</option>';
+                }
+                $html .= '</optgroup>';
+            }
+            return $html . '</select>';
+        };
+        $rule_row = static function ($i, array $rule) use ($target_select): string {
+            $n = 'rules[' . $i . ']';
+            $target = !empty($rule) ? $rule['taxonomy'] . ':' . $rule['term'] : '';
+            return '<tr><td>' . $target_select($n . '[target]', $target) . '</td>'
+                . '<td><select name="' . esc_attr($n . '[returnable]') . '"><option value="yes"' . selected(!isset($rule['returnable']) || $rule['returnable'], true, false) . '>' . esc_html__('Returnable', 'ffl-funnels-addons') . '</option><option value="no"' . selected(isset($rule['returnable']) && !$rule['returnable'], true, false) . '>' . esc_html__('Not returnable', 'ffl-funnels-addons') . '</option></select></td>'
+                . '<td><input type="number" min="1" max="365" name="' . esc_attr($n . '[days]') . '" value="' . esc_attr(isset($rule['days']) && null !== $rule['days'] ? (string) $rule['days'] : '') . '" placeholder="' . esc_attr__('default', 'ffl-funnels-addons') . '"></td>'
+                . '<td><input type="number" min="0" max="100" step="0.01" name="' . esc_attr($n . '[fee]') . '" value="' . esc_attr(isset($rule['fee']) && null !== $rule['fee'] ? (string) $rule['fee'] : '') . '" placeholder="' . esc_attr__('default', 'ffl-funnels-addons') . '"></td>'
+                . '<td><input type="text" maxlength="300" name="' . esc_attr($n . '[note]') . '" value="' . esc_attr((string) ($rule['note'] ?? '')) . '" placeholder="' . esc_attr__('e.g. Ammunition cannot be returned.', 'ffl-funnels-addons') . '"></td>'
+                . '<td><button type="button" class="button-link button-link-delete" data-ffla-remove>' . esc_html__('Remove', 'ffl-funnels-addons') . '</button></td></tr>';
+        };
+        $reply_row = static function ($i, array $reply): string {
+            $n = 'replies[' . $i . ']';
+            return '<tr><td><input type="text" maxlength="100" name="' . esc_attr($n . '[title]') . '" value="' . esc_attr((string) ($reply['title'] ?? '')) . '" aria-label="' . esc_attr__('Title', 'ffl-funnels-addons') . '"></td>'
+                . '<td><textarea rows="4" name="' . esc_attr($n . '[body]') . '" aria-label="' . esc_attr__('Reply text', 'ffl-funnels-addons') . '">' . esc_textarea((string) ($reply['body'] ?? '')) . '</textarea></td>'
+                . '<td><button type="button" class="button-link button-link-delete" data-ffla-remove>' . esc_html__('Remove', 'ffl-funnels-addons') . '</button></td></tr>';
+        };
+
+        echo '<div class="wrap ffla-req-admin ffla-req-setup-screen"><h1 class="wp-heading-inline">' . esc_html__('Return rules & saved replies', 'ffl-funnels-addons') . '</h1> '
+            . '<a class="page-title-action" href="' . esc_url(admin_url('admin.php?page=' . self::SLUG)) . '">' . esc_html__('← All requests', 'ffl-funnels-addons') . '</a><hr class="wp-header-end">';
+        self::notices();
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '"><input type="hidden" name="action" value="ffla_req_setup_save">';
+        wp_nonce_field('ffla_req_setup_save');
+
+        echo '<div class="ffla-req-box"><h2>' . esc_html__('Return rules', 'ffl-funnels-addons') . '</h2><p>' . esc_html(sprintf(
+            /* translators: 1: days, 2: percent */
+            __('Without a rule, products use the defaults from settings: %1$d-day return window and %2$s%% restocking fee. When several rules match a product, it is not returnable if any rule says so, the shortest window and the highest fee apply. The restocking fee is never charged for damaged, defective, wrong or not-as-described items.', 'ffl-funnels-addons'),
+            FFLA_Requests_Rules::default_days(),
+            wc_format_decimal(FFLA_Requests_Rules::default_fee(), 2, true)
+        )) . ' <a href="' . esc_url(admin_url('admin.php?page=ffla-customer-operations')) . '">' . esc_html__('Change defaults', 'ffl-funnels-addons') . '</a></p>';
+        echo '<table class="widefat ffla-req-repeater" data-ffla-repeater="rules"><thead><tr><th>' . esc_html__('Applies to', 'ffl-funnels-addons') . '</th><th>' . esc_html__('Returns', 'ffl-funnels-addons') . '</th><th>' . esc_html__('Window (days)', 'ffl-funnels-addons') . '</th><th>' . esc_html__('Restocking fee (%)', 'ffl-funnels-addons') . '</th><th>' . esc_html__('Note shown to customers', 'ffl-funnels-addons') . '</th><th></th></tr></thead><tbody>';
+        foreach (FFLA_Requests_Rules::all() as $i => $rule) {
+            echo $rule_row($i, $rule); // phpcs:ignore WordPress.Security.EscapeOutput
+        }
+        echo '</tbody></table><template data-ffla-template="rules">' . $rule_row('__i__', []) . '</template>'; // phpcs:ignore WordPress.Security.EscapeOutput
+        echo '<p><button type="button" class="button" data-ffla-add="rules">' . esc_html__('Add rule', 'ffl-funnels-addons') . '</button></p></div>';
+
+        echo '<div class="ffla-req-box" id="ffla-replies"><h2>' . esc_html__('Saved replies', 'ffl-funnels-addons') . '</h2><p>' . esc_html__('Staff insert these from the request screen and edit them before sending. Placeholders: {first_name}, {customer_name}, {request_number}, {order_number}, {store_name}, {request_link}.', 'ffl-funnels-addons') . '</p>';
+        echo '<table class="widefat ffla-req-repeater" data-ffla-repeater="replies"><thead><tr><th style="width:25%">' . esc_html__('Title', 'ffl-funnels-addons') . '</th><th>' . esc_html__('Reply', 'ffl-funnels-addons') . '</th><th></th></tr></thead><tbody>';
+        foreach (FFLA_Requests_Replies::all() as $i => $reply) {
+            echo $reply_row($i, $reply); // phpcs:ignore WordPress.Security.EscapeOutput
+        }
+        echo '</tbody></table><template data-ffla-template="replies">' . $reply_row('__i__', []) . '</template>'; // phpcs:ignore WordPress.Security.EscapeOutput
+        echo '<p><button type="button" class="button" data-ffla-add="replies">' . esc_html__('Add reply', 'ffl-funnels-addons') . '</button></p></div>';
+
+        self::button(__('Save rules & replies', 'ffl-funnels-addons'), 'primary');
+        echo '</form></div>';
+    }
+
+    public static function save_setup(): void
+    {
+        if (!current_user_can('manage_woocommerce')) {
+            wp_die(esc_html__('Access denied.', 'ffl-funnels-addons'), '', ['response' => 403]);
+        }
+        check_admin_referer('ffla_req_setup_save');
+        $rules = FFLA_Requests_Rules::save(array_values((array) wp_unslash($_POST['rules'] ?? [])));
+        $replies = FFLA_Requests_Replies::save(array_values((array) wp_unslash($_POST['replies'] ?? [])));
+        self::flash('success', sprintf(
+            /* translators: 1: rules, 2: replies */
+            __('Saved %1$d return rules and %2$d saved replies.', 'ffl-funnels-addons'),
+            count($rules),
+            count($replies)
+        ));
+        wp_safe_redirect(admin_url('admin.php?page=' . self::SLUG . '&screen=setup'));
+        exit;
+    }
+
+    public static function export_csv(): void
+    {
+        require_once __DIR__ . '/class-ffla-requests-report.php';
+        FFLA_Requests_Report::export();
     }
 
     private static function actor(): array

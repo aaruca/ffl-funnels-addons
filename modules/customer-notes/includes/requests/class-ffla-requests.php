@@ -23,7 +23,7 @@ defined('ABSPATH') || exit;
 
 class FFLA_Requests
 {
-    const DB_VERSION = '1';
+    const DB_VERSION = '2';
     const DB_OPTION = 'ffla_requests_db_version';
 
     /** Per order: at most this many requests open at once, and in total. */
@@ -103,6 +103,15 @@ class FFLA_Requests
             resolution_note text NULL,
             access_secret char(32) NOT NULL DEFAULT '',
             awaiting varchar(10) NOT NULL DEFAULT 'staff',
+            return_carrier varchar(20) NOT NULL DEFAULT '',
+            return_tracking varchar(100) NOT NULL DEFAULT '',
+            ffl longtext NULL,
+            refund_total decimal(19,4) NOT NULL DEFAULT 0,
+            waiting_since datetime NULL DEFAULT NULL,
+            reminded_at datetime NULL DEFAULT NULL,
+            rating tinyint(1) unsigned NOT NULL DEFAULT 0,
+            rating_comment text NULL,
+            rated_at datetime NULL DEFAULT NULL,
             created_at datetime NOT NULL,
             updated_at datetime NOT NULL,
             closed_at datetime NULL DEFAULT NULL,
@@ -139,6 +148,7 @@ class FFLA_Requests
             size int(10) unsigned NOT NULL DEFAULT 0,
             data longblob NOT NULL,
             is_public tinyint(1) NOT NULL DEFAULT 0,
+            kind varchar(20) NOT NULL DEFAULT '',
             actor_type varchar(10) NOT NULL,
             actor_id bigint(20) unsigned NOT NULL DEFAULT 0,
             created_at datetime NOT NULL,
@@ -205,6 +215,7 @@ class FFLA_Requests
             'resolved'       => __('Resolved', 'ffl-funnels-addons'),
             'denied'         => __('Request declined', 'ffl-funnels-addons'),
             'withdrawn'      => __('Cancelled by customer', 'ffl-funnels-addons'),
+            'no_response'    => __('Closed — no reply from customer', 'ffl-funnels-addons'),
             'duplicate'      => __('Duplicate request', 'ffl-funnels-addons'),
         ]);
     }
@@ -372,17 +383,23 @@ class FFLA_Requests
             $out['issue'] = sprintf(__('Issue reports can be opened up to %d days after ordering. Please contact the store.', 'ffl-funnels-addons'), $issue_days);
         }
 
-        $return_days = max(1, (int) self::setting('requests_return_days'));
-        $since = $order->get_date_completed() ?: ($order->get_date_paid() ?: $created);
         if (!in_array('return', $types, true)) {
             $out['return'] = __('Return requests are not available.', 'ffl-funnels-addons');
         } elseif ('refunded' === $order->get_status()) {
             $out['return'] = __('This order was already refunded.', 'ffl-funnels-addons');
-        } elseif ($since && $since->getTimestamp() < time() - $return_days * DAY_IN_SECONDS) {
-            /* translators: %d: days */
-            $out['return'] = sprintf(__('Returns can be requested up to %d days after the order was completed.', 'ffl-funnels-addons'), $return_days);
-        } elseif (!array_filter(self::returnable_items($order), static function ($i) { return $i['available'] > 0; })) {
-            $out['return'] = __('There are no items left to return on this order.', 'ffl-funnels-addons');
+        } else {
+            // Per line: units left, return rules and each line's own window.
+            $lines = array_filter(self::returnable_items($order), static function ($i) { return $i['available'] > 0; });
+            $open = array_filter($lines, static function ($i) { return '' === $i['blocked']; });
+            if (!$lines) {
+                $out['return'] = __('There are no items left to return on this order.', 'ffl-funnels-addons');
+            } elseif (!$open) {
+                $windows = array_filter($lines, static function ($i) { return $i['allowed']; });
+                $out['return'] = $windows
+                    /* translators: %d: days */
+                    ? sprintf(__('Returns can be requested up to %d days after the order was completed.', 'ffl-funnels-addons'), max(array_column($windows, 'days')))
+                    : __('The items on this order cannot be returned online. Please contact the store.', 'ffl-funnels-addons');
+            }
         }
 
         return $out;
@@ -406,6 +423,9 @@ class FFLA_Requests
             }
         }
 
+        $since = $order->get_date_completed() ?: ($order->get_date_paid() ?: $order->get_date_created());
+        $since = $since ? $since->getTimestamp() : time();
+
         $out = [];
         foreach ($order->get_items() as $item_id => $item) {
             if (!$item instanceof WC_Order_Item_Product) {
@@ -414,6 +434,15 @@ class FFLA_Requests
             $ordered = (int) $item->get_quantity();
             $refunded = abs((int) $order->get_qty_refunded_for_item($item_id));
             $requested = (int) ($in_open[$item_id] ?? 0);
+            $policy = FFLA_Requests_Rules::for_product((int) $item->get_product_id());
+            $in_window = $since >= time() - $policy['days'] * DAY_IN_SECONDS;
+            $blocked = '';
+            if (!$policy['returnable']) {
+                $blocked = $policy['note'];
+            } elseif (!$in_window) {
+                /* translators: %d: days */
+                $blocked = sprintf(__('Return window ended (%d days).', 'ffl-funnels-addons'), $policy['days']);
+            }
             $out[(int) $item_id] = [
                 'item_id'    => (int) $item_id,
                 'product_id' => (int) $item->get_product_id(),
@@ -423,6 +452,12 @@ class FFLA_Requests
                 'requested'  => $requested,
                 'available'  => max(0, $ordered - $refunded - $requested),
                 'firearm'    => class_exists('FFLA_Customer_Operations') ? FFLA_Customer_Operations::firearm($item) : false,
+                'price'      => $ordered ? round(((float) $item->get_total() + (float) $item->get_total_tax()) / $ordered, wc_get_price_decimals()) : 0.0,
+                'allowed'    => $policy['returnable'],
+                'days'       => $policy['days'],
+                'fee'        => $policy['fee'],
+                'note'       => $policy['note'],
+                'blocked'    => $blocked,
             ];
         }
 
@@ -643,21 +678,44 @@ class FFLA_Requests
             if (!$qty || !isset($returnable[$item_id])) {
                 continue;
             }
-            $limit = 'return' === $type ? $returnable[$item_id]['available'] : $returnable[$item_id]['ordered'];
+            $line = $returnable[$item_id];
+            $limit = 'return' === $type ? $line['available'] : $line['ordered'];
             if ($qty > $limit) {
                 /* translators: %s: product name */
-                throw new InvalidArgumentException(sprintf(__('Too many units selected for %s.', 'ffl-funnels-addons'), $returnable[$item_id]['name']));
+                throw new InvalidArgumentException(sprintf(__('Too many units selected for %s.', 'ffl-funnels-addons'), $line['name']));
+            }
+            // Return rules bind customers; staff may make exceptions.
+            if ('return' === $type && !$staff && '' !== $line['blocked']) {
+                /* translators: 1: product name, 2: reason */
+                throw new InvalidArgumentException(sprintf(__('%1$s cannot be returned: %2$s', 'ffl-funnels-addons'), $line['name'], $line['blocked']));
             }
             $lines[] = [
                 'item_id'    => $item_id,
-                'product_id' => $returnable[$item_id]['product_id'],
-                'name'       => $returnable[$item_id]['name'],
+                'product_id' => $line['product_id'],
+                'name'       => $line['name'],
                 'qty'        => $qty,
-                'firearm'    => (bool) $returnable[$item_id]['firearm'],
+                'firearm'    => (bool) $line['firearm'],
+                'price'      => (float) $line['price'],
+                'fee'        => 'return' === $type ? FFLA_Requests_Rules::fee_for((float) $line['fee'], $reason) : 0.0,
+                'exception'  => 'return' === $type && '' !== $line['blocked'],
             ];
         }
         if ('return' === $type && !$lines) {
             throw new InvalidArgumentException(__('Select the items and quantities to return.', 'ffl-funnels-addons'));
+        }
+
+        if (!$staff && FFLA_Requests_Rules::photo_required($reason) && empty($data['files_count'])) {
+            throw new InvalidArgumentException(__('Please add at least one photo for this reason.', 'ffl-funnels-addons'));
+        }
+
+        // Firearms come back through a licensed dealer.
+        $ffl = null;
+        $returns_firearm = 'return' === $type && (bool) array_filter($lines, static function ($l) { return $l['firearm']; });
+        if ($returns_firearm && isset($data['ffl']) && is_array($data['ffl'])) {
+            $ffl = self::clean_ffl($data['ffl'], $order);
+        }
+        if ($returns_firearm && !$staff && !$ffl && FFLA_Customer_Operations_Settings::enabled('requests_ffl_required')) {
+            throw new InvalidArgumentException(__('Enter the FFL dealer that will ship the firearm back (name, license number, city and state).', 'ffl-funnels-addons'));
         }
 
         $now = current_time('mysql', true);
@@ -678,6 +736,7 @@ class FFLA_Requests
             'source'         => in_array($source, ['public_form', 'my_account', 'staff'], true) ? $source : 'public_form',
             'items'          => wp_json_encode($lines),
             'has_firearm'    => $has_firearm ? 1 : 0,
+            'ffl'            => $ffl ? wp_json_encode($ffl) : null,
             'access_secret'  => self::random_hex(16),
             'awaiting'       => $staff ? 'customer' : 'staff',
             'created_at'     => $now,
@@ -762,7 +821,8 @@ class FFLA_Requests
         return self::add_event($request, $public ? 'message' : 'note', $actor, $public, $text);
     }
 
-    public static function set_status($request, string $to, array $actor, bool $public_event = true, string $note = ''): void
+    /** @return int The status event ID (0 when the status did not change). */
+    public static function set_status($request, string $to, array $actor, bool $public_event = true, string $note = ''): int
     {
         global $wpdb;
         $allowed = self::statuses_for($request->type);
@@ -771,18 +831,26 @@ class FFLA_Requests
         }
         $from = (string) $request->status;
         if ($from === $to) {
-            return;
+            return 0;
         }
         if ('closed' === $from) {
             throw new InvalidArgumentException(__('Reopen the request before changing its status.', 'ffl-funnels-addons'));
         }
 
         $t = self::tables();
-        $wpdb->update($t['requests'], ['status' => $to, 'updated_at' => current_time('mysql', true)], ['id' => (int) $request->id]);
-        self::add_event($request, 'status', $actor, $public_event, $note, ['from' => $from, 'to' => $to]);
+        $now = current_time('mysql', true);
+        // waiting_since drives reminders and auto-close; it restarts each time we wait on the customer.
+        $wpdb->update($t['requests'], [
+            'status'        => $to,
+            'updated_at'    => $now,
+            'waiting_since' => 'waiting_customer' === $to ? $now : null,
+            'reminded_at'   => null,
+        ], ['id' => (int) $request->id]);
+        $event_id = self::add_event($request, 'status', $actor, $public_event, $note, ['from' => $from, 'to' => $to]);
         self::order_note($request, sprintf('Customer request %s: %s → %s.', $request->number, self::status_label($from), self::status_label($to)));
 
         do_action('ffla_request_status_changed', self::get((int) $request->id), $from, $to);
+        return $event_id;
     }
 
     /**
@@ -811,6 +879,7 @@ class FFLA_Requests
             'closed_at'       => $now,
             'updated_at'      => $now,
             'awaiting'        => '',
+            'waiting_since'   => null,
         ], ['id' => (int) $request->id]);
 
         self::add_event($request, 'resolution', $actor, true, $note, ['from' => $request->status, 'resolution' => $resolution]);
@@ -918,6 +987,171 @@ class FFLA_Requests
                     sprintf(__('A refund of %s was issued on the order. Close this request with the matching outcome when done.', 'ffl-funnels-addons'), $amount));
             }
         }
+    }
+
+    /* ── Return shipping ───────────────────────────────────────────────── */
+
+    public static function carriers(): array
+    {
+        return apply_filters('ffla_requests_carriers', [
+            'ups'   => 'UPS',
+            'usps'  => 'USPS',
+            'fedex' => 'FedEx',
+            'dhl'   => 'DHL',
+            'other' => __('Other', 'ffl-funnels-addons'),
+        ]);
+    }
+
+    public static function tracking_link(string $carrier, string $number): string
+    {
+        $number = rawurlencode($number);
+        $links = [
+            'ups'   => 'https://www.ups.com/track?tracknum=' . $number,
+            'usps'  => 'https://tools.usps.com/go/TrackConfirmAction?tLabels=' . $number,
+            'fedex' => 'https://www.fedex.com/fedextrack/?trknbr=' . $number,
+            'dhl'   => 'https://www.dhl.com/us-en/home/tracking/tracking-express.html?tracking-id=' . $number,
+        ];
+        return (string) apply_filters('ffla_requests_tracking_link', $links[$carrier] ?? '', $carrier, $number);
+    }
+
+    /** Record how the returned item travels back to the store. */
+    public static function set_return_tracking($request, string $carrier, string $tracking, array $actor): void
+    {
+        global $wpdb;
+        $carrier = sanitize_key($carrier);
+        $tracking = strtoupper(preg_replace('/[^A-Za-z0-9 \-]/', '', substr(trim($tracking), 0, 60)));
+        if (!isset(self::carriers()[$carrier]) || strlen(str_replace([' ', '-'], '', $tracking)) < 6) {
+            throw new InvalidArgumentException(__('Choose the carrier and enter a valid tracking number.', 'ffl-funnels-addons'));
+        }
+        $t = self::tables();
+        $wpdb->update($t['requests'], ['return_carrier' => $carrier, 'return_tracking' => $tracking], ['id' => (int) $request->id]);
+        self::add_event($request, 'tracking', $actor, true, self::carriers()[$carrier] . ' ' . $tracking, ['carrier' => $carrier, 'tracking' => $tracking]);
+        if ('customer' === ($actor['type'] ?? '')) {
+            $wpdb->update($t['requests'], ['awaiting' => 'staff'], ['id' => (int) $request->id]);
+        }
+        self::order_note($request, sprintf('Customer request %s: return shipment %s %s.', $request->number, self::carriers()[$carrier], $tracking));
+    }
+
+    /* ── FFL dealer for firearm returns ────────────────────────────────── */
+
+    /** Normalize an FFL license number (format only, not verified). */
+    public static function license($value): string
+    {
+        if (class_exists('Pickup_Shipping_Settings')) {
+            return Pickup_Shipping_Settings::license($value);
+        }
+        $value = strtoupper(preg_replace('/[\s-]/', '', (string) $value));
+        return preg_match('/^[0-9]{9}[A-Z][0-9]{5}$/', $value) ? $value : '';
+    }
+
+    /** 123456789A12345 → 1-23-456-78-9A-12345 */
+    public static function format_license(string $license): string
+    {
+        return 15 === strlen($license)
+            ? implode('-', [substr($license, 0, 1), substr($license, 1, 2), substr($license, 3, 3), substr($license, 6, 2), substr($license, 8, 2), substr($license, 10, 5)])
+            : $license;
+    }
+
+    /**
+     * The dealer the order shipped to (g-FFL Checkout stores the license as
+     * `_shipping_fflno` and the dealer in the shipping address).
+     *
+     * @return array|null
+     */
+    public static function order_dealer($order)
+    {
+        if (!$order instanceof WC_Order) {
+            return null;
+        }
+        $license = '';
+        foreach (['_shipping_fflno', 'shipping_fflno', '_ffl_license', '_ffl_id'] as $key) {
+            $license = self::license($order->get_meta($key));
+            if ('' !== $license) {
+                break;
+            }
+        }
+        $dealer = '' === $license ? null : [
+            'source'   => 'order',
+            'name'     => $order->get_shipping_company() ?: trim($order->get_shipping_first_name() . ' ' . $order->get_shipping_last_name()),
+            'license'  => $license,
+            'address'  => trim($order->get_shipping_address_1() . ' ' . $order->get_shipping_address_2()),
+            'city'     => $order->get_shipping_city(),
+            'state'    => $order->get_shipping_state(),
+            'postcode' => $order->get_shipping_postcode(),
+            'phone'    => method_exists($order, 'get_shipping_phone') ? $order->get_shipping_phone() : '',
+            'email'    => '',
+        ];
+        return apply_filters('ffla_requests_order_dealer', $dealer, $order);
+    }
+
+    /**
+     * Validate FFL input: ['source' => 'order'] reuses the order's dealer,
+     * otherwise name, license, city and state are required.
+     *
+     * @return array|null
+     */
+    public static function clean_ffl(array $input, $order = null)
+    {
+        if ('order' === ($input['source'] ?? '')) {
+            return self::order_dealer($order);
+        }
+        $clean = static function ($key, $max = 120) use ($input) {
+            return substr(sanitize_text_field((string) ($input[$key] ?? '')), 0, $max);
+        };
+        $ffl = [
+            'source'   => 'customer',
+            'name'     => $clean('name'),
+            'license'  => self::license($input['license'] ?? ''),
+            'address'  => $clean('address', 200),
+            'city'     => $clean('city', 80),
+            'state'    => $clean('state', 40),
+            'postcode' => $clean('postcode', 20),
+            'phone'    => $clean('phone', 40),
+            'email'    => sanitize_email((string) ($input['email'] ?? '')),
+        ];
+        if ('' === $ffl['name'] || '' === $ffl['license'] || '' === $ffl['city'] || '' === $ffl['state']) {
+            return null;
+        }
+        return $ffl;
+    }
+
+    public static function ffl($request): array
+    {
+        $ffl = json_decode((string) ($request->ffl ?? ''), true);
+        return is_array($ffl) ? $ffl : [];
+    }
+
+    public static function set_ffl($request, array $ffl, array $actor): void
+    {
+        global $wpdb;
+        $t = self::tables();
+        $wpdb->update($t['requests'], ['ffl' => wp_json_encode($ffl)], ['id' => (int) $request->id]);
+        self::add_event($request, 'note', $actor, false, sprintf('FFL dealer for the return: %s (%s), %s %s', $ffl['name'], self::format_license($ffl['license']), $ffl['city'], $ffl['state']));
+    }
+
+    /* ── Rating and refunds ────────────────────────────────────────────── */
+
+    public static function rate($request, int $rating, string $comment): void
+    {
+        global $wpdb;
+        if (self::is_open($request->status)) {
+            throw new InvalidArgumentException(__('You can rate a request once it is closed.', 'ffl-funnels-addons'));
+        }
+        if ($rating < 1 || $rating > 5) {
+            throw new InvalidArgumentException(__('Choose 1 to 5 stars.', 'ffl-funnels-addons'));
+        }
+        $comment = function_exists('mb_substr') ? mb_substr(self::clean_text($comment), 0, 1000) : substr(self::clean_text($comment), 0, 1000);
+        $t = self::tables();
+        $wpdb->update($t['requests'], ['rating' => $rating, 'rating_comment' => $comment, 'rated_at' => current_time('mysql', true)], ['id' => (int) $request->id]);
+        self::add_event($request, 'rating', ['type' => 'customer', 'id' => get_current_user_id()], false, $comment, ['rating' => $rating]);
+        do_action('ffla_request_rated', self::get((int) $request->id), $rating, $comment);
+    }
+
+    public static function add_refund_total($request, float $amount): void
+    {
+        global $wpdb;
+        $t = self::tables();
+        $wpdb->query($wpdb->prepare("UPDATE {$t['requests']} SET refund_total = refund_total + %f WHERE id = %d", $amount, (int) $request->id)); // phpcs:ignore
     }
 
     /* ── Access ────────────────────────────────────────────────────────── */

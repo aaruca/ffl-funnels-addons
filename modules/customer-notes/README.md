@@ -4,7 +4,7 @@ This extends the existing **Customer Notes** module; its module ID remains `cust
 
 ## Enable only what the store needs
 
-Open **FFL Funnels → Customer & Order Management**. The seven collapsible settings sections submit together with **Save settings**. Every switch includes a description. Customer Notes remains enabled by default; the twenty new feature switches start **off**. Enabling a dependent switch alone does not activate its prerequisite.
+Open **FFL Funnels → Customer & Order Management**. The eight collapsible settings sections submit together with **Save settings**. Every switch includes a description. Customer Notes remains enabled by default; the twenty new feature switches start **off**. Enabling a dependent switch alone does not activate its prerequisite.
 
 1. **General:** internal notes follow the customer across orders. They do not become customer messages, invoice text or packing-slip text.
 2. **Pickup:** enable Ready for Pickup, optionally the preparation checklist and partial collection. Enter the actual collection location, address, hours and instructions. These texts do not change shipping zones, the FFL selector, prices or tax addresses. There is one configured communication location per store; verify it matches the order's pickup location.
@@ -109,14 +109,56 @@ The step tracker follows the type: issues go **Received → Under review → Res
   - **Delete** permanently (spam or test data only).
 - **Orders:** the **Customer requests** box on Edit Order lists the order's requests and opens **New request** — for customers who call or email. Staff requests skip the time windows; the confirmation email is optional. The orders list gets a **Requests** column.
 
+### Return rules and restocking fees
+
+**WooCommerce → Requests → Rules & replies.** A rule targets a product category (including its subcategories) or a product tag and can make products **not returnable** (for example Ammunition, a `used` or `special-order` tag), give them their own **return window** or a **restocking fee**. When several rules match one product, it is not returnable if any rule says so, the shortest window and the highest fee apply; products without a rule use **Return window** and **Default restocking fee** from settings. Each line uses its own window, so a 60-day accessory can still be returned on an order whose firearm is past 30 days.
+
+Customers see non-returnable lines greyed out with the rule's note, and the fee per line. While they fill in the form they get a fee estimate ("Restocking fee: $17.70. Estimated refund: $100.30, shipping not included"). The fee is never charged for damaged, defective, wrong or not-as-described items (filter `ffla_requests_fee_waived_reasons`). The fee percent is saved on each request line at submission. Staff-created requests may include non-returnable items as an exception (flagged on the request).
+
+### Required photos
+
+With **Require a photo** on (default), customers must attach at least one photo when the reason is Arrived damaged, Wrong item received or Defective (filter `ffla_requests_photo_reasons`). Requires customer uploads.
+
+### FFL dealer on firearm returns
+
+With **Ask for the FFL dealer on firearm returns** on (default), a return that includes a firearm needs the dealer who will ship it back: either **the dealer from the order** (read from g-FFL Checkout's `_shipping_fflno` and the shipping address; filter `ffla_requests_order_dealer`) or another dealer (name, 15-character FFL license number, city and state required; address, ZIP, phone and email optional). The license format is checked, not verified with the ATF. Staff see and can edit the dealer on the request, and it is included in staff emails and the CSV export.
+
+### Return shipping
+
+**Approve return** accepts an optional prepaid **return label** (PDF or image) and its tracking number. The customer sees **Your return label** with a download link, and while the return is approved they can enter the carrier (UPS, USPS, FedEx, DHL, other; filter `ffla_requests_carriers`) and tracking number themselves. Staff are emailed when the customer adds it, the inbox marks the request **Shipped back**, and both sides get a carrier tracking link. Staff can add or correct tracking in **Return shipment**.
+
+### Refund from the request
+
+The **Refund** box on an open request issues a normal WooCommerce refund (`wc_create_refund`): quantities prefilled from the request, the restocking fee prefilled from the request lines (kept by refunding the rest of each line's price and tax), an optional extra amount such as shipping, automatic refund through the payment gateway when it supports refunds (or a manual refund record), optional restock, and optionally **close the request** — as Refunded, or Partially refunded when a fee was kept or not every requested unit was refunded — with the refund details in the customer's resolution note and email. Staff must tick **I confirm this refund**; a form token stops a double submit from refunding twice, and the amount can never exceed what is left to refund on the order. The total updates live as staff change quantities or the fee.
+
+### Saved replies
+
+Staff insert saved replies into a reply or a resolution note from a dropdown, then edit before sending. Manage them in **Rules & replies**; placeholders `{first_name}`, `{customer_name}`, `{request_number}`, `{order_number}`, `{store_name}`, `{request_link}`. Five starter replies are included.
+
+### Automation (Request Automation settings, off by default)
+
+- **Remind customers who have not replied:** one email after the request has been *Waiting for customer* for N days (1–30, default 3), quoting the last staff message. Requires customer emails.
+- **Close requests with no reply:** after N days of *Waiting for customer* (1–90, default 14) the request closes as **Closed — no reply from customer**; the customer can still reply for 14 days to reopen.
+- **Daily staff digest:** from 8:00 store time, one email to the staff notification addresses listing overdue requests and requests waiting for a staff reply; skipped when there is nothing to report.
+
+Runs on an hourly WP-Cron event (`ffla_requests_hourly`) that exists only while one of these is on; each run handles at most 50 requests per job.
+
+### Ratings
+
+With **Rating after closing** on (default), customers rate a closed request 1–5 stars with an optional comment from their request page (not for cancelled or duplicate requests); they can change it later. Ratings of 1–2 email staff. The closing email invites them to rate. Staff see the rating on the request and in the inbox.
+
+### Report
+
+**WooCommerce → Requests → Report** (last 30 / 90 days, 12 months, all time): requests opened (issues vs returns), still open, median time to first staff reply and to close, amount refunded from requests, average rating; top reasons, outcomes, products with the most returned units and issues with their **return rate** (units returned ÷ units sold in the period, from WooCommerce Analytics), and the rating distribution. **Export CSV** downloads the period's requests (spreadsheet formulas in customer text are neutralised).
+
 ### Security, storage and privacy
 
 - The shortcode HTML holds no customer data, so full-page caching is safe; everything loads through `admin-ajax.php`.
 - Access: a signed order ticket (2 hours) after the number + email check, the request's key from the emailed link (HMAC of a per-request secret with the site's auth salt), or being the signed-in order customer (nonce fetched over AJAX).
 - Abuse limits: honeypot and minimum fill time; lookups 10 per 15 minutes per visitor and 15 per hour per order; 6 new requests and 30 attempts per hour per visitor; 30 replies per hour; at most 5 open and 25 total requests per order. Behind a proxy that hides visitor IPs, return the real IP with the `ffla_requests_client_ip` filter.
 - Uploads must be real JPEG, PNG or PDF matching the extension. Photos are re-encoded (max 2000 px), which removes location and device data. Files are stored in private database tables (not the Media Library) and served with `nosniff`; PDFs download as attachments.
-- Data lives in `wp_ffla_requests`, `wp_ffla_request_events` and `wp_ffla_request_files`. **Tools → Export Personal Data** includes requests; **Erase Personal Data** anonymizes closed requests (name, email, customer messages and files) and keeps open ones. Tables are dropped on plugin deletion only if **Delete requests on uninstall** is on.
-- Hooks: `ffla_request_created`, `ffla_request_status_changed`, `ffla_request_closed`, `ffla_request_assigned`; filters `ffla_requests_reasons`, `ffla_requests_resolutions`, `ffla_requests_preferences`, `ffla_requests_find_order` (custom order numbers; `_order_number` meta is supported) and `ffla_requests_client_ip`.
+- Data lives in `wp_ffla_requests`, `wp_ffla_request_events` and `wp_ffla_request_files` (schema version 2 adds return shipping, FFL dealer, refund total, reminder and rating columns; it upgrades automatically). Rules and saved replies are the `ffla_requests_rules` and `ffla_requests_replies` options. **Tools → Export Personal Data** includes requests; **Erase Personal Data** anonymizes closed requests (name, email, customer messages and files) and keeps open ones. Tables are dropped on plugin deletion only if **Delete requests on uninstall** is on.
+- Hooks: `ffla_request_created`, `ffla_request_status_changed`, `ffla_request_closed`, `ffla_request_assigned`, `ffla_request_rated`; filters `ffla_requests_carriers`, `ffla_requests_tracking_link`, `ffla_requests_order_dealer`, `ffla_requests_fee_waived_reasons`, `ffla_requests_photo_reasons`, filters `ffla_requests_reasons`, `ffla_requests_resolutions`, `ffla_requests_preferences`, `ffla_requests_find_order` (custom order numbers; `_order_number` meta is supported) and `ffla_requests_client_ip`.
 - MCP (WordPress 6.9+ with the MCP Adapter): `ffla-requests/list`, `ffla-requests/get` and `ffla-requests/add-note` for staff with `manage_woocommerce`. Replies, status changes and closing stay in the admin screen.
 
 ## Verification

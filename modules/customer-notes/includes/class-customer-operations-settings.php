@@ -47,6 +47,15 @@ class FFLA_Customer_Operations_Settings
             'requests_guests' => ['Customer Requests', 'Guest access', 'Customers verify with the order number and billing email, so guest checkouts can use the form too. When off, customers must sign in.', 'switch', true],
             'requests_account_tab' => ['Customer Requests', 'My Account tab', 'Adds a tab to the customer’s My Account where signed-in customers see all their requests and start a new one from any of their orders.', 'switch', true],
             'requests_account_label' => ['Customer Requests', 'My Account tab name', 'Menu label for that tab, e.g. “Returns & Issues” or “Order Help”. A number in brackets shows when a request is waiting for the customer’s reply.', 'text', 'Returns & Issues'],
+            'requests_photo_required' => ['Customer Requests', 'Require a photo', 'Customers must attach at least one photo when the reason is “Arrived damaged”, “Wrong item received” or “Defective”. Requires customer photos.', 'switch', true],
+            'requests_restocking_fee' => ['Customer Requests', 'Default restocking fee (%)', '0–100. Applied to returns for customer reasons (no longer needed, ordered by mistake, doesn’t fit, other) and waived for damaged, defective, wrong or not-as-described items. Override per category or tag in Requests → Rules & replies. 0 = no fee.', 'number', 0],
+            'requests_ffl_required' => ['Customer Requests', 'Ask for the FFL dealer on firearm returns', 'Customers returning a firearm confirm the dealer from their order or enter the dealer that will ship it back (name, license, city, state).', 'switch', true],
+            'requests_ratings' => ['Customer Requests', 'Rating after closing', 'Customers can rate the help they got (1–5 stars and a comment) once a request is closed. Ratings of 1–2 are emailed to staff.', 'switch', true],
+            'requests_auto_remind' => ['Request Automation', 'Remind customers who have not replied', 'Email the customer once when a request has been “Waiting for customer” for the days below. Requires customer emails and working WP-Cron.', 'switch', false],
+            'requests_remind_days' => ['Request Automation', 'Remind after (days)', '1–30 days of waiting for the customer.', 'number', 3],
+            'requests_auto_close' => ['Request Automation', 'Close requests with no reply', 'Close requests that stayed “Waiting for customer” for the days below with the outcome “Closed — no reply from customer”. The customer can still reply for 14 days to reopen.', 'switch', false],
+            'requests_close_days' => ['Request Automation', 'Close after (days)', '1–90 days of waiting for the customer. Set it longer than the reminder.', 'number', 14],
+            'requests_staff_digest' => ['Request Automation', 'Daily staff digest', 'Each morning, email the staff notification addresses a list of overdue requests and requests waiting for a staff reply. Skipped when there is nothing to report.', 'switch', false],
             'requests_uploads' => ['Customer Requests', 'Customer photos and documents', 'Up to 3 JPEG, PNG or PDF files per message (20 per request). Photos are resized and their location data removed. Stored in private database tables, never in the Media Library.', 'switch', true],
             'requests_emails' => ['Customer Requests', 'Customer emails', 'Confirmation with a private tracking link, staff replies, return approval with instructions, the status updates you choose to announce and the closing resolution. Staff are notified of new requests and customer replies either way.', 'switch', true],
             'requests_issue_days' => ['Customer Requests', 'Issue window (days)', 'How many days after the order date customers can report an issue (1–365). Staff can always open one.', 'number', 90],
@@ -63,7 +72,8 @@ class FFLA_Customer_Operations_Settings
     /** Allowed range for number fields. */
     public static function range(string $key): array
     {
-        $ranges = ['reminder_max' => [1, 5], 'reminder_days' => [1, 30], 'requests_issue_days' => [1, 365], 'requests_return_days' => [1, 365]];
+        $ranges = ['reminder_max' => [1, 5], 'reminder_days' => [1, 30], 'requests_issue_days' => [1, 365], 'requests_return_days' => [1, 365],
+            'requests_restocking_fee' => [0, 100], 'requests_remind_days' => [1, 30], 'requests_close_days' => [1, 90]];
         return $ranges[$key] ?? [1, 30];
     }
 
@@ -83,7 +93,7 @@ class FFLA_Customer_Operations_Settings
         $dependencies = ['partial_pickup'=>['pickup'], 'require_serials'=>['serials'], 'invoice_serials'=>['serials'], 'packing_serials'=>['serials'],
             'attachments'=>['followup'], 'auto_ready'=>['pickup','notifications'], 'pickup_reminders'=>['auto_ready'], 'staff_reminders'=>['followup','notifications'],
             'customer_serials'=>['serials','customer_progress'], 'customer_help'=>['followup','customer_progress'], 'customer_tracking'=>['customer_progress'], 'customer_documents'=>['customer_progress'],
-            'requests_issues'=>['requests'], 'requests_returns'=>['requests'], 'requests_guests'=>['requests'], 'requests_account_tab'=>['requests'], 'requests_uploads'=>['requests'], 'requests_emails'=>['requests']];
+            'requests_issues'=>['requests'], 'requests_returns'=>['requests'], 'requests_guests'=>['requests'], 'requests_account_tab'=>['requests'], 'requests_uploads'=>['requests'], 'requests_photo_required'=>['requests','requests_uploads'], 'requests_ffl_required'=>['requests'], 'requests_ratings'=>['requests'], 'requests_auto_remind'=>['requests','requests_emails'], 'requests_auto_close'=>['requests'], 'requests_staff_digest'=>['requests'], 'requests_emails'=>['requests']];
         foreach ($dependencies[$key] ?? [] as $dependency) { if (!self::enabled($dependency)) { return false; } }
         return true;
     }

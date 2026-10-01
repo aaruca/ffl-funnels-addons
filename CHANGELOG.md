@@ -2,6 +2,25 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [Unreleased]
+
+### Added
+- Customer requests: **return rules** per product category (including subcategories) or tag — not returnable, own return window, restocking fee — managed in Requests → Rules & replies, with a default restocking fee setting. Customers see non-returnable lines with the reason, the fee per line and a live estimate of fee and refund; the fee is waived for damaged, defective, wrong or not-as-described items and saved on each request line.
+- Customer requests: **required photo** for "Arrived damaged", "Wrong item received" and "Defective".
+- Customer requests: **FFL dealer on firearm returns** — the dealer from the order (g-FFL Checkout) or another dealer with license number; shown and editable for staff, included in emails and export.
+- Customer requests: **return shipping** — prepaid return label (PDF or image) and tracking on approval; customers enter carrier and tracking themselves, staff get an email, the inbox marks "Shipped back", carrier tracking links on both sides.
+- Customer requests: **refund from the request** — WooCommerce refund for the requested items with restocking fee, extra amount, gateway or manual refund, restock and optional close as Refunded / Partially refunded; confirmation required, protected against double submits and over-refunds.
+- Customer requests: **saved replies** with placeholders, inserted into replies and resolution notes.
+- Customer requests: **automation** (new Request Automation settings, off by default) — one reminder after N days waiting for the customer, auto-close with "Closed — no reply from customer", and a daily staff digest of overdue and waiting requests.
+- Customer requests: **ratings** after closing (1–5 stars and a comment), low ratings emailed to staff.
+- Customer requests: **report** (Requests → Report) with volume, median first reply and time to close, refunds, ratings, top reasons, outcomes and product return rates, plus CSV export.
+
+### Changed
+- Customer requests: database schema version 2 (upgrades automatically).
+
+### Fixed
+- Customer requests: text with a plain `%s` or `%%` placeholder rendered literally in the storefront form.
+
 ## [1.53.0] - 2026-10-01
 
 ### Added

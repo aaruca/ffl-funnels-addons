@@ -34,8 +34,8 @@
 .ffla-req-form { margin: 0 0 16px; }
 .ffla-req-field { display: flex; flex-direction: column; gap: 6px; margin: 0 0 14px; }
 .ffla-req-field label, .ffla-req-fieldset legend, .ffla-req-confirm label { font-weight: 600; }
-.ffla-req input[type=text], .ffla-req input[type=email], .ffla-req select, .ffla-req textarea { width: 100%; max-width: 100%; }
-.ffla-req :is(input[type=text], input[type=email], select, textarea) { font: inherit; font-size: 1rem; line-height: 1.4; padding: 9px 11px; border: 1px solid rgba(0, 0, 0, .3); border-radius: 6px; background: #fff; color: #1e1e1e; min-height: 42px; }
+.ffla-req input[type=text], .ffla-req input[type=email], .ffla-req input[type=tel], .ffla-req select, .ffla-req textarea { width: 100%; max-width: 100%; }
+.ffla-req :is(input[type=text], input[type=email], input[type=tel], input[type=number], select, textarea) { font: inherit; font-size: 1rem; line-height: 1.4; padding: 9px 11px; border: 1px solid rgba(0, 0, 0, .3); border-radius: 6px; background: #fff; color: #1e1e1e; min-height: 42px; }
 .ffla-req input[type=file] { font-size: .9em; max-width: 100%; }
 .ffla-req textarea { resize: vertical; min-height: 90px; }
 .ffla-req-fieldset { border: 1px solid var(--ffla-req-border); border-radius: 8px; padding: 10px 14px; margin: 0 0 14px; }
@@ -126,4 +126,31 @@
 	.ffla-req-tracker li { flex-direction: row; text-align: left; }
 	.ffla-req-tracker li::before { display: none; }
 	.ffla-req-item { flex-direction: column; align-items: flex-start; }
+}
+
+/* Return rules, fees, FFL, return shipping and rating. */
+.ffla-req-why { display: block; margin-top: 2px; }
+.ffla-req-tag--fee { background: #eef4ff; color: #1d4f91; }
+.ffla-req-need { color: var(--ffla-req-bad); font-size: .9em; font-weight: 600; }
+.ffla-req-ffl { display: flex; flex-direction: column; gap: 4px; }
+.ffla-req-ffl[hidden] { display: none; }
+.ffla-req-ffl > p { margin: 0 0 6px; }
+.ffla-req-ffl-choice { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 10px; }
+.ffla-req-radio { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.ffla-req-radio input { margin-top: 4px; }
+.ffla-req-ffl-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; }
+.ffla-req-ffl-grid[hidden] { display: none; }
+.ffla-req-ffl-grid .ffla-req-field--name, .ffla-req-ffl-grid .ffla-req-field--license, .ffla-req-ffl-grid .ffla-req-field--address { grid-column: 1 / -1; }
+.ffla-req-inline { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(0, 2fr); gap: 0 14px; }
+.ffla-req-ship, .ffla-req-rate { border: 1px solid var(--ffla-req-border); border-radius: 8px; padding: 4px 16px 6px; margin: 0 0 16px; }
+.ffla-req-labels { margin-top: 10px; }
+.ffla-req-download { font-weight: 600; }
+.ffla-req-stars { color: #b8860b; letter-spacing: 2px; font-size: 1.15em; }
+.ffla-req-stars-input { display: flex; gap: 2px; border: 0; padding: 0; margin: 0 0 10px; }
+.ffla-req-star input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.ffla-req-star label { font-size: 2rem; line-height: 1; color: rgba(0, 0, 0, .25); cursor: pointer; padding: 0 2px; }
+.ffla-req-star.is-on label { color: #b8860b; }
+.ffla-req-star input:focus-visible + label { outline: 2px solid var(--ffla-req-accent); outline-offset: 2px; border-radius: 4px; }
+@media (max-width: 540px) {
+	.ffla-req-ffl-grid, .ffla-req-inline { grid-template-columns: minmax(0, 1fr); }
 }

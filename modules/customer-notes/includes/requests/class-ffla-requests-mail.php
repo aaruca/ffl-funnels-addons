@@ -22,6 +22,7 @@ class FFLA_Requests_Mail
     {
         add_action('ffla_request_created', [__CLASS__, 'on_created'], 10, 2);
         add_action('ffla_request_assigned', [__CLASS__, 'staff_assigned'], 10, 2);
+        add_action('ffla_request_rated', [__CLASS__, 'staff_low_rating'], 10, 3);
     }
 
     public static function customer_enabled(): bool
@@ -140,7 +141,11 @@ class FFLA_Requests_Mail
             /* translators: %d: days */
             __('If something is still not right, reply from your request page within %d days and we will reopen it.', 'ffl-funnels-addons'),
             FFLA_Requests::REOPEN_DAYS
-        )) . '</p>' . self::summary($request);
+        )) . '</p>';
+        if (FFLA_Customer_Operations_Settings::enabled('requests_ratings') && 'withdrawn' !== $request->resolution) {
+            $body .= '<p>' . esc_html__('How did we do? You can rate our help from your request page — it takes a few seconds.', 'ffl-funnels-addons') . '</p>';
+        }
+        $body .= self::summary($request);
 
         self::send_customer($request,
             /* translators: %s: request number */
@@ -172,7 +177,124 @@ class FFLA_Requests_Mail
         );
     }
 
+    /** One reminder when we have been waiting on the customer. */
+    public static function customer_reminder($request): bool
+    {
+        if (!self::customer_enabled()) {
+            return false;
+        }
+        $last = '';
+        foreach (array_reverse(FFLA_Requests::events((int) $request->id, true)) as $event) {
+            if ('staff' === $event->actor_type && '' !== trim((string) $event->body)) {
+                $last = (string) $event->body;
+                break;
+            }
+        }
+        $body = '<p>' . esc_html(sprintf(
+            /* translators: 1: first name, 2: request number */
+            __('Hi%1$s, we are waiting for your reply on request %2$s so we can keep going.', 'ffl-funnels-addons'),
+            self::first_name($request),
+            $request->number
+        )) . '</p>' . self::quote($last) . self::summary($request);
+
+        return self::send_customer($request,
+            /* translators: %s: request number */
+            sprintf(__('Reminder: we need your reply on request %s', 'ffl-funnels-addons'), $request->number),
+            __('We need your reply', 'ffl-funnels-addons'),
+            $body,
+            'reminder'
+        );
+    }
+
     /* ── Staff ─────────────────────────────────────────────────────────── */
+
+    public static function staff_tracking($request): void
+    {
+        $link = FFLA_Requests::tracking_link((string) $request->return_carrier, (string) $request->return_tracking);
+        $body = '<p>' . esc_html(sprintf(
+            /* translators: 1: request number, 2: carrier, 3: tracking number */
+            __('The customer shipped the return for request %1$s: %2$s %3$s.', 'ffl-funnels-addons'),
+            $request->number,
+            FFLA_Requests::carriers()[$request->return_carrier] ?? $request->return_carrier,
+            $request->return_tracking
+        )) . '</p>' . ($link ? '<p><a href="' . esc_url($link) . '">' . esc_html__('Track the package', 'ffl-funnels-addons') . '</a></p>' : '')
+            . '<p><a href="' . esc_url(self::admin_request_url($request)) . '">' . esc_html__('Open the request', 'ffl-funnels-addons') . '</a></p>';
+
+        self::send_staff($request, self::staff_recipients($request),
+            /* translators: %s: request number */
+            sprintf(__('Return shipped for request %s', 'ffl-funnels-addons'), $request->number),
+            __('Return on its way', 'ffl-funnels-addons'),
+            $body,
+            'staff_tracking'
+        );
+    }
+
+    public static function staff_low_rating($request, int $rating, string $comment): void
+    {
+        if ($rating > 2) {
+            return;
+        }
+        $body = '<p>' . esc_html(sprintf(
+            /* translators: 1: request number, 2: rating */
+            __('The customer rated request %1$s %2$d out of 5.', 'ffl-funnels-addons'),
+            $request->number,
+            $rating
+        )) . '</p>' . self::quote($comment)
+            . '<p><a href="' . esc_url(self::admin_request_url($request)) . '">' . esc_html__('Open the request', 'ffl-funnels-addons') . '</a></p>';
+
+        self::send_staff($request, self::staff_recipients($request),
+            /* translators: %s: request number */
+            sprintf(__('Low rating on request %s', 'ffl-funnels-addons'), $request->number),
+            __('Low customer rating', 'ffl-funnels-addons'),
+            $body,
+            'staff_low_rating'
+        );
+    }
+
+    /**
+     * Daily list of overdue requests and requests waiting for staff.
+     *
+     * @param array $overdue  Request rows.
+     * @param array $awaiting Request rows.
+     */
+    public static function staff_digest(array $overdue, array $awaiting): bool
+    {
+        $to = self::staff_recipients((object) ['assignee' => 0]);
+        if (!$to || (!$overdue && !$awaiting)) {
+            return false;
+        }
+        $table = static function (array $rows, string $title): string {
+            if (!$rows) {
+                return '';
+            }
+            $html = '<h3>' . esc_html($title) . ' (' . count($rows) . ')</h3><table cellspacing="0" cellpadding="6" style="width:100%;border:1px solid #e5e5e5;border-collapse:collapse;">';
+            foreach ($rows as $r) {
+                $html .= '<tr><td style="border:1px solid #e5e5e5;"><a href="' . esc_url(self::admin_request_url($r)) . '">' . esc_html($r->number) . '</a></td>'
+                    . '<td style="border:1px solid #e5e5e5;">' . esc_html(FFLA_Requests::type_label($r->type) . ' · ' . FFLA_Requests::status_label($r->status)) . '</td>'
+                    . '<td style="border:1px solid #e5e5e5;">' . esc_html($r->customer_name) . '</td>'
+                    . '<td style="border:1px solid #e5e5e5;">' . esc_html($r->due_at ? FFLA_Requests::local_time($r->due_at, get_option('date_format')) : FFLA_Requests::local_time($r->updated_at, get_option('date_format'))) . '</td></tr>';
+            }
+            return $html . '</table>';
+        };
+        $body = $table($overdue, __('Overdue', 'ffl-funnels-addons')) . $table($awaiting, __('Waiting for a staff reply', 'ffl-funnels-addons'))
+            . '<p><a href="' . esc_url(admin_url('admin.php?page=ffla-requests&view=awaiting')) . '">' . esc_html__('Open the requests inbox', 'ffl-funnels-addons') . '</a></p>';
+
+        $subject = sprintf(
+            /* translators: 1: overdue count, 2: waiting count */
+            __('Requests digest: %1$d overdue, %2$d waiting for a reply', 'ffl-funnels-addons'),
+            count($overdue),
+            count($awaiting)
+        );
+        try {
+            if (function_exists('WC') && WC() && method_exists(WC(), 'mailer')) {
+                $mailer = WC()->mailer();
+                return (bool) $mailer->send(implode(',', $to), $subject, $mailer->wrap_message(__('Customer requests', 'ffl-funnels-addons'), $body));
+            }
+            return (bool) wp_mail($to, $subject, $body, ['Content-Type: text/html; charset=UTF-8']);
+        } catch (Throwable $e) {
+            return false;
+        }
+    }
 
     public static function staff_new($request): void
     {
@@ -336,7 +458,17 @@ class FFLA_Requests_Mail
             $rows[__('Prefers', 'ffl-funnels-addons')] = FFLA_Requests::preferences()[$request->preferred] ?? $request->preferred;
         }
         foreach (FFLA_Requests::items($request) as $line) {
-            $rows[] = $line['name'] . ' × ' . $line['qty'] . (!empty($line['firearm']) ? ' — ' . __('FIREARM: return through an FFL', 'ffl-funnels-addons') : '');
+            $rows[] = $line['name'] . ' × ' . $line['qty'] . (!empty($line['firearm']) ? ' — ' . __('FIREARM: return through an FFL', 'ffl-funnels-addons') : '')
+                . (!empty($line['fee']) ? ' — ' . sprintf(
+                    /* translators: %s: percent */
+                    __('restocking fee %s%%', 'ffl-funnels-addons'),
+                    wc_format_decimal($line['fee'], 2, true)
+                ) : '')
+                . (!empty($line['exception']) ? ' — ' . __('outside return rules', 'ffl-funnels-addons') : '');
+        }
+        $ffl = FFLA_Requests::ffl($request);
+        if ($ffl) {
+            $rows[__('FFL dealer', 'ffl-funnels-addons')] = $ffl['name'] . ' · ' . FFLA_Requests::format_license($ffl['license']) . ' · ' . trim($ffl['city'] . ', ' . $ffl['state'], ', ');
         }
         $html = '<ul>';
         foreach ($rows as $label => $value) {

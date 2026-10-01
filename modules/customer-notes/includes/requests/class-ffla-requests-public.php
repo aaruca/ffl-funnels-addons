@@ -24,7 +24,7 @@ defined('ABSPATH') || exit;
 class FFLA_Requests_Public
 {
     const TICKET_TTL = 7200;
-    const ENDPOINTS = ['session', 'verify', 'submit', 'view', 'reply', 'withdraw', 'file'];
+    const ENDPOINTS = ['session', 'verify', 'submit', 'view', 'reply', 'withdraw', 'file', 'tracking', 'rate'];
 
     public static function boot(): void
     {
@@ -214,6 +214,10 @@ class FFLA_Requests_Public
             'reasons'       => ['issue' => FFLA_Requests::reasons('issue'), 'return' => FFLA_Requests::reasons('return')],
             'preferences'   => FFLA_Requests::preferences(),
             'firearmNotice' => self::fill_notice((string) FFLA_Requests::setting('requests_firearm_notice')),
+            'photoReasons'  => array_values(FFLA_Requests_Rules::photo_reasons()),
+            'feeWaived'     => array_values(FFLA_Requests_Rules::fee_waived_reasons()),
+            'fflRequired'   => FFLA_Customer_Operations_Settings::enabled('requests_ffl_required'),
+            'carriers'      => FFLA_Requests::carriers(),
             'i18n'          => self::strings(),
         ];
     }
@@ -288,6 +292,48 @@ class FFLA_Requests_Public
             'stepSkipped'     => __('Skipped', 'ffl-funnels-addons'),
             'none'            => __('None yet.', 'ffl-funnels-addons'),
             'charsLeft'       => __('characters left', 'ffl-funnels-addons'),
+            'photoNeeded'     => __('Please add at least one photo for this reason.', 'ffl-funnels-addons'),
+            'photoHint'       => __('A photo is required for this reason.', 'ffl-funnels-addons'),
+            'cannotReturn'    => __('Not returnable', 'ffl-funnels-addons'),
+            /* translators: %s: percent */
+            'feeLine'         => __('Restocking fee %s%%', 'ffl-funnels-addons'),
+            'feeTitle'        => __('Restocking fee', 'ffl-funnels-addons'),
+            /* translators: 1: fee amount, 2: estimated refund */
+            'feeEstimate'     => __('Restocking fee: %1$s. Estimated refund for these items: %2$s (shipping not included). The store confirms the final amount.', 'ffl-funnels-addons'),
+            'feeWaivedNote'   => __('No restocking fee for this reason.', 'ffl-funnels-addons'),
+            'fflTitle'        => __('FFL dealer for the return', 'ffl-funnels-addons'),
+            'fflHint'         => __('A firearm can only come back through a licensed dealer. Tell us which dealer will ship it.', 'ffl-funnels-addons'),
+            'fflUseOrder'     => __('Use the dealer from this order', 'ffl-funnels-addons'),
+            'fflOther'        => __('Use a different dealer', 'ffl-funnels-addons'),
+            'fflName'         => __('Dealer name', 'ffl-funnels-addons'),
+            'fflLicense'      => __('FFL license number', 'ffl-funnels-addons'),
+            'fflLicenseHint'  => __('15 characters, e.g. 1-23-456-78-9A-12345', 'ffl-funnels-addons'),
+            'fflAddress'      => __('Street address', 'ffl-funnels-addons'),
+            'fflCity'         => __('City', 'ffl-funnels-addons'),
+            'fflState'        => __('State', 'ffl-funnels-addons'),
+            'fflZip'          => __('ZIP code', 'ffl-funnels-addons'),
+            'fflPhone'        => __('Dealer phone', 'ffl-funnels-addons'),
+            'fflEmail'        => __('Dealer email', 'ffl-funnels-addons'),
+            'fflMissing'      => __('Enter the dealer name, a valid 15-character FFL license number, city and state.', 'ffl-funnels-addons'),
+            'fflLabel'        => __('Return dealer (FFL)', 'ffl-funnels-addons'),
+            'label'           => __('Your return label', 'ffl-funnels-addons'),
+            'labelHint'       => __('Print it and attach it to the package.', 'ffl-funnels-addons'),
+            'shipTitle'       => __('Shipped it back?', 'ffl-funnels-addons'),
+            'shipHint'        => __('Enter the carrier and tracking number so we can watch for your package.', 'ffl-funnels-addons'),
+            'carrier'         => __('Carrier', 'ffl-funnels-addons'),
+            'trackingNumber'  => __('Tracking number', 'ffl-funnels-addons'),
+            'saveTracking'    => __('Save tracking number', 'ffl-funnels-addons'),
+            'shipment'        => __('Return shipment', 'ffl-funnels-addons'),
+            'trackPackage'    => __('Track package', 'ffl-funnels-addons'),
+            'rateTitle'       => __('How did we do?', 'ffl-funnels-addons'),
+            'rateComment'     => __('Anything we could do better? (optional)', 'ffl-funnels-addons'),
+            'rateSend'        => __('Send rating', 'ffl-funnels-addons'),
+            /* translators: %d: stars */
+            'rateStars'       => __('%d out of 5 stars', 'ffl-funnels-addons'),
+            'rateThanks'      => __('Thanks for your feedback!', 'ffl-funnels-addons'),
+            'rateChange'      => __('Change rating', 'ffl-funnels-addons'),
+            'rateChoose'      => __('Choose 1 to 5 stars.', 'ffl-funnels-addons'),
+            'refunded'        => __('Refunded so far', 'ffl-funnels-addons'),
         ];
     }
 
@@ -451,6 +497,9 @@ class FFLA_Requests_Public
                 $data['items'][absint($item_id)] = absint($qty);
             }
         }
+        if (isset($_POST['ffl']) && is_array($_POST['ffl'])) {
+            $data['ffl'] = array_map(static function ($v) { return is_scalar($v) ? (string) $v : ''; }, (array) wp_unslash($_POST['ffl']));
+        }
         $source = !empty($_POST['embedded']) && FFLA_Requests::is_owner($order) ? 'my_account' : 'public_form';
         // phpcs:enable
 
@@ -464,6 +513,7 @@ class FFLA_Requests_Public
         try {
             $files = FFLA_Customer_Operations_Settings::enabled('requests_uploads') ? FFLA_Requests_Files::from_request('files') : [];
             $prepared = $files ? FFLA_Requests_Files::prepare($files, 0) : [];
+            $data['files_count'] = count($prepared);
             $request = FFLA_Requests::create($order, $data, $source, $actor);
         } catch (InvalidArgumentException $e) {
             self::fail($e->getMessage());
@@ -534,6 +584,44 @@ class FFLA_Requests_Public
         $request = FFLA_Requests::get((int) $request->id);
         FFLA_Requests_Mail::staff_reply($request, trim(__('The customer cancelled this request.', 'ffl-funnels-addons') . "\n\n" . $note));
         wp_send_json_success(['kind' => 'request', 'request' => self::view_payload($request)]);
+    }
+
+    /** Customer enters the carrier and tracking number of their return. */
+    public static function ajax_tracking(): void
+    {
+        self::guard();
+        if (self::honeypot() || !FFLA_Requests::rate_limit('reply', 30, HOUR_IN_SECONDS)) {
+            self::fail(__('Too many messages from this connection. Please try again later.', 'ffl-funnels-addons'), 429);
+        }
+        $request = self::authorize();
+        if (!self::can_track($request)) {
+            self::fail(__('Tracking can be added once your return is approved.', 'ffl-funnels-addons'));
+        }
+        try {
+            // phpcs:ignore WordPress.Security.NonceVerification
+            FFLA_Requests::set_return_tracking($request, sanitize_key(wp_unslash($_POST['carrier'] ?? '')), sanitize_text_field(wp_unslash($_POST['tracking'] ?? '')), ['type' => 'customer', 'id' => get_current_user_id()]);
+        } catch (InvalidArgumentException $e) {
+            self::fail($e->getMessage());
+        }
+        $request = FFLA_Requests::get((int) $request->id);
+        FFLA_Requests_Mail::staff_tracking($request);
+        wp_send_json_success(['kind' => 'request', 'request' => self::view_payload($request)]);
+    }
+
+    public static function ajax_rate(): void
+    {
+        self::guard();
+        if (!FFLA_Customer_Operations_Settings::enabled('requests_ratings') || !FFLA_Requests::rate_limit('reply', 30, HOUR_IN_SECONDS)) {
+            self::fail(__('Ratings are not available.', 'ffl-funnels-addons'));
+        }
+        $request = self::authorize();
+        try {
+            // phpcs:ignore WordPress.Security.NonceVerification
+            FFLA_Requests::rate($request, absint($_POST['rating'] ?? 0), (string) wp_unslash($_POST['comment'] ?? ''));
+        } catch (InvalidArgumentException $e) {
+            self::fail($e->getMessage());
+        }
+        wp_send_json_success(['kind' => 'request', 'request' => self::view_payload(FFLA_Requests::get((int) $request->id))]);
     }
 
     public static function ajax_file(): void
@@ -649,8 +737,13 @@ class FFLA_Requests_Public
                 'ordered'   => $line['ordered'],
                 'available' => $line['available'],
                 'firearm'   => $line['firearm'],
+                'price'     => $line['price'],
+                'fee'       => $line['fee'],
+                'blocked'   => $line['blocked'],
+                'note'      => $line['note'],
             ];
         }
+        $dealer = FFLA_Requests::order_dealer($order);
 
         return [
             'kind'        => 'order',
@@ -661,6 +754,14 @@ class FFLA_Requests_Public
                 'status' => wc_get_order_status_name($order->get_status()),
                 'total'  => self::plain_price($order->get_total(), $order->get_currency()),
                 'items'  => $items,
+                'dealer' => $dealer ? self::dealer_summary($dealer) : '',
+            ],
+            'currency'    => [
+                'symbol'   => html_entity_decode(get_woocommerce_currency_symbol($order->get_currency()), ENT_QUOTES, 'UTF-8'),
+                'decimals' => wc_get_price_decimals(),
+                'dec'      => wc_get_price_decimal_separator(),
+                'thou'     => wc_get_price_thousand_separator(),
+                'format'   => html_entity_decode(get_woocommerce_price_format(), ENT_QUOTES, 'UTF-8'),
             ],
             'eligibility' => FFLA_Requests::eligibility($order),
             'requests'    => array_map([__CLASS__, 'summary'], array_reverse(FFLA_Requests::for_order($order->get_id()))),
@@ -690,13 +791,18 @@ class FFLA_Requests_Public
         $resolutions = FFLA_Requests::resolutions();
 
         $files_by_event = [];
+        $labels = [];
         foreach (FFLA_Requests_Files::for_request((int) $request->id, true) as $file) {
-            $files_by_event[(int) $file->event_id][] = [
+            $entry = [
                 'name'  => $file->name,
                 'url'   => add_query_arg(['action' => 'ffla_req_file', 'number' => rawurlencode($request->number), 'key' => $key, 'file' => $file->token], admin_url('admin-ajax.php')),
                 'image' => 0 === strpos($file->mime, 'image/'),
                 'size'  => size_format((int) $file->size),
             ];
+            $files_by_event[(int) $file->event_id][] = $entry;
+            if ('label' === $file->kind) {
+                $labels[] = $entry;
+            }
         }
 
         $timeline = [];
@@ -724,6 +830,12 @@ class FFLA_Requests_Public
                     break;
                 case 'reopen':
                     $title = __('Request reopened', 'ffl-funnels-addons');
+                    break;
+                case 'tracking':
+                    $title = $mine ? __('You shipped the return', 'ffl-funnels-addons') : __('Return tracking added', 'ffl-funnels-addons');
+                    break;
+                case 'refund':
+                    $title = __('Refund issued', 'ffl-funnels-addons');
                     break;
                 default:
                     continue 2;
@@ -760,8 +872,20 @@ class FFLA_Requests_Public
             'created'       => FFLA_Requests::local_time($request->created_at),
             'updated'       => FFLA_Requests::local_time($request->updated_at),
             'items'         => array_map(static function ($line) {
-                return ['name' => (string) $line['name'], 'qty' => (int) $line['qty'], 'firearm' => !empty($line['firearm'])];
+                return ['name' => (string) $line['name'], 'qty' => (int) $line['qty'], 'firearm' => !empty($line['firearm']), 'fee' => (float) ($line['fee'] ?? 0)];
             }, FFLA_Requests::items($request)),
+            'labels'        => $labels,
+            'shipment'      => '' !== (string) $request->return_tracking ? [
+                'carrier'  => FFLA_Requests::carriers()[$request->return_carrier] ?? $request->return_carrier,
+                'tracking' => $request->return_tracking,
+                'link'     => FFLA_Requests::tracking_link((string) $request->return_carrier, (string) $request->return_tracking),
+            ] : null,
+            'canTrack'      => self::can_track($request),
+            'ffl'           => ($ffl = FFLA_Requests::ffl($request)) ? self::dealer_summary($ffl) : '',
+            'refunded'      => (float) $request->refund_total > 0 ? self::plain_price((float) $request->refund_total, (string) (wc_get_order((int) $request->order_id) ? wc_get_order((int) $request->order_id)->get_currency() : get_woocommerce_currency())) : '',
+            'rating'        => (int) $request->rating,
+            'ratingComment' => (string) $request->rating_comment,
+            'canRate'       => !$open && FFLA_Customer_Operations_Settings::enabled('requests_ratings') && !in_array($request->resolution, ['withdrawn', 'duplicate'], true),
             'firearmNotice' => $request->has_firearm ? FFLA_Requests_Mail::fill((string) FFLA_Requests::setting('requests_firearm_notice'), $request) : '',
             'instructions'  => $instructions,
             'resolution'    => $open ? null : [
@@ -819,6 +943,22 @@ class FFLA_Requests_Public
             $steps[] = ['key' => $key, 'label' => $label, 'state' => $state];
         }
         return $steps;
+    }
+
+    /** Customers add return tracking while the return is approved. */
+    private static function can_track($request): bool
+    {
+        return 'return' === $request->type && 'approved' === $request->status;
+    }
+
+    /** One-line dealer description: "Name · FFL 1-23-… · City, ST". */
+    private static function dealer_summary(array $ffl): string
+    {
+        return implode(' · ', array_filter([
+            (string) ($ffl['name'] ?? ''),
+            'FFL ' . FFLA_Requests::format_license((string) ($ffl['license'] ?? '')),
+            trim(($ffl['city'] ?? '') . ', ' . ($ffl['state'] ?? ''), ', '),
+        ]));
     }
 
     private static function can_withdraw($request): bool

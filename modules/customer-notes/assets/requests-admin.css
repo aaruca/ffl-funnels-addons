@@ -72,3 +72,29 @@
 @media (max-width: 1100px) {
 	.ffla-req-cols { grid-template-columns: minmax(0, 1fr); }
 }
+.ffla-req-two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 0 10px; }
+.ffla-req-replies { margin: 0 0 6px; }
+.ffla-req-replies select { width: auto; max-width: 70%; }
+.ffla-req-refund table input[type=number] { width: 70px; }
+.ffla-req-refund tr.is-requested td:first-child { font-weight: 600; }
+.ffla-req-refund-total { font-size: 14px; margin: 10px 0 4px; }
+.ffla-req-confirm-box { background: #fcf9e8; border-left: 3px solid #996800; padding: 8px 10px; }
+.ffla-req-box details > summary, details.ffla-req-box > summary { cursor: pointer; }
+details.ffla-req-box[open] > summary { margin-bottom: 10px; }
+.ffla-req-shipped { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; font-weight: 600; background: #e3f4e8; color: #135c28; }
+.ffla-req-stars { color: #b8860b; letter-spacing: 1px; }
+.ffla-req-repeater td { vertical-align: top; }
+.ffla-req-repeater select, .ffla-req-repeater input[type=text], .ffla-req-repeater textarea { width: 100%; }
+.ffla-req-repeater input[type=number] { width: 90px; }
+.ffla-req-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 12px 0 16px; }
+.ffla-req-kpi { background: #fff; border: 1px solid #c3c4c7; border-radius: 4px; padding: 12px 14px; }
+.ffla-req-kpi .label { display: block; color: #50575e; font-size: 12px; }
+.ffla-req-kpi .value { display: block; font-size: 24px; font-weight: 600; line-height: 1.3; margin-top: 2px; }
+.ffla-req-kpi .sub { display: block; color: #646970; font-size: 12px; }
+.ffla-req-report-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.ffla-req-bar { position: relative; height: 8px; border-radius: 4px; background: #dce8f5; min-width: 80px; }
+.ffla-req-report .num { text-align: right; font-variant-numeric: tabular-nums; }
+.ffla-req-bar span { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: #2271b1; }
+@media (max-width: 1100px) { .ffla-req-report-grid { grid-template-columns: minmax(0, 1fr); } }
+.ffla-req-two > span { min-width: 0; }
+.ffla-req-two input, .ffla-req-two select { width: 100%; max-width: 100%; box-sizing: border-box; }
