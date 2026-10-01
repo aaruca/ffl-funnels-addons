@@ -249,6 +249,11 @@ if (in_array('customer-notes', $ffla_active_modules, true)) {
     );
 }
 
+// ── Order Badges cleanup ───────────────────────────────────────────
+// Badges are derived live from product tags; the only stored data is this
+// settings option, so it is removed whether or not the module is active.
+delete_option('ffla_order_badges_settings');
+
 // ── FFLA core cleanup ──────────────────────────────────────────────
 delete_option('ffla_active_modules');
 delete_transient('ffla_github_release');

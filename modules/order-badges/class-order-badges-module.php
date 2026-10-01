@@ -12,8 +12,12 @@
  *
  * Badges appear on the Orders list (a "Product Type" column, HPOS + legacy) and
  * the Edit Order screen (an order-level set in the details panel plus a per-item
- * set on each product line). Classification is derived live from product tags,
- * so it never goes stale when tags change.
+ * set on each product line).
+ *
+ * Classification is derived live from each product's CURRENT tags, not frozen
+ * at purchase time: it never goes stale, and changing a product's tags also
+ * re-labels its past orders. The settings page says so. Line items whose
+ * product no longer exists get no badge at all (there are no tags to read).
  *
  * @package FFL_Funnels_Addons
  */
@@ -22,17 +26,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-class Order_Source_Module extends FFLA_Module {
+class Order_Badges_Module extends FFLA_Module {
 
 	/** Settings page slug + option + save wiring. */
 	private const PAGE_SLUG   = 'ffla-order-badges';
-	private const OPTION      = 'ffla_order_source_settings';
-	private const SAVE_ACTION = 'ffla_os_save_settings';
-	private const NONCE       = 'ffla_os_settings';
-	private const NONCE_FIELD = '_ffla_os_nonce';
+	private const OPTION      = 'ffla_order_badges_settings';
+	private const SAVE_ACTION = 'ffla_ob_save_settings';
+	private const NONCE       = 'ffla_ob_settings';
+	private const NONCE_FIELD = '_ffla_ob_nonce';
+
+	/** Settings-page script handle (enqueued here, with its real dependencies). */
+	private const SETTINGS_SCRIPT = 'ffla-order-badges-settings';
 
 	/** Orders-list column id. */
-	private const COLUMN = 'ffla_order_source';
+	private const COLUMN = 'ffla_order_badges';
 
 	/** Default colour for the "Online Only" badge. */
 	private const DEFAULT_ONLINE_COLOR = '#0f766e';
@@ -47,7 +54,7 @@ class Order_Source_Module extends FFLA_Module {
 	private $settings_cache = null;
 
 	public function get_id(): string {
-		return 'order-source';
+		return 'order-badges';
 	}
 
 	public function get_name(): string {
@@ -88,7 +95,8 @@ class Order_Source_Module extends FFLA_Module {
 	}
 
 	public function deactivate(): void {
-		// Nothing to clean up.
+		// Nothing to clean up. Settings are kept so re-activating restores them;
+		// uninstall.php removes the option.
 	}
 
 	public function get_admin_pages(): array {
@@ -124,18 +132,20 @@ class Order_Source_Module extends FFLA_Module {
 		$saved = get_option( self::OPTION, array() );
 		$saved = is_array( $saved ) ? $saved : array();
 
-		$badge_tags   = isset( $saved['badge_tags'] ) && is_array( $saved['badge_tags'] ) ? array_map( 'intval', $saved['badge_tags'] ) : array();
-		$instore_tags = isset( $saved['instore_tags'] ) && is_array( $saved['instore_tags'] ) ? array_map( 'intval', $saved['instore_tags'] ) : array();
+		$badge_tags   = array_map( 'absint', self::scalar_list( $saved['badge_tags'] ?? array() ) );
+		$instore_tags = array_map( 'absint', self::scalar_list( $saved['instore_tags'] ?? array() ) );
 		$colors       = array();
 		if ( isset( $saved['colors'] ) && is_array( $saved['colors'] ) ) {
 			foreach ( $saved['colors'] as $id => $color ) {
-				$hex = sanitize_hex_color( (string) $color );
+				$hex = is_scalar( $color ) ? sanitize_hex_color( (string) $color ) : '';
 				if ( $hex ) {
 					$colors[ (int) $id ] = $hex;
 				}
 			}
 		}
-		$online_color = isset( $saved['online_color'] ) ? sanitize_hex_color( (string) $saved['online_color'] ) : '';
+		$online_color = isset( $saved['online_color'] ) && is_scalar( $saved['online_color'] )
+			? sanitize_hex_color( (string) $saved['online_color'] )
+			: '';
 
 		$this->settings_cache = array(
 			'badge_tags'   => $badge_tags,
@@ -148,6 +158,21 @@ class Order_Source_Module extends FFLA_Module {
 	}
 
 	/**
+	 * The scalar values of a submitted/saved list. Anything else (a nested array
+	 * from a crafted request, an object) is dropped rather than cast.
+	 *
+	 * @param mixed $value
+	 * @return array<int, scalar>
+	 */
+	private static function scalar_list( $value ): array {
+		if ( ! is_array( $value ) ) {
+			return array();
+		}
+
+		return array_values( array_filter( $value, 'is_scalar' ) );
+	}
+
+	/**
 	 * The colour configured for a badge tag, or a stable palette default.
 	 */
 	private function color_for( int $term_id ): string {
@@ -156,7 +181,7 @@ class Order_Source_Module extends FFLA_Module {
 			return $settings['colors'][ $term_id ];
 		}
 		$index = array_search( $term_id, $settings['badge_tags'], true );
-		$index = false === $index ? 0 : $index;
+		$index = false === $index ? 0 : (int) $index;
 
 		return self::PALETTE[ $index % count( self::PALETTE ) ];
 	}
@@ -171,10 +196,49 @@ class Order_Source_Module extends FFLA_Module {
 			array(
 				'taxonomy'   => 'product_tag',
 				'hide_empty' => false,
+				'orderby'    => 'name',
 			)
 		);
 
 		return is_array( $terms ) ? $terms : array();
+	}
+
+	/**
+	 * The subset of $ids that are real product tags, in submitted order.
+	 *
+	 * Looks up only the submitted IDs, so saving stays cheap on stores with
+	 * thousands of tags.
+	 *
+	 * @param array<int, scalar> $ids
+	 * @return int[]
+	 */
+	private function existing_tag_ids( array $ids ): array {
+		$ids = array_values( array_unique( array_filter( array_map( 'absint', $ids ) ) ) );
+		if ( empty( $ids ) ) {
+			return array(); // An empty `include` would match every tag.
+		}
+
+		$found = get_terms(
+			array(
+				'taxonomy'   => 'product_tag',
+				'include'    => $ids,
+				'hide_empty' => false,
+				'fields'     => 'ids',
+			)
+		);
+		if ( ! is_array( $found ) ) {
+			return array();
+		}
+		$found = array_map( 'intval', $found );
+
+		return array_values(
+			array_filter(
+				$ids,
+				static function ( $id ) use ( $found ) {
+					return in_array( $id, $found, true );
+				}
+			)
+		);
 	}
 
 	/**
@@ -184,7 +248,7 @@ class Order_Source_Module extends FFLA_Module {
 		$settings = $this->settings();
 		$tags     = $this->all_product_tags();
 
-		if ( isset( $_GET['ffla_os_saved'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only UI flag.
+		if ( isset( $_GET['ffla_ob_saved'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only UI flag.
 			FFLA_Admin::render_notice( 'success', __( 'Settings saved.', 'ffl-funnels-addons' ) );
 		}
 
@@ -195,7 +259,7 @@ class Order_Source_Module extends FFLA_Module {
 			return;
 		}
 		?>
-		<form class="ffla-os-settings" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+		<form class="ffla-ob-settings" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 			<input type="hidden" name="action" value="<?php echo esc_attr( self::SAVE_ACTION ); ?>">
 			<?php wp_nonce_field( self::NONCE, self::NONCE_FIELD ); ?>
 
@@ -203,8 +267,9 @@ class Order_Source_Module extends FFLA_Module {
 				<div class="wb-card__header"><h3><?php esc_html_e( 'Badge tags', 'ffl-funnels-addons' ); ?></h3></div>
 				<div class="wb-card__body">
 					<p class="wb-field__desc"><?php esc_html_e( 'Choose which product tags appear as badges on orders. Each product shows a badge for every one of its tags selected here. Pick a colour for each.', 'ffl-funnels-addons' ); ?></p>
+					<p class="wb-field__desc"><?php esc_html_e( 'Badges follow each product\'s current tags, so changing a product\'s tags also updates the badges on its past orders.', 'ffl-funnels-addons' ); ?></p>
 
-					<select id="ffla-os-badge-tags" class="ffla-os-tags" name="ffla_os[badge_tags][]" multiple
+					<select id="ffla-ob-badge-tags" class="ffla-ob-tags" name="ffla_ob[badge_tags][]" multiple
 						data-placeholder="<?php esc_attr_e( 'Select tags…', 'ffl-funnels-addons' ); ?>">
 						<?php foreach ( $tags as $tag ) : ?>
 							<option value="<?php echo esc_attr( (string) $tag->term_id ); ?>" <?php selected( in_array( (int) $tag->term_id, $settings['badge_tags'], true ) ); ?>>
@@ -213,7 +278,7 @@ class Order_Source_Module extends FFLA_Module {
 						<?php endforeach; ?>
 					</select>
 
-					<div id="ffla-os-color-rows" class="ffla-os-color-rows">
+					<div id="ffla-ob-color-rows" class="ffla-ob-color-rows">
 						<?php
 						foreach ( $settings['badge_tags'] as $term_id ) {
 							$term = get_term( $term_id, 'product_tag' );
@@ -232,7 +297,7 @@ class Order_Source_Module extends FFLA_Module {
 				<div class="wb-card__body">
 					<p class="wb-field__desc"><?php esc_html_e( 'Tags that mean a product is physically in-store. If a product has none of these tags, it is treated as "Online Only". Leave empty to not show the Online Only badge.', 'ffl-funnels-addons' ); ?></p>
 
-					<select id="ffla-os-instore-tags" class="ffla-os-tags" name="ffla_os[instore_tags][]" multiple
+					<select id="ffla-ob-instore-tags" class="ffla-ob-tags" name="ffla_ob[instore_tags][]" multiple
 						data-placeholder="<?php esc_attr_e( 'Select tags…', 'ffl-funnels-addons' ); ?>">
 						<?php foreach ( $tags as $tag ) : ?>
 							<option value="<?php echo esc_attr( (string) $tag->term_id ); ?>" <?php selected( in_array( (int) $tag->term_id, $settings['instore_tags'], true ) ); ?>>
@@ -241,10 +306,10 @@ class Order_Source_Module extends FFLA_Module {
 						<?php endforeach; ?>
 					</select>
 
-					<div class="ffla-os-online-color">
-						<label class="ffla-os-color-row__name" for="ffla-os-online-color-input"><?php esc_html_e( 'Online Only badge colour', 'ffl-funnels-addons' ); ?></label>
-						<input type="text" id="ffla-os-online-color-input" class="ffla-os-color"
-							name="ffla_os[online_color]" value="<?php echo esc_attr( $settings['online_color'] ); ?>">
+					<div class="ffla-ob-online-color">
+						<label class="ffla-ob-color-row__name" for="ffla-ob-online-color-input"><?php esc_html_e( 'Online Only badge colour', 'ffl-funnels-addons' ); ?></label>
+						<input type="text" id="ffla-ob-online-color-input" class="ffla-ob-color"
+							name="ffla_ob[online_color]" value="<?php echo esc_attr( $settings['online_color'] ); ?>">
 					</div>
 				</div>
 			</div>
@@ -261,9 +326,9 @@ class Order_Source_Module extends FFLA_Module {
 	 */
 	private function render_color_row( int $term_id, string $name, string $color ): void {
 		?>
-		<div class="ffla-os-color-row" data-id="<?php echo esc_attr( (string) $term_id ); ?>">
-			<span class="ffla-os-color-row__name"><?php echo esc_html( $name ); ?></span>
-			<input type="text" class="ffla-os-color" name="ffla_os[colors][<?php echo esc_attr( (string) $term_id ); ?>]" value="<?php echo esc_attr( $color ); ?>">
+		<div class="ffla-ob-color-row" data-id="<?php echo esc_attr( (string) $term_id ); ?>">
+			<span class="ffla-ob-color-row__name"><?php echo esc_html( $name ); ?></span>
+			<input type="text" class="ffla-ob-color" name="ffla_ob[colors][<?php echo esc_attr( (string) $term_id ); ?>]" value="<?php echo esc_attr( $color ); ?>">
 		</div>
 		<?php
 	}
@@ -278,35 +343,19 @@ class Order_Source_Module extends FFLA_Module {
 		check_admin_referer( self::NONCE, self::NONCE_FIELD );
 
 		// Nonce verified above; the nested array is validated field-by-field below
-		// (intval against existing tag IDs, sanitize_hex_color for colours).
+		// (only scalars, IDs checked against real tags, sanitize_hex_color for colours).
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-		$raw = isset( $_POST['ffla_os'] ) && is_array( $_POST['ffla_os'] ) ? wp_unslash( $_POST['ffla_os'] ) : array();
+		$raw = isset( $_POST['ffla_ob'] ) && is_array( $_POST['ffla_ob'] ) ? wp_unslash( $_POST['ffla_ob'] ) : array();
 
-		$valid_ids = array_map( 'intval', wp_list_pluck( $this->all_product_tags(), 'term_id' ) );
-
-		$badge_tags = array();
-		if ( isset( $raw['badge_tags'] ) && is_array( $raw['badge_tags'] ) ) {
-			foreach ( $raw['badge_tags'] as $id ) {
-				$id = (int) $id;
-				if ( in_array( $id, $valid_ids, true ) ) {
-					$badge_tags[] = $id;
-				}
-			}
-		}
-
-		$instore_tags = array();
-		if ( isset( $raw['instore_tags'] ) && is_array( $raw['instore_tags'] ) ) {
-			foreach ( $raw['instore_tags'] as $id ) {
-				$id = (int) $id;
-				if ( in_array( $id, $valid_ids, true ) ) {
-					$instore_tags[] = $id;
-				}
-			}
-		}
+		$badge_tags   = $this->existing_tag_ids( self::scalar_list( $raw['badge_tags'] ?? array() ) );
+		$instore_tags = $this->existing_tag_ids( self::scalar_list( $raw['instore_tags'] ?? array() ) );
 
 		$colors = array();
 		if ( isset( $raw['colors'] ) && is_array( $raw['colors'] ) ) {
 			foreach ( $raw['colors'] as $id => $color ) {
+				if ( ! is_scalar( $color ) ) {
+					continue;
+				}
 				$id  = (int) $id;
 				$hex = sanitize_hex_color( (string) $color );
 				if ( $hex && in_array( $id, $badge_tags, true ) ) {
@@ -315,14 +364,16 @@ class Order_Source_Module extends FFLA_Module {
 			}
 		}
 
-		$online_color = isset( $raw['online_color'] ) ? sanitize_hex_color( (string) $raw['online_color'] ) : '';
+		$online_color = isset( $raw['online_color'] ) && is_scalar( $raw['online_color'] )
+			? sanitize_hex_color( (string) $raw['online_color'] )
+			: '';
 
 		update_option(
 			self::OPTION,
 			array(
-				'badge_tags'   => array_values( array_unique( $badge_tags ) ),
+				'badge_tags'   => $badge_tags,
 				'colors'       => $colors,
-				'instore_tags' => array_values( array_unique( $instore_tags ) ),
+				'instore_tags' => $instore_tags,
 				'online_color' => $online_color ? $online_color : self::DEFAULT_ONLINE_COLOR,
 			)
 		);
@@ -331,7 +382,7 @@ class Order_Source_Module extends FFLA_Module {
 			add_query_arg(
 				array(
 					'page'          => self::PAGE_SLUG,
-					'ffla_os_saved' => '1',
+					'ffla_ob_saved' => '1',
 				),
 				admin_url( 'admin.php' )
 			)
@@ -340,26 +391,36 @@ class Order_Source_Module extends FFLA_Module {
 	}
 
 	/**
-	 * Enqueue the settings-page assets (select2 + the WP colour picker). The
-	 * module's own JS/CSS are auto-loaded by FFLA_Admin on this page.
+	 * Enqueue the settings-page assets: the WP colour picker, selectWoo (select2)
+	 * when WooCommerce provides it, and the page script with those as declared
+	 * dependencies. The module stylesheet is auto-loaded by FFLA_Admin.
+	 *
+	 * @param string $hook Current admin page hook suffix.
 	 */
-	public function enqueue_settings_assets( string $hook ): void {
-		$screen = get_current_screen();
-		if ( ! $screen instanceof WP_Screen || false === strpos( (string) $screen->id, self::PAGE_SLUG ) ) {
+	public function enqueue_settings_assets( $hook ): void {
+		if ( false === strpos( (string) $hook, self::PAGE_SLUG ) ) {
 			return;
 		}
 
+		$deps = array( 'jquery', 'wp-color-picker' );
 		wp_enqueue_style( 'wp-color-picker' );
-		wp_enqueue_script( 'wp-color-picker' );
 
 		// WooCommerce bundles selectWoo (select2); use it when present for a nice
 		// searchable multi-select, otherwise the native control still works.
 		if ( wp_script_is( 'selectWoo', 'registered' ) ) {
-			wp_enqueue_script( 'selectWoo' );
+			$deps[] = 'selectWoo';
 		}
 		if ( wp_style_is( 'woocommerce_admin_styles', 'registered' ) ) {
 			wp_enqueue_style( 'woocommerce_admin_styles' );
 		}
+
+		wp_enqueue_script(
+			self::SETTINGS_SCRIPT,
+			$this->get_url() . 'admin/js/order-badges-settings.js',
+			$deps,
+			FFLA_VERSION,
+			true
+		);
 	}
 
 	/* =====================================================================
@@ -394,7 +455,7 @@ class Order_Source_Module extends FFLA_Module {
 	 * @param string       $column
 	 * @param int|WC_Order $order_or_id
 	 */
-	public function render_column( string $column, $order_or_id ): void {
+	public function render_column( $column, $order_or_id ): void {
 		if ( self::COLUMN !== $column ) {
 			return;
 		}
@@ -414,7 +475,7 @@ class Order_Source_Module extends FFLA_Module {
 	/**
 	 * Order-level badge set in the order details panel, under the General fields.
 	 *
-	 * @param WC_Order $order
+	 * @param WC_Order|int $order
 	 */
 	public function render_order_badge( $order ): void {
 		if ( ! $order instanceof WC_Order ) {
@@ -429,8 +490,8 @@ class Order_Source_Module extends FFLA_Module {
 			return;
 		}
 
-		echo '<p class="form-field form-field-wide ffla-os-order-badge">'
-			. '<span class="ffla-os-order-badge__label">' . esc_html__( 'Product Type', 'ffl-funnels-addons' ) . '</span>'
+		echo '<p class="form-field form-field-wide ffla-ob-order-badge">'
+			. '<span class="ffla-ob-order-badge__label">' . esc_html__( 'Product Type', 'ffl-funnels-addons' ) . '</span>'
 			. $badges // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built from escaped parts.
 			. '</p>';
 	}
@@ -456,17 +517,29 @@ class Order_Source_Module extends FFLA_Module {
 	/**
 	 * Badge set for a single product: matched badge tags + whether it is online.
 	 *
+	 * A product that no longer exists (deleted after the order was placed) has no
+	 * tags to classify by, so it gets no badges — rather than being reported as
+	 * "Online Only" just because it lacks an in-store tag.
+	 *
 	 * @return array{tags: array<int, array{name: string, color: string}>, online: bool}
 	 */
 	private function product_badge_set( int $product_id ): array {
+		$empty = array(
+			'tags'   => array(),
+			'online' => false,
+		);
 		if ( $product_id <= 0 ) {
-			return array(
-				'tags'   => array(),
-				'online' => false,
-			);
+			return $empty;
 		}
 		if ( isset( $this->product_cache[ $product_id ] ) ) {
 			return $this->product_cache[ $product_id ];
+		}
+
+		// Line items store the parent product ID (variations included), so a
+		// missing or non-product post means the product was deleted.
+		if ( 'product' !== get_post_type( $product_id ) ) {
+			$this->product_cache[ $product_id ] = $empty;
+			return $empty;
 		}
 
 		$settings = $this->settings();
@@ -507,7 +580,7 @@ class Order_Source_Module extends FFLA_Module {
 	 */
 	private function order_badge_set( WC_Order $order ): array {
 		$items = $order->get_items();
-		$this->prime_product_terms( $items );
+		$this->prime_product_caches( $items );
 
 		$tags       = array();
 		$any_online = false;
@@ -532,13 +605,13 @@ class Order_Source_Module extends FFLA_Module {
 	}
 
 	/**
-	 * Warm the product-tag cache for a set of line items in a single query, so
-	 * the per-item get_the_terms() calls are cache hits instead of one query
-	 * each. Only primes products not already memoised this request.
+	 * Warm the post and product-tag caches for a set of line items in bulk, so
+	 * the per-item get_post_type() / get_the_terms() calls are cache hits instead
+	 * of a query each. Only primes products not already memoised this request.
 	 *
 	 * @param array<int, WC_Order_Item> $items
 	 */
-	private function prime_product_terms( array $items ): void {
+	private function prime_product_caches( array $items ): void {
 		$ids = array();
 		foreach ( $items as $item ) {
 			if ( ! $item instanceof WC_Order_Item_Product ) {
@@ -549,9 +622,15 @@ class Order_Source_Module extends FFLA_Module {
 				$ids[ $product_id ] = $product_id;
 			}
 		}
-		if ( $ids ) {
-			update_object_term_cache( array_values( $ids ), 'product' );
+		if ( ! $ids ) {
+			return;
 		}
+
+		$ids = array_values( $ids );
+		if ( function_exists( '_prime_post_caches' ) ) {
+			_prime_post_caches( $ids, false, false );
+		}
+		update_object_term_cache( $ids, 'product' );
 	}
 
 	/* =====================================================================
@@ -593,16 +672,28 @@ class Order_Source_Module extends FFLA_Module {
 			return '';
 		}
 
-		return '<span class="ffla-os-badges">' . implode( '', $badges ) . '</span>';
+		return '<span class="ffla-ob-badges">' . implode( '', $badges ) . '</span>';
 	}
 
 	/**
-	 * Normalised key for de-duplicating badges by label: lowercased with all
-	 * non-alphanumerics stripped, so "Online only", "Online Only" and "online-only"
-	 * are treated as the same badge.
+	 * Normalised key for de-duplicating badges by label.
+	 *
+	 * Case-folded (multibyte-safe) with whitespace and punctuation removed, so
+	 * "Online only", "Online Only" and "online-only" are the same badge. Letters,
+	 * digits and symbols in any script are kept, so "Tienda Física", "🔥 Hot" vs
+	 * "⭐ Hot", or non-Latin tag names stay distinct. If normalising leaves
+	 * nothing (or the label is not valid UTF-8), the lowercased label itself is
+	 * the key, so two different labels can never collapse into one.
 	 */
 	private function badge_key( string $label ): string {
-		return (string) preg_replace( '/[^a-z0-9]+/', '', strtolower( $label ) );
+		$lower = function_exists( 'mb_strtolower' ) ? mb_strtolower( $label, 'UTF-8' ) : strtolower( $label );
+		$key   = preg_replace( '/[^\p{L}\p{N}\p{S}]+/u', '', $lower );
+
+		if ( ! is_string( $key ) || '' === $key ) {
+			return 'raw:' . trim( $lower );
+		}
+
+		return $key;
 	}
 
 	/**
@@ -611,7 +702,7 @@ class Order_Source_Module extends FFLA_Module {
 	 * fallback for browsers without color-mix.
 	 */
 	private function badge_html( string $label, string $color ): string {
-		return '<span class="ffla-os-badge" style="--ffla-c:' . esc_attr( $color ) . '">'
+		return '<span class="ffla-ob-badge" style="--ffla-c:' . esc_attr( $color ) . '">'
 			. esc_html( $label )
 			. '</span>';
 	}
@@ -629,15 +720,15 @@ class Order_Source_Module extends FFLA_Module {
 			return;
 		}
 		?>
-		<style id="ffla-order-source-css">
-			.ffla-os-badges {
+		<style id="ffla-order-badges-css">
+			.ffla-ob-badges {
 				display: inline-flex;
 				flex-wrap: wrap;
 				gap: 4px;
 				max-width: 100%;
 				vertical-align: middle;
 			}
-			.ffla-os-badge {
+			.ffla-ob-badge {
 				display: inline-flex;
 				line-height: 2.5em;
 				padding: 0 1em;
@@ -654,8 +745,8 @@ class Order_Source_Module extends FFLA_Module {
 				background: color-mix(in srgb, var(--ffla-c, #777) 16%, white);
 				color: color-mix(in srgb, var(--ffla-c, #777) 72%, black);
 			}
-			td.name .ffla-os-badges { margin-top: 4px; }
-			.ffla-os-order-badge .ffla-os-order-badge__label {
+			td.name .ffla-ob-badges { margin-top: 4px; }
+			.ffla-ob-order-badge .ffla-ob-order-badge__label {
 				display: block;
 				font-weight: 600;
 				margin-bottom: 4px;

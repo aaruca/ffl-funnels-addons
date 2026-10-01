@@ -93,7 +93,7 @@ if (!class_exists('FFL_Funnels_Addons')):
             require_once FFLA_PATH . 'modules/ga4-bridge/class-ga4-bridge-module.php';
             require_once FFLA_PATH . 'modules/google-merchant-policy/class-google-merchant-policy-module.php';
             require_once FFLA_PATH . 'modules/white-label/class-white-label-module.php';
-            require_once FFLA_PATH . 'modules/order-source/class-order-source-module.php';
+            require_once FFLA_PATH . 'modules/order-badges/class-order-badges-module.php';
         }
 
         /**
@@ -116,7 +116,7 @@ if (!class_exists('FFL_Funnels_Addons')):
             $this->registry->register(new Ga4_Bridge_Module());
             $this->registry->register(new Google_Merchant_Policy_Module());
             $this->registry->register(new White_Label_Module());
-            $this->registry->register(new Order_Source_Module());
+            $this->registry->register(new Order_Badges_Module());
         }
 
         /**

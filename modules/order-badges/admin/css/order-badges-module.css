@@ -2,32 +2,32 @@
  * Order Badges — settings page styles.
  */
 
-.ffla-os-tags {
+.ffla-ob-tags {
     width: 100%;
     max-width: 520px;
     min-height: 34px;
 }
 
-.ffla-os-color-rows {
+.ffla-ob-color-rows {
     margin-top: 12px;
     display: flex;
     flex-direction: column;
     gap: 8px;
 }
 
-.ffla-os-color-row {
+.ffla-ob-color-row {
     display: flex;
     align-items: center;
     gap: 10px;
 }
 
-.ffla-os-color-row__name {
+.ffla-ob-color-row__name {
     min-width: 160px;
     font-weight: 600;
     font-size: 13px;
 }
 
-.ffla-os-online-color {
+.ffla-ob-online-color {
     margin-top: 14px;
     display: flex;
     align-items: center;

@@ -18,30 +18,30 @@
     }
 
     $(function () {
-        var $badge = $('#ffla-os-badge-tags');
+        var $badge = $('#ffla-ob-badge-tags');
         if (!$badge.length) {
             return;
         }
-        var $rows = $('#ffla-os-color-rows');
+        var $rows = $('#ffla-ob-color-rows');
 
         // Searchable multi-selects when WooCommerce's selectWoo (or select2) is present.
         if ($.fn.selectWoo) {
-            $('.ffla-os-tags').selectWoo({ width: '100%' });
+            $('.ffla-ob-tags').selectWoo({ width: '100%' });
         } else if ($.fn.select2) {
-            $('.ffla-os-tags').select2({ width: '100%' });
+            $('.ffla-ob-tags').select2({ width: '100%' });
         }
 
         // Colour pickers already on the page (saved rows + Online Only colour).
-        $('.ffla-os-settings .ffla-os-color').each(function () {
+        $('.ffla-ob-settings .ffla-ob-color').each(function () {
             initColorPicker($(this));
         });
 
         function addColorRow(id, name) {
             var color = PALETTE[$rows.children().length % PALETTE.length];
-            var $row = $('<div class="ffla-os-color-row"></div>').attr('data-id', id);
-            $('<span class="ffla-os-color-row__name"></span>').text(name).appendTo($row);
-            var $input = $('<input type="text" class="ffla-os-color">')
-                .attr('name', 'ffla_os[colors][' + id + ']')
+            var $row = $('<div class="ffla-ob-color-row"></div>').attr('data-id', id);
+            $('<span class="ffla-ob-color-row__name"></span>').text(name).appendTo($row);
+            var $input = $('<input type="text" class="ffla-ob-color">')
+                .attr('name', 'ffla_ob[colors][' + id + ']')
                 .val(color);
             $row.append($input);
             $rows.append($row);
@@ -54,11 +54,11 @@
             $badge.find('option:selected').each(function () {
                 var id = $(this).val();
                 selected[id] = true;
-                if (!$rows.find('.ffla-os-color-row[data-id="' + id + '"]').length) {
-                    addColorRow(id, $(this).text());
+                if (!$rows.find('.ffla-ob-color-row[data-id="' + id + '"]').length) {
+                    addColorRow(id, $.trim($(this).text()));
                 }
             });
-            $rows.find('.ffla-os-color-row').each(function () {
+            $rows.find('.ffla-ob-color-row').each(function () {
                 if (!selected[String($(this).data('id'))]) {
                     $(this).remove();
                 }
