@@ -561,23 +561,48 @@ class Order_Source_Module extends FFLA_Module {
 	/**
 	 * Render a badge set (tag badges + an optional Online Only badge) as HTML.
 	 *
+	 * De-duplicates by normalised label, so the same badge never appears twice —
+	 * e.g. an "Online only" badge tag and the synthetic "Online Only" status badge
+	 * collapse into one.
+	 *
 	 * @param array{tags: array<int, array{name: string, color: string}>, online: bool} $set
 	 */
 	private function badges_html( array $set ): string {
-		if ( empty( $set['tags'] ) && empty( $set['online'] ) ) {
+		$seen   = array();
+		$badges = array();
+
+		foreach ( $set['tags'] as $tag ) {
+			$key = $this->badge_key( $tag['name'] );
+			if ( isset( $seen[ $key ] ) ) {
+				continue;
+			}
+			$seen[ $key ] = true;
+			$badges[]     = $this->badge_html( $tag['name'], $tag['color'] );
+		}
+
+		if ( ! empty( $set['online'] ) ) {
+			$label = __( 'Online Only', 'ffl-funnels-addons' );
+			$key   = $this->badge_key( $label );
+			if ( ! isset( $seen[ $key ] ) ) {
+				$seen[ $key ] = true;
+				$badges[]     = $this->badge_html( $label, $this->settings()['online_color'] );
+			}
+		}
+
+		if ( empty( $badges ) ) {
 			return '';
 		}
 
-		$html = '<span class="ffla-os-badges">';
-		foreach ( $set['tags'] as $tag ) {
-			$html .= $this->badge_html( $tag['name'], $tag['color'] );
-		}
-		if ( ! empty( $set['online'] ) ) {
-			$html .= $this->badge_html( __( 'Online Only', 'ffl-funnels-addons' ), $this->settings()['online_color'] );
-		}
-		$html .= '</span>';
+		return '<span class="ffla-os-badges">' . implode( '', $badges ) . '</span>';
+	}
 
-		return $html;
+	/**
+	 * Normalised key for de-duplicating badges by label: lowercased with all
+	 * non-alphanumerics stripped, so "Online only", "Online Only" and "online-only"
+	 * are treated as the same badge.
+	 */
+	private function badge_key( string $label ): string {
+		return (string) preg_replace( '/[^a-z0-9]+/', '', strtolower( $label ) );
 	}
 
 	/**
