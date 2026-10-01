@@ -161,7 +161,10 @@ class White_Label_Dashboard
      */
     public function ajax_analytics(): void
     {
-        if (!check_ajax_referer(self::AJAX_NONCE, 'nonce', false) || !current_user_can('read')) {
+        // Match the cap that gates the custom dashboard itself (welcome_panel =
+        // edit_theme_options), so store search analytics aren't exposed to any
+        // logged-in user (e.g. WooCommerce customers, who all have `read`).
+        if (!check_ajax_referer(self::AJAX_NONCE, 'nonce', false) || !current_user_can('edit_theme_options')) {
             wp_send_json_error(['message' => __('You do not have permission to view analytics.', 'ffl-funnels-addons')], 403);
             return;
         }

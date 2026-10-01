@@ -38,7 +38,18 @@ body.index-php.ffla-theme-dark #wpcontent {
     --ffla-dash-muted: var(--ffla-wl-dashMuted, #64748b);
     --ffla-dash-border: var(--ffla-wl-dashBorder, #e6eaf1);
     --ffla-dash-accent: var(--ffla-wl-primaryColor, #2563eb);
+    /* Soft accent derived from the Primary colour so non-blue brands don't get a
+       blue chip behind a coloured icon. The rgba line is the fallback for
+       browsers without color-mix; the color-mix line overrides where supported. */
     --ffla-dash-accent-soft: rgba(37, 99, 235, 0.1);
+    --ffla-dash-accent-soft: color-mix(in srgb, var(--ffla-wl-primaryColor, #2563eb) 10%, transparent);
+
+    /* Base corner radius (Styles → Dashboard → Base corner radius) and the
+       derived steps used by smaller items. Set the base to 0 for square. */
+    --ffla-dash-r: var(--ffla-wl-dashRadius, 14px);
+    --ffla-dash-r-1: max(0px, calc(var(--ffla-wl-dashRadius, 14px) - 2px));
+    --ffla-dash-r-2: max(0px, calc(var(--ffla-wl-dashRadius, 14px) - 4px));
+    --ffla-dash-r-3: max(0px, calc(var(--ffla-wl-dashRadius, 14px) - 6px));
 
     color: var(--ffla-dash-text);
     max-width: 1180px;
@@ -52,6 +63,7 @@ body.ffla-theme-dark .ffla-wl-dash {
     --ffla-dash-muted: var(--ffla-wl-dashMuted, #93a3bd);
     --ffla-dash-border: var(--ffla-wl-dashBorder, #1e293b);
     --ffla-dash-accent-soft: rgba(96, 165, 250, 0.14);
+    --ffla-dash-accent-soft: color-mix(in srgb, var(--ffla-wl-primaryColor, #60a5fa) 16%, transparent);
 }
 
 .ffla-wl-dash a {
@@ -157,7 +169,7 @@ body.ffla-theme-dark .ffla-wl-dash {
     display: flex;
     flex-direction: column;
     padding: 20px;
-    border-radius: 14px;
+    border-radius: var(--ffla-dash-r);
     background: var(--ffla-dash-card);
     border: 1px solid var(--ffla-dash-border);
     color: var(--ffla-dash-text) !important;
@@ -173,7 +185,7 @@ body.ffla-theme-dark .ffla-wl-dash {
     justify-content: center;
     width: 40px;
     height: 40px;
-    border-radius: 10px;
+    border-radius: var(--ffla-dash-r-2);
     background: var(--ffla-dash-accent-soft);
     color: var(--ffla-dash-accent);
     margin-bottom: 14px;
@@ -218,7 +230,7 @@ body.ffla-theme-dark .ffla-wl-dash {
     display: flex;
     flex-direction: column;
     padding: 18px 20px;
-    border-radius: 14px;
+    border-radius: var(--ffla-dash-r);
     background: var(--ffla-dash-card);
     border: 1px solid var(--ffla-dash-border);
 }
@@ -235,7 +247,7 @@ body.ffla-theme-dark .ffla-wl-dash {
     justify-content: center;
     width: 34px;
     height: 34px;
-    border-radius: 9px;
+    border-radius: var(--ffla-dash-r-2);
     background: var(--ffla-dash-accent-soft);
     color: var(--ffla-dash-accent);
 }
@@ -281,7 +293,7 @@ body.ffla-theme-dark .ffla-dash-section {
 /* ── Panels ─────────────────────────────────────────────────────────────── */
 .ffla-dash-panel {
     padding: 20px 22px;
-    border-radius: 14px;
+    border-radius: var(--ffla-dash-r);
     background: var(--ffla-dash-card);
     border: 1px solid var(--ffla-dash-border);
 }
@@ -334,7 +346,7 @@ body.ffla-theme-dark .ffla-dash-section {
     display: flex;
     align-items: center;
     padding: 8px 12px;
-    border-radius: 8px;
+    border-radius: var(--ffla-dash-r-3);
     background: var(--ffla-dash-accent);
     color: #fff;
     min-width: 54px;
@@ -455,7 +467,7 @@ body.ffla-theme-dark .ffla-dash-section {
     color: var(--ffla-dash-text);
     background-color: var(--ffla-dash-card);
     border: 1px solid var(--ffla-dash-border);
-    border-radius: 8px;
+    border-radius: var(--ffla-dash-r-3);
     box-shadow: none;
 }
 .ffla-dash-period select:focus {
@@ -469,7 +481,7 @@ body.ffla-theme-dark .ffla-dash-section {
     margin-bottom: 14px;
     background: var(--ffla-dash-card);
     border: 1px solid var(--ffla-dash-border);
-    border-radius: 10px;
+    border-radius: var(--ffla-dash-r-2);
 }
 .ffla-dash-tab {
     appearance: none;
@@ -477,7 +489,7 @@ body.ffla-theme-dark .ffla-dash-section {
     color: var(--ffla-dash-muted);
     background: transparent;
     border: 0;
-    border-radius: 7px;
+    border-radius: var(--ffla-dash-r-3);
     font-size: 13px;
     font-weight: 700;
     line-height: 1.4;
@@ -508,7 +520,7 @@ body.ffla-theme-dark .ffla-dash-section {
     color: var(--ffla-dash-muted);
     background: var(--ffla-dash-card);
     border: 1px solid var(--ffla-dash-border);
-    border-radius: 14px;
+    border-radius: var(--ffla-dash-r);
 }
 .ffla-dash-loading .spinner {
     float: none;
@@ -548,7 +560,7 @@ body.ffla-theme-dark .ffla-dash-section {
     padding: 17px 18px;
     background: var(--ffla-dash-card);
     border: 1px solid var(--ffla-dash-border);
-    border-radius: 12px;
+    border-radius: var(--ffla-dash-r-1);
 }
 .ffla-dash-analytics-metric__top {
     display: flex;
@@ -578,6 +590,13 @@ body.ffla-theme-dark .ffla-dash-section {
 .ffla-dash-analytics-grid {
     display: grid;
     grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
+    gap: 18px;
+    margin-bottom: 18px;
+}
+/* SnapFind funnel + top terms stacked (one per row). */
+.ffla-dash-analytics-stack {
+    display: grid;
+    grid-template-columns: 1fr;
     gap: 18px;
     margin-bottom: 18px;
 }

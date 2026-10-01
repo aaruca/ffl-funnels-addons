@@ -154,6 +154,11 @@
                 rows.sort(function (a, b) {
                     var cellA = a.children[index];
                     var cellB = b.children[index];
+                    // A row may have fewer cells than headers (e.g. a colspan
+                    // summary row); treat a missing cell as equal rather than throw.
+                    if (!cellA || !cellB) {
+                        return 0;
+                    }
                     var valueA = numeric ? parseFloat(cellA.getAttribute('data-v') || '0') : cellA.textContent.trim().toLowerCase();
                     var valueB = numeric ? parseFloat(cellB.getAttribute('data-v') || '0') : cellB.textContent.trim().toLowerCase();
                     if (valueA < valueB) { return ascending ? -1 : 1; }
@@ -426,10 +431,11 @@
     }
 
     function renderSnapFind(parent, data) {
-        var split = makeElement('div', 'ffla-dash-analytics-grid');
-        renderFunnel(split, data);
-        renderSearchTerms(split, data.top_terms || []);
-        parent.appendChild(split);
+        // Stack the funnel and top-terms (one per row) rather than side by side.
+        var stack = makeElement('div', 'ffla-dash-analytics-stack');
+        renderFunnel(stack, data);
+        renderSearchTerms(stack, data.top_terms || []);
+        parent.appendChild(stack);
     }
 
     function renderAnalytics(panel, data) {

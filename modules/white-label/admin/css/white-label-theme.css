@@ -13,7 +13,14 @@
  */
 
 body.wp-admin.wp-core-ui {
-    --wp-admin-theme-color: var(--ffla-wl-primaryColor);
+    --wp-admin-theme-color: var(--ffla-wl-primaryColor, #2271b1);
+}
+
+/* Use the (light) dashboard background as the content-area background on every
+   admin page — always the light value, even in dark mode, so third-party plugin
+   pages keep their expected light contrast. */
+body.wp-admin {
+    background-color: var(--ffla-wl-contentBg, #f4f6fb) !important;
 }
 
 a,
@@ -25,10 +32,15 @@ a,
 }
 
 /* ── Count badges in the sidebar ──────────────────────────────────── */
+/* Core badges plus plugin badges that paint their own colour (e.g. WS Form's
+   `.wsf-submit-unread > span`). The `#adminmenu` id out-specifies the plugins'
+   `.admin-color-* .class > span` rules; !important covers their !important. */
 #adminmenu .menu-counter,
 #adminmenu .awaiting-mod,
-#adminmenu .update-plugins {
+#adminmenu .update-plugins,
+#adminmenu .wsf-submit-unread > span {
     background: var(--ffla-wl-primaryColor, #2271b1) !important;
+    background-color: var(--ffla-wl-primaryColor, #2271b1) !important;
     color: var(--ffla-wl-primaryContrast, #ffffff) !important;
 }
 
@@ -37,7 +49,6 @@ a,
 .wp-core-ui .button,
 .wp-core-ui .button-secondary {
     color: var(--ffla-wl-primaryColor, #2271b1) !important;
-    border-color: var(--ffla-wl-primaryColor, #2271b1) !important;
     border-color: var(--ffla-wl-primaryColor, #2271b1) !important;
 }
 
@@ -94,7 +105,15 @@ a,
 #adminmenuback,
 #adminmenuwrap {
     background: var(--ffla-wl-sidebarBg, #1d2327) !important;
-    border-right: 1px solid var(--ffla-wl-borderColor, #00000029) !important;
+}
+
+/* Right border goes on #adminmenuback ONLY. A border-right on #adminmenuwrap
+   triggers a WordPress admin layout bug that pushes #wpbody ~1100px down (the
+   menu's height), so the page content renders far below the fold and looks
+   blank until you scroll — and it re-breaks on resize/zoom. #adminmenuback
+   spans the full sidebar height, so the border still looks right. */
+#adminmenuback {
+    border-right: 1px solid var(--ffla-wl-sidebarBorder, var(--ffla-wl-borderColor, #00000029)) !important;
 }
 
 /* Menu group separators follow the border/divider colour. Transparent
@@ -104,7 +123,7 @@ a,
 }
 
 #adminmenu div.separator {
-    background: var(--ffla-wl-borderColor, transparent) !important;
+    background: var(--ffla-wl-sidebarBorder, var(--ffla-wl-borderColor, transparent)) !important;
 }
 
 ul#adminmenu a.wp-has-current-submenu:after,
@@ -124,9 +143,10 @@ ul#adminmenu > li.current > a.current:after,
     color: var(--ffla-wl-sidebarIcon, #a7aaad) !important;
 }
 
-/* Plugin SVG icons (background-image data URIs) are recoloured by rewriting
-   their fill in white-label-theme.js — not CSS `mask`, which caused a paint
-   bug. So there is no CSS rule for them here. */
+/* Plugin SVG icons (background-image data URIs) are recoloured server-side in
+   White_Label_Admin::recolour_menu_icons() — not via CSS `mask` or runtime JS,
+   both of which caused the "content blank until scroll/resize" paint bug. So
+   there is no CSS rule (and no client script) for them here. */
 
 /* Paint the hover on the <a> itself (WordPress does too, via `#adminmenu
    a:hover`). Targeting the <li> alone leaves the <a>'s own hover background on
@@ -141,6 +161,12 @@ ul#adminmenu > li.current > a.current:after,
         --ffla-wl-sidebarHoverBg,
         var(--ffla-wl-primaryColor, #2271b1)
     ) !important;
+    /* WordPress draws a 4px inset left bar (box-shadow, currentColor) on hover.
+       Colour it the same as the hover background so it blends in seamlessly. */
+    box-shadow: var(
+        --ffla-wl-sidebarHoverBg,
+        var(--ffla-wl-primaryColor, #2271b1)
+    ) 4px 0 0 0 inset !important;
 }
 
 #adminmenu li.menu-top:hover > a.menu-top,
@@ -164,8 +190,14 @@ ul#adminmenu > li.current > a.current:after,
     ) !important;
 }
 
+/* Colour the current item's text span directly — the generic .wp-menu-name rule
+   above also sets a colour with !important, so the current colour must reach the
+   span itself (and cover .wp-has-current-submenu, not just .current). */
 #adminmenu li.current a.menu-top,
+#adminmenu li.current a.menu-top .wp-menu-name,
 #adminmenu li.wp-has-current-submenu a.wp-has-current-submenu,
+#adminmenu li.wp-has-current-submenu a.wp-has-current-submenu .wp-menu-name,
+#adminmenu li.wp-menu-open > a.menu-top .wp-menu-name,
 #adminmenu .current div.wp-menu-name {
     color: var(--ffla-wl-sidebarCurrentText, #ffffff) !important;
 }
@@ -175,6 +207,32 @@ ul#adminmenu > li.current > a.current:after,
     color: var(--ffla-wl-sidebarCurrentIcon, #ffffff) !important;
 }
 
+/* ── Plugin menu icons shipped as <img> (Merchant, YITH, …) ──────────────
+   Some plugins render their sidebar icon as an <img> file (not a dashicon font
+   and not the .wp-menu-image.svg background data-URI that WordPress's own
+   svg-painter recolours). Those images are usually baked light for the dark
+   sidebar and shown at opacity .6, so they wash out on the light theme.
+   We can't repaint an external image by `fill`, so force it to a flat
+   silhouette that matches the current theme — the same monochrome treatment the
+   rest of the sidebar icons get. (Uses `filter` on the small icon only, never on
+   admin-chrome containers, so it can't trigger the content-blank paint bug.) */
+body.ffla-theme-light #adminmenu .wp-menu-image img {
+    filter: brightness(0) !important; /* dark silhouette on the light sidebar */
+}
+body.ffla-theme-dark #adminmenu .wp-menu-image img {
+    filter: brightness(0) invert(1) !important; /* light silhouette on the dark sidebar */
+}
+
+/* On hover / current the item gets the accent background, so flip the icon to a
+   light silhouette for contrast (mirrors the #fff hover/current icon default). */
+#adminmenu li.menu-top:hover .wp-menu-image img,
+#adminmenu li > a.menu-top:focus .wp-menu-image img,
+#adminmenu li.current .wp-menu-image img,
+#adminmenu li.wp-has-current-submenu .wp-menu-image img {
+    filter: brightness(0) invert(1) !important;
+    opacity: 1 !important;
+}
+
 /* "Collapse menu" button — a <button>, not a menu link. Its label and its
    dashicon arrow both follow the button's `color`, so theme that for the normal
    and hover/focus states. */
@@ -182,9 +240,18 @@ ul#adminmenu > li.current > a.current:after,
     color: var(--ffla-wl-sidebarText, #f0f0f1) !important;
 }
 
+#adminmenu #collapse-menu:hover,
 #adminmenu #collapse-button:hover,
 #adminmenu #collapse-button:focus {
+    background: var(
+        --ffla-wl-sidebarHoverBg,
+        var(--ffla-wl-primaryColor, #2271b1)
+    ) !important;
     color: var(--ffla-wl-sidebarHoverText, #ffffff) !important;
+    box-shadow: var(
+        --ffla-wl-sidebarHoverBg,
+        var(--ffla-wl-primaryColor, #2271b1)
+    ) 4px 0 0 0 inset !important;
 }
 
 /* ── Submenu ─────────────────────────────────────────────────────────── */
@@ -218,7 +285,14 @@ ul#adminmenu > li.current > a.current:after,
 
 #wpadminbar {
     background: var(--ffla-wl-adminbarBg, #1d2327) !important;
-    border-bottom: 1px solid var(--ffla-wl-borderColor, #00000029) !important;
+    border-bottom: 1px solid var(--ffla-wl-adminbarBorder, var(--ffla-wl-borderColor, #00000029)) !important;
+}
+
+/* Round the Site Icon (core renders it in the site-name node). Core styles it
+   via `#wp-admin-bar-site-name > .ab-item .site-icon`; the `img` type selector
+   here out-specifies that so no !important is needed. */
+#wpadminbar #wp-admin-bar-site-name > .ab-item img.site-icon {
+    border-radius: 50%;
 }
 
 #wpadminbar .ab-item,
@@ -297,18 +371,38 @@ ul#adminmenu > li.current > a.current:after,
     color: var(--ffla-wl-adminbarSubHoverText, #ffffff) !important;
 }
 
+/* The user-menu "user actions" group (account details + Log Out) should not
+   react to hover — keep every item in its resting colours. */
+#wpadminbar #wp-admin-bar-user-actions .ab-item:hover,
+#wpadminbar #wp-admin-bar-user-actions .ab-item:focus,
+#wpadminbar #wp-admin-bar-user-actions a.ab-item:hover,
+#wpadminbar #wp-admin-bar-user-actions a.ab-item:focus {
+    background: var(--ffla-wl-adminbarSubBg, #2c3338) !important;
+    color: var(--ffla-wl-adminbarSubText, #c3c4c7) !important;
+}
+
+/* ── WooCommerce "site visibility" badge (Live / Coming soon) ─────────────
+   Always the primary colour with contrast text — even on hover. */
+#wpadminbar #wp-admin-bar-woocommerce-site-visibility-badge > .ab-item,
+#wpadminbar #wp-admin-bar-woocommerce-site-visibility-badge > .ab-item:hover,
+#wpadminbar #wp-admin-bar-woocommerce-site-visibility-badge > .ab-item:focus,
+#wpadminbar:not(.mobile) .ab-top-menu > #wp-admin-bar-woocommerce-site-visibility-badge:hover > .ab-item {
+    background: var(--ffla-wl-primaryColor, #2271b1) !important;
+    color: var(--ffla-wl-primaryContrast, #ffffff) !important;
+}
+
 /* Form Fields */
 .wp-core-ui select:focus {
-    border-color: var(--ffla-wl-primaryColor) !important;
+    border-color: var(--ffla-wl-primaryColor, #2271b1) !important;
     box-shadow: 0 0 0 var(--wp-admin-border-width-focus, 1.5px)
-        var(--ffla-wl-primaryColor) !important;
+        var(--ffla-wl-primaryColor, #2271b1) !important;
 }
 
 /* ── Corner radius ───────────────────────────────────────────────────────
-   WordPress rounds its UI at 2px. Soften that to a rounder radius. Change the
-   value in one place below. Checkboxes/radios are intentionally left alone. */
+   Corner radius for WordPress's UI (buttons, inputs, cards, notices, …).
+   Change the value in one place below. Checkboxes/radios are left alone. */
 :root {
-    --ffla-wl-radius: 5px;
+    --ffla-wl-radius: 0px;
 }
 
 .wp-core-ui .button,
@@ -363,9 +457,10 @@ ul.striped > :nth-child(odd),
     background-color: transparent;
 }
 
-/* A separator between every row. */
-.wp-list-table tbody td,
-.wp-list-table tbody th {
+/* A separator between every row. Excludes the Plugins table, which draws its own
+   row separators via an inset box-shadow — our border would double it up. */
+.wp-list-table:not(.plugins) tbody td,
+.wp-list-table:not(.plugins) tbody th {
     border-bottom: 1px solid var(--ffla-wl-borderColor, #f0f0f1);
 }
 
@@ -375,9 +470,11 @@ ul.striped > :nth-child(odd),
     background-color: #f6f7f7 !important;
 }
 
-/* Cell links and sort-column links use the text colour, not the primary
-   accent; primary is kept as the hover affordance. */
+/* Cell links (incl. the primary "name" column, which is a <th>) and sort-column
+   links use the text colour, not the primary accent — the row title should read
+   as text, not a coloured link. Primary is kept as the hover affordance. */
 .wp-list-table tbody td a,
+.wp-list-table tbody th a,
 .wp-list-table thead th.sortable a,
 .wp-list-table thead th.sorted a,
 .wp-list-table tfoot th.sortable a,
@@ -386,9 +483,29 @@ ul.striped > :nth-child(odd),
 }
 
 .wp-list-table tbody td a:hover,
+.wp-list-table tbody th a:hover,
 .wp-list-table thead th.sortable a:hover,
 .wp-list-table thead th.sorted a:hover {
     color: var(--ffla-wl-primaryColor, #2271b1) !important;
+}
+
+/* Underline links inside table rows (row actions, categories, plugin actions,
+   …) but never the row title, which reads as text. */
+.wp-list-table tbody td a,
+.wp-list-table tbody th a {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.wp-list-table tbody a.row-title {
+    text-decoration: none;
+}
+
+/* Active plugin rows: keep the accent left border (a highlight cue) but drop the
+   tinted background so the row reads like the others. */
+.plugins tr.active > td,
+.plugins tr.active > th {
+    background-color: transparent !important;
 }
 
 /* Keep the hover-revealed row actions subtle, with Trash in red. */
@@ -400,34 +517,11 @@ ul.striped > :nth-child(odd),
 .wp-list-table .row-actions span.delete a {
     color: #b32d2e !important;
 }
-
-/* ── Wider sidebar ───────────────────────────────────────────────────────
-   Widen the admin menu and shift the content over by the same amount, so
-   nothing (including third-party plugin pages) hides behind it. Scoped to the
-   expanded desktop layout only; the specificity is kept low so WordPress's own
-   `.folded` / auto-fold / mobile rules still win in those states. Change the
-   width in one place. */
-:root {
-    --ffla-wl-sidebar-width: 200px;
-}
-
-@media only screen and (min-width: 961px) {
-    #adminmenuback,
-    #adminmenuwrap,
-    #adminmenu,
-    #adminmenu .wp-submenu {
-        width: var(--ffla-wl-sidebar-width, 200px);
-    }
-
-    /* Fly-out submenus open to the right of the menu, so pin them to the new
-       width. (Their own auto-width rule keeps them fit-to-content.) */
-    #adminmenu .wp-submenu {
-        left: var(--ffla-wl-sidebar-width, 200px);
-    }
-
-    /* Push the content and footer over by the same amount. */
-    #wpcontent,
-    #wpfooter {
-        margin-left: var(--ffla-wl-sidebar-width, 200px);
-    }
-}
+/* NOTE: We intentionally do NOT widen the admin menu / shift #wpcontent.
+   A forced wider sidebar steals horizontal space from the content, and on
+   plugin-heavy list tables (e.g. WooCommerce Products with many columns under
+   table-layout:fixed) that extra narrowing collapses the title column, wraps
+   long titles into hundreds of lines, and makes rows thousands of px tall — so
+   the real content is pushed far below the fold and the page looks blank until
+   you scroll (and shifts on zoom/resize). WordPress's native sidebar width and
+   auto-fold give the content the most room, so we leave them alone. */

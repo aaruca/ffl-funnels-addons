@@ -37,11 +37,65 @@
     /* ── Colour fields ─────────────────────────────────────────────────── */
 
     var HEX = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+    var NAME_RE = /\[styles\]\[(light|dark)\]\[([A-Za-z0-9]+)\]/;
+
+    // <input type="color"> only accepts #rrggbb, so expand a valid #rgb shorthand
+    // before assigning it — otherwise the browser silently rejects it and the
+    // swatch jumps to black, desyncing from the (valid) typed value.
+    function toSwatchHex(value) {
+        value = value.trim();
+        if (/^#[0-9a-fA-F]{6}$/.test(value)) {
+            return value;
+        }
+        if (/^#[0-9a-fA-F]{3}$/.test(value)) {
+            return '#' + value[1] + value[1] + value[2] + value[2] + value[3] + value[3];
+        }
+        return null;
+    }
+
+    // Live preview: rebuild a mode-scoped <style> from the current inputs, so
+    // edits show on this page in real time. It mirrors the CSS the module
+    // injects server-side (body.ffla-theme-<mode>{--ffla-wl-<key>:<hex>}) and is
+    // appended last, so it overrides the saved values until the page reloads.
+    // Only set values are emitted; a blank field falls back to the saved/default.
+    // Chrome (sidebar, top bar, submenu, buttons, borders) previews here;
+    // dashboard-only colours preview on the dashboard page.
+    var previewEl = null;
+    function renderPreview() {
+        var modes = { light: {}, dark: {} };
+        root.querySelectorAll('[data-ffla-wl-color-text]').forEach(function (input) {
+            var m = input.name.match(NAME_RE);
+            if (!m) {
+                return;
+            }
+            var val = input.value.trim();
+            if (HEX.test(val)) {
+                modes[m[1]][m[2]] = val;
+            }
+        });
+
+        var css = '';
+        ['light', 'dark'].forEach(function (mode) {
+            var decl = '';
+            Object.keys(modes[mode]).forEach(function (key) {
+                decl += '--ffla-wl-' + key + ':' + modes[mode][key] + ';';
+            });
+            if (decl) {
+                css += 'body.ffla-theme-' + mode + '{' + decl + '}';
+            }
+        });
+
+        if (!previewEl) {
+            previewEl = document.createElement('style');
+            previewEl.id = 'ffla-wl-live-preview';
+            document.head.appendChild(previewEl);
+        }
+        previewEl.textContent = css;
+    }
 
     root.querySelectorAll('[data-ffla-wl-color]').forEach(function (field) {
         var swatch = field.querySelector('[data-ffla-wl-color-swatch]');
         var text = field.querySelector('[data-ffla-wl-color-text]');
-        var clear = field.querySelector('[data-ffla-wl-color-clear]');
         if (!swatch || !text) {
             return;
         }
@@ -49,23 +103,21 @@
         // Picking from the swatch fills the text value.
         swatch.addEventListener('input', function () {
             text.value = swatch.value;
+            renderPreview();
         });
 
-        // Typing a valid hex updates the swatch.
+        // Typing a valid hex (or clearing the field) updates the swatch + preview.
         text.addEventListener('input', function () {
-            if (HEX.test(text.value.trim())) {
-                swatch.value = text.value.trim();
+            var full = toSwatchHex(text.value);
+            if (full) {
+                swatch.value = full;
             }
+            renderPreview();
         });
-
-        // Clear = unset (blank means "inherit / keep default").
-        if (clear) {
-            clear.addEventListener('click', function () {
-                text.value = '';
-                text.focus();
-            });
-        }
     });
+
+    // Seed the preview so it becomes the authority for subsequent edits.
+    renderPreview();
 
     /* ── Restrictions: hiding a top-level item hides/blocks its children ──── */
 
@@ -150,19 +202,66 @@
         });
     });
 
+    /* ── Menu tab: add / remove custom dividers ──────────────────────────── */
+
+    var dividerSeq = 0;
+    root.querySelectorAll('[data-ffla-wl-add-divider]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var list = root.querySelector('[data-ffla-wl-sortable]');
+            var tpl = root.querySelector('[data-ffla-wl-divider-template]');
+            if (!list || !tpl || !tpl.content) {
+                return;
+            }
+            var template = tpl.content.firstElementChild;
+            if (!template) {
+                return;
+            }
+            var prefix = list.getAttribute('data-ffla-wl-divider-prefix') || 'ffla-divider-';
+            // Monotonic counter guarantees uniqueness even for rapid clicks within
+            // the same millisecond (Date.now() alone could collide).
+            var token = prefix + Date.now() + '-' + (++dividerSeq);
+            var node = template.cloneNode(true);
+            var input = node.querySelector('input[type="hidden"]');
+            if (input) {
+                input.value = token;
+            }
+            list.appendChild(node);
+        });
+    });
+
+    // Remove a divider (delegated).
+    root.addEventListener('click', function (e) {
+        var remove = e.target.closest('[data-ffla-wl-remove]');
+        if (!remove) {
+            return;
+        }
+        var item = remove.closest('.ffla-wl-sortable__item');
+        if (item) {
+            item.remove();
+        }
+    });
+
     /* ── Import/Export: copy the export JSON ───────────────────────────── */
 
     root.querySelectorAll('[data-ffla-wl-copy]').forEach(function (button) {
+        // Capture the original label once, so a rapid second click can't record
+        // "Copied!" as the label and leave it stuck.
+        var originalLabel = button.textContent;
+        var resetTimer = null;
+
         button.addEventListener('click', function () {
-            var textarea = button.closest('.wb-card__body').querySelector('.ffla-wl-io__json');
+            var card = button.closest('.wb-card__body');
+            var textarea = card ? card.querySelector('.ffla-wl-io__json') : null;
             if (!textarea) {
                 return;
             }
 
             var done = function () {
-                var label = button.textContent;
                 button.textContent = 'Copied!';
-                setTimeout(function () { button.textContent = label; }, 1500);
+                if (resetTimer) {
+                    clearTimeout(resetTimer);
+                }
+                resetTimer = setTimeout(function () { button.textContent = originalLabel; }, 1500);
             };
 
             if (navigator.clipboard && navigator.clipboard.writeText) {

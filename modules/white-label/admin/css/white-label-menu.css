@@ -1,0 +1,28 @@
+/**
+ * White Label — sidebar menu dividers.
+ *
+ * Loaded on every admin page (by White_Label_Menu_Order). Hides the separators
+ * WordPress and plugins add by default, and styles the custom dividers added via
+ * White Label → Menu.
+ */
+
+/* Remove the default separators (WordPress core + plugins). */
+#adminmenu li.wp-menu-separator:not(.ffla-wl-menu-divider) {
+    display: none !important;
+}
+
+/* Our custom dividers. */
+#adminmenu li.wp-menu-separator.ffla-wl-menu-divider {
+    display: block !important;
+    height: auto;
+    margin: 6px 0;
+    padding: 0;
+}
+
+#adminmenu li.ffla-wl-menu-divider div.separator {
+    height: 0;
+    margin: 0;
+    line-height: 1;
+    border-top: 1px solid var(--ffla-wl-sidebarBorder, var(--ffla-wl-borderColor, rgba(0, 0, 0, 0.18)));
+    background: none;
+}

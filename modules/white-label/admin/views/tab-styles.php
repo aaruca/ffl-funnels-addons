@@ -8,6 +8,7 @@
  *
  * @var array<string, array<string, string>> $style_fields  group label => (key => label)
  * @var array{light: array<string,string>, dark: array<string,string>} $style_values
+ * @var int|null                                                        $dash_radius
  *
  * @package FFL_Funnels_Addons
  */
@@ -31,9 +32,6 @@ $render_swatch = static function (string $name, string $value) {
         <input type="text" name="<?php echo esc_attr($name); ?>"
             class="wb-input ffla-wl-color__text" value="<?php echo esc_attr($value); ?>"
             placeholder="#rrggbb" spellcheck="false" autocomplete="off" data-ffla-wl-color-text>
-        <button type="button" class="wb-btn wb-btn--subtle ffla-wl-color__clear" data-ffla-wl-color-clear>
-            <?php esc_html_e('Clear', 'ffl-funnels-addons'); ?>
-        </button>
     </span>
     <?php
 };
@@ -78,6 +76,21 @@ $render_field = static function (string $key, string $label, array $values) use 
     <div class="wb-card">
         <div class="wb-card__header"><h3><?php echo esc_html($group_label); ?></h3></div>
         <div class="wb-card__body">
+            <?php if ($group_label === __('Dashboard', 'ffl-funnels-addons')) : ?>
+                <div class="wb-field ffla-wl-radius-field">
+                    <label class="wb-field__label" for="ffla-wl-dash-radius"><?php esc_html_e('Base corner radius', 'ffl-funnels-addons'); ?></label>
+                    <div class="wb-field__control">
+                        <div class="ffla-wl-radius-input">
+                            <input type="number" min="0" max="40" step="1" id="ffla-wl-dash-radius"
+                                name="ffla_wl[styles][dashRadius]" class="wb-input"
+                                value="<?php echo esc_attr(null === $dash_radius ? '' : (string) $dash_radius); ?>"
+                                placeholder="14">
+                            <span class="ffla-wl-radius-unit">px</span>
+                        </div>
+                        <p class="wb-field__desc"><?php esc_html_e('Corner radius for the dashboard cards; smaller items scale from it. Set 0 for square corners. Leave blank for the default.', 'ffl-funnels-addons'); ?></p>
+                    </div>
+                </div>
+            <?php endif; ?>
             <?php foreach ($fields as $key => $label) : ?>
                 <?php $render_field($key, $label, $style_values); ?>
             <?php endforeach; ?>

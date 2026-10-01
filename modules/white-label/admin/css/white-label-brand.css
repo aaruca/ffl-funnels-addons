@@ -1,0 +1,104 @@
+/**
+ * White Label — sidebar brand block.
+ *
+ * The logo + "FFL Funnels" wordmark sit at the very top of the admin sidebar as
+ * one clickable unit. Colours follow the sidebar theme variables so it reads on
+ * both the light and dark palettes; it collapses to just the logo when the menu
+ * is folded.
+ */
+
+.ffla-wl-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-sizing: border-box;
+    padding: 13px 14px;
+    text-decoration: none;
+    line-height: 1;
+    background: var(--ffla-wl-sidebarBg, #1d2327);
+    border-bottom: 1px solid var(--ffla-wl-sidebarBorder, var(--ffla-wl-borderColor, #00000029));
+}
+
+/* No hover/focus background — the accent-coloured logo must never sit on a
+   matching accent fill and disappear. Keep the resting sidebar background. */
+.ffla-wl-brand:hover,
+.ffla-wl-brand:focus {
+    background: var(--ffla-wl-sidebarBg, #1d2327);
+    box-shadow: none;
+    outline: none;
+}
+
+.ffla-wl-brand__logo {
+    flex: 0 0 auto;
+    display: block;
+    width: 30px;
+    height: 30px;
+    object-fit: contain;
+}
+
+.ffla-wl-brand__text {
+    color: var(--ffla-wl-sidebarText, #f0f0f1);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* No hover text-colour change: the brand keeps its resting background, so the
+   "item hover text" colour (often white, for hovered menu items that DO get a
+   coloured background) would be invisible here in light mode. */
+
+/* Manually collapsed menu (icons only) — show just the centred logo.
+   WordPress keeps the `auto-fold` body class at every width and only collapses
+   the menu visually via its own media queries, so we mirror those breakpoints
+   rather than keying off the class alone. */
+body.folded #ffla-wl-brand {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+body.folded .ffla-wl-brand__text {
+    display: none;
+}
+
+/* Auto-fold collapses only on narrower screens (WP's own breakpoint). */
+@media only screen and (max-width: 960px) {
+    body.auto-fold #ffla-wl-brand {
+        justify-content: center;
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    body.auto-fold .ffla-wl-brand__text {
+        display: none;
+    }
+
+    /* Hovering the auto-folded menu widens it — bring the wordmark back. A
+       manually folded menu (body.folded) does NOT widen on hover, so exclude it
+       or the wordmark would expand inside the still-narrow rail and clip. */
+    body.auto-fold:not(.folded) #adminmenuwrap:hover #ffla-wl-brand {
+        justify-content: flex-start;
+        padding-left: 14px;
+        padding-right: 14px;
+    }
+
+    body.auto-fold:not(.folded) #adminmenuwrap:hover .ffla-wl-brand__text {
+        display: block;
+    }
+}
+
+/* Mobile: the menu opens full-width, so always keep the wordmark visible. */
+@media screen and (max-width: 782px) {
+    body.auto-fold #ffla-wl-brand {
+        justify-content: flex-start;
+        padding-left: 14px;
+        padding-right: 14px;
+    }
+
+    body.auto-fold .ffla-wl-brand__text {
+        display: block;
+    }
+}

@@ -59,20 +59,22 @@
 
 /* Colour fields (Light + Dark pair) ------------------------------------- */
 
+/* Light + Dark sit side by side (two columns), not stacked. */
 .ffla-wl-color-pair__modes {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px 28px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 16px;
 }
 
 .ffla-wl-color-pair__mode {
     display: flex;
-    align-items: center;
-    gap: 8px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    min-width: 0;
 }
 
 .ffla-wl-color-pair__tag {
-    min-width: 40px;
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
@@ -81,30 +83,48 @@
 }
 
 .ffla-wl-color {
-    display: inline-flex;
+    display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
+    min-width: 0;
 }
 
 .ffla-wl-color__swatch {
-    width: 40px;
-    height: 34px;
-    padding: 2px;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    width: 34px;
+    height: 32px;
+    padding: 0;
     border: 1px solid var(--wb-border, #e2e4e9);
     border-radius: 6px;
     background: none;
     cursor: pointer;
     flex: 0 0 auto;
+    overflow: hidden;
+}
+
+/* Strip the browser's default swatch chrome (inner padding + border) so the
+   colour fills edge-to-edge; the rounded container clips the square fill. */
+.ffla-wl-color__swatch::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+.ffla-wl-color__swatch::-webkit-color-swatch {
+    border: none;
+    border-radius: 0;
+}
+.ffla-wl-color__swatch::-moz-color-swatch {
+    border: none;
+    border-radius: 0;
 }
 
 .ffla-wl-color__text {
-    max-width: 130px;
+    flex: 0 0 auto;
+    width: 108px;
+    min-width: 0;
     font-family: Menlo, Consolas, monospace;
 }
 
-.ffla-wl-color__clear {
-    flex: 0 0 auto;
-}
 
 /* Restrictions — menu visibility tree ----------------------------------- */
 
@@ -214,6 +234,76 @@
 .ffla-wl-sortable__label {
     font-weight: 600;
     font-size: 13px;
+}
+
+/* Styles tab — dashboard base radius (number field) */
+.ffla-wl-radius-input {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ffla-wl-radius-input .wb-input {
+    width: 90px;
+}
+
+.ffla-wl-radius-unit {
+    color: var(--wb-text-muted, #646970);
+    font-size: 13px;
+}
+
+/* Menu tab — dividers */
+.ffla-wl-menu-toolbar {
+    margin: 4px 0 4px;
+}
+
+.ffla-wl-menu-toolbar .wb-btn .dashicons {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    line-height: 1;
+    vertical-align: text-bottom;
+}
+
+.ffla-wl-sortable__divider {
+    background: var(--wb-surface-alt, #f6f7f7);
+    border-style: dashed;
+}
+
+.ffla-wl-sortable__label--divider {
+    flex: 1;
+    font-weight: 500;
+    font-style: italic;
+    color: var(--wb-text-muted, #646970);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 11px;
+}
+
+.ffla-wl-sortable__remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid var(--wb-border, #e2e4e9);
+    border-radius: 6px;
+    background: none;
+    color: var(--wb-text-muted, #646970);
+    cursor: pointer;
+}
+
+.ffla-wl-sortable__remove:hover {
+    color: #b32d2e;
+    border-color: #b32d2e;
+}
+
+.ffla-wl-sortable__remove .dashicons {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    line-height: 1;
 }
 
 /* ── Import / Export ─────────────────────────────────────────────────── */
