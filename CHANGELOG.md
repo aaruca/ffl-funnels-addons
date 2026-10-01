@@ -2,7 +2,7 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
-## [Unreleased]
+## [1.55.0] - 2026-10-01
 
 ### Changed
 - Admin redesign for every module (shared shell and components): a compact header with the plugin mark and version, a sidebar with module icons where single-page modules are direct links and multi-page modules open a list of their pages, flat cards with divided setting rows, new inputs, toggles and buttons, sentence-case labels instead of all caps, and a save bar that floats at the bottom of the page, turns dark with **Unsaved changes**, offers **Discard** and warns before leaving with unsaved edits. The dashboard groups modules into **Active** and **Available**, with an **Open settings** link on each active module. On narrow screens the sidebar scrolls to the current page.
