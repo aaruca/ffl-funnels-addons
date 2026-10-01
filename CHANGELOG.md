@@ -2,6 +2,32 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.51.0] - 2026-10-01
+
+### Added
+- WooBooster: **use WooBooster from your own AI over MCP**. On WordPress 6.9+ WooBooster registers seven abilities — `woobooster/search-catalog`, `list-rules`, `validate-rule`, `create-rule`, `update-rule`, `set-rule-status` and `diagnose-product` — exposed to MCP clients (Claude, ChatGPT, Cursor…) through the official MCP Adapter plugin or a plugin that includes it, such as Novamira. Only WooBooster operations are exposed, every ability requires `manage_woocommerce`, writes are validated and new rules are created inactive. WB Settings → AI Assistant shows whether MCP is available on the site. Older WordPress versions simply don't register them.
+- WooBooster: the AI API key and Tavily key can be set in `wp-config.php` (`FFLA_WOOBOOSTER_AI_KEY`, `FFLA_WOOBOOSTER_TAVILY_KEY`), so they are not stored in the database; the settings field shows when a constant is in use.
+- WooBooster: **Similar: key attributes** setting (Smart Recommendations) — the attributes that make two products the same kind, such as `pa_caliber` or `pa_platform`. Blank auto-detects common firearms attributes present on the store.
+- `tests/smoke/woobooster-smart-smoke.php` (12 checks).
+
+### Changed
+- WooBooster AI Assistant: the default OpenAI model is now **GPT-5.6 Luna** (`gpt-5.6-luna`) with low reasoning effort; a model override still wins. The assistant validates every rule against the catalog (`validate_rule`) before proposing it and can no longer write rules on its own: rules are saved only from the **Create** button, which validates again, and a proposal that carries a `rule_id` updates that rule. Store search now matches SKUs and returns price and stock; web search defaults to Tavily `basic` (1 credit instead of 2) and returns its sources with the summary; repeated searches within 15 minutes are reused; a request stops after 5 model calls instead of 8.
+- WooBooster **Bought Together** ranks pairs by how much more often they sell together than chance (lift), not by raw counts, so items that are in most orders anyway (ammo, fees) no longer top every list. Large orders count less (1/(items−1) per pair), orders with more than 40 products are skipped, virtual products (transfer fees, gift cards, protection plans) are left out, and on stores with 200+ multi-item orders a pair needs at least 2 shared orders.
+- WooBooster **Trending** now ranks recent momentum: each order counts once regardless of quantity and its weight halves every 14 days. Parent categories include their subcategories' sales, virtual products are left out, and lists are kept for two days so a late cron run never empties them.
+- WooBooster `rand` sorting now picks at random from the best sellers instead of running `ORDER BY RAND()` over every matching product.
+- WooBooster recommendations are cached as transients on sites without Redis/Memcached (the object cache only lasted one request there), including "no rule matches" results; Similar Products results are kept for 6 hours.
+- WooBooster's nightly co-purchase build reads order lines in batches with one query (keyset pagination, falling back to item meta for orders WooCommerce's lookup table hasn't synced), writes only lists that changed and skips the run when the order window is unchanged. The **Rebuild** button always rebuilds.
+
+### Fixed
+- WooBooster: switching a rule on from the rules list now indexes it. Rules created inactive (as AI-created rules are) never matched any product until they were edited and saved again.
+- WooBooster: actions in the same AND group now return products that match all of them. Each action used to be cut to the display limit in random order before intersecting, so groups usually came back empty. Smart sources in an AND group no longer pad the result with best-seller fallbacks.
+- WooBooster: co-purchase lists of products that no longer have any pairs are removed on rebuild instead of staying forever.
+- WooBooster: **Similar Products** ignores WooCommerce's internal terms (`simple`, `featured`, `outofstock`, shipping class) when finding candidates — they pulled unrelated products into the pool and made the query scan most of the catalog — and finds caliber on stores that use `pa_caliber`.
+- WooBooster: **Recently Viewed** results are never cached; with a persistent object cache, one visitor's list could be shown to others.
+- WooBooster: the matched rule is restored on a cache hit, so analytics attribution no longer drops for cached recommendations.
+- WooBooster: switching a rule on or off, or saving settings, clears cached recommendations right away; the Rule Tester shows the combined result shoppers see, including Smart sources.
+- WooBooster AI Assistant: `attribute_value` actions are saved in the `pa_attribute:term-slug` format the engine expects; a bare term slug used to produce an empty rule.
+
 ## [1.50.0] - 2026-10-01
 
 ### Added

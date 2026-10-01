@@ -277,13 +277,28 @@ class WooBooster_Rule
 
         $new_status = $rule->status ? 0 : 1;
 
-        return (bool) $wpdb->update(
+        $updated = (bool) $wpdb->update(
             self::$table,
             array('status' => $new_status),
             array('id' => absint($id)),
             array('%d'),
             array('%d')
         );
+
+        if ($updated) {
+            // The lookup index only holds ACTIVE rules, so (re)build or drop
+            // this rule's entries. Without this, a rule created inactive (as
+            // AI-created rules are) and then switched on never matched until
+            // it was edited and saved again.
+            self::rebuild_index_for_rule($id);
+
+            // Cached recommendations must follow the switch right away.
+            if (class_exists('WooBooster_Matcher')) {
+                WooBooster_Matcher::invalidate_recommendation_cache();
+            }
+        }
+
+        return $updated;
     }
 
     /**

@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.50.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.51.0-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -37,9 +37,10 @@ This plugin is a modular suite of tools designed to enhance FFL Funnels stores. 
 
 ### 1. WooBooster Module
 An intelligent product recommendation engine that goes beyond simple "related products".
-*   **AI Rule Generator:** Create robust recommendation rules using natural language. Choose the **LLM provider** in WooBooster settings (OpenAI, DeepSeek, or NVIDIA NIM), optional model override, and **thinking mode** where supported. **Tavily** remains optional for web search; SnapFind is unrelated to this feature.
+*   **AI Rule Generator:** Create recommendation rules in natural language. Defaults to OpenAI **GPT-5.6 Luna** (DeepSeek and NVIDIA NIM also available, with a model override). Every proposal is validated against the real catalog and saved only from the **Create** button, inactive for review. Keys can live in `wp-config.php` (`FFLA_WOOBOOSTER_AI_KEY`, `FFLA_WOOBOOSTER_TAVILY_KEY`). **Tavily** is optional for web search.
+*   **Use your own AI (MCP):** On WordPress 6.9+, the `woobooster/*` abilities (search catalog, list/validate/create/update rules, activate rules, diagnose a product) are available to Claude, ChatGPT, Cursor and other MCP clients through the official MCP Adapter plugin or a plugin that includes it, such as Novamira. Requires `manage_woocommerce`; no PHP or database access is exposed.
 *   **Targeted Rules:** Create specific recommendation rules based on Categories, Tags, and Attributes (e.g., recommend specific holsters for Glock 19).
-*   **Smart Recommendations:** Automatically display "Bought Together", "Trending", "Recently Viewed", and "Similar Products" without manual curation. WB Settings includes **index diagnostics** (orders in window, multi-line vs single-line orders) and filterable order statuses for co-purchase / trending builds.
+*   **Smart Recommendations:** Automatically display "Bought Together" (ranked by lift, so items in every cart don't dominate), "Trending" (recent orders, weighted toward the last two weeks), "Recently Viewed", and "Similar Products" (by brand, configurable key attributes such as caliber, category, price) without manual curation. WB Settings includes **index diagnostics** (orders in window, multi-line vs single-line orders) and filterable order statuses for co-purchase / trending builds.
 *   **High Performance:** Uses custom index tables and aggressive caching to ensure zero impact on page load speed.
 *   **Bricks Integration:** Fully compatible with Bricks Builder via **WooBooster Recommendations** (rules-based) and **WooBooster Smart Recommendations** (pick one Smart strategy with fallbacks, no rule required). Smart loops roll up attribution to a single **Smart (all)** row in WooBooster analytics.
 

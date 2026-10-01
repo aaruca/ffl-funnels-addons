@@ -75,10 +75,13 @@ class WooBooster_Cron
      *
      * @return array Stats from the build.
      */
-    public function run_copurchase()
+    public function run_copurchase($force = false)
     {
+        // Cron passes no arguments (WordPress hands the callback an empty
+        // string), so scheduled runs may skip an unchanged window; the manual
+        // "Rebuild" button passes true.
         $builder = new WooBooster_Copurchase();
-        return $builder->build();
+        return $builder->build(true === $force);
     }
 
     /**

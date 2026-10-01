@@ -23,7 +23,7 @@ class WooBooster_Admin
         'openai' => array(
             'label'    => 'OpenAI',
             'api_url'  => 'https://api.openai.com/v1/chat/completions',
-            'model'    => 'gpt-4o-mini',
+            'model'    => 'gpt-5.6-luna',
             'thinking' => false,
         ),
         'deepseek' => array(
@@ -252,7 +252,7 @@ class WooBooster_Admin
 
         $default_model = isset(self::$ai_providers[$provider]['model'])
             ? self::$ai_providers[$provider]['model']
-            : 'gpt-4o-mini';
+            : 'gpt-5.6-luna';
         ?>
         <div class="wb-card" style="margin-top:24px;">
             <div class="wb-card__header">
@@ -268,12 +268,16 @@ class WooBooster_Admin
                     __('Choose which AI service powers the WooBooster assistant.', 'ffl-funnels-addons')
                 );
 
-                FFLA_Admin::render_password_field(
-                    __('API Key', 'ffl-funnels-addons'),
-                    'woobooster_ai_api_key',
-                    $api_key,
-                    __('Enter the API key for your selected provider (OpenAI, DeepSeek, or NVIDIA).', 'ffl-funnels-addons')
-                );
+                if (self::constant_value('FFLA_WOOBOOSTER_AI_KEY')) {
+                    self::render_constant_notice(__('API Key', 'ffl-funnels-addons'), 'FFLA_WOOBOOSTER_AI_KEY');
+                } else {
+                    FFLA_Admin::render_password_field(
+                        __('API Key', 'ffl-funnels-addons'),
+                        'woobooster_ai_api_key',
+                        $api_key,
+                        __('Enter the API key for your selected provider (OpenAI, DeepSeek, or NVIDIA), or define FFLA_WOOBOOSTER_AI_KEY in wp-config.php to set it for this site without saving it in the database.', 'ffl-funnels-addons')
+                    );
+                }
                 ?>
 
                 <div class="wb-field">
@@ -298,12 +302,18 @@ class WooBooster_Admin
                     __('Enable chain-of-thought reasoning. The AI shows its thought process before answering. Supported by DeepSeek and NVIDIA NIM only.', 'ffl-funnels-addons')
                 );
 
-                FFLA_Admin::render_password_field(
-                    __('Tavily API Key', 'ffl-funnels-addons'),
-                    'woobooster_tavily_key',
-                    $tavily_key,
-                    __('Optional. Allows the AI to search the web for product compatibility data and rankings.', 'ffl-funnels-addons')
-                );
+                if (self::constant_value('FFLA_WOOBOOSTER_TAVILY_KEY')) {
+                    self::render_constant_notice(__('Tavily API Key', 'ffl-funnels-addons'), 'FFLA_WOOBOOSTER_TAVILY_KEY');
+                } else {
+                    FFLA_Admin::render_password_field(
+                        __('Tavily API Key', 'ffl-funnels-addons'),
+                        'woobooster_tavily_key',
+                        $tavily_key,
+                        __('Optional. Allows the AI to search the web for product compatibility data and rankings. Can also be set with FFLA_WOOBOOSTER_TAVILY_KEY in wp-config.php.', 'ffl-funnels-addons')
+                    );
+                }
+
+                $this->render_mcp_status();
                 ?>
             </div>
         </div>
@@ -317,10 +327,67 @@ class WooBooster_Admin
             var defaults = <?php echo wp_json_encode(array_map(function ($p) { return $p['model']; }, self::$ai_providers)); ?>;
 
             providerEl.addEventListener('change', function() {
-                modelEl.placeholder = defaults[this.value] || 'gpt-4o-mini';
+                modelEl.placeholder = defaults[this.value] || 'gpt-5.6-luna';
             });
         })();
         </script>
+        <?php
+    }
+
+    /**
+     * A non-empty string constant's value, or ''.
+     */
+    private static function constant_value(string $name): string
+    {
+        return (defined($name) && is_string(constant($name))) ? trim((string) constant($name)) : '';
+    }
+
+    /**
+     * Read-only row shown instead of a key field when wp-config.php sets it.
+     */
+    private static function render_constant_notice(string $label, string $constant): void
+    {
+        ?>
+        <div class="wb-field">
+            <label class="wb-field__label"><?php echo esc_html($label); ?></label>
+            <div class="wb-field__control">
+                <p class="wb-field__desc">
+                    <?php
+                    echo esc_html(sprintf(
+                        /* translators: %s: PHP constant name */
+                        __('Set in wp-config.php (%s). Remove the constant to manage it here.', 'ffl-funnels-addons'),
+                        $constant
+                    ));
+                    ?>
+                </p>
+            </div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Where the team can use WooBooster from their own AI (MCP).
+     */
+    private function render_mcp_status(): void
+    {
+        if (!WooBooster_Abilities::abilities_supported()) {
+            $status = __('Needs WordPress 6.9 or newer. The assistant above still works.', 'ffl-funnels-addons');
+        } elseif (WooBooster_Abilities::mcp_available()) {
+            $status = sprintf(
+                /* translators: %s: REST endpoint path */
+                __('Available. MCP clients (Claude, ChatGPT, Cursor…) connected to this site can search the catalog and create, update and diagnose rules through the woobooster/* abilities. Endpoint: %s', 'ffl-funnels-addons'),
+                rest_url('mcp/mcp-adapter-default-server')
+            );
+        } else {
+            $status = __('WooBooster abilities are registered, but no MCP server is running. Install and activate the official "MCP Adapter" plugin (or a plugin that includes it, such as Novamira) to use them from Claude, ChatGPT or Cursor.', 'ffl-funnels-addons');
+        }
+        ?>
+        <div class="wb-field">
+            <label class="wb-field__label"><?php esc_html_e('Use with your own AI (MCP)', 'ffl-funnels-addons'); ?></label>
+            <div class="wb-field__control">
+                <p class="wb-field__desc"><?php echo esc_html($status); ?></p>
+            </div>
+        </div>
         <?php
     }
 
@@ -352,7 +419,7 @@ class WooBooster_Admin
                                 <span class="wb-toggle__slider"></span>
                             </label>
                             <p class="wb-field__desc">
-                                <?php esc_html_e('Analyze orders to find products frequently purchased together. Runs nightly via WP-Cron.', 'ffl-funnels-addons'); ?>
+                                <?php esc_html_e('Analyze orders to find products bought together more often than chance, so items that are in most orders anyway (ammo, fees) do not top every list. Runs nightly via WP-Cron and skips the run when no orders changed.', 'ffl-funnels-addons'); ?>
                             </p>
                         </div>
                     </div>
@@ -365,7 +432,7 @@ class WooBooster_Admin
                                 <span class="wb-toggle__slider"></span>
                             </label>
                             <p class="wb-field__desc">
-                                <?php esc_html_e('Track bestselling products per category. Updates every 6 hours via WP-Cron.', 'ffl-funnels-addons'); ?>
+                                <?php esc_html_e('Rank products per category by recent orders, weighted toward the last two weeks (parent categories include their subcategories). Updates every 6 hours via WP-Cron.', 'ffl-funnels-addons'); ?>
                             </p>
                         </div>
                     </div>
@@ -392,6 +459,28 @@ class WooBooster_Admin
                             </label>
                             <p class="wb-field__desc">
                                 <?php esc_html_e('Find products with similar price range and category, ordered by sales.', 'ffl-funnels-addons'); ?>
+                            </p>
+                        </div>
+                    </div>
+
+                    <?php
+                    $similar_attrs = isset($options['similar_key_attributes']) ? (string) $options['similar_key_attributes'] : '';
+                    $detected_attrs = WooBooster_Matcher::similar_key_attributes();
+                    ?>
+                    <div class="wb-field">
+                        <label class="wb-field__label" for="wb-similar-attrs"><?php esc_html_e('Similar: key attributes', 'ffl-funnels-addons'); ?></label>
+                        <div class="wb-field__control">
+                            <input type="text" id="wb-similar-attrs" name="woobooster_similar_key_attributes"
+                                value="<?php echo esc_attr($similar_attrs); ?>" class="wb-input"
+                                placeholder="<?php esc_attr_e('Auto-detect', 'ffl-funnels-addons'); ?>">
+                            <p class="wb-field__desc">
+                                <?php
+                                echo esc_html(sprintf(
+                                    /* translators: %s: comma-separated attribute taxonomies */
+                                    __('Attribute taxonomies that make two products the same kind (comma-separated, e.g. pa_caliber, pa_platform). Leave blank to auto-detect. In use: %s', 'ffl-funnels-addons'),
+                                    $detected_attrs ? implode(', ', $detected_attrs) : __('none found', 'ffl-funnels-addons')
+                                ));
+                                ?>
                             </p>
                         </div>
                     </div>
@@ -736,10 +825,10 @@ class WooBooster_Admin
             'section_title' => isset($_POST['woobooster_section_title']) ? sanitize_text_field(wp_unslash($_POST['woobooster_section_title'])) : '',
             'render_method' => isset($_POST['woobooster_render_method']) ? sanitize_key($_POST['woobooster_render_method']) : 'bricks',
             'ai_provider' => isset($_POST['woobooster_ai_provider']) ? sanitize_key($_POST['woobooster_ai_provider']) : 'openai',
-            'ai_api_key' => isset($_POST['woobooster_ai_api_key']) ? sanitize_text_field(wp_unslash($_POST['woobooster_ai_api_key'])) : '',
+            'ai_api_key' => isset($_POST['woobooster_ai_api_key']) ? sanitize_text_field(wp_unslash($_POST['woobooster_ai_api_key'])) : ($existing['ai_api_key'] ?? ''),
             'ai_model' => isset($_POST['woobooster_ai_model']) ? sanitize_text_field(wp_unslash($_POST['woobooster_ai_model'])) : '',
             'ai_thinking' => isset($_POST['woobooster_ai_thinking']) ? '1' : '0',
-            'tavily_key' => isset($_POST['woobooster_tavily_key']) ? sanitize_text_field(wp_unslash($_POST['woobooster_tavily_key'])) : '',
+            'tavily_key' => isset($_POST['woobooster_tavily_key']) ? sanitize_text_field(wp_unslash($_POST['woobooster_tavily_key'])) : ($existing['tavily_key'] ?? ''),
             'exclude_outofstock' => isset($_POST['woobooster_exclude_outofstock']) ? '1' : '0',
             'debug_mode' => isset($_POST['woobooster_debug_mode']) ? '1' : '0',
             'delete_data_uninstall' => isset($_POST['woobooster_delete_data']) ? '1' : '0',
@@ -753,11 +842,19 @@ class WooBooster_Admin
             $options['smart_similar'] = isset($_POST['woobooster_smart_similar']) ? '1' : '0';
             $options['smart_days'] = isset($_POST['woobooster_smart_days']) ? absint($_POST['woobooster_smart_days']) : 90;
             $options['smart_max_relations'] = isset($_POST['woobooster_smart_max_relations']) ? absint($_POST['woobooster_smart_max_relations']) : 20;
+
+            $attrs = isset($_POST['woobooster_similar_key_attributes']) ? sanitize_text_field(wp_unslash($_POST['woobooster_similar_key_attributes'])) : '';
+            $attrs = array_filter(array_map('sanitize_key', array_map('trim', explode(',', $attrs))));
+            $options['similar_key_attributes'] = implode(', ', array_unique($attrs));
         }
 
         // Explicitly persist with autoload=false so sensitive keys (AI provider/Tavily)
         // are not loaded on every request via wp_options autoload cache.
         update_option('woobooster_settings', $options, false);
+
+        // Settings shape every cached recommendation (stock filter, Smart
+        // options), so start fresh.
+        WooBooster_Matcher::invalidate_recommendation_cache();
 
         if (isset($_POST['woobooster_smart_save'])) {
             WooBooster_Cron::schedule();
@@ -949,7 +1046,7 @@ class WooBooster_Admin
         $options = get_option('woobooster_settings', array());
 
         if (!empty($options['smart_copurchase'])) {
-            $results['copurchase'] = $cron->run_copurchase();
+            $results['copurchase'] = $cron->run_copurchase(true);
         }
 
         if (!empty($options['smart_trending'])) {
@@ -1059,8 +1156,7 @@ class WooBooster_Admin
         }
 
         $config = $this->get_ai_provider_config();
-        $options = get_option('woobooster_settings', array());
-        $tavily_key = isset($options['tavily_key']) ? $options['tavily_key'] : '';
+        $tavily_key = $this->get_tavily_key();
 
         if (empty($config['api_key'])) {
             wp_send_json_error(array(
@@ -1087,8 +1183,11 @@ class WooBooster_Admin
 
         // Track tool steps for frontend feedback.
         $steps = array();
-        $max_turns = 8;
+        // Each turn resends the whole conversation plus every tool result, so
+        // cost grows with turns; 5 is enough to search, check and propose.
+        $max_turns = max(1, (int) apply_filters('woobooster_ai_max_turns', 5));
         $turn = 0;
+        $hit_turn_cap = false;
 
         while ($turn < $max_turns) {
             $turn++;
@@ -1133,45 +1232,52 @@ class WooBooster_Admin
                 break;
             }
 
+            if ($turn >= $max_turns) {
+                $hit_turn_cap = true;
+                break;
+            }
+
             // Add assistant message (with tool_calls) to history.
             $chat_history[] = $assistant_message;
 
             // Execute ALL tool calls from this turn (supports parallel calls).
             foreach ($assistant_message['tool_calls'] as $tool_call) {
                 $fn_name = $tool_call['function']['name'];
-                $fn_args = json_decode($tool_call['function']['arguments'], true);
+                $fn_args = json_decode((string) $tool_call['function']['arguments'], true);
+                $fn_args = is_array($fn_args) ? $fn_args : array();
 
                 $tool_result = '';
 
                 switch ($fn_name) {
                     case 'search_store':
                         $steps[] = array('tool' => 'search_store', 'label' => sprintf(__('Searching store for "%s"...', 'ffl-funnels-addons'), $fn_args['query'] ?? ''));
-                        $tool_result = $this->ai_tool_search_store($fn_args);
+                        $tool_result = $this->cached_tool_result('search_store', $fn_args, static function () use ($fn_args) {
+                            return wp_json_encode(WooBooster_AI_Tools::search_catalog($fn_args));
+                        });
                         break;
 
                     case 'search_web':
                         $steps[] = array('tool' => 'search_web', 'label' => sprintf(__('Searching the web for "%s"...', 'ffl-funnels-addons'), $fn_args['query'] ?? ''));
-                        $tool_result = $this->ai_tool_search_web($fn_args, $tavily_key);
+                        $tool_result = $this->cached_tool_result('search_web', $fn_args, function () use ($fn_args, $tavily_key) {
+                            return $this->ai_tool_search_web($fn_args, $tavily_key);
+                        });
                         break;
 
                     case 'get_rules':
                         $steps[] = array('tool' => 'get_rules', 'label' => __('Checking existing rules...', 'ffl-funnels-addons'));
-                        $tool_result = $this->ai_tool_get_rules();
+                        $tool_result = wp_json_encode(WooBooster_AI_Tools::list_rules());
+                        break;
+
+                    case 'validate_rule':
+                        $steps[] = array('tool' => 'validate_rule', 'label' => __('Checking the rule against your catalog…', 'ffl-funnels-addons'));
+                        $validate_id = isset($fn_args['rule_id']) ? absint($fn_args['rule_id']) : 0;
+                        unset($fn_args['rule_id']);
+                        $tool_result = wp_json_encode(WooBooster_AI_Tools::validate_rule($fn_args, $validate_id));
                         break;
 
                     case 'get_bundles':
                         $steps[] = array('tool' => 'get_bundles', 'label' => __('Checking existing bundles...', 'ffl-funnels-addons'));
                         $tool_result = $this->ai_tool_get_bundles();
-                        break;
-
-                    case 'create_rule':
-                        $steps[] = array('tool' => 'create_rule', 'label' => sprintf(__('Creating rule "%s"…', 'ffl-funnels-addons'), $fn_args['name'] ?? ''));
-                        $tool_result = wp_json_encode($this->ai_tool_create_rule($fn_args));
-                        break;
-
-                    case 'update_rule':
-                        $steps[] = array('tool' => 'update_rule', 'label' => sprintf(__('Updating rule #%d…', 'ffl-funnels-addons'), $fn_args['rule_id'] ?? 0));
-                        $tool_result = wp_json_encode($this->ai_tool_update_rule($fn_args));
                         break;
 
                     default:
@@ -1191,9 +1297,14 @@ class WooBooster_Admin
             // Loop continues — the AI will get all tool results and decide next step.
         }
 
+        $final_message = (string) ($assistant_message['content'] ?? '');
+        if ($hit_turn_cap) {
+            $final_message = trim($final_message . "\n\n" . __('I stopped after the maximum number of steps to keep costs down. Reply "continue" (or narrow the request) and I will pick up from here.', 'ffl-funnels-addons'));
+        }
+
         wp_send_json_success(array(
             'is_final'  => false,
-            'message'   => wp_kses_post($assistant_message['content'] ?? ''),
+            'message'   => wp_kses_post($final_message),
             'reasoning' => wp_kses_post($assistant_message['reasoning_content'] ?? ''),
             'provider'  => $config['label'],
             'steps'     => $steps,
@@ -1207,106 +1318,53 @@ class WooBooster_Admin
     {
         $has_web = !empty($tavily_key);
         $web_instruction = $has_web
-            ? "- Use `search_web` to find product compatibility data (e.g. \"best holsters for Glock 19\", \"compatible optics for AR-15 platform\", \"what magazines work with Sig P365\"). This is very powerful — use it whenever the user asks about compatibility or \"best sellers\" for a specific product.\n- For any ranking or \"best of the year\" query, pass `time_range = \"year\"` (or `\"month\"` for very recent releases) and include the current year in the query string."
-            : "- Web search is not available (no Tavily API key configured). Rely on store search and your own knowledge.";
+            ? "- Use `search_web` for compatibility or \"best of\" questions (e.g. \"best holsters for Glock 19\", \"magazines that fit Sig P365\"). For rankings include the current year and a recent `time_range`. Then confirm with `search_store` which of those products the store actually carries."
+            : "- Web search is not available (no Tavily API key). Rely on `search_store` and your own knowledge.";
 
         $today = wp_date('F j, Y');
         $current_year = wp_date('Y');
 
-        return "You are a product recommendation specialist for an FFL (Federal Firearms Licensed) WooCommerce store. You help store owners create WooBooster recommendation rules that drive cross-sells and upsells.
+        return "You are a product recommendation specialist for an FFL (Federal Firearms Licensed) WooCommerce store. You help the store team create WooBooster rules that drive cross-sells and upsells.
 
 ## Current Date
-Today is {$today}. The current year is {$current_year}. NEVER assume the year from your training data. When the user asks about \"best of the year\", \"new releases\", \"top rated this year\" or any time-sensitive ranking, always use {$current_year} and call `search_web` with a recent `time_range`.
+Today is {$today}. The current year is {$current_year}. Never assume the year from training data.
 
 ## How WooBooster Rules Work
-A rule has TWO parts:
-1. **Condition** — WHEN to show recommendations (triggered when a customer views a product matching this condition)
-2. **Action** — WHAT products to recommend
+A rule has a **condition** (WHEN a viewed product matches) and an **action** (WHAT to recommend).
 
-### Condition Attributes (use these exact values):
-- `product_cat` — Product category (use the slug, e.g. \"handguns\", \"rifles\")
-- `product_tag` — Product tag (use the slug)
-- `pa_*` — Product attribute taxonomy (e.g. `pa_caliber`, `pa_brand`, `pa_manufacturer`)
-- `specific_product` — A specific product by ID
+Condition (`condition_attribute` + `condition_operator` + `condition_value`):
+- `product_cat` / `product_tag` with a term slug, e.g. \"handguns\"
+- a `pa_*` attribute taxonomy with a term slug, e.g. `pa_caliber` = \"9mm\"
+- `specific_product` with product ID(s)
+- operators: `equals` (most common), `not_equals`, `contains`
 
-### Condition Operators:
-- `equals` — Exact match (most common)
-- `not_equals` — Everything except this
-- `contains` — Partial match
+Action (`action_source`):
+- `category` / `tag` — `action_value` is the slug
+- `attribute_value` — `action_value` MUST be \"pa_attribute:term-slug\", e.g. \"pa_caliber:9mm\" (attribute search results give it to you)
+- `specific_products` — hand-picked IDs in `action_products` (comma-separated), never in action_value
+- `copurchase` (bought together), `trending`, `similar`, `recently_viewed` — no action_value
+- `action_orderby`: rand (random among best sellers, default), bestselling, price, price_desc, date, rating
+- `action_limit`: products to show (default 4)
 
-### Action Sources (what to recommend):
-- `category` — Products from a category slug
-- `tag` — Products with a tag slug
-- `attribute_value` — Products with a specific attribute value
-- `specific_products` — Hand-picked products by ID (put IDs in action_products, NOT action_value)
-- `copurchase` — Frequently bought together (based on order history)
-- `trending` — Currently trending products
-- `apply_coupon` — Attach a coupon to the recommendation
-
-### Action Sort Options (action_orderby):
-- `rand` — Random order (default, good for variety)
-- `bestselling` — Best sellers first (great for proven products)
-- `price` — Cheapest first
-- `price_desc` — Most expensive first
-- `date` — Newest arrivals first
-- `rating` — Highest rated first
-
-## Your Workflow (INTERACTIVE — always confirm before creating)
-
-### Golden rules:
-- **NEVER ask the user for IDs, slugs, or technical data** — always use \`search_store\` yourself to find them.
-- **NEVER generate a [RULE] block until the user confirms** the products they want.
-- **NEVER create rules automatically** — always wait for explicit approval.
-- Only use IDs and slugs obtained from \`search_store\` results. Never invent or guess them.
-
-### Step-by-step process:
-
-**Step 1 — Understand the request**
-Ask clarifying questions if the intent is vague. Once clear, proceed.
-
-**Step 2 — Find the condition product/category**
-- Call \`search_store\` yourself.
-- **One match**: \"I found [Name] (ID: X) — I'll use this as the trigger. Confirmed?\"
-- **Multiple matches**: list them and ask the user to choose:
-  > I found several matches. Which one do you mean?
-  > 1. Glock 19 Gen 5 (ID: 1042)
-  > 2. Glock 19X (ID: 1089)
-- **No match**: tell the user and ask how to proceed.
-- Do NOT continue to the next step until the user confirms.
-
-**Step 3 — Find the recommended products**
+## Workflow (always confirm before proposing)
+- Never ask the user for IDs or slugs: find them with `search_store`. Use only IDs/slugs from tool results.
+- Clarify vague requests, then find the trigger (condition). If several products/terms match, list them and let the user pick.
 - {$web_instruction}
-- After any web search, always call \`search_store\` to verify which of those products actually exist in the store. Only present products that are confirmed in inventory.
-- Present them and ask for confirmation:
-  > I found these matching products in your store. Should I use all of them, or remove any?
-  > 1. Safariland Gravity OWB (ID: 204600)
-  > 2. Safariland Gravity OWB Multi-Cam (ID: 204598)
-  > 3. GrovTec IWB Holster (ID: 205560)
-- Do NOT generate the [RULE] until the user confirms the final product list.
+- Find the products to recommend; prefer items in stock (results show `stock`). Show the list and ask the user to confirm or trim it.
+- When the user confirms, call `validate_rule`. Fix every error it reports (search again if a slug or ID is wrong) and mention its warnings.
+- Then describe the rule in one or two sentences and emit the normalized rule from `validate_rule` as a [RULE] block. The user saves it with the button under your message; rules are created inactive for review.
+- To change an existing rule, find it with `get_rules`, validate the changes with its `rule_id`, and include `rule_id` in the [RULE] JSON.
 
-**Step 4 — Propose and create**
-Only after the user confirms both the condition and the recommended products, describe the rule in plain text and then emit the [RULE] block.
+[RULE] block format — no code fences, all confirmed IDs included:
 
-CRITICAL RULES for the [RULE] block:
-- Do NOT wrap it in markdown code fences (no triple backticks). Emit it directly in your message.
-- The JSON must contain ALL confirmed product IDs — never leave action_products empty.
-- When action_source is \`specific_products\`, action_products is MANDATORY. List every confirmed ID separated by commas.
-- Use ONLY real IDs from search_store results. Never use placeholder values.
+[RULE]{\"name\":\"Glock 19 Holsters\",\"condition_attribute\":\"specific_product\",\"condition_value\":\"1042\",\"action_source\":\"specific_products\",\"action_products\":\"204606,204604,204600\",\"action_orderby\":\"bestselling\"}[/RULE]
 
-Format (emit exactly like this, no code fences):
+[RULE]{\"name\":\"9mm Ammo for 9mm Handguns\",\"condition_attribute\":\"pa_caliber\",\"condition_value\":\"9mm\",\"action_source\":\"attribute_value\",\"action_value\":\"pa_caliber:9mm\",\"action_orderby\":\"bestselling\"}[/RULE]
 
-[RULE]{\"name\":\"Glock 19 Holsters\",\"condition_attribute\":\"specific_product\",\"condition_value\":\"1042\",\"action_source\":\"specific_products\",\"action_products\":\"204606,204604,204600,204598,204596,204580\",\"action_orderby\":\"bestselling\"}[/RULE]
-
-Category action example:
-
-[RULE]{\"name\":\"Glock 19 Holsters\",\"condition_attribute\":\"specific_product\",\"condition_value\":\"1042\",\"action_source\":\"category\",\"action_value\":\"holsters-gun-leather\",\"action_orderby\":\"bestselling\"}[/RULE]
-
-After emitting the [RULE] block, ask: \"Shall I create this rule?\"
-
-Prefer \`product_cat\` or \`pa_*\` conditions over \`specific_product\` for broader reach, unless the user specifically wants one product.
+Prefer `product_cat` or `pa_*` conditions over `specific_product` for broader reach, unless the user wants one product.
 
 ## FFL Store Context
-Common product types: firearms (handguns, rifles, shotguns), ammunition, holsters, optics/scopes, red dots, magazines, cleaning kits, gun cases, safes, ear protection, eye protection, grips, stocks, lights, lasers, bipods, slings, targets, range gear, reloading equipment, and tactical accessories.";
+Common product types: firearms (handguns, rifles, shotguns), ammunition, holsters, optics/red dots, magazines, cleaning kits, cases, safes, hearing/eye protection, grips, stocks, lights, lasers, bipods, slings, targets, range gear, reloading equipment and tactical accessories.";
     }
 
     /**
@@ -1321,7 +1379,12 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
         $options  = get_option('woobooster_settings', array());
         $provider = isset($options['ai_provider']) ? $options['ai_provider'] : 'openai';
 
-        $api_key = isset($options['ai_api_key']) ? $options['ai_api_key'] : '';
+        // wp-config.php wins, so the team can set one key per site without
+        // storing it in the database.
+        $api_key = self::constant_value('FFLA_WOOBOOSTER_AI_KEY');
+        if ('' === $api_key) {
+            $api_key = isset($options['ai_api_key']) ? $options['ai_api_key'] : '';
+        }
         if (empty($api_key) && !empty($options['openai_key'])) {
             $api_key = $options['openai_key'];
         }
@@ -1337,6 +1400,17 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
         $supports_thinking = !empty($defs['thinking']) && $thinking;
 
         $body_extra = array();
+
+        // OpenAI's GPT-5 family are reasoning models: "low" effort is plenty
+        // for searching the catalog and drafting a rule, and costs far fewer
+        // tokens than the default. Older models reject the parameter.
+        if ('openai' === $provider && 0 === strpos($model, 'gpt-5')) {
+            $effort = (string) apply_filters('woobooster_ai_reasoning_effort', 'low', $model);
+            if ('' !== $effort) {
+                $body_extra['reasoning_effort'] = $effort;
+            }
+        }
+
         if ($supports_thinking) {
             if ('nvidia' === $provider) {
                 $body_extra['chat_template_kwargs'] = array('thinking' => true);
@@ -1361,16 +1435,69 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
     }
 
     /**
+     * Tavily key: wp-config.php constant first, then the saved setting.
+     */
+    private function get_tavily_key(): string
+    {
+        $key = self::constant_value('FFLA_WOOBOOSTER_TAVILY_KEY');
+        if ('' !== $key) {
+            return $key;
+        }
+        $options = get_option('woobooster_settings', array());
+
+        return isset($options['tavily_key']) ? trim((string) $options['tavily_key']) : '';
+    }
+
+    /**
+     * Reuse a search result for 15 minutes per user, so retries and
+     * follow-up questions do not pay for the same search twice.
+     *
+     * @param string   $tool    Tool name.
+     * @param array    $args    Tool arguments.
+     * @param callable $compute Produces the result string on a miss.
+     */
+    private function cached_tool_result(string $tool, array $args, callable $compute): string
+    {
+        ksort($args);
+        $key = 'wb_ai_' . md5($tool . '|' . get_current_user_id() . '|' . wp_json_encode($args));
+        $cached = get_transient($key);
+        if (is_string($cached) && '' !== $cached) {
+            return $cached;
+        }
+
+        $result = (string) $compute();
+        if ('' !== $result) {
+            set_transient($key, $result, 15 * MINUTE_IN_SECONDS);
+        }
+
+        return $result;
+    }
+
+    /**
      * Define the AI tool schemas.
      */
     private function get_ai_tools(string $tavily_key): array
     {
+        $rule_fields = array(
+            'rule_id' => array('type' => 'integer', 'description' => 'Only when changing an existing rule.'),
+            'name' => array('type' => 'string', 'description' => 'Descriptive rule name'),
+            'priority' => array('type' => 'integer', 'description' => 'Lower = higher priority. Default 10.'),
+            'condition_attribute' => array('type' => 'string', 'description' => 'One of: product_cat, product_tag, specific_product, or a pa_* taxonomy'),
+            'condition_operator' => array('type' => 'string', 'enum' => WooBooster_AI_Tools::OPERATORS),
+            'condition_value' => array('type' => 'string', 'description' => 'Term slug, or product ID(s) for specific_product'),
+            'action_source' => array('type' => 'string', 'enum' => WooBooster_AI_Tools::ACTION_SOURCES),
+            'action_value' => array('type' => 'string', 'description' => 'Category/tag slug, or "pa_attribute:term-slug" for attribute_value'),
+            'action_products' => array('type' => 'string', 'description' => 'Comma-separated product IDs for specific_products'),
+            'action_orderby' => array('type' => 'string', 'enum' => WooBooster_AI_Tools::ORDERBY),
+            'action_limit' => array('type' => 'integer', 'description' => 'Max products to show. Default 4.'),
+        );
+
         $tools = array(
             array(
                 'type' => 'function',
                 'function' => array(
                     'name' => 'search_store',
-                    'description' => 'Search the WooCommerce catalog for products, categories, tags, or attributes. Returns IDs and slugs needed for rule creation.',
+                    'description' => 'Search the catalog. type=product matches title, description and SKU and returns id, name, sku, price, stock and categories. category/tag/attribute return slugs (attribute results include the exact action_value to use).',
                     'parameters' => array(
                         'type' => 'object',
                         'properties' => array(
@@ -1385,7 +1512,7 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
                 'type' => 'function',
                 'function' => array(
                     'name' => 'get_rules',
-                    'description' => 'List existing WooBooster rules to avoid duplicates or understand current setup.',
+                    'description' => 'List existing WooBooster rules to avoid duplicates or find a rule to change.',
                     'parameters' => array(
                         'type' => 'object',
                         'properties' => new \stdClass(),
@@ -1395,47 +1522,12 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
             array(
                 'type' => 'function',
                 'function' => array(
-                    'name' => 'create_rule',
-                    'description' => 'Create a new recommendation rule. Always search_store first to get correct slugs/IDs.',
+                    'name' => 'validate_rule',
+                    'description' => 'Check a rule against the real catalog before proposing it. Returns errors, warnings and the normalized rule to put in the [RULE] block. Does NOT save anything.',
                     'parameters' => array(
                         'type' => 'object',
-                        'properties' => array(
-                            'name' => array('type' => 'string', 'description' => 'Descriptive rule name'),
-                            'priority' => array('type' => 'integer', 'description' => 'Lower = higher priority. Default 10.'),
-                            'condition_attribute' => array('type' => 'string', 'description' => 'One of: product_cat, product_tag, specific_product, or pa_* taxonomy'),
-                            'condition_operator' => array('type' => 'string', 'enum' => array('equals', 'not_equals', 'contains')),
-                            'condition_value' => array('type' => 'string', 'description' => 'The slug or ID for the condition'),
-                            'action_source' => array('type' => 'string', 'enum' => array('category', 'tag', 'attribute_value', 'specific_products', 'copurchase', 'trending')),
-                            'action_value' => array('type' => 'string', 'description' => 'Slug for category/tag/attribute_value actions'),
-                            'action_products' => array('type' => 'string', 'description' => 'Comma-separated product IDs for specific_products action'),
-                            'action_orderby' => array('type' => 'string', 'enum' => array('rand', 'bestselling', 'price', 'price_desc', 'date', 'rating'), 'description' => 'Sort order. Default rand.'),
-                            'action_limit' => array('type' => 'integer', 'description' => 'Max products to show. Default 4.'),
-                        ),
-                        'required' => array('name', 'condition_attribute', 'condition_operator', 'action_source'),
-                    ),
-                ),
-            ),
-            array(
-                'type' => 'function',
-                'function' => array(
-                    'name' => 'update_rule',
-                    'description' => 'Update an existing rule. Only provide fields you want to change.',
-                    'parameters' => array(
-                        'type' => 'object',
-                        'properties' => array(
-                            'rule_id' => array('type' => 'integer', 'description' => 'ID of the rule to update'),
-                            'name' => array('type' => 'string'),
-                            'priority' => array('type' => 'integer'),
-                            'condition_attribute' => array('type' => 'string'),
-                            'condition_operator' => array('type' => 'string', 'enum' => array('equals', 'not_equals', 'contains')),
-                            'condition_value' => array('type' => 'string'),
-                            'action_source' => array('type' => 'string', 'enum' => array('category', 'tag', 'attribute_value', 'specific_products', 'copurchase', 'trending')),
-                            'action_value' => array('type' => 'string'),
-                            'action_products' => array('type' => 'string'),
-                            'action_orderby' => array('type' => 'string', 'enum' => array('rand', 'bestselling', 'price', 'price_desc', 'date', 'rating')),
-                            'action_limit' => array('type' => 'integer'),
-                        ),
-                        'required' => array('rule_id'),
+                        'properties' => $rule_fields,
+                        'required' => array('name', 'condition_attribute', 'condition_value', 'action_source'),
                     ),
                 ),
             ),
@@ -1482,7 +1574,7 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
                         'search_depth' => array(
                             'type' => 'string',
                             'enum' => array('basic', 'advanced'),
-                            'description' => 'Use "advanced" for compatibility research. Default "advanced".',
+                            'description' => 'Default "basic". Use "advanced" (twice the cost) only when basic results are not enough.',
                         ),
                     ),
                     'required' => array('query'),
@@ -1527,64 +1619,6 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
     // ── AI Tool Handlers ──────────────────────────────────────────────
 
     /**
-     * Tool: Search the WooCommerce store catalog.
-     */
-    private function ai_tool_search_store(array $args): string
-    {
-        $type = isset($args['type']) ? sanitize_text_field($args['type']) : 'product';
-        $query = isset($args['query']) ? sanitize_text_field($args['query']) : '';
-        $results = array();
-
-        if ('product' === $type) {
-            $products = wc_get_products(array(
-                'status' => 'publish',
-                'limit' => 15,
-                's' => $query,
-                'return' => 'objects',
-            ));
-            foreach ($products as $p) {
-                $item = array('id' => $p->get_id(), 'name' => $p->get_name(), 'slug' => $p->get_slug());
-                $cats = wp_get_post_terms($p->get_id(), 'product_cat', array('fields' => 'names'));
-                if (!is_wp_error($cats) && !empty($cats)) {
-                    $item['categories'] = implode(', ', $cats);
-                }
-                $results[] = $item;
-            }
-        } elseif ('attribute' === $type) {
-            global $wpdb;
-            // phpcs:ignore WordPress.DB.DirectDatabaseQuery
-            $terms = $wpdb->get_results($wpdb->prepare(
-                "SELECT t.term_id, t.name, t.slug, tt.taxonomy
-                FROM {$wpdb->terms} AS t
-                INNER JOIN {$wpdb->term_taxonomy} AS tt ON t.term_id = tt.term_id
-                WHERE t.name LIKE %s AND tt.taxonomy LIKE %s LIMIT 20",
-                '%' . $wpdb->esc_like($query) . '%',
-                'pa_%'
-            ));
-            foreach ($terms as $t) {
-                $results[] = array('id' => $t->term_id, 'name' => $t->name, 'slug' => $t->slug, 'taxonomy' => $t->taxonomy);
-            }
-        } else {
-            $taxonomy = ('tag' === $type) ? 'product_tag' : 'product_cat';
-            $terms = get_terms(array(
-                'taxonomy' => $taxonomy,
-                'name__like' => $query,
-                'number' => 15,
-                'hide_empty' => false,
-            ));
-            if (!is_wp_error($terms)) {
-                foreach ($terms as $t) {
-                    $results[] = array('id' => $t->term_id, 'name' => $t->name, 'slug' => $t->slug, 'count' => $t->count);
-                }
-            }
-        }
-
-        return empty($results)
-            ? sprintf('No %s found matching "%s".', $type, $query)
-            : wp_json_encode($results);
-    }
-
-    /**
      * Tool: Search the web via Tavily API.
      */
     private function ai_tool_search_web(array $args, string $tavily_key): string
@@ -1612,7 +1646,7 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
         $allowed_depth = array('basic', 'advanced');
         $search_depth = isset($args['search_depth']) && in_array($args['search_depth'], $allowed_depth, true)
             ? $args['search_depth']
-            : 'advanced';
+            : 'basic'; // "advanced" costs 2 Tavily credits instead of 1; the model can still ask for it.
 
         $payload = array(
             'api_key'        => trim($tavily_key),
@@ -1642,215 +1676,31 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
         }
 
         $body = json_decode(wp_remote_retrieve_body($response), true);
-
-        if (isset($body['answer'])) {
-            return $body['answer'];
+        if (!is_array($body)) {
+            return 'Web search failed: unreadable response.';
         }
 
-        if (isset($body['results'])) {
-            return wp_json_encode(array_slice($body['results'], 0, 5));
-        }
-
-        return 'No web results found.';
-    }
-
-    /**
-     * Tool: Get all existing rules.
-     */
-    private function ai_tool_get_rules(): string
-    {
-        require_once WOOBOOSTER_PATH . 'includes/class-woobooster-rule.php';
-        $rules = WooBooster_Rule::get_all();
-        $summary = array();
-
-        foreach ($rules as $rule) {
-            $conditions = WooBooster_Rule::get_conditions($rule->id);
-            $actions = WooBooster_Rule::get_actions($rule->id);
-
-            $condition_str = '';
-            if (!empty($conditions[0])) {
-                $cond = $conditions[0][0] ?? null;
-                if ($cond) {
-                    $condition_str = sprintf(
-                        '%s %s %s',
-                        $cond->condition_attribute ?? '',
-                        $cond->condition_operator ?? '',
-                        $cond->condition_value ?? ''
-                    );
-                }
-            }
-
-            $action_str = '';
-            if (!empty($actions[0])) {
-                $act = $actions[0][0] ?? null;
-                if ($act) {
-                    $action_str = sprintf(
-                        '%s:%s',
-                        $act->action_source ?? '',
-                        $act->action_value ?? ''
-                    );
-                }
-            }
-
-            $summary[] = array(
-                'id' => $rule->id,
-                'name' => $rule->name,
-                'priority' => $rule->priority,
-                'status' => $rule->status ? 'active' : 'inactive',
-                'condition' => $condition_str,
-                'action' => $action_str,
+        // Send the summary AND its sources (title, URL, short snippet), so the
+        // model can check product names instead of trusting a summary alone.
+        $sources = array();
+        foreach (array_slice((array) ($body['results'] ?? array()), 0, 5) as $result) {
+            $sources[] = array(
+                'title'   => (string) ($result['title'] ?? ''),
+                'url'     => (string) ($result['url'] ?? ''),
+                'snippet' => wp_html_excerpt((string) ($result['content'] ?? ''), 300, '…'),
             );
         }
 
-        return empty($summary) ? 'No rules exist yet.' : wp_json_encode($summary);
-    }
-
-    /**
-     * Tool: Create a new rule with proper conditions/actions table support.
-     *
-     * @return array{success: bool, message: string, rule_id?: int, edit_url?: string}
-     */
-    private function ai_tool_create_rule(array $args): array
-    {
-        require_once WOOBOOSTER_PATH . 'includes/class-woobooster-rule.php';
-
-        $rule_data = array(
-            'name' => sanitize_text_field($args['name'] ?? ''),
-            'priority' => absint($args['priority'] ?? 10),
-            'status' => 0, // Inactive — let owner review first.
-            'condition_attribute' => sanitize_key($args['condition_attribute'] ?? ''),
-            'condition_operator' => $args['condition_operator'] ?? 'equals',
-            'condition_value' => sanitize_text_field($args['condition_value'] ?? ''),
-            'action_source' => sanitize_key($args['action_source'] ?? 'category'),
-            'action_value' => sanitize_text_field($args['action_value'] ?? ''),
-            'action_orderby' => sanitize_key($args['action_orderby'] ?? 'rand'),
-            'action_limit' => max(1, absint($args['action_limit'] ?? 4)),
-        );
-
-        $rule_id = WooBooster_Rule::create($rule_data);
-
-        if (!$rule_id) {
-            return array('success' => false, 'message' => 'Failed to save rule to database.');
+        if (empty($sources) && empty($body['answer'])) {
+            return 'No web results found.';
         }
 
-        // Save condition to the conditions table.
-        WooBooster_Rule::save_conditions($rule_id, array(
-            array( // Group 0
-                array(
-                    'condition_attribute' => $rule_data['condition_attribute'],
-                    'condition_operator' => $rule_data['condition_operator'],
-                    'condition_value' => $rule_data['condition_value'],
-                    'include_children' => 1,
-                    'min_quantity' => 1,
-                ),
-            ),
+        return wp_json_encode(array(
+            'answer'  => (string) ($body['answer'] ?? ''),
+            'sources' => $sources,
         ));
-
-        // Save action to the actions table.
-        $action_row = array(
-            'action_source' => $rule_data['action_source'],
-            'action_value' => $rule_data['action_value'],
-            'action_orderby' => $rule_data['action_orderby'],
-            'action_limit' => $rule_data['action_limit'],
-            'include_children' => 1,
-        );
-        if (!empty($args['action_products'])) {
-            $action_row['action_products'] = sanitize_text_field($args['action_products']);
-            // Auto-derive action_limit from product count for specific_products
-            if ('specific_products' === $rule_data['action_source']) {
-                $product_ids = array_filter(array_map('intval', explode(',', $action_row['action_products'])));
-                if (!empty($product_ids)) {
-                    $action_row['action_limit'] = count($product_ids);
-                }
-            }
-        }
-        WooBooster_Rule::save_actions($rule_id, array(
-            array($action_row), // Group 0
-        ));
-
-        $edit_url = admin_url('admin.php?page=ffla-woobooster-rules&action=edit&rule_id=' . $rule_id);
-
-        return array(
-            'success' => true,
-            'message' => sprintf('Rule #%d "%s" created successfully (inactive). Edit URL: %s', $rule_id, $rule_data['name'], $edit_url),
-            'rule_id' => $rule_id,
-            'edit_url' => $edit_url,
-        );
     }
 
-    /**
-     * Tool: Update an existing rule.
-     *
-     * @return array{success: bool, message: string, rule_id?: int, edit_url?: string}
-     */
-    private function ai_tool_update_rule(array $args): array
-    {
-        require_once WOOBOOSTER_PATH . 'includes/class-woobooster-rule.php';
-
-        $rule_id = absint($args['rule_id'] ?? 0);
-        if (!$rule_id) {
-            return array('success' => false, 'message' => 'Missing rule_id.');
-        }
-
-        $existing = WooBooster_Rule::get($rule_id);
-        if (!$existing) {
-            return array('success' => false, 'message' => sprintf('Rule #%d not found.', $rule_id));
-        }
-
-        // Update main rule table (only provided fields).
-        $update_data = array();
-        $field_map = array('name', 'priority', 'condition_attribute', 'condition_operator', 'condition_value', 'action_source', 'action_value', 'action_orderby', 'action_limit');
-        foreach ($field_map as $field) {
-            if (isset($args[$field])) {
-                $update_data[$field] = $args[$field];
-            }
-        }
-
-        if (!empty($update_data)) {
-            WooBooster_Rule::update($rule_id, $update_data);
-        }
-
-        // If condition fields changed, rebuild conditions table.
-        if (isset($args['condition_attribute'])) {
-            WooBooster_Rule::save_conditions($rule_id, array(
-                array(
-                    array(
-                        'condition_attribute' => sanitize_key($args['condition_attribute']),
-                        'condition_operator' => $args['condition_operator'] ?? $existing->condition_operator,
-                        'condition_value' => sanitize_text_field($args['condition_value'] ?? $existing->condition_value),
-                        'include_children' => 1,
-                        'min_quantity' => 1,
-                    ),
-                ),
-            ));
-        }
-
-        // If action fields changed, rebuild actions table.
-        if (isset($args['action_source'])) {
-            $action_row = array(
-                'action_source' => sanitize_key($args['action_source']),
-                'action_value' => sanitize_text_field($args['action_value'] ?? $existing->action_value),
-                'action_orderby' => sanitize_key($args['action_orderby'] ?? 'rand'),
-                'action_limit' => max(1, absint($args['action_limit'] ?? 4)),
-                'include_children' => 1,
-            );
-            if (!empty($args['action_products'])) {
-                $action_row['action_products'] = sanitize_text_field($args['action_products']);
-            }
-            WooBooster_Rule::save_actions($rule_id, array(
-                array($action_row),
-            ));
-        }
-
-        $edit_url = admin_url('admin.php?page=ffla-woobooster-rules&action=edit&rule_id=' . $rule_id);
-
-        return array(
-            'success' => true,
-            'message' => sprintf('Rule #%d updated. Edit URL: %s', $rule_id, $edit_url),
-            'rule_id' => $rule_id,
-            'edit_url' => $edit_url,
-        );
-    }
     /**
      * Render the AI Chat Modal HTML structure
      */
@@ -1878,17 +1728,23 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
             wp_send_json_error(array('message' => __('Invalid rule data format.', 'ffl-funnels-addons')));
         }
 
-        // Create the rule via the tool function (reuse existing logic).
-        $result = $this->ai_tool_create_rule($data);
+        // Validate against the real catalog, then create (inactive) or, when
+        // the block carries a rule_id, update that rule.
+        $rule_id = isset($data['rule_id']) ? absint($data['rule_id']) : 0;
+        $result = $rule_id
+            ? WooBooster_AI_Tools::update_rule($rule_id, $data)
+            : WooBooster_AI_Tools::create_rule($data);
 
         if ($result['success']) {
             wp_send_json_success(array(
                 'message' => $result['message'],
                 'rule_id' => $result['rule_id'],
                 'edit_url' => $result['edit_url'],
+                'warnings' => $result['warnings'] ?? array(),
             ));
         } else {
-            wp_send_json_error(array('message' => $result['message']));
+            $errors = !empty($result['errors']) ? ' ' . implode(' ', $result['errors']) : '';
+            wp_send_json_error(array('message' => $result['message'] . $errors));
         }
     }
 

@@ -2,8 +2,8 @@
 /**
  * WooBooster Trending Builder.
  *
- * Calculates trending/bestselling products per category and stores
- * results in transients. Zero new database tables.
+ * Ranks products by recent, time-decayed order momentum per category and
+ * stores the results in transients. Zero new database tables.
  *
  * @package FFL_Funnels_Addons
  */
@@ -18,8 +18,17 @@ class WooBooster_Trending
     /**
      * Build the trending index.
      *
-     * Aggregates recent sales by product, grouped by category,
-     * and stores ranked product ID arrays in transients.
+     * Since 1.51.0 "trending" means recent momentum, not lifetime quantity:
+     * every distinct order that contains a product adds a weight that halves
+     * every `woobooster_trending_half_life_days` days (default 14), so a sale
+     * yesterday counts about twice one from two weeks ago and quantity does not
+     * matter (20 boxes of ammo in one order count once). Products are ranked
+     * per category, and each category's list also includes sales from its
+     * child categories. Virtual products are left out (see
+     * WooBooster_Copurchase::excluded_product_ids()).
+     *
+     * Results are stored as transients (top 50 per category plus a global
+     * list), kept for two days so a late cron run never leaves them empty.
      *
      * @return array Build stats.
      */
@@ -35,153 +44,63 @@ class WooBooster_Trending
             $days = 90;
         }
 
+        $half_life = max(1.0, (float) apply_filters('woobooster_trending_half_life_days', 14));
         $date_cutoff = gmdate('Y-m-d H:i:s', strtotime("-{$days} days"));
-
-        $lookup_table = $wpdb->prefix . 'wc_order_product_lookup';
-        $has_lookup = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $lookup_table)) === $lookup_table;
 
         $statuses = self::get_order_statuses();
         $statuses_hpos = self::expand_statuses_for_hpos($statuses);
-        $status_placeholders = implode(', ', array_fill(0, count($statuses), '%s'));
-        $status_placeholders_hpos = implode(', ', array_fill(0, count($statuses_hpos), '%s'));
+        $use_hpos = WooBooster_Copurchase::is_custom_orders_table_in_use();
 
-        $product_sales = array();
+        $rows = $this->daily_order_counts($use_hpos, $use_hpos ? $statuses_hpos : $statuses, $date_cutoff);
+        $product_scores = self::score_rows($rows, time(), $half_life, WooBooster_Copurchase::excluded_product_ids());
 
-        if ($has_lookup) {
-            $use_hpos_lookup = WooBooster_Copurchase::is_custom_orders_table_in_use();
-
-            if ($use_hpos_lookup) {
-                $hpos_table = $wpdb->prefix . 'wc_orders';
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-                $results = $wpdb->get_results(
-                    $wpdb->prepare(
-                        "SELECT l.product_id, SUM(l.product_qty) AS total_qty
-                        FROM {$lookup_table} l
-                        JOIN {$hpos_table} o ON o.id = l.order_id
-                        WHERE l.date_created >= %s
-                        AND o.type = 'shop_order'
-                        AND o.status IN ({$status_placeholders_hpos})
-                        GROUP BY l.product_id
-                        ORDER BY total_qty DESC",
-                        array_merge(array($date_cutoff), $statuses_hpos)
-                    )
-                );
-            } else {
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-                $results = $wpdb->get_results(
-                    $wpdb->prepare(
-                        "SELECT l.product_id, SUM(l.product_qty) AS total_qty
-                        FROM {$lookup_table} l
-                        JOIN {$wpdb->posts} p ON p.ID = l.order_id
-                        WHERE l.date_created >= %s
-                        AND p.post_type = 'shop_order'
-                        AND p.post_status IN ({$status_placeholders})
-                        GROUP BY l.product_id
-                        ORDER BY total_qty DESC",
-                        array_merge(array($date_cutoff), $statuses)
-                    )
-                );
-            }
-
-            foreach ($results as $row) {
-                $product_sales[absint($row->product_id)] = absint($row->total_qty);
-            }
-        } else {
-            // Fallback: scan order items.
-            $order_items_table = $wpdb->prefix . 'woocommerce_order_items';
-            $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
-
-            $hpos_table = $wpdb->prefix . 'wc_orders';
-            $use_hpos = WooBooster_Copurchase::is_custom_orders_table_in_use();
-
-            if ($use_hpos) {
-                // HPOS stores status without the `wc-` prefix; match both forms.
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- status_placeholders_hpos built from a trusted whitelist.
-                $results = $wpdb->get_results(
-                    $wpdb->prepare(
-                        "SELECT oim_pid.meta_value AS product_id, SUM(oim_qty.meta_value) AS total_qty
-                        FROM {$order_items_table} oi
-                        JOIN {$hpos_table} o ON oi.order_id = o.id
-                        JOIN {$order_itemmeta_table} oim_pid ON oi.order_item_id = oim_pid.order_item_id AND oim_pid.meta_key = '_product_id'
-                        JOIN {$order_itemmeta_table} oim_qty ON oi.order_item_id = oim_qty.order_item_id AND oim_qty.meta_key = '_qty'
-                        WHERE o.status IN ({$status_placeholders_hpos})
-                        AND o.date_created_gmt >= %s
-                        AND oi.order_item_type = 'line_item'
-                        GROUP BY oim_pid.meta_value
-                        ORDER BY total_qty DESC",
-                        array_merge($statuses_hpos, array($date_cutoff))
-                    )
-                );
-            } else {
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-                $results = $wpdb->get_results(
-                    $wpdb->prepare(
-                        "SELECT oim_pid.meta_value AS product_id, SUM(oim_qty.meta_value) AS total_qty
-                        FROM {$order_items_table} oi
-                        JOIN {$wpdb->posts} p ON oi.order_id = p.ID
-                        JOIN {$order_itemmeta_table} oim_pid ON oi.order_item_id = oim_pid.order_item_id AND oim_pid.meta_key = '_product_id'
-                        JOIN {$order_itemmeta_table} oim_qty ON oi.order_item_id = oim_qty.order_item_id AND oim_qty.meta_key = '_qty'
-                        WHERE p.post_status IN ({$status_placeholders})
-                        AND p.post_date_gmt >= %s
-                        AND oi.order_item_type = 'line_item'
-                        GROUP BY oim_pid.meta_value
-                        ORDER BY total_qty DESC",
-                        array_merge($statuses, array($date_cutoff))
-                    )
-                );
-            }
-
-            foreach ($results as $row) {
-                $product_sales[absint($row->product_id)] = absint($row->total_qty);
-            }
-        }
-
-        // Group products by category using a single SQL JOIN (avoids N+1).
+        // Product → categories (one query), then roll each score up to every
+        // ancestor category so parent pages see their children's sales.
         $categories_indexed = 0;
         $category_products = array();
 
-        $product_ids = array_keys($product_sales);
+        $product_ids = array_keys($product_scores);
         if (!empty($product_ids)) {
             $placeholders = implode(', ', array_fill(0, count($product_ids), '%d'));
-            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
             $cat_relationships = $wpdb->get_results(
                 $wpdb->prepare(
-                    "SELECT tt.term_id, p.ID as product_id
-                    FROM {$wpdb->posts} p
-                    INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+                    "SELECT tt.term_id, tr.object_id AS product_id
+                    FROM {$wpdb->term_relationships} tr
                     INNER JOIN {$wpdb->term_taxonomy} tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
-                    WHERE p.ID IN ({$placeholders}) AND tt.taxonomy = %s",
+                    WHERE tr.object_id IN ({$placeholders}) AND tt.taxonomy = %s",
                     array_merge($product_ids, array('product_cat'))
                 )
             );
 
+            $ancestors = array();
             foreach ($cat_relationships as $row) {
                 $cat_id = absint($row->term_id);
                 $pid = absint($row->product_id);
-                if (!isset($category_products[$cat_id])) {
-                    $category_products[$cat_id] = array();
+                if (!isset($product_scores[$pid])) {
+                    continue;
                 }
-                if (isset($product_sales[$pid])) {
-                    $category_products[$cat_id][$pid] = $product_sales[$pid];
+                if (!isset($ancestors[$cat_id])) {
+                    $ancestors[$cat_id] = array_map('absint', (array) get_ancestors($cat_id, 'product_cat', 'taxonomy'));
+                }
+                foreach (array_merge(array($cat_id), $ancestors[$cat_id]) as $target) {
+                    // A product sits in a category once, even when several of
+                    // its categories share that ancestor.
+                    $category_products[$target][$pid] = $product_scores[$pid];
                 }
             }
         }
 
-        // Store top 50 per category as transient.
+        $ttl = 2 * DAY_IN_SECONDS;
         foreach ($category_products as $cat_id => $products) {
-            arsort($products);
-            $top = array_slice(array_keys($products), 0, 50, true);
-            set_transient('wb_trending_cat_' . $cat_id, $top, 12 * HOUR_IN_SECONDS);
+            set_transient('wb_trending_cat_' . $cat_id, self::top_ids($products, 50), $ttl);
             $categories_indexed++;
         }
 
-        // Also store a global trending list (all categories combined).
-        arsort($product_sales);
-        $global_top = array_slice(array_keys($product_sales), 0, 50, true);
-        set_transient('wb_trending_global', $global_top, 12 * HOUR_IN_SECONDS);
+        set_transient('wb_trending_global', self::top_ids($product_scores, 50), $ttl);
 
         $elapsed = round(microtime(true) - $start, 2);
-        $product_count = count($product_sales);
+        $product_count = count($product_scores);
 
         $reason = '';
         if (0 === $product_count) {
@@ -202,6 +121,7 @@ class WooBooster_Trending
             'products'   => $product_count,
             'categories' => $categories_indexed,
             'days'       => $days,
+            'half_life'  => $half_life,
             'statuses'   => $statuses,
             'reason'     => $reason,
             'time'       => $elapsed,
@@ -213,6 +133,122 @@ class WooBooster_Trending
         update_option('woobooster_last_build', $last_build);
 
         return $stats;
+    }
+
+    /**
+     * Time-decayed popularity per product (pure function; unit-testable).
+     *
+     * @param array<int, array{product_id:int|string, day:string, orders:int|string}> $rows
+     *        Distinct orders per product per day (UTC dates, Y-m-d).
+     * @param int   $now        Current Unix time.
+     * @param float $half_life  Days for a sale's weight to halve.
+     * @param int[] $excluded   Product IDs to leave out.
+     * @return array<int, float> product_id => score.
+     */
+    public static function score_rows(array $rows, int $now, float $half_life, array $excluded = array()): array
+    {
+        $excluded = array_flip(array_map('absint', $excluded));
+        $scores = array();
+
+        foreach ($rows as $row) {
+            $row = (array) $row;
+            $pid = absint($row['product_id'] ?? 0);
+            $orders = (int) ($row['orders'] ?? 0);
+            $day = strtotime((string) ($row['day'] ?? '') . ' 12:00:00 UTC');
+            if (!$pid || $orders < 1 || false === $day || isset($excluded[$pid])) {
+                continue;
+            }
+            $age_days = max(0.0, ($now - $day) / DAY_IN_SECONDS);
+            $scores[$pid] = ($scores[$pid] ?? 0.0) + $orders * pow(0.5, $age_days / $half_life);
+        }
+
+        return $scores;
+    }
+
+    /**
+     * IDs of the $limit highest scores; ties broken by product ID.
+     *
+     * @param array<int, float> $scores
+     * @return int[]
+     */
+    private static function top_ids(array $scores, int $limit): array
+    {
+        uksort($scores, static function ($a, $b) use ($scores) {
+            if ($scores[$a] === $scores[$b]) {
+                return $a <=> $b;
+            }
+            return $scores[$b] <=> $scores[$a];
+        });
+
+        return array_map('intval', array_slice(array_keys($scores), 0, $limit));
+    }
+
+    /**
+     * Distinct orders per product per day in the window.
+     *
+     * Uses wc_order_product_lookup when present (parent product IDs), or order
+     * item meta otherwise.
+     *
+     * @param bool     $use_hpos    Whether orders live in wc_orders.
+     * @param string[] $statuses    Statuses in the storage's format.
+     * @param string   $date_cutoff GMT lower bound.
+     * @return array<int, array{product_id:string, day:string, orders:string}>
+     */
+    private function daily_order_counts(bool $use_hpos, array $statuses, string $date_cutoff): array
+    {
+        global $wpdb;
+
+        $placeholders = implode(', ', array_fill(0, count($statuses), '%s'));
+        $args = array_merge($statuses, array($date_cutoff));
+
+        if ($use_hpos) {
+            $orders_table = $wpdb->prefix . 'wc_orders';
+            $order_join = "JOIN {$orders_table} o ON o.id = %s";
+            $where = "o.type = 'shop_order' AND o.status IN ({$placeholders}) AND o.date_created_gmt >= %s";
+            $date_col = 'o.date_created_gmt';
+        } else {
+            $order_join = "JOIN {$wpdb->posts} o ON o.ID = %s";
+            $where = "o.post_type = 'shop_order' AND o.post_status IN ({$placeholders}) AND o.post_date_gmt >= %s";
+            $date_col = 'o.post_date_gmt';
+        }
+
+        if (WooBooster_Copurchase::lookup_table_exists()) {
+            $lookup = $wpdb->prefix . 'wc_order_product_lookup';
+            $join = sprintf($order_join, 'l.order_id');
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
+            $rows = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT l.product_id AS product_id, DATE({$date_col}) AS day, COUNT(DISTINCT l.order_id) AS orders
+                    FROM {$lookup} l
+                    {$join}
+                    WHERE {$where} AND l.product_id > 0
+                    GROUP BY l.product_id, DATE({$date_col})",
+                    $args
+                ),
+                ARRAY_A
+            );
+
+            return (array) $rows;
+        }
+
+        $items = $wpdb->prefix . 'woocommerce_order_items';
+        $itemmeta = $wpdb->prefix . 'woocommerce_order_itemmeta';
+        $join = sprintf($order_join, 'oi.order_id');
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT oim.meta_value AS product_id, DATE({$date_col}) AS day, COUNT(DISTINCT oi.order_id) AS orders
+                FROM {$items} oi
+                {$join}
+                JOIN {$itemmeta} oim ON oi.order_item_id = oim.order_item_id AND oim.meta_key = '_product_id'
+                WHERE {$where} AND oi.order_item_type = 'line_item' AND oim.meta_value > 0
+                GROUP BY oim.meta_value, DATE({$date_col})",
+                $args
+            ),
+            ARRAY_A
+        );
+
+        return (array) $rows;
     }
 
     /**

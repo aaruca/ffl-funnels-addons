@@ -46,19 +46,111 @@ class WooBooster_Matcher
     const CACHE_GROUP   = 'ffl-funnels-addons';
     const CACHE_VERSION = 'woobooster_cache_version';
 
+    /**
+     * Per-request copy of the cache version (null = not read yet).
+     *
+     * @var int|null
+     */
+    private static $cache_version = null;
+
     public static function invalidate_recommendation_cache(): void
     {
-        $version = (int) get_option(self::CACHE_VERSION, 0);
-        update_option(self::CACHE_VERSION, $version + 1, false);
+        $version = (int) get_option(self::CACHE_VERSION, 0) + 1;
+        update_option(self::CACHE_VERSION, $version, false);
+        // Later lookups in this same request (an MCP call that edits a rule
+        // and then diagnoses a product) must not read the old entries.
+        self::$cache_version = $version;
     }
 
     private static function cache_version(): int
     {
-        static $v = null;
-        if (null === $v) {
-            $v = (int) get_option(self::CACHE_VERSION, 0);
+        if (null === self::$cache_version) {
+            self::$cache_version = (int) get_option(self::CACHE_VERSION, 0);
         }
-        return $v;
+        return self::$cache_version;
+    }
+
+    /**
+     * Read a cached recommendation result.
+     *
+     * The object cache is used first. Without a persistent object cache
+     * (Redis/Memcached) wp_cache_* only lives for one request, so results are
+     * also kept as a transient — otherwise every uncached product view re-ran
+     * rule matching and its product queries.
+     *
+     * @param string $key Cache key (already versioned).
+     * @return mixed|false The cached value, or false on a miss.
+     */
+    private static function cache_get(string $key)
+    {
+        $value = wp_cache_get($key, self::CACHE_GROUP);
+        if (false !== $value) {
+            return $value;
+        }
+
+        if (!wp_using_ext_object_cache()) {
+            $value = get_transient('wbrc_' . md5($key));
+            if (false !== $value) {
+                wp_cache_set($key, $value, self::CACHE_GROUP, HOUR_IN_SECONDS);
+                return $value;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Store a recommendation result (object cache, plus a transient when
+     * there is no persistent object cache). See cache_get().
+     *
+     * @param string $key   Cache key (already versioned).
+     * @param mixed  $value Value to store.
+     * @param int    $ttl   Lifetime in seconds.
+     */
+    private static function cache_set(string $key, $value, int $ttl): void
+    {
+        wp_cache_set($key, $value, self::CACHE_GROUP, $ttl);
+
+        if (!wp_using_ext_object_cache()) {
+            set_transient('wbrc_' . md5($key), $value, $ttl);
+        }
+    }
+
+    /**
+     * The active rule row for a cached result, so callers that read
+     * $last_matched_rule (analytics attribution) still see it on a cache hit.
+     *
+     * @param int $rule_id Rule ID (0 = none).
+     * @return object|null
+     */
+    private function cached_rule(int $rule_id)
+    {
+        if ($rule_id < 1) {
+            return null;
+        }
+        $this->prefetch_rules(array($rule_id));
+
+        return self::$rule_row_cache[$rule_id] ?? null;
+    }
+
+    /**
+     * Whether any action depends on the current visitor (recently viewed is
+     * read from the visitor's cookie), so its result must never be shared
+     * through the cache.
+     *
+     * @param array $action_groups Grouped action rows.
+     */
+    private static function uses_visitor_data(array $action_groups): bool
+    {
+        foreach ($action_groups as $actions) {
+            foreach ((array) $actions as $action) {
+                if (isset($action->action_source) && 'recently_viewed' === $action->action_source) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -161,12 +253,13 @@ class WooBooster_Matcher
         }
 
         $args_hash = md5(wp_json_encode($args));
-        $cache_key = 'woobooster_rec_v' . self::cache_version() . '_' . $product_id . '_' . $args_hash;
-        $cached = wp_cache_get($cache_key, self::CACHE_GROUP);
+        $cache_key = 'woobooster_rec2_v' . self::cache_version() . '_' . $product_id . '_' . $args_hash;
+        $cached = self::cache_get($cache_key);
 
-        if (false !== $cached) {
+        if (is_array($cached) && isset($cached['ids'])) {
             $this->debug_log("Cache hit for product {$product_id}");
-            return $cached;
+            self::$last_matched_rule = $this->cached_rule((int) ($cached['rule_id'] ?? 0));
+            return $cached['ids'];
         }
 
         $start_time = microtime(true);
@@ -195,6 +288,8 @@ class WooBooster_Matcher
 
         if (!$rule) {
             $this->debug_log("No matching rule for product {$product_id}");
+            // Cache the miss too: most products in a catalog match no rule.
+            self::cache_set($cache_key, array('ids' => array(), 'rule_id' => 0), HOUR_IN_SECONDS);
             return array();
         }
 
@@ -202,46 +297,12 @@ class WooBooster_Matcher
         $this->debug_log("Matched rule #{$rule->id} ({$rule->name}) for product {$product_id}");
 
         // Step 4: Execute actions.
-        $all_product_ids = array();
         $action_groups = WooBooster_Rule::get_actions($rule->id);
+        $all_product_ids = $this->execute_action_groups($product_id, $action_groups, $args, $terms);
 
-        if (!empty($action_groups)) {
-            // Groups are merged (OR), rows within a group are intersected (AND).
-            foreach ($action_groups as $group_id => $actions) {
-                if (empty($actions)) {
-                    continue;
-                }
-
-                $group_product_ids = array();
-                $first_in_group = true;
-
-                foreach ($actions as $action) {
-                    $ids = $this->execute_query($product_id, $action, $args, $terms);
-                    if ($first_in_group) {
-                        $group_product_ids = $ids;
-                        $first_in_group = false;
-                    } else {
-                        // AND logic within group
-                        $group_product_ids = array_intersect($group_product_ids, $ids);
-                    }
-                }
-
-                if (!empty($group_product_ids)) {
-                    // OR logic between groups
-                    $all_product_ids = array_merge($all_product_ids, $group_product_ids);
-                }
-            }
+        if (!self::uses_visitor_data($action_groups)) {
+            self::cache_set($cache_key, array('ids' => $all_product_ids, 'rule_id' => (int) $rule->id), HOUR_IN_SECONDS);
         }
-
-        // Deduplicate.
-        $all_product_ids = array_values(array_unique($all_product_ids));
-
-        // If a global hard limit was requested, apply it here too.
-        if (isset($args['limit']) && $args['limit'] > 0) {
-            $all_product_ids = array_slice($all_product_ids, 0, absint($args['limit']));
-        }
-
-        wp_cache_set($cache_key, $all_product_ids, self::CACHE_GROUP, HOUR_IN_SECONDS);
 
         $total_actions = 0;
         if (!empty($action_groups)) {
@@ -282,12 +343,13 @@ class WooBooster_Matcher
         }
 
         $args_hash = md5(wp_json_encode($args));
-        $cache_key = 'woobooster_rule_v' . self::cache_version() . '_' . $rule_id . '_' . $product_id . '_' . $args_hash;
-        $cached    = wp_cache_get($cache_key, self::CACHE_GROUP);
+        $cache_key = 'woobooster_rule2_v' . self::cache_version() . '_' . $rule_id . '_' . $product_id . '_' . $args_hash;
+        $cached    = self::cache_get($cache_key);
 
-        if (false !== $cached) {
+        if (is_array($cached) && isset($cached['ids'])) {
             $this->debug_log("Cache hit for rule #{$rule_id}, product {$product_id}");
-            return $cached;
+            self::$last_matched_rule = $this->cached_rule($rule_id);
+            return $cached['ids'];
         }
 
         $start_time = microtime(true);
@@ -316,41 +378,12 @@ class WooBooster_Matcher
         $terms = $this->get_product_terms($product_id);
 
         // Execute actions — same logic as get_recommendations().
-        $all_product_ids = array();
         $action_groups   = WooBooster_Rule::get_actions($rule_id);
+        $all_product_ids = $this->execute_action_groups($product_id, $action_groups, $args, $terms);
 
-        if (!empty($action_groups)) {
-            foreach ($action_groups as $group_id => $actions) {
-                if (empty($actions)) {
-                    continue;
-                }
-
-                $group_product_ids = array();
-                $first_in_group    = true;
-
-                foreach ($actions as $action) {
-                    $ids = $this->execute_query($product_id, $action, $args, $terms);
-                    if ($first_in_group) {
-                        $group_product_ids = $ids;
-                        $first_in_group    = false;
-                    } else {
-                        $group_product_ids = array_intersect($group_product_ids, $ids);
-                    }
-                }
-
-                if (!empty($group_product_ids)) {
-                    $all_product_ids = array_merge($all_product_ids, $group_product_ids);
-                }
-            }
+        if (!self::uses_visitor_data($action_groups)) {
+            self::cache_set($cache_key, array('ids' => $all_product_ids, 'rule_id' => $rule_id), HOUR_IN_SECONDS);
         }
-
-        $all_product_ids = array_values(array_unique($all_product_ids));
-
-        if (isset($args['limit']) && $args['limit'] > 0) {
-            $all_product_ids = array_slice($all_product_ids, 0, absint($args['limit']));
-        }
-
-        wp_cache_set($cache_key, $all_product_ids, self::CACHE_GROUP, HOUR_IN_SECONDS);
 
         $elapsed = round((microtime(true) - $start_time) * 1000, 2);
         $this->debug_log("Specific rule #{$rule_id} for product {$product_id}: {$elapsed}ms, returned " . count($all_product_ids) . ' products');
@@ -395,9 +428,13 @@ class WooBooster_Matcher
             ? (bool) $args['exclude_outofstock']
             : $global_exclude;
 
+        // Recently viewed comes from the visitor's own cookie: never share it
+        // through the cache (it used to be cached per product for everyone).
+        $cacheable = 'recently_viewed' !== $source;
+
         $args_hash = md5(wp_json_encode(array($limit, $exclude_outofstock)));
         $cache_key = 'woobooster_smart_v' . self::cache_version() . '_' . $source . '_' . $product_id . '_' . $args_hash;
-        $cached    = wp_cache_get($cache_key, self::CACHE_GROUP);
+        $cached    = $cacheable ? self::cache_get($cache_key) : false;
 
         if (false !== $cached) {
             return $cached;
@@ -436,9 +473,126 @@ class WooBooster_Matcher
             $product_ids = array_slice($product_ids, 0, $limit);
         }
 
-        wp_cache_set($cache_key, $product_ids, self::CACHE_GROUP, HOUR_IN_SECONDS);
+        if ($cacheable) {
+            self::cache_set($cache_key, $product_ids, HOUR_IN_SECONDS);
+        }
 
         return $product_ids;
+    }
+
+    /**
+     * Run a rule's action groups: groups are merged (OR), actions inside a
+     * group must all match (AND).
+     *
+     * An AND group used to query each action separately — already cut to the
+     * display limit and, by default, in random order — and then intersect the
+     * lists, so two random 4-product samples rarely overlapped and the group
+     * came back empty. Now taxonomy actions in a group run as ONE query whose
+     * conditions all apply; groups that mix in other sources intersect larger
+     * candidate pools before cutting to the limit.
+     *
+     * @param int   $product_id    Source product.
+     * @param array $action_groups Grouped action rows from WooBooster_Rule::get_actions().
+     * @param array $args          Overrides: limit, exclude_outofstock.
+     * @param array $terms         Source product terms.
+     * @return int[]
+     */
+    private function execute_action_groups($product_id, array $action_groups, array $args, array $terms): array
+    {
+        $all_product_ids = array();
+
+        foreach ($action_groups as $actions) {
+            $actions = array_values(array_filter((array) $actions));
+            if (empty($actions)) {
+                continue;
+            }
+
+            if (1 === count($actions)) {
+                $group_product_ids = $this->execute_query($product_id, $actions[0], $args, $terms);
+            } else {
+                $group_product_ids = $this->execute_and_group($product_id, $actions, $args, $terms);
+            }
+
+            if (!empty($group_product_ids)) {
+                $all_product_ids = array_merge($all_product_ids, $group_product_ids);
+            }
+        }
+
+        $all_product_ids = array_values(array_unique(array_map('absint', $all_product_ids)));
+
+        // If a global hard limit was requested, apply it here too.
+        if (isset($args['limit']) && $args['limit'] > 0) {
+            $all_product_ids = array_slice($all_product_ids, 0, absint($args['limit']));
+        }
+
+        return $all_product_ids;
+    }
+
+    /**
+     * Products matching EVERY action in a group. See execute_action_groups().
+     *
+     * @param int      $product_id Source product.
+     * @param object[] $actions    Two or more action rows.
+     * @param array    $args       Overrides: limit, exclude_outofstock.
+     * @param array    $terms      Source product terms.
+     * @return int[]
+     */
+    private function execute_and_group($product_id, array $actions, array $args, array $terms): array
+    {
+        $limit = isset($args['limit']) && $args['limit'] ? absint($args['limit']) : 0;
+        if ($limit < 1) {
+            foreach ($actions as $action) {
+                $limit = max($limit, absint($action->action_limit));
+            }
+        }
+        $limit = max(1, $limit);
+
+        $taxonomy_sources = array('category', 'tag', 'attribute', 'attribute_value');
+        $all_taxonomy = true;
+        foreach ($actions as $action) {
+            if (!in_array($action->action_source, $taxonomy_sources, true)) {
+                $all_taxonomy = false;
+                break;
+            }
+        }
+
+        if ($all_taxonomy) {
+            $tax_clauses = array();
+            foreach ($actions as $action) {
+                $resolved = $this->resolve_action($action, $terms);
+                if (!$resolved || '' === $resolved['term'] || array() === $resolved['term']) {
+                    return array(); // A condition that cannot match makes the AND group empty.
+                }
+                $tax_clauses[] = array(
+                    'taxonomy'         => $resolved['taxonomy'],
+                    'field'            => 'slug',
+                    'terms'            => $resolved['term'],
+                    'include_children' => !empty($action->include_children),
+                );
+            }
+
+            // The first action supplies sorting; every action's exclusions apply.
+            $first = clone $actions[0];
+            $first->action_limit = $limit;
+            return $this->execute_query($product_id, $first, array_merge($args, array('limit' => $limit)), $terms, $tax_clauses, array_slice($actions, 1));
+        }
+
+        // Mixed sources: intersect generous pools, keep the first action's order.
+        // Smart sources skip their best-seller fallback here, so "bought
+        // together AND holsters" only returns holsters actually bought together.
+        $pool = min(200, max($limit * 10, 50));
+        $group_product_ids = null;
+        foreach ($actions as $action) {
+            $ids = $this->execute_query($product_id, $action, array_merge($args, array('limit' => $pool, 'no_fallback' => true)), $terms);
+            $group_product_ids = null === $group_product_ids
+                ? array_map('absint', $ids)
+                : array_values(array_intersect($group_product_ids, array_map('absint', $ids)));
+            if (empty($group_product_ids)) {
+                return array();
+            }
+        }
+
+        return array_slice(array_values((array) $group_product_ids), 0, $limit);
     }
 
     /**
@@ -688,7 +842,7 @@ class WooBooster_Matcher
      * @param array  $terms      Product terms for "same attribute" resolution.
      * @return array Array of product IDs.
      */
-    public function execute_query($product_id, $action, $args, $terms)
+    public function execute_query($product_id, $action, $args, $terms, $tax_clauses = null, array $extra_actions = array())
     {
         // Determine limit.
         $limit = isset($args['limit']) && $args['limit'] ? absint($args['limit']) : absint($action->action_limit);
@@ -700,7 +854,7 @@ class WooBooster_Matcher
         // Smart Recommendation sources — bypass taxonomy-based query.
         $smart_sources = array('copurchase', 'trending', 'recently_viewed', 'similar');
         if (in_array($action->action_source, $smart_sources, true)) {
-            return $this->execute_smart_query($product_id, $action, $limit, $exclude_outofstock, $terms);
+            return $this->execute_smart_query($product_id, $action, $limit, $exclude_outofstock, $terms, empty($args['no_fallback']));
         }
 
         // Specific Products source — query by explicit IDs.
@@ -713,11 +867,25 @@ class WooBooster_Matcher
             return array();
         }
 
-        // Resolve taxonomy and term for the query.
-        $resolved = $this->resolve_action($action, $terms);
+        // Resolve taxonomy and term for the query, unless an AND group already
+        // supplied one clause per action (see execute_and_group()).
+        if (is_array($tax_clauses) && !empty($tax_clauses)) {
+            $tax_query = $tax_clauses;
+        } else {
+            $resolved = $this->resolve_action($action, $terms);
 
-        if (!$resolved) {
-            return array();
+            if (!$resolved) {
+                return array();
+            }
+
+            $tax_query = array(
+                array(
+                    'taxonomy' => $resolved['taxonomy'],
+                    'field' => 'slug',
+                    'terms' => $resolved['term'],
+                    'include_children' => !empty($action->include_children),
+                ),
+            );
         }
 
         $query_args = array(
@@ -726,14 +894,7 @@ class WooBooster_Matcher
             'posts_per_page' => $limit,
             'post__not_in' => array($product_id),
             'fields' => 'ids',
-            'tax_query' => array(
-                array(
-                    'taxonomy' => $resolved['taxonomy'],
-                    'field' => 'slug',
-                    'terms' => $resolved['term'],
-                    'include_children' => !empty($action->include_children),
-                ),
-            ),
+            'tax_query' => $tax_query,
             'no_found_rows' => true,
             'update_post_meta_cache' => false,
             'update_post_term_cache' => false,
@@ -750,8 +911,14 @@ class WooBooster_Matcher
             );
         }
 
-        // Apply exclusions (categories, products, price range).
+        // Apply exclusions (categories, products, price range) — for every
+        // action of an AND group, not just the first.
         $query_args = $this->apply_exclusions($query_args, $action);
+        foreach ($extra_actions as $extra_action) {
+            $query_args = $this->apply_exclusions($query_args, $extra_action);
+        }
+
+        $shuffle = false;
 
         // Order by.
         switch ($action->action_orderby) {
@@ -786,7 +953,27 @@ class WooBooster_Matcher
 
             case 'rand':
             default:
-                $query_args['orderby'] = 'rand';
+                // Random among the best sellers instead of ORDER BY RAND(),
+                // which sorted every matching product on every query. Products
+                // without a total_sales value are still eligible (NOT EXISTS).
+                $query_args['posts_per_page'] = max($limit * 5, 40);
+                $sales_clause = array(
+                    'relation' => 'OR',
+                    'wb_sales' => array(
+                        'key'     => 'total_sales',
+                        'compare' => 'EXISTS',
+                        'type'    => 'NUMERIC',
+                    ),
+                    array(
+                        'key'     => 'total_sales',
+                        'compare' => 'NOT EXISTS',
+                    ),
+                );
+                $query_args['meta_query'] = empty($query_args['meta_query'])
+                    ? $sales_clause
+                    : array('relation' => 'AND', $query_args['meta_query'], $sales_clause);
+                $query_args['orderby'] = array('wb_sales' => 'DESC', 'ID' => 'DESC');
+                $shuffle = true;
                 break;
         }
 
@@ -794,6 +981,11 @@ class WooBooster_Matcher
 
         $query = new WP_Query($query_args);
         $result_ids = $query->posts;
+
+        if ($shuffle) {
+            shuffle($result_ids);
+            $result_ids = array_slice($result_ids, 0, $limit);
+        }
 
         return $result_ids;
     }
@@ -927,14 +1119,14 @@ class WooBooster_Matcher
      * @param array  $terms             Product terms.
      * @return array Array of product IDs.
      */
-    protected function execute_smart_query($product_id, $action, $limit, $exclude_outofstock, $terms)
+    protected function execute_smart_query($product_id, $action, $limit, $exclude_outofstock, $terms, $allow_fallback = true)
     {
         switch ($action->action_source) {
             case 'copurchase':
                 $stored = get_post_meta($product_id, '_woobooster_copurchased', true);
                 $ranked = (!empty($stored) && is_array($stored)) ? array_map('absint', $stored) : array();
                 $valid  = $this->validate_candidates($ranked, $limit, $exclude_outofstock, array($product_id));
-                if (count($valid) < $limit) {
+                if ($allow_fallback && count($valid) < $limit) {
                     $valid = $this->fallback_fill($product_id, $valid, $limit, $exclude_outofstock, $terms);
                 }
                 return $valid;
@@ -942,7 +1134,7 @@ class WooBooster_Matcher
             case 'trending':
                 $ranked = $this->build_trending_candidates($product_id);
                 $valid  = $this->validate_candidates($ranked, $limit, $exclude_outofstock, array($product_id));
-                if (count($valid) < $limit) {
+                if ($allow_fallback && count($valid) < $limit) {
                     $valid = $this->fallback_fill($product_id, $valid, $limit, $exclude_outofstock, $terms);
                 }
                 return $valid;
@@ -954,7 +1146,7 @@ class WooBooster_Matcher
                     $ranked = array_values(array_filter(array_map('absint', explode(',', $raw))));
                 }
                 $valid = $this->validate_candidates($ranked, $limit, $exclude_outofstock, array($product_id));
-                if (count($valid) < $limit) {
+                if ($allow_fallback && count($valid) < $limit) {
                     $valid = $this->fallback_fill($product_id, $valid, $limit, $exclude_outofstock, $terms);
                 }
                 return $valid;
@@ -1127,6 +1319,31 @@ class WooBooster_Matcher
     }
 
     /**
+     * Attribute taxonomies that make two products "the same kind" for Similar
+     * Products (caliber, gauge, platform…).
+     *
+     * Uses the WooBooster setting when filled in, otherwise every common
+     * firearms attribute that exists on this store. The old hard-coded list
+     * (`pa_caliber-gauge`, `pa_platform`) missed stores that use `pa_caliber`,
+     * which silently zeroed this signal.
+     *
+     * @return string[]
+     */
+    public static function similar_key_attributes(): array
+    {
+        $configured = trim((string) woobooster_get_option('similar_key_attributes', ''));
+        if ('' !== $configured) {
+            $list = array_map('sanitize_key', array_map('trim', explode(',', $configured)));
+        } else {
+            $list = array('pa_caliber', 'pa_caliber-gauge', 'pa_gauge', 'pa_cartridge', 'pa_platform', 'pa_model', 'pa_action', 'pa_manufacturer');
+        }
+
+        return array_values(array_filter(array_unique($list), static function ($taxonomy) {
+            return '' !== $taxonomy && taxonomy_exists($taxonomy);
+        }));
+    }
+
+    /**
      * "Similar products" via a weighted multi-signal score.
      *
      * Pool: products that share a brand, key attribute, category or tag with the
@@ -1143,8 +1360,8 @@ class WooBooster_Matcher
         global $wpdb;
 
         $cache_args_hash = md5(wp_json_encode(array((int) $limit, (bool) $exclude_outofstock)));
-        $cache_key = 'wb_similar_v' . self::cache_version() . '_' . (int) $product_id . '_' . $cache_args_hash;
-        $cached = wp_cache_get($cache_key, self::CACHE_GROUP);
+        $cache_key = 'wb_similar2_v' . self::cache_version() . '_' . (int) $product_id . '_' . $cache_args_hash;
+        $cached = self::cache_get($cache_key);
         if (false !== $cached) {
             return $cached;
         }
@@ -1162,7 +1379,7 @@ class WooBooster_Matcher
         ));
 
         $brand_taxonomies = apply_filters('woobooster_similar_brand_taxonomies', array('product_brand', 'pa_brand', 'pa_manufacturer'));
-        $key_attr_taxonomies = apply_filters('woobooster_similar_key_attributes', array('pa_caliber-gauge', 'pa_manufacturer', 'pa_platform'));
+        $key_attr_taxonomies = apply_filters('woobooster_similar_key_attributes', self::similar_key_attributes());
 
         $source_terms = array(
             'brand'    => array(),
@@ -1187,8 +1404,20 @@ class WooBooster_Matcher
             }
         }
 
+        // WooCommerce's internal taxonomies (product type, visibility flags
+        // such as `outofstock` or `featured`, shipping class) are shared by
+        // most of the catalog: matching on them dragged unrelated products into
+        // the candidate pool and made this query scan nearly every product.
+        $internal_taxonomies = apply_filters(
+            'woobooster_similar_ignored_taxonomies',
+            array('product_type', 'product_visibility', 'product_shipping_class')
+        );
+
         $tt_ids = array();
         foreach ($terms as $t) {
+            if (in_array($t['taxonomy'], $internal_taxonomies, true)) {
+                continue;
+            }
             if (isset($t['term_id'])) {
                 $term = get_term((int) $t['term_id'], $t['taxonomy']);
                 if ($term && !is_wp_error($term) && isset($term->term_taxonomy_id)) {
@@ -1200,7 +1429,7 @@ class WooBooster_Matcher
 
         if (empty($tt_ids)) {
             $fallback = $this->fallback_fill($product_id, array(), $limit, $exclude_outofstock, $terms);
-            wp_cache_set($cache_key, $fallback, self::CACHE_GROUP, DAY_IN_SECONDS);
+            self::cache_set($cache_key, $fallback, 6 * HOUR_IN_SECONDS);
             return $fallback;
         }
 
@@ -1221,7 +1450,7 @@ class WooBooster_Matcher
         $candidate_ids = array_values(array_unique(array_map('absint', (array) $candidate_ids)));
         if (empty($candidate_ids)) {
             $fallback = $this->fallback_fill($product_id, array(), $limit, $exclude_outofstock, $terms);
-            wp_cache_set($cache_key, $fallback, self::CACHE_GROUP, DAY_IN_SECONDS);
+            self::cache_set($cache_key, $fallback, 6 * HOUR_IN_SECONDS);
             return $fallback;
         }
 
@@ -1369,7 +1598,7 @@ class WooBooster_Matcher
             $valid = $this->fallback_fill($product_id, $valid, $limit, $exclude_outofstock, $terms);
         }
 
-        wp_cache_set($cache_key, $valid, self::CACHE_GROUP, DAY_IN_SECONDS);
+        self::cache_set($cache_key, $valid, 6 * HOUR_IN_SECONDS);
         return $valid;
     }
 
@@ -1524,17 +1753,16 @@ class WooBooster_Matcher
                         'results' => array()
                     );
 
-                    if ($resolved) {
-                        $ids = $this->execute_query($product_id, $action, array(), $terms);
-                        $action_debug['results'] = $ids;
-                        $result['product_ids'] = array_merge($result['product_ids'], $ids); // Accumulate all
-                    }
+                    // Every source runs, including Smart ones (co-purchase,
+                    // trending, similar…) that have no taxonomy to resolve.
+                    $action_debug['results'] = $this->execute_query($product_id, $action, array(), $terms);
 
                     $result['actions'][] = $action_debug;
                 }
             }
 
-            $result['product_ids'] = array_unique($result['product_ids']);
+            // What shoppers actually get: groups OR'd, actions in a group AND'd.
+            $result['product_ids'] = $this->execute_action_groups($product_id, $action_groups, array(), $terms);
 
             foreach ($result['product_ids'] as $pid) {
                 $p = wc_get_product($pid);

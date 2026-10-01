@@ -282,7 +282,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 var btn = document.createElement('button');
                 btn.type = 'button';
                 btn.className = 'wb-ai-create-rule-btn';
-                btn.textContent = fmt(t('aiCreateThis', 'Create This %s'), ENTITY_LABEL);
+                // A rule block carrying rule_id updates that rule instead of creating one.
+                btn.textContent = (!IS_BUNDLE && blockData.rule_id)
+                    ? fmt(t('aiUpdateRule', 'Update Rule #%s'), blockData.rule_id)
+                    : fmt(t('aiCreateThis', 'Create This %s'), ENTITY_LABEL);
                 btn.dataset.ruleData = JSON.stringify(blockData);
 
                 btn.addEventListener('click', function () {
@@ -323,7 +326,9 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(function (r) { return r.json(); })
             .then(function (result) {
                 if (result.success) {
-                    appendSystemMessage('success', fmt(t('aiCreatedOpening', '%s created! Opening editor…'), ENTITY_LABEL));
+                    appendSystemMessage('success', (!IS_BUNDLE && data.rule_id)
+                        ? fmt(t('aiUpdatedOpening', 'Rule #%s updated! Opening editor…'), data.rule_id)
+                        : fmt(t('aiCreatedOpening', '%s created! Opening editor…'), ENTITY_LABEL));
                     if (result.data.edit_url && result.data.edit_url.startsWith(window.location.origin)) {
                         setTimeout(function () {
                             window.location.href = result.data.edit_url;

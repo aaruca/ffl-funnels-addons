@@ -51,6 +51,12 @@ class WooBooster_Module extends FFLA_Module
         require_once $path . 'includes/class-woobooster-bundle.php';
         require_once $path . 'includes/class-woobooster-bundle-matcher.php';
         require_once $path . 'includes/class-woobooster-bundle-cart.php';
+        require_once $path . 'includes/class-woobooster-ai-tools.php';
+        require_once $path . 'includes/class-woobooster-abilities.php';
+
+        // WordPress abilities (6.9+) for MCP clients; the built-in AI chat uses
+        // the same WooBooster_AI_Tools. Registers nothing on older WordPress.
+        WooBooster_Abilities::init();
 
         // Admin.
         if (is_admin()) {
