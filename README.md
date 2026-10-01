@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.49.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.50.0-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -133,7 +133,8 @@ Optional GA4 compatibility for **MonsterInsights Pro + the eCommerce Addon** on 
 ### 12. White Label
 Brand and simplify wp-admin for store clients without changing WordPress core.
 *   **Light/dark branding:** Configure independent admin palettes and let each user switch modes from the admin bar.
-*   **Menu and access control:** Reorder top-level menus, hide or block admin/menu-bar items for client users, and exempt staff with email patterns.
+*   **Agency branding:** FFL Funnels logo at the top of the admin sidebar and in the admin footer credit (filter `ffla_wl_admin_footer_text`); the WordPress logo menu is removed from the admin bar.
+*   **Menu and access control:** Reorder top-level menus and add dividers for client users, hide or block admin/menu-bar items for them, and exempt staff with email patterns (staff keep the native menu).
 *   **Client dashboard:** Optional branded replacement for the standard WordPress dashboard, with configurable support/resource links and cached WooCommerce business metrics.
 *   **Analytics tabs:** Switch between **MonsterInsights** and **SnapFind**, with per-user tab/range preferences and lazy loading. MonsterInsights supplies sessions, pageviews, new users, engagement rate, traffic trends, top pages and traffic sources. Rank Math is no longer an analytics dependency.
 *   **MonsterInsights eCommerce:** With an eligible license and active eCommerce Addon on MonsterInsights 11.2+, display purchases, analytics revenue, average order value, purchases per session and top products. Analytics revenue remains separate from WooCommerce business totals; values use the Google Analytics property currency.
@@ -149,6 +150,13 @@ Brand and simplify wp-admin for store clients without changing WordPress core.
 * **Camarillo-style delivery flow, configurable for every store:** Capture the native selection before review calculations, store it in the customer's WooCommerce session, and invalidate only the cart's package caches when dealer, delivery choice, cart context or configuration changes. Filter actual rates and let WooCommerce select an available method before totals are calculated. The refreshed UI follows that server-confirmed method, including radio, dropdown and single-hidden-field checkout layouts. Repairs notify checkout once per choice; stale-dealer responses request a bounded fresh review instead of selecting the old dealer's method.
 * **Final validation and order data:** Final server-side method validation, session cleanup, and delivery snapshots in shipping-line metadata, order details and emails. Existing rates/costs/taxes are preserved. The search-store button alone does not authorize pickup; the native dealer selection must be present. The selected pickup instance must be available in the package's matching WooCommerce zone, not merely checked in the addon settings.
 * **Compatibility boundaries:** Checkout Blocks/Store API are not modified in this version. Incomplete configuration or detection of the old Camarillo shipping snippet pauses the module with an admin warning. Disable only the old shipping logic before enabling this module; preserve any separate tax code. Do not promise free pickup in editable text unless the configured method is free.
+
+### 14. Order Badges
+Colour-coded product-tag badges on WooCommerce orders, so staff see at a glance what an order contains.
+*   **Where:** a **Product Type** column on the Orders list (HPOS and legacy) and the Edit Order screen, for the whole order and on each product line.
+*   **Badge tags:** choose any product tags to show as badges, each with its own colour.
+*   **In-store tags:** products carrying none of them show an **Online Only** badge (colour configurable). Leave empty to turn Online Only off.
+*   **Live:** badges follow each product's current tags, so retagging a product re-labels its past orders. Lines whose product was deleted show no badge.
 
 ## Installation
 

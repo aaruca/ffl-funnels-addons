@@ -2,6 +2,29 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.50.0] - 2026-10-01
+
+### Added
+- **Order Badges module** (#21). Colour-coded product-tag badges on WooCommerce orders, in a **Product Type** column on the Orders list (HPOS and legacy) and on the Edit Order screen, both for the whole order and on each product line. Under **FFL Funnels → Order Badges**, choose which product tags appear as badges (each with its own colour) and which tags mean a product is in store; a product with none of the in-store tags shows **Online Only**. Badges follow each product's current tags, so retagging a product also re-labels its past orders; lines whose product was deleted get no badge. Ships inactive.
+- White Label (#17): FFL Funnels agency branding for every user while the module is active: the FFL Funnels logo and wordmark at the top of the admin sidebar (links to fflfunnels.com), a "Thank you for growing with FFL Funnels." admin footer credit (filter `ffla_wl_admin_footer_text`), and no WordPress logo menu in the admin bar.
+- White Label: custom sidebar dividers you can add anywhere on the Menu tab and drag with the menu items.
+- White Label: a base corner radius for dashboard cards (Styles → Dashboard, 0–40 px), separate sidebar and admin-bar border colours, and a live preview of colour edits on the settings page.
+- `tests/smoke/order-badges-smoke.php` (31 checks).
+
+### Changed
+- White Label: the menu order and dividers apply to clients only. Staff matched by the exempt emails keep WordPress's native menu, and the Menu tab now says so. WordPress and plugin menu separators are hidden for clients.
+- White Label: plugin SVG menu icons are recoloured through WordPress's own svg-painter with the sidebar icon colours, and re-tint instantly on the light/dark toggle. Refreshed light and dark default palettes; the content area uses the light dashboard background in both modes so third-party plugin pages keep their contrast.
+- White Label: colour fields no longer have a Clear button; empty the field instead (its placeholder shows the default it falls back to). The SnapFind funnel and top search terms are stacked on the dashboard.
+
+### Fixed
+- White Label: plugin menu icons delivered as `<img>` (for example Merchant, YITH) no longer wash out; they render as a silhouette matching the light or dark theme.
+- White Label: admin-bar nodes added at very late priority (for example WP Rocket) now appear under Restrictions and can be removed for clients.
+- White Label: sorting a dashboard report table no longer fails on rows with fewer cells; a 3-digit hex colour no longer turns the swatch black; the Export **Copy** button no longer gets stuck on "Copied!" after a quick second click.
+
+### Security
+- White Label: the dashboard analytics AJAX endpoint requires `edit_theme_options` (it previously accepted any logged-in user, including customers).
+- White Label: saving or importing settings can no longer lock out the person doing it. If the exempt emails would not cover them, their email is added; the `FFLA_WL_SUPERUSERS` constant only counts when it matches them.
+
 ## [1.49.0] - 2026-09-29
 
 ### Added
