@@ -143,10 +143,12 @@ ul#adminmenu > li.current > a.current:after,
     color: var(--ffla-wl-sidebarIcon, #a7aaad) !important;
 }
 
-/* Plugin SVG icons (background-image data URIs) are recoloured server-side in
-   White_Label_Admin::recolour_menu_icons() — not via CSS `mask` or runtime JS,
-   both of which caused the "content blank until scroll/resize" paint bug. So
-   there is no CSS rule (and no client script) for them here. */
+/* Plugin SVG icons (background-image data URIs) are recoloured by WordPress
+   core's own svg-painter.js, fed our sidebar-icon colours by
+   White_Label_Admin::override_svg_icon_colours() (and repainted on the
+   light/dark toggle by white-label-icons.js). Never via CSS `mask`, which
+   caused the "content blank until scroll/resize" paint bug — so there is no
+   CSS rule for them here. */
 
 /* Paint the hover on the <a> itself (WordPress does too, via `#adminmenu
    a:hover`). Targeting the <li> alone leaves the <a>'s own hover background on

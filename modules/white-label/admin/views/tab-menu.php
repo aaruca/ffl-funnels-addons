@@ -23,6 +23,9 @@ if (!defined('ABSPATH')) {
         <p class="wb-field__desc">
             <?php esc_html_e('Drag the items to reorder the top-level sidebar menu, and add dividers wherever you like. Menus added later (e.g. a new plugin) appear at the bottom until you move them.', 'ffl-funnels-addons'); ?>
         </p>
+        <p class="wb-field__desc">
+            <?php esc_html_e('This order (and hiding the default WordPress separators) applies to clients only. Staff matched by the exempt emails keep the native menu, so you will not see your changes in your own sidebar — check them while logged in as a client account.', 'ffl-funnels-addons'); ?>
+        </p>
 
         <div class="ffla-wl-menu-toolbar">
             <button type="button" class="wb-btn" data-ffla-wl-add-divider>

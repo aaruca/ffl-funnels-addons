@@ -57,7 +57,10 @@
     // edits show on this page in real time. It mirrors the CSS the module
     // injects server-side (body.ffla-theme-<mode>{--ffla-wl-<key>:<hex>}) and is
     // appended last, so it overrides the saved values until the page reloads.
-    // Only set values are emitted; a blank field falls back to the saved/default.
+    // A blank field previews what Save will produce: the mode's default when it
+    // has one (data-ffla-wl-default), otherwise `initial`, which unsets the
+    // variable so the stylesheet's own var() fallback shows (e.g. hover colours
+    // inheriting Primary). A half-typed value is skipped until it is valid.
     // Chrome (sidebar, top bar, submenu, buttons, borders) previews here;
     // dashboard-only colours preview on the dashboard page.
     var previewEl = null;
@@ -71,6 +74,9 @@
             var val = input.value.trim();
             if (HEX.test(val)) {
                 modes[m[1]][m[2]] = val;
+            } else if (val === '') {
+                var fallback = (input.getAttribute('data-ffla-wl-default') || '').trim();
+                modes[m[1]][m[2]] = HEX.test(fallback) ? fallback : 'initial';
             }
         });
 
@@ -84,6 +90,12 @@
                 css += 'body.ffla-theme-' + mode + '{' + decl + '}';
             }
         });
+
+        // The content-area background is the LIGHT dashboard background in both
+        // modes (set mode-independently server-side), so mirror that too.
+        if (modes.light.dashBg && HEX.test(modes.light.dashBg)) {
+            css += 'body.wp-admin.wp-core-ui{--ffla-wl-contentBg:' + modes.light.dashBg + ';}';
+        }
 
         if (!previewEl) {
             previewEl = document.createElement('style');
@@ -107,8 +119,12 @@
         });
 
         // Typing a valid hex (or clearing the field) updates the swatch + preview.
+        // A cleared field shows the mode's default in the swatch, matching Save.
         text.addEventListener('input', function () {
             var full = toSwatchHex(text.value);
+            if (!full && text.value.trim() === '') {
+                full = toSwatchHex(text.getAttribute('data-ffla-wl-default') || '');
+            }
             if (full) {
                 swatch.value = full;
             }
@@ -177,7 +193,7 @@
             item.classList.add('is-dragging');
             if (e.dataTransfer) {
                 e.dataTransfer.effectAllowed = 'move';
-                try { e.dataTransfer.setData('text/plain', ''); } catch (err) {}
+                try { e.dataTransfer.setData('text/plain', ''); } catch (err) { /* Some browsers reject setData here; the drag still works. */ }
             }
         });
 

@@ -9,7 +9,10 @@
  *   inject into $menu as a separator entry).
  * - Reorders the top-level menu using WordPress's native ordering filters.
  *
- * Applies to everyone — it's an organisational preference, not a restriction.
+ * Applies to clients only (non-exempt users): White_Label_Module registers it
+ * only when the current user is not exempt, so staff keep WordPress's native
+ * order and separators. Until exempt emails are configured nobody is exempt,
+ * so it applies to everyone during setup.
  *
  * @package FFL_Funnels_Addons
  */

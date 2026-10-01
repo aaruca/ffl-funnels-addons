@@ -182,22 +182,23 @@ class White_Label_Admin
             'before'
         );
 
-        // Repaint via WordPress's own painter when the light/dark toggle fires,
-        // so plugin icons re-tint instantly without a reload.
-        $repaint = 'window.fflaWlIconColours=' . wp_json_encode(['light' => $light, 'dark' => $dark]) . ';'
-            . 'document.addEventListener("ffla-wl-theme-changed",function(e){'
-            . 'var c=e.detail&&window.fflaWlIconColours[e.detail.mode];'
-            . 'if(c&&window._wpColorScheme&&window.wp&&wp.svgPainter){window._wpColorScheme.icons=c;wp.svgPainter.init();}'
-            . '});';
-        wp_add_inline_script('svg-painter', $repaint);
-
-        // Make plugin SVG icon hover instant (svg-painter adds a 100ms lag).
+        // Make plugin SVG icon hover instant (svg-painter adds a 100ms lag) and
+        // re-tint the icons in place when the light/dark toggle fires. The
+        // repaint lives in white-label-icons.js: it swaps svg-painter's colours
+        // with setColors() and repaints each icon, instead of calling
+        // wp.svgPainter.init() — core's init() re-collects every icon and binds
+        // another pair of hover handlers on each call, so they piled up per toggle.
         wp_enqueue_script(
             'ffla-wl-icons',
             FFLA_URL . 'modules/white-label/admin/js/white-label-icons.js',
             ['jquery', 'svg-painter'],
             FFLA_VERSION,
             true
+        );
+        wp_add_inline_script(
+            'ffla-wl-icons',
+            'window.fflaWlIconColours=' . wp_json_encode(['light' => $light, 'dark' => $dark]) . ';',
+            'before'
         );
     }
 
@@ -425,6 +426,7 @@ class White_Label_Admin
             'active_tab'    => $this->get_active_tab(),
             'style_fields'  => $this->get_style_fields(),
             'style_values'  => $this->get_styles(),
+            'style_defaults' => $this->get_style_defaults(),
             'dash_radius'   => $this->get_dash_radius(),
             'menu_tree'     => $this->get_admin_menu_tree(),
             'menu_rows'     => $this->get_menu_rows(),
@@ -781,6 +783,12 @@ class White_Label_Admin
     {
         $user = wp_get_current_user();
         if (!$user || !$user->exists()) {
+            return $settings;
+        }
+
+        // Multisite super admins are always exempt (White_Label_Access), so
+        // there is nothing to protect — don't add their email to the list.
+        if (is_multisite() && is_super_admin($user->ID)) {
             return $settings;
         }
 

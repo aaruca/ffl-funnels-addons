@@ -69,8 +69,41 @@
         scheduleApply();
     });
 
-    // svg-painter re-inits on our light/dark toggle; re-apply instant handlers.
-    document.addEventListener('ffla-wl-theme-changed', function () {
+    // Light/dark toggle: hand svg-painter the new mode's icon colours and repaint
+    // every painted icon in place (mirroring core's paint() resting colours),
+    // then re-apply the instant hover handlers.
+    //
+    // Deliberately NOT wp.svgPainter.init(): core's init() pushes every icon into
+    // its internal list again and binds another mouseenter/mouseleave pair each
+    // call, so repeated toggles stacked duplicate handlers and delayed repaints.
+    // setColors() + paintElement() change colours without binding anything.
+    function repaintForMode(mode) {
+        var colours = window.fflaWlIconColours && window.fflaWlIconColours[mode];
+        var painter = window.wp && wp.svgPainter;
+        if (!colours || !painter || typeof painter.setColors !== 'function' || typeof painter.paintElement !== 'function') {
+            return;
+        }
+
+        if (window._wpColorScheme) {
+            window._wpColorScheme.icons = colours;
+        }
+        painter.setColors({ icons: colours });
+
+        // Same elements core's svg-painter paints: background-image SVG data URIs.
+        $('#adminmenu .wp-menu-image, #wpadminbar .ab-item').each(function () {
+            var $el = $(this);
+            var bg = $el.css('background-image');
+            if (!bg || bg.indexOf('data:image/svg+xml;base64') === -1) {
+                return;
+            }
+            var $item = $el.parent().parent();
+            var current = $item.hasClass('current') || $item.hasClass('wp-has-current-submenu');
+            painter.paintElement($el, current ? 'current' : 'base');
+        });
+    }
+
+    document.addEventListener('ffla-wl-theme-changed', function (e) {
+        repaintForMode(e.detail && e.detail.mode);
         scheduleApply();
     });
 })(jQuery);

@@ -46,8 +46,10 @@ class White_Label_Module extends FFLA_Module
         require_once $this->get_path() . 'includes/class-white-label-settings.php';
         require_once $this->get_path() . 'includes/class-white-label-access.php';
 
-        // Admin-bar branding: swap the WordPress logo for the Site Icon. Applies
-        // everywhere the toolbar shows (wp-admin and front end), for all users.
+        // Agency branding, for all users: removes the WordPress "W" logo node
+        // from the admin bar (wp-admin and front end), adds the FFL Funnels
+        // logo + wordmark to the top of the admin sidebar, and replaces the
+        // admin footer credit (filterable via `ffla_wl_admin_footer_text`).
         require_once $this->get_path() . 'includes/class-white-label-branding.php';
         (new White_Label_Branding())->register_hooks();
 
