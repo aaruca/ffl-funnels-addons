@@ -108,8 +108,9 @@ class FFLA_Customer_Operations_Admin
             echo '</section>';
         }
         $saved = isset($_GET['saved']); // phpcs:ignore WordPress.Security.NonceVerification
-        echo '<div class="ffla-set-savebar" data-savebar data-state="' . ($saved ? 'saved' : 'clean') . '"><p class="ffla-set-status" role="status" data-save-status>' . ($saved ? 'Settings saved.' : 'No unsaved changes.') . '</p>'
-            . '<button type="submit" class="button button-primary">Save settings</button></div>';
+        echo '<div class="wb-actions-bar ffla-set-savebar" data-savebar data-state="' . ($saved ? 'saved' : 'clean') . '"><p class="wb-actions-bar__status ffla-set-status" role="status" data-save-status>' . ($saved ? 'Settings saved' : 'No unsaved changes') . '</p>'
+            . '<button type="button" class="wb-btn wb-btn--subtle wb-actions-bar__discard" data-discard>Discard</button>'
+            . '<button type="submit" class="wb-btn wb-btn--primary">Save settings</button></div>';
         echo '</form>';
 
         echo '<section class="ffla-set-panel ffla-set-tool ffla-ops-section" id="email-preview" data-section="email-preview" aria-labelledby="ffla-set-title-email-preview">'

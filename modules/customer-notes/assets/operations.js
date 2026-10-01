@@ -161,7 +161,17 @@
     function track() {
         dirty = snapshot() !== initial;
         bar.dataset.state = dirty ? 'dirty' : 'clean';
-        status.textContent = dirty ? 'You have unsaved changes.' : 'No unsaved changes.';
+        status.textContent = dirty ? 'Unsaved changes' : 'No unsaved changes';
+    }
+    const discard = root.querySelector('[data-discard]');
+    if (discard) {
+        discard.addEventListener('click', function () {
+            const section = sectionField ? sectionField.value : '';
+            form.reset();
+            if (sectionField) { sectionField.value = section; }
+            refresh();
+            track();
+        });
     }
     form.addEventListener('change', () => { refresh(); track(); });
     form.addEventListener('input', track);

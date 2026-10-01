@@ -5,6 +5,7 @@ All notable changes to FFL Funnels Addons are documented in this file.
 ## [Unreleased]
 
 ### Changed
+- Admin redesign for every module (shared shell and components): a compact header with the plugin mark and version, a sidebar with module icons where single-page modules are direct links and multi-page modules open a list of their pages, flat cards with divided setting rows, new inputs, toggles and buttons, sentence-case labels instead of all caps, and a save bar that floats at the bottom of the page, turns dark with **Unsaved changes**, offers **Discard** and warns before leaving with unsaved edits. The dashboard groups modules into **Active** and **Available**, with an **Open settings** link on each active module. On narrow screens the sidebar scrolls to the current page.
 - Customer & Order Management settings: redesigned. A section list shows each section's status (On, Off or "3 of 5 on") and opens one section at a time; each section starts with its main switch, settings that need another switch are dimmed with the switch they need, switches are real toggles, and a sticky save bar shows unsaved changes and returns to the same section after saving. Email preview and the request form setup moved under Tools.
 
 ## [1.54.0] - 2026-10-01

@@ -49,7 +49,7 @@ function check(value, label) { assert.ok(value, label); checks++; }
                     check(await page.locator('[data-savebar]').getAttribute('data-state')!=='dirty','back to saved values is clean '+width);
                     const name=await page.locator('#ffla-ops-store_name').inputValue();
                     await page.locator('#ffla-ops-store_name').fill(name+' X');
-                    check(await page.locator('[data-savebar]').getAttribute('data-state')==='dirty'&&(await page.locator('[data-save-status]').textContent()).includes('unsaved'),'unsaved changes are announced '+width);
+                    check(await page.locator('[data-savebar]').getAttribute('data-state')==='dirty'&&(await page.locator('[data-save-status]').textContent()).toLowerCase().includes('unsaved'),'unsaved changes are announced '+width);
                     await page.locator('#ffla-ops-store_name').fill(name);
                     await page.locator('[data-section-link="email-preview"]').click();
                     await page.locator('[data-template-action=preview]').click();

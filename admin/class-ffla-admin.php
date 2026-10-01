@@ -118,7 +118,10 @@ class FFLA_Admin
                 'activating'        => __('Activating...', 'ffl-funnels-addons'),
                 'deactivating'      => __('Deactivating...', 'ffl-funnels-addons'),
                 'checking'          => __('Checking...', 'ffl-funnels-addons'),
-                'checkForUpdates'   => __('Check for Updates Now', 'ffl-funnels-addons'),
+                'checkForUpdates'   => __('Check for updates', 'ffl-funnels-addons'),
+                'noChanges'         => __('No unsaved changes', 'ffl-funnels-addons'),
+                'unsaved'           => __('Unsaved changes', 'ffl-funnels-addons'),
+                'discard'           => __('Discard', 'ffl-funnels-addons'),
                 'genericError'      => __('An unexpected error occurred. Please try again.', 'ffl-funnels-addons'),
                 'networkError'      => __('Network error. Check your connection and try again.', 'ffl-funnels-addons'),
                 'done'              => __('Done', 'ffl-funnels-addons'),
@@ -221,11 +224,13 @@ class FFLA_Admin
      */
     private function render_header(): void
     {
+        $mark = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 5h16l-6 7.5V19l-4 1.5v-8L4 5z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
         echo '<header class="wb-header">';
         echo '<div class="wb-header__title">';
+        echo '<span class="wb-header__mark" aria-hidden="true">' . $mark . '</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
         echo '<h1>' . esc_html__('FFL Funnels Addons', 'ffl-funnels-addons') . '</h1>';
+        echo '<span class="wb-header__version">v' . esc_html(FFLA_VERSION) . '</span>';
         echo '</div>';
-        echo '<div class="wb-header__version">v' . esc_html(FFLA_VERSION) . '</div>';
         echo '</header>';
     }
 
@@ -241,15 +246,34 @@ class FFLA_Admin
         $dash_active = ($current_page === 'ffl-funnels-addons') ? ' wb-sidebar__item--active' : '';
         $dash_icon = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2 2h5v5H2V2zM9 2h5v5H9V2zM2 9h5v5H2V9zM9 9h5v5H9V9z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
         echo '<li class="wb-sidebar__item' . esc_attr($dash_active) . '">';
-        echo '<a href="' . esc_url(admin_url('admin.php?page=ffl-funnels-addons')) . '">';
+        echo '<a href="' . esc_url(admin_url('admin.php?page=ffl-funnels-addons')) . '"' . ($dash_active ? ' aria-current="page"' : '') . '>';
         echo '<span class="wb-sidebar__icon">' . $dash_icon . '</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
         echo '<span class="wb-sidebar__label">' . esc_html__('Dashboard', 'ffl-funnels-addons') . '</span>';
         echo '</a></li>';
 
         // ── Module groups as collapsible dropdowns ────────────────────
+        $has_pages = false;
+        foreach ($this->registry->get_active() as $module) {
+            $has_pages = $has_pages || !empty($module->get_admin_pages());
+        }
+        if ($has_pages) {
+            echo '<li class="wb-sidebar__section" aria-hidden="true">' . esc_html__('Modules', 'ffl-funnels-addons') . '</li>';
+        }
         foreach ($this->registry->get_active() as $module) {
             $pages = $module->get_admin_pages();
             if (empty($pages)) {
+                continue;
+            }
+
+            // A module with one page is a plain link: a group would repeat its name.
+            if (1 === count($pages)) {
+                $page = reset($pages);
+                $active = ($page['slug'] === $current_page) ? ' wb-sidebar__item--active' : '';
+                echo '<li class="wb-sidebar__item' . esc_attr($active) . '">';
+                echo '<a href="' . esc_url(admin_url('admin.php?page=' . $page['slug'])) . '"' . ($active ? ' aria-current="page"' : '') . '>';
+                echo '<span class="wb-sidebar__icon">' . $module->get_icon_svg() . '</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                echo '<span class="wb-sidebar__label">' . esc_html($module->get_name()) . '</span>';
+                echo '</a></li>';
                 continue;
             }
 
@@ -260,7 +284,8 @@ class FFLA_Admin
 
             echo '<li class="wb-sidebar__group-dropdown">';
             echo '<details' . $open_attr . '>';
-            echo '<summary class="wb-sidebar__group-summary">';
+            echo '<summary class="wb-sidebar__group-summary' . ($is_open ? ' is-current' : '') . '">';
+            echo '<span class="wb-sidebar__icon">' . $module->get_icon_svg() . '</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
             echo '<span class="wb-sidebar__group-label">' . esc_html($module->get_name()) . '</span>';
             echo '<span class="wb-sidebar__chevron">'
                 . '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">'
@@ -274,7 +299,7 @@ class FFLA_Admin
                 $url = admin_url('admin.php?page=' . $page['slug']);
 
                 echo '<li class="wb-sidebar__item wb-sidebar__item--sub' . esc_attr($sub_active) . '">';
-                echo '<a href="' . esc_url($url) . '">';
+                echo '<a href="' . esc_url($url) . '"' . ($sub_active ? ' aria-current="page"' : '') . '>';
                 if (!empty($page['icon'])) {
                     echo '<span class="wb-sidebar__icon">' . $page['icon'] . '</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
                 }
@@ -297,8 +322,6 @@ class FFLA_Admin
     {
         echo '<footer class="wb-footer">';
         echo '<span>' . esc_html__('FFL Funnels Addons', 'ffl-funnels-addons') . ' v' . esc_html(FFLA_VERSION) . '</span>';
-        echo '<span class="wb-footer__sep">&middot;</span>';
-        echo '<span>' . esc_html__('Modular WooCommerce Toolkit', 'ffl-funnels-addons') . '</span>';
         echo '</footer>';
     }
 

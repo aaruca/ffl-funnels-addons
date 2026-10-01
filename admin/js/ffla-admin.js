@@ -120,6 +120,61 @@
     });
   }
 
+  /* ─── Narrow screens: the sidebar is a scrolling strip; show the current page ── */
+  var current = document.querySelector('.wb-sidebar [aria-current="page"]');
+  if (current && window.matchMedia('(max-width: 900px)').matches) {
+    current.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }
+
+  /* ─── Actions bar: unsaved-changes state and Discard ─────────── */
+  document.querySelectorAll('.wb-actions-bar').forEach(function (bar) {
+    if (bar.hasAttribute('data-savebar')) { return; } // The screen handles it itself.
+    var form = bar.closest('form');
+    if (!form || String(form.getAttribute('method') || '').toLowerCase() !== 'post') { return; }
+
+    var status = document.createElement('p');
+    status.className = 'wb-actions-bar__status';
+    status.setAttribute('role', 'status');
+    bar.insertBefore(status, bar.firstChild);
+
+    var discard = document.createElement('button');
+    discard.type = 'button';
+    discard.className = 'wb-btn wb-btn--subtle wb-actions-bar__discard';
+    discard.textContent = t('discard', 'Discard');
+    bar.insertBefore(discard, bar.querySelector('[type="submit"]'));
+
+    function snapshot() {
+      var out = [];
+      new FormData(form).forEach(function (value, key) {
+        if (key === '_wpnonce' || key === '_wp_http_referer') { return; }
+        out.push(key + '=' + (typeof value === 'string' ? value : (value && value.name) || ''));
+      });
+      return out.join('&');
+    }
+    var initial = snapshot();
+    var dirty = false;
+    function track() {
+      dirty = snapshot() !== initial;
+      bar.setAttribute('data-state', dirty ? 'dirty' : 'clean');
+      status.textContent = dirty ? t('unsaved', 'Unsaved changes') : t('noChanges', 'No unsaved changes');
+    }
+    track();
+    form.addEventListener('input', track);
+    form.addEventListener('change', track);
+    discard.addEventListener('click', function () {
+      form.reset();
+      form.querySelectorAll('input, select, textarea').forEach(function (el) {
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      track();
+    });
+    // Saving (normal post or a module's own AJAX save) makes the current values the saved ones.
+    form.addEventListener('submit', function () { initial = snapshot(); track(); });
+    window.addEventListener('beforeunload', function (event) {
+      if (dirty) { event.preventDefault(); event.returnValue = ''; }
+    });
+  });
+
   /* ─── Utility: Build URL-encoded params from object ──────────── */
   function buildParams(obj) {
     return Object.keys(obj).map(function (k) {
