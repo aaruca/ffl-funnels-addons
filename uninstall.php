@@ -262,6 +262,8 @@ if (is_array($ffla_ops_settings) && !empty($ffla_ops_settings['requests_delete_d
     delete_option('ffla_requests_db_version');
 }
 
+delete_option('ffla_requests_endpoint'); // My Account tab permalink flag.
+
 // ── Order Badges cleanup ───────────────────────────────────────────
 // Badges are derived live from product tags; the only stored data is this
 // settings option, so it is removed whether or not the module is active.

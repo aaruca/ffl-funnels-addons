@@ -138,6 +138,10 @@
 						self.home(e.message);
 					});
 				}
+				var preset = params.get('ffla_order');
+				if (!self.cfg.embedded && preset && self.session.loggedIn) {
+					return self.openOrder(preset);
+				}
 				if (self.cfg.embedded && self.session.loggedIn) {
 					return self.post('verify', { order: self.cfg.order }).then(function (data) {
 						self.showOrder(data, false);
@@ -160,16 +164,20 @@
 		if (error) {
 			nodes.push(notice(error, 'error'));
 		}
-		if (this.cfg.intro && !this.cfg.embedded) {
+		if (this.cfg.intro && !this.cfg.embedded && !s.loggedIn) {
 			nodes.push(text(this.cfg.intro, 'ffla-req-intro'));
 		}
 
 		if (s.loggedIn && s.orders) {
 			if (s.requests && s.requests.length) {
-				nodes.push(h('h3', { class: 'ffla-req-h', text: t.yourRequests }));
+				nodes.push(h('h3', { class: 'ffla-req-h', 'data-focus': !!this.cfg.account, text: t.yourRequests }));
 				nodes.push(this.requestList(s.requests, {}));
+			} else if (this.cfg.account) {
+				nodes.push(h('h3', { class: 'ffla-req-h', text: t.yourRequests }));
+				nodes.push(h('p', { class: 'ffla-req-muted', text: t.noRequests }));
 			}
-			nodes.push(h('h3', { class: 'ffla-req-h', 'data-focus': true, text: t.yourOrders }));
+			nodes.push(h('h3', { class: 'ffla-req-h', 'data-focus': !this.cfg.account || !(s.requests && s.requests.length), text: t.yourOrders }));
+			nodes.push(h('p', { class: 'ffla-req-muted', text: t.pickOrder }));
 			if (s.orders.length) {
 				nodes.push(h('ul', { class: 'ffla-req-list' }, s.orders.map(function (o) {
 					return h('li', {}, h('button', {

@@ -45,6 +45,8 @@ class FFLA_Customer_Operations_Settings
             'requests_issues' => ['Customer Requests', 'Issue reports', 'Problems such as a package not received, damage, missing or wrong items, billing or transfer questions.', 'switch', true],
             'requests_returns' => ['Customer Requests', 'Return requests', 'Customers pick the items and quantities to return. Firearms are flagged for an FFL-to-FFL return.', 'switch', true],
             'requests_guests' => ['Customer Requests', 'Guest access', 'Customers verify with the order number and billing email, so guest checkouts can use the form too. When off, customers must sign in.', 'switch', true],
+            'requests_account_tab' => ['Customer Requests', 'My Account tab', 'Adds a tab to the customer’s My Account where signed-in customers see all their requests and start a new one from any of their orders.', 'switch', true],
+            'requests_account_label' => ['Customer Requests', 'My Account tab name', 'Menu label for that tab, e.g. “Returns & Issues” or “Order Help”. A number in brackets shows when a request is waiting for the customer’s reply.', 'text', 'Returns & Issues'],
             'requests_uploads' => ['Customer Requests', 'Customer photos and documents', 'Up to 3 JPEG, PNG or PDF files per message (20 per request). Photos are resized and their location data removed. Stored in private database tables, never in the Media Library.', 'switch', true],
             'requests_emails' => ['Customer Requests', 'Customer emails', 'Confirmation with a private tracking link, staff replies, return approval with instructions, the status updates you choose to announce and the closing resolution. Staff are notified of new requests and customer replies either way.', 'switch', true],
             'requests_issue_days' => ['Customer Requests', 'Issue window (days)', 'How many days after the order date customers can report an issue (1–365). Staff can always open one.', 'number', 90],
@@ -81,7 +83,7 @@ class FFLA_Customer_Operations_Settings
         $dependencies = ['partial_pickup'=>['pickup'], 'require_serials'=>['serials'], 'invoice_serials'=>['serials'], 'packing_serials'=>['serials'],
             'attachments'=>['followup'], 'auto_ready'=>['pickup','notifications'], 'pickup_reminders'=>['auto_ready'], 'staff_reminders'=>['followup','notifications'],
             'customer_serials'=>['serials','customer_progress'], 'customer_help'=>['followup','customer_progress'], 'customer_tracking'=>['customer_progress'], 'customer_documents'=>['customer_progress'],
-            'requests_issues'=>['requests'], 'requests_returns'=>['requests'], 'requests_guests'=>['requests'], 'requests_uploads'=>['requests'], 'requests_emails'=>['requests']];
+            'requests_issues'=>['requests'], 'requests_returns'=>['requests'], 'requests_guests'=>['requests'], 'requests_account_tab'=>['requests'], 'requests_uploads'=>['requests'], 'requests_emails'=>['requests']];
         foreach ($dependencies[$key] ?? [] as $dependency) { if (!self::enabled($dependency)) { return false; } }
         return true;
     }

@@ -2,6 +2,14 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.53.0] - 2026-10-01
+
+### Added
+- Customer requests: a **Returns & Issues** tab in the customer's My Account (after Orders, `/my-account/returns-issues/`). Signed-in customers see all their requests with status and pick any of their recent orders to report a problem or request a return; the menu shows a count when a request is waiting for their reply. **Get help** in the Orders list now opens this tab with the order selected. New settings: **My Account tab** (on by default once requests are on) and **My Account tab name**; the slug can be changed with the `ffla_requests_account_endpoint` filter. Permalinks refresh automatically when the tab is switched on or off.
+
+### Changed
+- Customer requests: signed-in customers no longer see the "enter your order number and email" introduction, and a `?ffla_order=` link opens that order directly for its owner.
+
 ## [1.52.0] - 2026-10-01
 
 ### Added

@@ -44,6 +44,7 @@ function has_shortcode($content, $tag) { return false !== strpos((string) $conte
 function get_post_meta($id, $key = '', $single = false) { return ''; }
 function wp_kses($html, $allowed) { return $html; }
 function home_url($path = '') { return 'https://fixture.invalid' . $path; }
+function sanitize_title($t) { return strtolower(preg_replace('/[^a-z0-9]+/i', '-', trim((string) $t))); }
 function remove_action($hook,$cb) { $GLOBALS['hooks'][$hook]=array_filter($GLOBALS['hooks'][$hook] ?? [],static function($x)use($cb){return $x!==$cb;}); }
 function apply_filters($hook,$value,...$args) { return isset($GLOBALS['filters'][$hook]) ? $GLOBALS['filters'][$hook]($value,...$args) : $value; }
 function wp_next_scheduled($hook,$args) { return $GLOBALS['events'][$hook.json_encode($args)]['at'] ?? false; }

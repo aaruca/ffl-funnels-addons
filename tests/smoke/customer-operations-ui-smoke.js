@@ -34,7 +34,7 @@ function check(value, label) { assert.ok(value, label); checks++; }
                 check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'no horizontal overflow '+kind+' '+width);
                 check(await page.locator('.ffla-ops input[type=checkbox]:visible').evaluateAll(items=>items.every(x=>x.getBoundingClientRect().width===16)),'checkbox not stretched '+kind+' '+width);
                 if (kind==='settings') {
-                    check(await page.locator('input[role=switch]').count()===28,'all independent switches rendered (21 + 7 customer request switches)');
+                    check(await page.locator('input[role=switch]').count()===29,'all independent switches rendered (21 + 8 customer request switches)');
                     check(await page.locator('form:has(input[name=action][value=ffla_ops_settings])').count()===1&&await page.locator('form:has(input[name=action][value=ffla_ops_settings]) details.ffla-ops-section').count()===7,'one settings form keeps every group');
                     await page.locator('[data-template-action=preview]').click();
                     await page.waitForFunction(()=>document.querySelector('.ffla-ops-result').textContent==='Fixture saved');

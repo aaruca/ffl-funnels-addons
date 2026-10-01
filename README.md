@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.52.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.53.0-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -121,7 +121,7 @@ Extends the existing Customer Notes module (original notes contributed by @adeel
 *   **Pickup operations:** validated Ready for Pickup status, optional preparation checklist, partial collection and staff-confirmed collection. Does not capture payments or bypass the native FFL checkout.
 *   **Serial numbers:** per-firearm order-item serials and optional manufacturer/model/caliber snapshots, with separate invoice and packing-slip output switches for WP Overnight's PDF Invoices & Packing Slips for WooCommerce.
 *   **Follow-up cases:** private issue tracking with reason, priority, assigned employee, deadline, resolution/reopening, order-list filters and optional private evidence files. Cases do not change payment or fulfillment status.
-*   **Customer requests (issues & returns):** customers report a problem or request a return from any page with the `[ffla_order_requests]` shortcode (for example the home page) or from My Account, using their order number and checkout email (guests included). Each request gets its own number, a live status tracker, a reply thread with photos/PDFs, return item selection with firearm (FFL-to-FFL) flags and a closing resolution. Staff work them in **WooCommerce → Requests** (inbox, assignment, due dates, return approval with instructions, close/reopen, emails). Cache-safe, rate-limited, and it never refunds or ships by itself.
+*   **Customer requests (issues & returns):** customers report a problem or request a return from any page with the `[ffla_order_requests]` shortcode (for example the home page) or from their own **Returns & Issues** tab in My Account, using their order number and checkout email (guests included). Each request gets its own number, a live status tracker, a reply thread with photos/PDFs, return item selection with firearm (FFL-to-FFL) flags and a closing resolution. Staff work them in **WooCommerce → Requests** (inbox, assignment, due dates, return approval with instructions, close/reopen, emails). Cache-safe, rate-limited, and it never refunds or ships by itself.
 *   **Customer communication:** optional owner-only My Account progress, explicitly published updates, help requests, existing tracking/document links, configurable ready emails and bounded reminders. Internal notes remain private.
 *   **Setup and limits:** seven settings sections with individual descriptions. Read the [full setup and testing guide](modules/customer-notes/README.md) before enabling features. Validate actual PDF templates, SMTP, cron and fulfillment integrations on staging. Tax Reports and Nexus are unchanged.
 

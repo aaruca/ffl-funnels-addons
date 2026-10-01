@@ -36,6 +36,110 @@ class FFLA_Requests_Public
         }
         add_action('woocommerce_view_order', [__CLASS__, 'view_order'], 25);
         add_filter('woocommerce_my_account_my_orders_actions', [__CLASS__, 'order_actions'], 20, 2);
+
+        // My Account tab (endpoint registered through WooCommerce's query vars).
+        $endpoint = self::endpoint();
+        add_filter('woocommerce_get_query_vars', [__CLASS__, 'query_vars']);
+        add_filter('woocommerce_account_menu_items', [__CLASS__, 'menu_items'], 20);
+        add_action('woocommerce_account_' . $endpoint . '_endpoint', [__CLASS__, 'account_endpoint']);
+        add_filter('woocommerce_endpoint_' . $endpoint . '_title', [__CLASS__, 'endpoint_title'], 10, 2);
+        add_action('wp_loaded', [__CLASS__, 'maybe_flush_rewrites'], 99);
+    }
+
+    /* ── My Account tab ────────────────────────────────────────────────── */
+
+    /** URL slug of the tab: /my-account/{slug}/. */
+    public static function endpoint(): string
+    {
+        $slug = sanitize_title((string) apply_filters('ffla_requests_account_endpoint', 'returns-issues'));
+        return '' !== $slug ? $slug : 'returns-issues';
+    }
+
+    public static function account_tab(): bool
+    {
+        return FFLA_Requests::enabled() && FFLA_Customer_Operations_Settings::enabled('requests_account_tab');
+    }
+
+    public static function account_url(string $order_number = ''): string
+    {
+        $url = wc_get_account_endpoint_url(self::endpoint());
+        return '' !== $order_number ? add_query_arg('ffla_order', rawurlencode($order_number), $url) : $url;
+    }
+
+    public static function query_vars($vars)
+    {
+        if (is_array($vars) && self::account_tab()) {
+            $vars[self::endpoint()] = self::endpoint();
+        }
+        return $vars;
+    }
+
+    public static function menu_label(): string
+    {
+        $label = trim((string) FFLA_Requests::setting('requests_account_label'));
+        return '' !== $label ? $label : __('Returns & Issues', 'ffl-funnels-addons');
+    }
+
+    /** Insert the tab after Orders; show how many requests wait for the customer. */
+    public static function menu_items($items)
+    {
+        if (!is_array($items) || !self::account_tab() || !is_user_logged_in()) {
+            return $items;
+        }
+        $label = self::menu_label();
+        $waiting = self::waiting_count(get_current_user_id());
+        if ($waiting) {
+            $label .= ' (' . number_format_i18n($waiting) . ')';
+        }
+
+        $out = [];
+        foreach ($items as $key => $value) {
+            $out[$key] = $value;
+            if ('orders' === $key) {
+                $out[self::endpoint()] = $label;
+            }
+        }
+        if (!isset($out[self::endpoint()])) {
+            $logout = isset($out['customer-logout']) ? ['customer-logout' => $out['customer-logout']] : [];
+            unset($out['customer-logout']);
+            $out[self::endpoint()] = $label;
+            $out += $logout;
+        }
+        return $out;
+    }
+
+    private static function waiting_count(int $user_id): int
+    {
+        global $wpdb;
+        if (!$user_id || get_option(FFLA_Requests::DB_OPTION) !== FFLA_Requests::DB_VERSION) {
+            return 0;
+        }
+        $t = FFLA_Requests::tables();
+        return (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$t['requests']} WHERE customer_id = %d AND status = 'waiting_customer'", $user_id)); // phpcs:ignore
+    }
+
+    public static function endpoint_title($title, $endpoint = '')
+    {
+        return self::account_tab() ? self::menu_label() : $title;
+    }
+
+    public static function account_endpoint(): void
+    {
+        if (!self::account_tab()) {
+            echo '<p>' . esc_html__('Requests are not available right now. Please contact the store.', 'ffl-funnels-addons') . '</p>';
+            return;
+        }
+        echo self::shortcode(['account' => '1']); // phpcs:ignore WordPress.Security.EscapeOutput
+    }
+
+    /** Refresh permalinks once when the tab is switched on or off (or its slug changes). */
+    public static function maybe_flush_rewrites(): void
+    {
+        $want = self::account_tab() ? self::endpoint() : '';
+        if (get_option('ffla_requests_endpoint') !== $want) {
+            flush_rewrite_rules(false);
+            update_option('ffla_requests_endpoint', $want, true);
+        }
     }
 
     /* ── Assets and markup ─────────────────────────────────────────────── */
@@ -63,7 +167,7 @@ class FFLA_Requests_Public
                 : '';
         }
 
-        $atts = shortcode_atts(['type' => 'both', 'order' => '', 'title' => ''], (array) $atts, 'ffla_order_requests');
+        $atts = shortcode_atts(['type' => 'both', 'order' => '', 'title' => '', 'account' => ''], (array) $atts, 'ffla_order_requests');
         $types = FFLA_Requests::types_enabled();
         if (in_array($atts['type'], ['issue', 'return'], true)) {
             $types = array_values(array_intersect($types, [$atts['type']]));
@@ -81,7 +185,7 @@ class FFLA_Requests_Public
         static $instance = 0;
         $instance++;
 
-        return '<div ' . (1 === $instance ? 'id="ffla-requests" ' : '') . 'class="ffla-req" data-config="' . esc_attr((string) wp_json_encode(self::config($types, (string) $atts['order']))) . '">'
+        return '<div ' . (1 === $instance ? 'id="ffla-requests" ' : '') . 'class="ffla-req" data-config="' . esc_attr((string) wp_json_encode(self::config($types, (string) $atts['order'], !empty($atts['account'])))) . '">'
             . ('' !== $atts['title'] ? '<h2 class="ffla-req-heading">' . esc_html($atts['title']) . '</h2>' : '')
             . '<div class="ffla-req-app" aria-live="polite"><p class="ffla-req-loading">' . esc_html__('Loading…', 'ffl-funnels-addons') . '</p></div>'
             . '<noscript><p>' . esc_html__('Please enable JavaScript to report a problem or request a return, or contact the store.', 'ffl-funnels-addons') . '</p></noscript>'
@@ -89,7 +193,7 @@ class FFLA_Requests_Public
     }
 
     /** Static (cacheable) configuration — no customer data. */
-    private static function config(array $types, string $order): array
+    private static function config(array $types, string $order, bool $account = false): array
     {
         $myaccount = function_exists('wc_get_page_permalink') ? wc_get_page_permalink('myaccount') : '';
 
@@ -98,6 +202,7 @@ class FFLA_Requests_Public
             'types'         => $types,
             'order'         => $order,
             'embedded'      => '' !== $order,
+            'account'       => $account,
             'intro'         => str_replace('\\n', "\n", (string) FFLA_Requests::setting('requests_intro')),
             'guests'        => FFLA_Customer_Operations_Settings::enabled('requests_guests'),
             'uploads'       => FFLA_Customer_Operations_Settings::enabled('requests_uploads'),
@@ -123,6 +228,8 @@ class FFLA_Requests_Public
             'signIn'          => __('Sign in to report a problem or request a return.', 'ffl-funnels-addons'),
             'signInLink'      => __('Sign in', 'ffl-funnels-addons'),
             'yourOrders'      => __('Your recent orders', 'ffl-funnels-addons'),
+            'pickOrder'       => __('Choose an order to report a problem or request a return.', 'ffl-funnels-addons'),
+            'noRequests'      => __('You have no requests yet.', 'ffl-funnels-addons'),
             'yourRequests'    => __('Your requests', 'ffl-funnels-addons'),
             'otherOrder'      => __('Find another order by number and email', 'ffl-funnels-addons'),
             'noOrders'        => __('No orders found on your account.', 'ffl-funnels-addons'),
@@ -207,7 +314,7 @@ class FFLA_Requests_Public
         if (is_array($actions) && FFLA_Requests::enabled() && FFLA_Requests::is_owner($order)
             && !in_array($order->get_status(), ['pending', 'failed', 'cancelled', 'checkout-draft'], true)) {
             $actions['ffla-help'] = [
-                'url'  => $order->get_view_order_url() . '#ffla-requests',
+                'url'  => self::account_tab() ? self::account_url((string) $order->get_order_number()) : $order->get_view_order_url() . '#ffla-requests',
                 'name' => __('Get help', 'ffl-funnels-addons'),
             ];
         }
