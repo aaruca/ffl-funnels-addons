@@ -2,7 +2,7 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
-## [Unreleased]
+## [1.54.0] - 2026-10-01
 
 ### Added
 - Customer requests: **return rules** per product category (including subcategories) or tag — not returnable, own return window, restocking fee — managed in Requests → Rules & replies, with a default restocking fee setting. Customers see non-returnable lines with the reason, the fee per line and a live estimate of fee and refund; the fee is waived for damaged, defective, wrong or not-as-described items and saved on each request line.
