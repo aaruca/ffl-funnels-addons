@@ -4,6 +4,14 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+/**
+ * A failure that concerns one product only. The catalog scan records the
+ * product and continues instead of stopping on it.
+ */
+class Google_Merchant_Policy_Item_Exception extends RuntimeException
+{
+}
+
 class Google_Merchant_Policy_Google_Sync
 {
     const UPDATE_HOOK = 'gla/jobs/update_products/process_item';
@@ -115,7 +123,8 @@ class Google_Merchant_Policy_Google_Sync
             return false;
         }
         if (empty($product->get_meta('_wc_gla_synced_at', true))) {
-            throw new RuntimeException(__('Google product IDs exist without a sync timestamp. Review this product in Google for WooCommerce before resuming removal.', 'ffl-funnels-addons'));
+            // A problem with this one product: the scan records it and moves on.
+            throw new Google_Merchant_Policy_Item_Exception(__('Google product IDs exist without a sync timestamp. Review this product in Google for WooCommerce.', 'ffl-funnels-addons'));
         }
         $syncer = self::find_syncer();
         if ($syncer && is_callable([$syncer, 'pre_delete']) && is_callable([$syncer, 'delete'])) {

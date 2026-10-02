@@ -94,8 +94,32 @@ class Google_Merchant_Policy_Admin
             FFLA_Admin::render_notice('warning', __('Google for WooCommerce is not active. Policies can be prepared and audited, but its product-feed filter will not run until that plugin is active.', 'ffl-funnels-addons'));
         }
 
+        // Opening this page keeps a running scan moving even if its schedule
+        // was lost (page loads elsewhere only check while the watchdog exists).
+        Google_Merchant_Policy_Reconciler::recover();
+
         $settings = Google_Merchant_Policy_Engine::get_settings();
         $state = Google_Merchant_Policy_Reconciler::get_state();
+
+        if ((string) $state['last_error'] !== '') {
+            FFLA_Admin::render_notice($state['status'] === 'paused' ? 'info' : 'danger', sprintf(__('Last scan error: %s', 'ffl-funnels-addons'), esc_html((string) $state['last_error'])));
+        }
+        if ((int) ($state['item_errors'] ?? 0) > 0) {
+            $links = [];
+            foreach ((array) ($state['error_items'] ?? []) as $item) {
+                $item_id = (int) ($item['id'] ?? 0);
+                if ($item_id > 0) {
+                    $parent = wp_get_post_parent_id($item_id);
+                    $links[] = '<a href="' . esc_url((string) get_edit_post_link($parent ?: $item_id)) . '" title="' . esc_attr((string) ($item['message'] ?? '')) . '">#' . $item_id . '</a>';
+                }
+            }
+            FFLA_Admin::render_notice('warning', sprintf(
+                /* translators: 1: number of products, 2: list of product links */
+                _n('%1$d product could not be removed from Google and was skipped: %2$s. Fix it in Google for WooCommerce, then run a new scan.', '%1$d products could not be removed from Google and were skipped: %2$s. Fix them in Google for WooCommerce, then run a new scan.', (int) $state['item_errors'], 'ffl-funnels-addons'),
+                (int) $state['item_errors'],
+                implode(', ', $links)
+            ));
+        }
         // Scans saved before two-way sync have no upload counter.
         if ($settings['mode'] === 'enforce' && !array_key_exists('upload_requests', (array) get_option(Google_Merchant_Policy_Reconciler::STATE_OPTION, []))) {
             FFLA_Admin::render_notice('info', __('Run Save policies & start catalog scan once to apply two-way sync to the whole catalog: Allowed products that this addon excluded earlier are uploaded, and exclusions made in Google for WooCommerce are kept as Always exclude.', 'ffl-funnels-addons'));
@@ -139,7 +163,7 @@ class Google_Merchant_Policy_Admin
         echo '<div class="wb-field"><label for="ffla-gmp-mode"><strong>' . esc_html__('Operating mode', 'ffl-funnels-addons') . '</strong></label><select id="ffla-gmp-mode" name="mode" aria-describedby="ffla-gmp-mode-help">';
         echo '<option value="audit"' . selected($settings['mode'], 'audit', false) . '>' . esc_html__('Audit only — no feed changes', 'ffl-funnels-addons') . '</option>';
         echo '<option value="enforce"' . selected($settings['mode'], 'enforce', false) . '>' . esc_html__('Enforce — this addon decides what reaches Google', 'ffl-funnels-addons') . '</option></select><p id="ffla-gmp-mode-help" class="wb-field__desc">' . esc_html__('Audit records decisions only; Google is not changed. Enforce uploads Allowed products and removes Blocked AND Pending ones through Google for WooCommerce, then keeps Google in sync after every change. Mode changes apply when you save.', 'ffl-funnels-addons') . '</p></div>';
-        echo '<div class="wb-field"><label for="ffla-gmp-batch"><strong>' . esc_html__('Products per batch', 'ffl-funnels-addons') . '</strong></label><input id="ffla-gmp-batch" name="batch_size" type="number" min="10" max="250" step="10" aria-describedby="ffla-gmp-batch-help" value="' . esc_attr((string) $settings['batch_size']) . '"><p id="ffla-gmp-batch-help" class="wb-field__desc">' . esc_html__('Start at 50; allowed range: 10–250. Smaller batches reduce work per request, not the catalog size. Saving changes restarts the scan.', 'ffl-funnels-addons') . '</p></div>';
+        echo '<div class="wb-field"><label for="ffla-gmp-batch"><strong>' . esc_html__('Products per batch', 'ffl-funnels-addons') . '</strong></label><input id="ffla-gmp-batch" name="batch_size" type="number" min="10" max="250" step="1" aria-describedby="ffla-gmp-batch-help" value="' . esc_attr((string) $settings['batch_size']) . '"><p id="ffla-gmp-batch-help" class="wb-field__desc">' . esc_html__('Start at 50; allowed range: 10–250. Smaller batches reduce work per request, not the catalog size. Saving changes restarts the scan.', 'ffl-funnels-addons') . '</p></div>';
         echo '<label class="ffla-gmp-checkbox"><input type="checkbox" name="content_safety" value="1"' . checked((string) $settings['content_safety'], '1', false) . '><span><strong>' . esc_html__('Restricted-content safety scan', 'ffl-funnels-addons') . '</strong><small>' . esc_html__('Keep enabled to check names, descriptions and category names for restricted-content patterns, even in Allow categories. Turning it off never bypasses firearm/ammunition flags; in Enforce, products that only failed these text checks are uploaded after the next scan. Pattern matching is not a guarantee of Google compliance.', 'ffl-funnels-addons') . '</small></span></label>';
         echo '</div></div>';
 
@@ -154,7 +178,7 @@ class Google_Merchant_Policy_Admin
                 $stored = (int) $term->parent > 0 ? 'inherit' : 'pending';
             }
             $effective = Google_Merchant_Policy_Engine::get_effective_category_policy((int) $term->term_id);
-            echo '<tr data-category-name="' . esc_attr(strtolower((string) $term->name)) . '"><td><span class="ffla-gmp-depth" style="--depth:' . esc_attr((string) $depth) . '"></span><strong>' . esc_html((string) $term->name) . '</strong><code>' . esc_html((string) $term->slug) . '</code></td><td>' . esc_html(number_format_i18n((int) $term->count)) . '</td><td><select name="category_policy[' . esc_attr((string) $term->term_id) . ']">';
+            echo '<tr data-category-name="' . esc_attr(strtolower((string) $term->name)) . '"><td><span class="ffla-gmp-depth" style="--depth:' . esc_attr((string) $depth) . '"></span><strong>' . esc_html((string) $term->name) . '</strong><code>' . esc_html((string) $term->slug) . '</code></td><td>' . esc_html(number_format_i18n((int) $term->count)) . '</td><td><select name="category_policy[' . esc_attr((string) $term->term_id) . ']" data-initial="' . esc_attr($stored) . '">';
             foreach (['inherit' => __('Inherit parent', 'ffl-funnels-addons'), 'allow' => __('Allow', 'ffl-funnels-addons'), 'block' => __('Block', 'ffl-funnels-addons'), 'pending' => __('Pending — not eligible in Enforce', 'ffl-funnels-addons')] as $value => $label) {
                 echo '<option value="' . esc_attr($value) . '"' . selected($stored, $value, false) . '>' . esc_html($label) . '</option>';
             }
@@ -172,10 +196,6 @@ class Google_Merchant_Policy_Admin
         $this->action_form('ffla_gmp_pause', 'ffla_gmp_pause', __('Pause scan', 'ffl-funnels-addons'), 'wb-btn');
         echo '</div>';
         echo '<p class="ffla-gmp-action-help">' . esc_html__('Resume and Pause use saved settings only. Resume continues a checkpoint unless the scan is Idle or Complete; then it starts a new scan. Pause stops this scan, not Enforce filtering or Google jobs already delegated.', 'ffl-funnels-addons') . '</p>';
-
-        if ((string) $state['last_error'] !== '') {
-            FFLA_Admin::render_notice('error', sprintf(__('Last scan error: %s', 'ffl-funnels-addons'), esc_html((string) $state['last_error'])));
-        }
     }
 
     public function render_add_term_field(): void
@@ -186,13 +206,18 @@ class Google_Merchant_Policy_Admin
 
     public function render_edit_term_field($term): void
     {
+        // Only people who can save the rule see it, so a change is never
+        // silently dropped on save.
+        if (!current_user_can('manage_woocommerce')) {
+            return;
+        }
         $stored = Google_Merchant_Policy_Engine::get_category_policy((int) $term->term_id);
         if ($stored === '') {
             $stored = (int) $term->parent > 0 ? 'inherit' : 'pending';
         }
         echo '<tr class="form-field"><th scope="row"><label for="ffla-gmp-term-policy">' . esc_html__('Google Merchant policy', 'ffl-funnels-addons') . '</label></th><td>';
         $this->term_select('ffla_gmp_term_policy', $stored);
-        echo '<p class="description">' . esc_html__('Firearm/ammunition flags always override Allow. Text checks also apply when enabled. Pending is excluded in Enforce; Inherit follows the first explicit ancestor rule. Saving this category starts a new catalog scan.', 'ffl-funnels-addons') . '</p></td></tr>';
+        echo '<p class="description">' . esc_html__('Firearm/ammunition flags always override Allow. Text checks also apply when enabled. Pending is excluded in Enforce; Inherit follows the first explicit ancestor rule. Changing this rule (or moving the category under another parent) starts a new catalog scan; other edits do not.', 'ffl-funnels-addons') . '</p></td></tr>';
     }
 
     public function save_term_field(int $term_id, int $tt_id): void

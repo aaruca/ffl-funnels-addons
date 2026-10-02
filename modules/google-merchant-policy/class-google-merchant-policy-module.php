@@ -74,7 +74,7 @@ class Google_Merchant_Policy_Module extends FFLA_Module
         if (!class_exists('Google_Merchant_Policy_Reconciler')) {
             require_once $base . 'includes/class-google-merchant-policy-reconciler.php';
         }
-        Google_Merchant_Policy_Reconciler::clear_schedule();
+        Google_Merchant_Policy_Reconciler::pause_for_deactivation();
     }
 
     public function get_admin_pages(): array

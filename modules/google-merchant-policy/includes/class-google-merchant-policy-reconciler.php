@@ -16,7 +16,42 @@ class Google_Merchant_Policy_Reconciler
     {
         add_action(self::ACTION, [__CLASS__, 'run_batch'], 10, 1);
         add_action(self::WATCHDOG, [__CLASS__, 'recover']);
-        add_action('wp_loaded', [__CLASS__, 'recover'], 110);
+        add_action('wp_loaded', [__CLASS__, 'maybe_recover'], 110);
+    }
+
+    /**
+     * Cheap safety net on page loads: the hourly watchdog event only exists
+     * while a scan runs (the cron list is already in memory), and the real
+     * check runs at most once a minute. Idle sites pay nothing.
+     */
+    public static function maybe_recover(): void
+    {
+        if (!wp_next_scheduled(self::WATCHDOG) || get_transient('ffla_gmp_recover_check')) {
+            return;
+        }
+        set_transient('ffla_gmp_recover_check', 1, MINUTE_IN_SECONDS);
+        self::recover();
+    }
+
+    /**
+     * Pause a running scan when the module is switched off, so switching it
+     * back on does not silently resume an old scan.
+     */
+    public static function pause_for_deactivation(): void
+    {
+        $state = self::get_state();
+        if ($state['status'] === 'running') {
+            $state['status'] = 'paused';
+            $state['last_error'] = __('Paused because the module was switched off. Resume to continue, or save to start a new scan.', 'ffl-funnels-addons');
+            update_option(self::STATE_OPTION, $state, false);
+        }
+        self::clear_schedule();
+    }
+
+    /** The scan ended (complete or failed): nothing left to watch. */
+    private static function stop_watchdog(): void
+    {
+        wp_unschedule_hook(self::WATCHDOG);
     }
 
     public static function start(): array
@@ -66,6 +101,7 @@ class Google_Merchant_Policy_Reconciler
             'status' => 'idle', 'scan_id' => '', 'last_id' => 0, 'max_id' => 0,
             'offset' => 0, 'processed' => 0, 'allowed' => 0, 'blocked' => 0,
             'pending' => 0, 'skipped' => 0, 'withdrawal_requests' => 0, 'upload_requests' => 0,
+            'item_errors' => 0, 'error_items' => [],
             'started_at' => '', 'updated_at' => '', 'finished_at' => '', 'last_error' => '',
         ];
     }
@@ -95,6 +131,7 @@ class Google_Merchant_Policy_Reconciler
             $state['status'] = 'failed';
             $state['last_error'] = __('Could not schedule the next catalog batch. Check WordPress cron / Action Scheduler and resume.', 'ffl-funnels-addons');
             self::checkpoint($state);
+            self::stop_watchdog();
         }
     }
 
@@ -140,8 +177,19 @@ class Google_Merchant_Policy_Reconciler
                 if ($product) {
                     $decision = Google_Merchant_Policy_Engine::apply_to_product($product);
                     if ($decision['status'] !== 'allowed') {
-                        if (Google_Merchant_Policy_Google_Sync::request_withdrawal($product)) {
-                            $state['withdrawal_requests']++;
+                        try {
+                            if (Google_Merchant_Policy_Google_Sync::request_withdrawal($product)) {
+                                $state['withdrawal_requests']++;
+                            }
+                        } catch (Google_Merchant_Policy_Item_Exception $item_error) {
+                            // One product's data problem must not stop the
+                            // whole catalog: note it and carry on.
+                            $state['item_errors'] = (int) ($state['item_errors'] ?? 0) + 1;
+                            $list = (array) ($state['error_items'] ?? []);
+                            if (count($list) < 50) {
+                                $list[] = ['id' => (int) $id, 'message' => sanitize_text_field($item_error->getMessage())];
+                            }
+                            $state['error_items'] = $list;
                         }
                     } elseif ($decision['visibility_change'] === 'included'
                         && Google_Merchant_Policy_Google_Sync::request_upload($product)) {
@@ -169,6 +217,7 @@ class Google_Merchant_Policy_Reconciler
                 $state['status'] = 'complete';
                 $state['finished_at'] = gmdate('c');
                 self::checkpoint($state);
+                self::stop_watchdog();
             } else {
                 self::recover();
             }
@@ -178,6 +227,7 @@ class Google_Merchant_Policy_Reconciler
                 $current['status'] = 'failed';
                 $current['last_error'] = sanitize_text_field($e->getMessage());
                 self::checkpoint($current);
+                self::stop_watchdog();
             }
         } finally {
             self::release_lock($token);

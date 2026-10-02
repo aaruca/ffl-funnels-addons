@@ -251,6 +251,28 @@ if (in_array('media-cleaner', $ffla_active_modules, true) || $mc_has_data) {
     $wpdb->delete($wpdb->postmeta, ['meta_key' => '_ffla_mclean_ignored']);
 }
 
+// ── Google Merchant Policy cleanup ─────────────────────────────────
+// Settings, scan state, category rules and the module's own product notes.
+// Google for WooCommerce's `_wc_gla_visibility` is deliberately left as it is:
+// clearing it would let products this module kept out of Google (firearms,
+// ammunition, blocked categories) sync again the moment the plugin is gone.
+if (in_array('google-merchant-policy', $ffla_active_modules, true)
+    || false !== get_option('ffla_google_merchant_policy_settings', false)
+    || false !== get_option('ffla_google_merchant_policy_reconcile_state', false)) {
+    delete_option('ffla_google_merchant_policy_settings');
+    delete_option('ffla_google_merchant_policy_reconcile_state');
+    delete_option('ffla_google_merchant_policy_reconcile_lock_v2');
+    delete_transient('ffla_gmp_recover_check');
+    wp_unschedule_hook('ffla_google_merchant_policy_reconcile');
+    wp_unschedule_hook('ffla_google_merchant_policy_watchdog');
+    if (function_exists('as_unschedule_all_actions')) {
+        as_unschedule_all_actions('ffla_google_merchant_policy_reconcile', null, 'ffla-google-merchant-policy');
+    }
+    $wpdb->delete($wpdb->termmeta, ['meta_key' => '_ffla_google_merchant_rule']);
+    // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+    $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key LIKE '\\_ffla\\_gmp\\_%'");
+}
+
 // ── Customer Notes cleanup ─────────────────────────────────────────
 if (in_array('customer-notes', $ffla_active_modules, true)) {
     // Per-customer notes live in user meta; guest notes in prefixed options.

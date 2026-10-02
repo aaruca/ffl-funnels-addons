@@ -94,7 +94,7 @@ class Google_Merchant_Policy_Product_Admin
             esc_html_e('Audit only: Google is not changed. Switch Google Merchant Policy to Enforce to apply this decision.', 'ffl-funnels-addons');
         } else {
             echo esc_html($decision['status'] === 'allowed'
-                ? __('Sent to Google through Google for WooCommerce.', 'ffl-funnels-addons')
+                ? __('Allowed: Google for WooCommerce may sync it (it still applies its own checks and needs a connected Merchant Center account).', 'ffl-funnels-addons')
                 : __('Kept out of Google. Removal is requested if it was synced.', 'ffl-funnels-addons'));
             $google = self::google_status($product);
             if ($google !== '') {
@@ -152,6 +152,26 @@ class Google_Merchant_Policy_Product_Admin
         $google = $product ? self::google_status($product, true) : '';
         if ($google !== '') {
             echo '<small class="ffla-gmp-column-note">' . esc_html($google) . '</small>';
+        }
+
+        // A variable product can be allowed while some variations are
+        // blocked on their own (flags or text checks): say how many.
+        if ($product && $product->is_type('variable')) {
+            global $wpdb;
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+            $blocked = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM {$wpdb->posts} p INNER JOIN {$wpdb->postmeta} m ON m.post_id = p.ID AND m.meta_key = %s
+                 WHERE p.post_parent = %d AND p.post_type = 'product_variation' AND m.meta_value <> 'allowed'",
+                Google_Merchant_Policy_Engine::STATUS_META,
+                (int) $post_id
+            ));
+            if ($blocked > 0) {
+                echo '<small class="ffla-gmp-column-note">' . esc_html(sprintf(
+                    /* translators: %d: number of variations */
+                    _n('%d variation not allowed', '%d variations not allowed', $blocked, 'ffl-funnels-addons'),
+                    $blocked
+                )) . '</small>';
+            }
         }
     }
 

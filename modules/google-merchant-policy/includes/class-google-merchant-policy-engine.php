@@ -39,6 +39,7 @@ class Google_Merchant_Policy_Engine
         }
         add_action('woocommerce_process_product_meta', [__CLASS__, 'on_wc_product_saved'], 80, 1);
         add_action('created_product_cat', [__CLASS__, 'on_category_created'], 10, 2);
+        add_action('edit_terms', [__CLASS__, 'remember_category_parent'], 10, 2);
         add_action('edited_product_cat', [__CLASS__, 'on_category_edited'], 40, 2);
         add_action('update_option_' . self::OPTION, [__CLASS__, 'reset_runtime_cache'], 10, 0);
     }
@@ -176,7 +177,7 @@ class Google_Merchant_Policy_Engine
         if (is_wp_error($term_ids) || empty($term_ids)) {
             $decision = [
                 'status' => 'pending',
-                'reason' => __('No product category has an Allow policy.', 'ffl-funnels-addons'),
+                'reason' => __('The product has no category, so no category rule allows it.', 'ffl-funnels-addons'),
                 'reasons' => ['no_category_policy'],
                 'product_id' => $product_id,
                 'parent_id' => $parent_id,
@@ -298,14 +299,25 @@ class Google_Merchant_Policy_Engine
         return $applied === $visibility || ($applied === 'yes' && $visibility === 'dont-sync-and-show');
     }
 
+    /**
+     * Save a category rule. Returns true only when the stored rule changed.
+     */
     public static function set_category_policy(int $term_id, string $policy): bool
     {
         $policy = sanitize_key($policy);
         if (!in_array($policy, ['allow', 'block', 'inherit', 'pending'], true)) {
             return false;
         }
+        if (self::get_category_policy($term_id) === $policy) {
+            return false;
+        }
         self::reset_runtime_cache();
-        return false !== update_term_meta($term_id, self::TERM_META, $policy);
+        $changed = false !== update_term_meta($term_id, self::TERM_META, $policy);
+        if ($changed) {
+            self::$rule_changed[$term_id] = true;
+        }
+
+        return $changed;
     }
 
     public static function get_category_policy(int $term_id): string
@@ -354,18 +366,6 @@ class Google_Merchant_Policy_Engine
         ];
     }
 
-    public static function on_product_saved(int $post_id, $post, bool $update): void
-    {
-        if (wp_is_post_revision($post_id) || (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE)) {
-            return;
-        }
-        $product = function_exists('wc_get_product') ? wc_get_product($post_id) : null;
-        if ($product) {
-            unset(self::$decision_cache[$post_id]);
-            self::apply_to_product($product);
-        }
-    }
-
     public static function on_wc_product_saved(int $product_id, $product = null): void
     {
         self::reset_runtime_cache();
@@ -383,10 +383,44 @@ class Google_Merchant_Policy_Engine
         self::reset_runtime_cache();
     }
 
+    /** @var array<int,int> Parent of each category before the current edit. */
+    private static $parent_before = [];
+
+    /** @var array<int,bool> Categories whose rule changed in this request. */
+    private static $rule_changed = [];
+
+    /**
+     * Fires before a term is updated: remember the parent, so a move to
+     * another parent (which changes inherited rules) can be detected.
+     */
+    public static function remember_category_parent($term_id, $taxonomy = ''): void
+    {
+        if ($taxonomy !== 'product_cat') {
+            return;
+        }
+        $term = get_term((int) $term_id, 'product_cat');
+        if ($term && !is_wp_error($term)) {
+            self::$parent_before[(int) $term_id] = (int) $term->parent;
+        }
+    }
+
+    /**
+     * A new scan only starts when something that decides products changed:
+     * the category's rule, or its parent. Renames, descriptions, images,
+     * Quick Edit of the name, or an import touching the term do not restart
+     * a running scan.
+     */
     public static function on_category_edited(int $term_id, int $tt_id): void
     {
         self::reset_runtime_cache();
-        if (class_exists('Google_Merchant_Policy_Reconciler')) {
+        $term = get_term($term_id, 'product_cat');
+        $parent_changed = isset(self::$parent_before[$term_id])
+            && $term && !is_wp_error($term)
+            && (int) $term->parent !== self::$parent_before[$term_id];
+        $rule_changed = !empty(self::$rule_changed[$term_id]);
+        unset(self::$parent_before[$term_id], self::$rule_changed[$term_id]);
+
+        if (($parent_changed || $rule_changed) && class_exists('Google_Merchant_Policy_Reconciler')) {
             Google_Merchant_Policy_Reconciler::start();
         }
     }
