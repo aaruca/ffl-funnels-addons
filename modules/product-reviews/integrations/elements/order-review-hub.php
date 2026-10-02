@@ -30,6 +30,9 @@ class FFLA_Order_Review_Hub extends \Bricks\Element
     public function render()
     {
         $settings = $this->settings;
-        echo \Product_Reviews_Order_Hub::render_hub(false, is_array($settings) ? $settings : []);
+        $this->set_attribute('_root', 'class', 'ffla-order-review-hub-wrap');
+        echo '<div ' . $this->render_attributes('_root') . '>';
+        echo \Product_Reviews_Order_Hub::render_hub(false, is_array($settings) ? $settings : []); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+        echo '</div>';
     }
 }

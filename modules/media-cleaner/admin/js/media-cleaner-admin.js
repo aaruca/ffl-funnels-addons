@@ -49,12 +49,20 @@
         if (lbl) { lbl.textContent = label || ''; }
     }
 
-    function startScan() {
+    function startScan(force) {
         setScanning(true);
         setProgress(1, i18n.scanning || 'Scanning…');
-        post('ffla_mclean_scan_start', {})
+        post('ffla_mclean_scan_start', force === true ? { force: 1 } : {})
             .then(function (res) {
                 if (!res || !res.success) { return failScan(); }
+                if (res.data && res.data.busy) {
+                    setScanning(false);
+                    setProgress(0, res.data.message || '');
+                    if (window.confirm(i18n.confirmScanBusy || 'Another scan is still running. Start over anyway?')) {
+                        startScan(true);
+                    }
+                    return;
+                }
                 stepScan();
             })
             .catch(failScan);
@@ -157,18 +165,18 @@
 
         var actions = [];
         if (state.status === 'active') {
-            actions = [['trash', i18n.trash || 'Trash selected'], ['ignore', i18n.ignore || 'Ignore selected']];
+            actions = [['trash', i18n.trashSelected || 'Trash selected'], ['ignore', i18n.ignoreSelected || 'Ignore selected']];
         } else if (state.status === 'ignored') {
-            actions = [['unignore', 'Stop ignoring selected']];
+            actions = [['unignore', i18n.unignoreSelected || 'Stop ignoring selected']];
         } else if (state.status === 'trashed') {
-            actions = [['restore', 'Restore selected'], ['delete', 'Delete selected permanently']];
+            actions = [['restore', i18n.restoreSelected || 'Restore selected'], ['delete', i18n.deleteSelected || 'Delete selected permanently']];
         }
 
         bulk.innerHTML = '';
         actions.forEach(function (a) {
             var b = document.createElement('button');
             b.type = 'button';
-            b.className = 'button ffla-mclean-bulk' + (a[0] === 'delete' ? ' ffla-mclean-bulk--danger' : '');
+            b.className = 'button ffla-mclean-bulk' + (a[0] === 'delete' || (a[0] === 'trash' && cfg.skipTrash) ? ' ffla-mclean-bulk--danger' : '');
             b.textContent = a[1];
             b.dataset.op = a[0];
             b.addEventListener('click', function () { runBulk(a[0]); });
@@ -280,7 +288,7 @@
 
     function init() {
         var scanBtn = $('ffla-mclean-scan-btn');
-        if (scanBtn) { scanBtn.addEventListener('click', startScan); }
+        if (scanBtn) { scanBtn.addEventListener('click', function () { startScan(false); }); }
 
         var abortBtn = $('ffla-mclean-abort-btn');
         if (abortBtn) { abortBtn.addEventListener('click', abortScan); }

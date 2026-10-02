@@ -39,6 +39,8 @@ function ffla_mclean_bricks_meta_keys(): array
         '_bricks_page_content_2',
         '_bricks_page_header_2',
         '_bricks_page_footer_2',
+        // Page settings: background images and per-page custom CSS.
+        '_bricks_page_settings',
     ]);
 }
 
@@ -138,6 +140,9 @@ function ffla_mclean_bricks_scan_once(): void
         $data  = ffla_mclean_bricks_to_array($value);
         if ($data !== null) {
             $ffla_mclean->get_from_meta($data, $look_for, $ids, $urls);
+            // URLs inside strings that are not image fields: custom CSS
+            // (`background: url(...)`), custom code, font files.
+            $urls = array_merge($urls, $ffla_mclean->get_urls_from_html((string) wp_json_encode($data)));
         }
     }
 

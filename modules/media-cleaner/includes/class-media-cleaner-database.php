@@ -105,14 +105,58 @@ class Media_Cleaner_Database
     }
 
     /**
-     * Empty the issues table. Used when starting a scan over.
+     * Clear the open results before a new scan.
+     *
+     * Only rows that are neither trashed nor ignored are removed. Trashed rows
+     * are the only map from a trash folder back to its attachment or file, and
+     * ignored rows are the user's decisions, so both must survive a rescan.
+     * DELETE (not TRUNCATE) also keeps AUTO_INCREMENT moving forward: row IDs
+     * name the trash folders, so an ID must never be handed out twice.
      */
-    public static function truncate_scan(): void
+    public static function clear_open_issues(): void
     {
         global $wpdb;
         $scan = self::scan_table();
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
-        $wpdb->query("TRUNCATE TABLE {$scan}");
+        $wpdb->query("DELETE FROM {$scan} WHERE deleted = 0 AND ignored = 0");
+    }
+
+    /**
+     * Kept for backwards compatibility; now clears only the open results.
+     *
+     * @deprecated 1.55.1 Use clear_open_issues().
+     */
+    public static function truncate_scan(): void
+    {
+        self::clear_open_issues();
+    }
+
+    /**
+     * Make sure the next row ID is above $floor, so a new result can never be
+     * given the number of a trash folder that already exists on disk.
+     */
+    public static function ensure_next_id_above(int $floor): void
+    {
+        if ($floor <= 0) {
+            return;
+        }
+
+        global $wpdb;
+        $scan = self::scan_table();
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $max = (int) $wpdb->get_var("SELECT MAX(id) FROM {$scan}");
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+        $next = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT AUTO_INCREMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+            $scan
+        ));
+
+        $want = max($floor, $max) + 1;
+        if ($next < $want) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $wpdb->query("ALTER TABLE {$scan} AUTO_INCREMENT = " . (int) $want);
+        }
     }
 
     /**

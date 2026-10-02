@@ -25,6 +25,15 @@ class Product_Reviews_Core
     /** @var bool */
     private static $order_review_rewrite_tag_registered = false;
 
+    /**
+     * Set once the FFL form handler has checked the nonce, honeypot and
+     * Turnstile for this request, so preprocess_comment does not check them a
+     * second time (a Turnstile token can only be verified once).
+     *
+     * @var bool
+     */
+    private static $form_checks_passed = false;
+
     public static function init(): void
     {
         add_filter('preprocess_comment', [__CLASS__, 'validate_review_submission']);
@@ -34,6 +43,11 @@ class Product_Reviews_Core
         // `delete_comment`, not `deleted_comment`: the row is already gone by
         // the time the latter fires, so the product ID cannot be looked up.
         add_action('delete_comment', [__CLASS__, 'flush_caches_for_comment'], 10, 1);
+        // Editing a review (rating, approval) changes the summary and badge.
+        add_action('edit_comment', [__CLASS__, 'flush_caches_for_comment'], 10, 1);
+        add_action('wp_set_comment_status', [__CLASS__, 'flush_caches_for_comment'], 10, 1);
+        add_action('updated_comment_meta', [__CLASS__, 'flush_caches_for_rating_meta'], 10, 3);
+        add_action('added_comment_meta', [__CLASS__, 'flush_caches_for_rating_meta'], 10, 3);
         add_action('admin_post_ffla_submit_product_review', [__CLASS__, 'handle_form_submission']);
         add_action('admin_post_nopriv_ffla_submit_product_review', [__CLASS__, 'handle_form_submission']);
         add_filter('woocommerce_product_tabs', [__CLASS__, 'maybe_replace_default_reviews_tab'], 98);
@@ -43,10 +57,64 @@ class Product_Reviews_Core
         add_action('parse_request', [__CLASS__, 'parse_request_order_review_page'], 4);
 
         if (is_admin()) {
+            // Classic Comments screen (WooCommerce before 6.7, or stores that
+            // still list reviews there).
             add_filter('manage_edit-comments_columns', [__CLASS__, 'register_admin_comments_columns']);
             add_action('manage_comments_custom_column', [__CLASS__, 'render_admin_comments_columns'], 10, 2);
             add_action('admin_head-edit-comments.php', [__CLASS__, 'render_admin_comments_column_css']);
+
+            // Products → Reviews (WooCommerce 6.7+), where reviews actually live.
+            add_filter('woocommerce_product_reviews_table_columns', [__CLASS__, 'register_admin_comments_columns']);
+            add_action('woocommerce_product_reviews_table_column_ffla_review_media', [__CLASS__, 'render_wc_reviews_media_column']);
+            add_action('woocommerce_product_reviews_table_column_ffla_review_helpful', [__CLASS__, 'render_wc_reviews_helpful_column']);
+            add_action('admin_head-product_page_product-reviews', [__CLASS__, 'render_admin_comments_column_css']);
         }
+    }
+
+    /**
+     * Where staff manage product reviews: Products → Reviews on WooCommerce
+     * 6.7+, otherwise the Comments screen.
+     */
+    public static function reviews_admin_url(string $status = ''): string
+    {
+        if (class_exists('\Automattic\WooCommerce\Internal\Admin\ProductReviews\Reviews')) {
+            $args = ['post_type' => 'product', 'page' => 'product-reviews'];
+            if ($status !== '') {
+                $args['comment_status'] = $status;
+            }
+
+            return add_query_arg($args, admin_url('edit.php'));
+        }
+
+        return admin_url('edit-comments.php' . ($status !== '' ? '?comment_status=' . rawurlencode($status) : ''));
+    }
+
+    /**
+     * @param \WP_Comment|mixed $item
+     */
+    public static function render_wc_reviews_media_column($item): void
+    {
+        if ($item instanceof \WP_Comment) {
+            self::render_admin_comments_columns('ffla_review_media', (int) $item->comment_ID);
+        }
+    }
+
+    /**
+     * @param \WP_Comment|mixed $item
+     */
+    public static function render_wc_reviews_helpful_column($item): void
+    {
+        if ($item instanceof \WP_Comment) {
+            self::render_admin_comments_columns('ffla_review_helpful', (int) $item->comment_ID);
+        }
+    }
+
+    /**
+     * Uploads on review forms (photos and videos).
+     */
+    public static function uploads_enabled(): bool
+    {
+        return '1' === self::get_setting('allow_media_uploads', '1');
     }
 
     public static function get_default_settings(): array
@@ -67,6 +135,7 @@ class Product_Reviews_Core
             'hide_default_reviews_tab'   => '0',
             'replace_default_reviews_tab' => '0',
             'form_title'                => __('Write a review', 'ffl-funnels-addons'),
+            'allow_media_uploads'       => '1',
             'moderate_all_reviews'      => '0',
             'request_email_mode'        => 'per_product',
             'order_review_page_id'      => '0',
@@ -278,8 +347,9 @@ class Product_Reviews_Core
         }
 
         // Only enforce nonce check for comments from the FFLA form.
-        // Native product comments and REST API don't have this nonce.
-        if (isset($_POST['ffla_review_form_nonce'])) {
+        // Native product comments and REST API don't have this nonce. The
+        // form handler already ran these checks for its own submissions.
+        if (isset($_POST['ffla_review_form_nonce']) && !self::$form_checks_passed) {
             $nonce = sanitize_text_field(wp_unslash($_POST['ffla_review_form_nonce']));
             if (!wp_verify_nonce($nonce, 'ffla_review_form')) {
                 wp_die(esc_html__('Security check failed. Please refresh and try again.', 'ffl-funnels-addons'));
@@ -581,11 +651,21 @@ class Product_Reviews_Core
         delete_transient(self::RATING_DISTRIBUTION_TRANSIENT_PREFIX . $product_id);
     }
 
-    public static function flush_caches_for_comment(int $comment_id): void
+    public static function flush_caches_for_comment($comment_id): void
     {
-        $comment = get_comment($comment_id);
+        $comment = get_comment((int) $comment_id);
         if ($comment) {
             self::flush_product_review_caches((int) $comment->comment_post_ID);
+        }
+    }
+
+    /**
+     * @param int|array $meta_id
+     */
+    public static function flush_caches_for_rating_meta($meta_id, $comment_id, $meta_key): void
+    {
+        if ('rating' === $meta_key) {
+            self::flush_caches_for_comment((int) $comment_id);
         }
     }
 
@@ -716,13 +796,6 @@ class Product_Reviews_Core
         return add_query_arg('ffla_ro', rawurlencode($token), $base);
     }
 
-    public static function maybe_flush_rewrites_on_settings(): void
-    {
-        if ('1' === self::get_setting('order_review_pretty_urls', '0')) {
-            flush_rewrite_rules(false);
-        }
-    }
-
     private static function review_honeypot_triggered(): bool
     {
         $honeypot = isset($_POST['ffla_hp']) ? trim((string) wp_unslash($_POST['ffla_hp'])) : '';
@@ -831,6 +904,10 @@ class Product_Reviews_Core
 
     private static function save_review_media(int $comment_id): void
     {
+        if (!self::uploads_enabled()) {
+            return;
+        }
+
         if (empty($_FILES['ffla_review_media']) || !is_array($_FILES['ffla_review_media'])) {
             return;
         }
@@ -1018,6 +1095,10 @@ class Product_Reviews_Core
 
     private static function has_review_media_upload(): bool
     {
+        if (!self::uploads_enabled()) {
+            return false;
+        }
+
         if (empty($_FILES['ffla_review_media']) || !is_array($_FILES['ffla_review_media'])) {
             return false;
         }
@@ -1133,6 +1214,19 @@ class Product_Reviews_Core
             );
         }
 
+        // These three checks are done; preprocess_comment must not repeat them.
+        self::$form_checks_passed = true;
+
+        // WooCommerce's own review rules apply to this form too.
+        if ('yes' !== get_option('woocommerce_enable_reviews', 'yes') || !comments_open($product_id)) {
+            self::redirect_with_status(
+                $redirect,
+                'error',
+                __('Reviews are closed for this product.', 'ffl-funnels-addons'),
+                $fallback
+            );
+        }
+
         if ($order_ctx) {
             if (!self::order_contains_reviewable_product($order_ctx, $product_id)) {
                 self::redirect_with_status(
@@ -1219,6 +1313,21 @@ class Product_Reviews_Core
 
         if (!is_email($commentdata['comment_author_email'])) {
             self::redirect_with_status($redirect, 'error', __('Please enter a valid email.', 'ffl-funnels-addons'), $fallback);
+        }
+
+        // "Reviews can only be left by verified owners" (WooCommerce →
+        // Settings → Products). A signed order link proves the purchase.
+        if (!$order_ctx
+            && 'yes' === get_option('woocommerce_review_rating_verification_required', 'no')
+            && !$can_moderate
+            && !(function_exists('wc_customer_bought_product')
+                && wc_customer_bought_product($commentdata['comment_author_email'], (int) $commentdata['user_id'], $product_id))) {
+            self::redirect_with_status(
+                $redirect,
+                'error',
+                __('Only customers who bought this product can review it.', 'ffl-funnels-addons'),
+                $fallback
+            );
         }
 
         $commentdata = self::apply_review_comment_approval($commentdata);

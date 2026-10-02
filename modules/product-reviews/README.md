@@ -41,6 +41,8 @@ Gives WooCommerce products a richer review form and list (star rating plus optio
 | Replace WooCommerce reviews tab with FFL form | The product **Reviews** tab shows the FFL list and form instead of WooCommerce's. | Off |
 | Hide default Woo reviews tab | Removes the **Reviews** tab. Ignored while the setting above is on. | Off |
 | Hold all new reviews for moderation | Every new product review waits for approval. | Off |
+| Allow photo and video uploads | Shows the upload field on every FFL form. Off hides it and ignores uploaded files. | On |
+| Review form title | Heading of the form in the WooCommerce Reviews tab (the Bricks Review Form has its own Title). | Write a review |
 | **Rating criteria** | | |
 | Enable secondary rating criteria | Shows the extra star groups on the form and the scores on reviews. | On |
 | Criteria | One per line, `slug\|Label`, up to 6. Malformed lines are dropped on save. | `quality\|Quality` and `value\|Value for money` |
@@ -53,15 +55,16 @@ Gives WooCommerce products a richer review form and list (star rating plus optio
 | **Reviewer notifications** | | |
 | Email the reviewer when their review is approved | Sent once when a held review is approved. | On |
 | Email the reviewer when someone replies | Sent once per approved reply, not when the reply comes from the reviewer's own address. | On |
+| Re-subscribe an address | Not stored: enter an email and save to remove it from the unsubscribed list, when the customer asks to get review requests again. | Empty |
 | **Order review hub** | | |
-| Hub page | The page with the shortcode or Bricks element. Every request email links here. | None |
+| Hub page | The page with the shortcode or Bricks element. Every request email (both modes) links here. Without one, links open the home page with `?ffla_ro=`, which only works if the hub is on the home page. | None |
 | Pretty URLs for review links | `/order-review/{token}/` instead of `?ffla_ro={token}`. Rewrite rules are refreshed when this or the slug changes. | Off |
 | Pretty URL slug | The part before the token. Empty falls back to `order-review`. | `order-review` |
 | Show extra rating criteria on hub forms | Adds the configured criteria (not only Quality and Value) to each hub form. Needs secondary criteria on. | Off |
 | **Email Template** | | |
 | Email subject | Empty sends "How was your purchase?". | How was your purchase? |
 | Email heading | First line of the email. | Leave a review for your recent order |
-| Email body template | Plain text with placeholders (below); HTML tags are stripped on save. Empty uses a built-in text for the chosen mode. | Hi {customer_name}, … {review_url} … Thank you! |
+| Email body template | Plain text with placeholders (below); HTML tags are stripped on save. Empty, or the untouched default while *One email per order* is chosen, uses a built-in text for the chosen mode. | Hi {customer_name}, … {review_url} … Thank you! |
 
 The **Cloudflare Turnstile** and **Bricks Elements** cards are information only. The **Reviewer notifications** card also shows how many addresses have unsubscribed.
 
@@ -69,9 +72,9 @@ The **Cloudflare Turnstile** and **Bricks Elements** cards are information only.
 
 ### Submitting a review
 
-- The FFL form (product tab, Bricks Review Form, hub) posts to `admin-post.php`. In order it checks: valid product, security token, empty honeypot, Turnstile (if the plugin is active, skipped on signed hub links), for hub links that the product is in the order and has not been reviewed from that billing email yet, review text, a rating of 1–5, forbidden words (refuse mode), WordPress's *Users must be registered and logged in to comment* (skipped on signed hub links), and a valid email. Problems come back as a message above the form; success shows "Thanks! Your review was submitted."
+- The FFL form (product tab, Bricks Review Form, hub) posts to `admin-post.php`. In order it checks: valid product, security token, empty honeypot, Turnstile (if the plugin is active, skipped on signed hub links), that reviews are open (WooCommerce's *Enable product reviews* and the product's own *Enable reviews* box), for hub links that the product is in the order and has not been reviewed from that billing email yet, review text, a rating of 1–5, forbidden words (refuse mode), WordPress's *Users must be registered and logged in to comment* (skipped on signed hub links), a valid email, and WooCommerce's *Reviews can only be left by "verified owners"* (a signed hub link counts as proof of purchase; staff who can moderate comments are exempt). Problems come back as a message above the form; success shows "Thanks! Your review was submitted."
+- The security token, honeypot and Turnstile are checked once per submission (a Turnstile token can only be verified once).
 - The review is saved as a normal WordPress comment of type `review`, so WordPress's own comment checks (duplicates, flooding, Discussion settings) still apply.
-- The FFL form does not read WooCommerce's review settings or a product's own *Enable reviews* box: reviews are accepted even where they are switched off, and *Reviews can only be left by "verified owners"* is not enforced. Only place the form where reviews should be possible.
 - **Verified buyer** is set when the review came through a signed link for an order containing the product, or when WooCommerce's purchase check finds the product in an order for that email or account.
 - Variations are always reviewed on the parent product.
 
@@ -91,18 +94,18 @@ These rules apply to every new product review, including ones from WooCommerce's
 - Up to 3 files per review, 5 MB each: JPG, PNG, GIF, WebP, MP4 or WebM. The browser warns about extra or oversized files; the server also skips anything over the limits or of another type.
 - Files go into the Media Library, not attached to the product. Media Cleaner always treats them as in use.
 - Permanently deleting a review (not just moving it to the comments trash) also deletes its files.
-- There is no setting to turn uploads off; the upload field is part of every form.
+- **Allow photo and video uploads** off removes the field from every form; anything uploaded anyway is ignored and does not hold the review.
 
 ### Ratings, criteria and summary
 
 - The overall star rating is stored in WooCommerce's own `rating` comment meta.
 - A criterion's slug is what its score is stored under, so renaming a label keeps old scores; removing a line hides the scores without deleting them. *Quality* and *Value for money* keep their original meta keys.
-- The rating summary and dynamic tags count approved top-level reviews with a 1–5 rating. They are cached per product for 12 hours and refreshed whenever a review is posted, approved, unapproved, deleted or pinned.
+- The rating summary and dynamic tags count approved top-level reviews with a 1–5 rating. They are cached per product for 12 hours and refreshed whenever a review is posted, edited, approved, unapproved, deleted or pinned, or its rating changes. The Reviews Rating Badge uses the same numbers.
 
 ### Lists, pinned reviews and replies
 
 - A list shows at most its *Max reviews* (product tab: 5 most recent). There is no pagination.
-- *Most helpful* sorts by net score (helpful minus not helpful), newest first on ties, within the 100 most recent reviews.
+- *Most helpful* sorts all of a product's approved reviews by net score (helpful minus not helpful) in the database, pinned reviews first and newest first on ties.
 - Pinned reviews always come first, labelled *Featured review*. Use the **Pin review** / **Unpin review** row action under **Products → Reviews** (needs `moderate_comments`).
 - Only approved direct replies to a review are shown. A reply is badged *Store response* when its author could moderate comments at the time of replying.
 
@@ -141,15 +144,15 @@ The default body is written for one product ("We would love your feedback on {pr
 
 ### Unsubscribe
 
-The link in a request email opens a confirmation page; the address is only added to the list after **Confirm unsubscribe**, so mail scanners that open links cannot unsubscribe anyone. The list stores a hash of the address, not the address. It only stops review requests; approval and reply notices are still sent. There is no screen to remove an address from the list.
+The link in a request email opens a confirmation page; the address is only added to the list after **Confirm unsubscribe**, so mail scanners that open links cannot unsubscribe anyone. The list stores a hash of the address, not the address. It only stops review requests; approval and reply notices are still sent. To take an address off the list (the customer asked for requests again), use **Re-subscribe an address** in the settings.
 
 ## Where it shows up
 
 | Place | What appears |
 |---|---|
 | **FFL Funnels → Product Reviews** | Settings. |
-| **Products → Reviews** (WooCommerce's reviews screen) | **Pin review** / **Unpin review** row action on product reviews. |
-| **Comments** | *Review Media* and *Helpful* columns (with a *Pinned* label). Current WooCommerce versions list product reviews under **Products → Reviews** instead, where these columns are not added. |
+| **Products → Reviews** (WooCommerce's reviews screen) | *Review Media* and *Helpful* columns (with a *Pinned* label), and the **Pin review** / **Unpin review** row action. |
+| **Comments** | The same columns, for stores that still list reviews there. |
 | Product page, **Reviews** tab | FFL list (5 most recent) and form, when *Replace WooCommerce reviews tab* is on. |
 | Bricks elements, category **FFL Funnels** | See below. |
 | Bricks dynamic tags, group **FFL Funnels - Product Reviews** | `{ffla_review_count}`, `{ffla_review_average}` (one decimal, empty with no reviews), `{ffla_review_recommend_percent}` (share of 4 and 5 star reviews, empty with no reviews). |
@@ -158,10 +161,12 @@ The link in a request email opens a confirmation page; the address is only added
 
 | Bricks element | Shows | Main controls |
 |---|---|---|
-| Reviews Rating Badge | Average, partial stars, count in brackets (WooCommerce's stored average and count) | Product ID, Show average number, Show review count, Hide when no reviews, star colours and size, typography |
+| Reviews Rating Badge | Average, partial stars, count in brackets (the same numbers as the rating summary) | Product ID, Average number (Show / Hide), Review count (Show / Hide), Hide when no reviews, star colours and size, typography |
 | Reviews List | Summary and review cards | Product ID, Max reviews (1–50, default 5), Order by (Most recent / Most helpful), Rating summary (Use module setting / Show / Hide), star and card styling, typography |
-| Review Form | The FFL form | Product ID, Title (default "Write a review"), Intro text, Show quality & value (all configured criteria), Collapse media upload, Show login hint; Style tab: Container, Stars, Fields, Submit button, Notices |
-| Order reviews hub | The hub | Intro title (optional) |
+| Review Form | The FFL form | Product ID, Title (default "Write a review"), Intro text, Extra rating criteria (Show / Hide; all configured criteria), Media upload (Collapsed / Expanded), Login hint (Show / Hide); Style tab: Container, Stars, Fields, Submit button, Notices |
+| Order reviews hub | The hub | Intro title (optional), plus Bricks' own ID, classes and styles on the wrapper |
+
+The on/off options above are selects, not checkboxes: Bricks drops an unchecked checkbox, which made default-on checkboxes impossible to switch off. Elements saved with the old checkboxes keep showing everything until you pick *Hide* (or *Expanded*).
 
 Empty *Product ID* means the current product: the global product, the Bricks query loop item or the product page. In the Bricks editor the newest published product is used for the preview.
 
@@ -182,7 +187,7 @@ The CSS and JavaScript load on product pages, the hub page, pages whose content 
 | Rating summary cache | transients `ffla_rev_dist_<product ID>` | Deleted |
 | Vote limits | transients | Expire on their own (12 hours / 1 day) |
 
-Uninstall cleanup only runs if the module is switched on when the plugin is deleted. Switching the module off keeps everything; request emails that come due while it is off are not sent.
+Uninstall cleanup runs whenever the settings option exists, even if the module was switched off first. Switching the module off keeps everything; request emails that come due while it is off are not sent (switching a module off stops all of its work, including queued emails).
 
 ## Troubleshooting
 
@@ -194,7 +199,8 @@ Uninstall cleanup only runs if the module is switched on when the plugin is dele
 - **Stars cannot be clicked, votes do nothing, the file picker looks plain.** The CSS/JS did not load on that page (for example a Bricks element outside a product page). Return `true` from `ffla_product_reviews_enqueue_assets` there.
 - **"Security check failed."** The form's WordPress security token is no longer valid, for example on a product page served from a full-page cache. Refresh, or keep product pages out of long-lived caching.
 - **Two review forms on a product.** Turn on *Hide default Woo reviews tab* when using the Bricks elements.
-- **Badge and summary show different numbers.** The badge uses WooCommerce's stored average and count; the summary and dynamic tags use this module's count of approved reviews with a rating, cached up to 12 hours.
+- **"Reviews are closed for this product."** WooCommerce's *Enable product reviews* is off, or the product's *Enable reviews* box (Advanced tab) is unticked.
+- **"Only customers who bought this product can review it."** WooCommerce → Settings → Products → *Reviews can only be left by "verified owners"* is on. Customers can still review through the signed link in a request email.
 - **"Vote already registered recently."** Someone on the same IP address voted on that review in the last 12 hours.
 
 ## For developers

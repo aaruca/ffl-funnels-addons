@@ -22,6 +22,7 @@ if (!class_exists('ACF') && !function_exists('acf')) {
 
 add_action('ffla_mclean_scan_postmeta', 'ffla_mclean_acf_scan_postmeta', 10, 1);
 add_action('ffla_mclean_scan_once', 'ffla_mclean_acf_scan_options', 10, 0);
+add_action('ffla_mclean_scan_once', 'ffla_mclean_acf_scan_terms_and_users', 11, 0);
 
 /**
  * field_key => type, for image/gallery/file fields only. Built once per request.
@@ -53,7 +54,91 @@ function ffla_mclean_acf_field_map(): array
         }
     }
 
+    // Fields registered in PHP (acf_add_local_field_group) or loaded from
+    // local JSON never exist as acf-field posts; ACF's API knows them all.
+    if (function_exists('acf_get_field_groups') && function_exists('acf_get_fields')) {
+        foreach ((array) acf_get_field_groups() as $group) {
+            $fields = acf_get_fields($group);
+            if (is_array($fields)) {
+                ffla_mclean_acf_map_fields($fields, $map);
+            }
+        }
+    }
+
     return $map;
+}
+
+/**
+ * Add image/gallery/file fields to the map, walking repeaters, groups and
+ * flexible-content layouts.
+ *
+ * @param array<int,array<string,mixed>> $fields
+ * @param array<string,string>           $map
+ */
+function ffla_mclean_acf_map_fields(array $fields, array &$map): void
+{
+    foreach ($fields as $field) {
+        if (!is_array($field) || empty($field['key']) || empty($field['type'])) {
+            continue;
+        }
+        if (in_array($field['type'], ['image', 'gallery', 'file'], true)) {
+            $map[(string) $field['key']] = (string) $field['type'];
+        }
+        if (!empty($field['sub_fields']) && is_array($field['sub_fields'])) {
+            ffla_mclean_acf_map_fields($field['sub_fields'], $map);
+        }
+        if (!empty($field['layouts']) && is_array($field['layouts'])) {
+            foreach ($field['layouts'] as $layout) {
+                if (is_array($layout) && !empty($layout['sub_fields']) && is_array($layout['sub_fields'])) {
+                    ffla_mclean_acf_map_fields($layout['sub_fields'], $map);
+                }
+            }
+        }
+    }
+}
+
+/**
+ * ACF fields on taxonomy terms (term meta) and users (user meta) use the same
+ * value + `_key` companion pattern as posts.
+ */
+function ffla_mclean_acf_scan_terms_and_users(): void
+{
+    global $wpdb, $ffla_mclean;
+    if (!$ffla_mclean) {
+        return;
+    }
+
+    $map = ffla_mclean_acf_field_map();
+    if (empty($map)) {
+        return;
+    }
+
+    $ids  = [];
+    $urls = [];
+
+    foreach ([[$wpdb->termmeta, 'term_id'], [$wpdb->usermeta, 'user_id']] as [$table, $owner]) {
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $companions = $wpdb->get_results(
+            "SELECT {$owner} AS owner, meta_key, meta_value FROM {$table} WHERE meta_key LIKE '\\_%' AND meta_value LIKE 'field\\_%'"
+        );
+        foreach ((array) $companions as $row) {
+            if (!isset($map[$row->meta_value])) {
+                continue;
+            }
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $value = $wpdb->get_var($wpdb->prepare(
+                "SELECT meta_value FROM {$table} WHERE {$owner} = %d AND meta_key = %s LIMIT 1",
+                (int) $row->owner,
+                substr((string) $row->meta_key, 1)
+            ));
+            if ($value !== null) {
+                ffla_mclean_acf_collect($value, $map[$row->meta_value], $ids, $urls);
+            }
+        }
+    }
+
+    $ffla_mclean->add_reference_id($ids, 'ACF Terms/Users (ID)');
+    $ffla_mclean->add_reference_url($urls, 'ACF Terms/Users (URL)');
 }
 
 /**

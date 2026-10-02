@@ -51,15 +51,33 @@ class FFLA_Review_Form extends \Bricks\Element
     }
 
     /**
-     * Bricks checkboxes: unchecked may omit the key; "0" must read as false (see PHP empty() quirk avoided).
+     * Read an on/off choice.
+     *
+     * These options used to be checkboxes that defaulted to on. Bricks removes
+     * an unchecked checkbox's key, which reads the same as "never set", so
+     * they could never be switched off. They are selects now: a missing key
+     * means the default, the "off" value turns the option off, and the `true`
+     * that older checkboxes saved still reads as on.
+     *
+     * @param array<int,string> $off_values
      */
-    private static function setting_bool(array $settings, string $key, bool $default = true): bool
+    private static function choice(array $settings, string $key, bool $default, array $off_values): bool
     {
         if (!array_key_exists($key, $settings)) {
             return $default;
         }
 
-        return filter_var($settings[$key], FILTER_VALIDATE_BOOLEAN);
+        $value = $settings[$key];
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        $value = strtolower(trim((string) $value));
+        if ($value === '') {
+            return $default;
+        }
+
+        return !in_array($value, array_merge($off_values, ['0', 'false', 'off', 'no']), true);
     }
 
     public function set_controls()
@@ -90,32 +108,42 @@ class FFLA_Review_Form extends \Bricks\Element
         ];
 
         $this->controls['showOptionalCriteria'] = [
-            'group'         => 'general',
-            'tab'           => 'content',
-            'label'         => esc_html__('Show quality & value', 'ffl-funnels-addons'),
-            'type'          => 'checkbox',
-            'inline'        => true,
-            'default'       => true,
-            'description'   => esc_html__('Optional extra star ratings; overall rating stays required.', 'ffl-funnels-addons'),
+            'group'       => 'general',
+            'tab'         => 'content',
+            'label'       => esc_html__('Extra rating criteria', 'ffl-funnels-addons'),
+            'type'        => 'select',
+            'options'     => [
+                'show' => esc_html__('Show', 'ffl-funnels-addons'),
+                'hide' => esc_html__('Hide', 'ffl-funnels-addons'),
+            ],
+            'placeholder' => esc_html__('Show', 'ffl-funnels-addons'),
+            'description' => esc_html__('Optional star ratings for every criterion set in the module settings (Rating criteria). The overall rating stays required.', 'ffl-funnels-addons'),
         ];
 
         $this->controls['collapseMedia'] = [
-            'group'         => 'general',
-            'tab'           => 'content',
-            'label'         => esc_html__('Collapse media upload', 'ffl-funnels-addons'),
-            'type'          => 'checkbox',
-            'inline'        => true,
-            'default'       => true,
-            'description'   => esc_html__('Keeps the form short; photos/video sit inside an expandable section.', 'ffl-funnels-addons'),
+            'group'       => 'general',
+            'tab'         => 'content',
+            'label'       => esc_html__('Media upload', 'ffl-funnels-addons'),
+            'type'        => 'select',
+            'options'     => [
+                'collapsed' => esc_html__('Collapsed', 'ffl-funnels-addons'),
+                'expanded'  => esc_html__('Expanded', 'ffl-funnels-addons'),
+            ],
+            'placeholder' => esc_html__('Collapsed', 'ffl-funnels-addons'),
+            'description' => esc_html__('Collapsed keeps the form short: photos and video sit inside an expandable section. Hidden when uploads are switched off in the module settings.', 'ffl-funnels-addons'),
         ];
 
         $this->controls['showLoginHint'] = [
-            'group'   => 'general',
-            'tab'     => 'content',
-            'label'   => esc_html__('Show login hint', 'ffl-funnels-addons'),
-            'type'    => 'checkbox',
-            'inline'  => true,
-            'default' => true,
+            'group'       => 'general',
+            'tab'         => 'content',
+            'label'       => esc_html__('Login hint', 'ffl-funnels-addons'),
+            'type'        => 'select',
+            'options'     => [
+                'show' => esc_html__('Show', 'ffl-funnels-addons'),
+                'hide' => esc_html__('Hide', 'ffl-funnels-addons'),
+            ],
+            'placeholder' => esc_html__('Show', 'ffl-funnels-addons'),
+            'description' => esc_html__('"You must be logged in" notice for guests, when WordPress requires an account to comment.', 'ffl-funnels-addons'),
         ];
 
         // ── Style: container ─────────────────────────────────────
@@ -425,9 +453,9 @@ class FFLA_Review_Form extends \Bricks\Element
 
         $form_settings = [
             'title'                 => isset($settings['title']) ? (string) $settings['title'] : '',
-            'showLoginHint'         => self::setting_bool($settings, 'showLoginHint', true),
-            'showOptionalCriteria'  => self::setting_bool($settings, 'showOptionalCriteria', true),
-            'collapseMedia'         => self::setting_bool($settings, 'collapseMedia', true),
+            'showLoginHint'         => self::choice($settings, 'showLoginHint', true, ['hide']),
+            'showOptionalCriteria'  => self::choice($settings, 'showOptionalCriteria', true, ['hide']),
+            'collapseMedia'         => self::choice($settings, 'collapseMedia', true, ['expanded']),
             'introText'             => isset($settings['introText']) ? trim((string) $settings['introText']) : '',
         ];
 

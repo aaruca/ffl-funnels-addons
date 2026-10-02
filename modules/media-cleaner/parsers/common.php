@@ -18,6 +18,57 @@ add_action('ffla_mclean_scan_once', 'ffla_mclean_common_scan_once');
 add_action('ffla_mclean_scan_post', 'ffla_mclean_common_scan_post', 10, 2);
 add_action('ffla_mclean_scan_postmeta', 'ffla_mclean_common_scan_postmeta', 10, 1);
 add_action('ffla_mclean_scan_widget', 'ffla_mclean_common_scan_widget', 10, 1);
+add_action('ffla_mclean_scan_once', 'ffla_mclean_common_scan_users', 20, 0);
+
+/**
+ * User meta: profile pictures and any uploads URL stored against a user
+ * (avatar plugins, author boxes, customer documents).
+ */
+function ffla_mclean_common_scan_users(): void
+{
+    global $wpdb, $ffla_mclean;
+    if (!$ffla_mclean) {
+        return;
+    }
+
+    $ids  = [];
+    $urls = [];
+
+    // Keys that hold an attachment ID (or an array with one).
+    $id_keys = apply_filters('ffla_mclean_user_meta_id_keys', [
+        'wp_user_avatar', 'simple_local_avatar', 'basic_user_avatar', 'mm_sua_attachment_id',
+        'profile_picture', 'profile_photo', 'author_avatar', 'avatar_id', 'user_avatar',
+    ]);
+    $id_keys = array_values(array_filter((array) $id_keys, 'is_string'));
+    if (!empty($id_keys)) {
+        $in = implode(', ', array_fill(0, count($id_keys), '%s'));
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $values = $wpdb->get_col($wpdb->prepare("SELECT meta_value FROM {$wpdb->usermeta} WHERE meta_key IN ({$in})", $id_keys));
+        foreach ((array) $values as $value) {
+            $value = maybe_unserialize($value);
+            if (is_array($value)) {
+                $ffla_mclean->get_from_meta($value, ['media_id', 'id', 'attachment_id', 'full', 'url'], $ids, $urls);
+            } else {
+                $ffla_mclean->array_to_ids_or_urls([$value], $ids, $urls);
+            }
+        }
+    }
+
+    // Any user meta value that mentions an uploads URL.
+    if ($ffla_mclean->upload_url !== '') {
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+        $values = $wpdb->get_col($wpdb->prepare(
+            "SELECT meta_value FROM {$wpdb->usermeta} WHERE meta_value LIKE %s",
+            '%' . $wpdb->esc_like($ffla_mclean->upload_url) . '%'
+        ));
+        foreach ((array) $values as $value) {
+            $urls = array_merge($urls, $ffla_mclean->get_urls_from_html((string) $value));
+        }
+    }
+
+    $ffla_mclean->add_reference_id($ids, 'User Meta');
+    $ffla_mclean->add_reference_url($urls, 'User Meta');
+}
 
 /**
  * Site-wide references: theme logo/header/background and the site icon.

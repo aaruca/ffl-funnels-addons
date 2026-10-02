@@ -57,6 +57,25 @@ function ffla_mclean_woo_scan_postmeta($post_id): void
             $ffla_mclean->add_reference_id($ids, 'WooCommerce Gallery', $post_id);
         }
     }
+
+    // Downloadable product files: [ hash => [ 'id', 'name', 'file' ] ], where
+    // 'file' is the URL a customer downloads (often a media library file).
+    $downloads = get_post_meta($post_id, '_downloadable_files', true);
+    if (is_array($downloads)) {
+        $urls = [];
+        foreach ($downloads as $download) {
+            $file = is_array($download) ? ($download['file'] ?? '') : (is_object($download) && method_exists($download, 'get_file') ? $download->get_file() : '');
+            if (is_string($file) && $file !== '') {
+                $clean = $ffla_mclean->is_url($file) ? $ffla_mclean->clean_url($file) : null;
+                if ($clean !== null) {
+                    $urls[] = $clean;
+                }
+            }
+        }
+        if (!empty($urls)) {
+            $ffla_mclean->add_reference_url($urls, 'WooCommerce Download', $post_id);
+        }
+    }
 }
 
 /**

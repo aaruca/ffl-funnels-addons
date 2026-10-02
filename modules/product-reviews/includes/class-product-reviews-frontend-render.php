@@ -153,7 +153,9 @@ class Product_Reviews_Frontend_Render
         echo '<span class="ffla-review-form__hint">' . esc_html__('Share what stood out — pros, cons, or who it is best for.', 'ffl-funnels-addons') . '</span>';
         echo '<textarea id="' . esc_attr($comment_id) . '" name="comment" rows="5" required></textarea></p>';
 
-        if ($collapse_media) {
+        if (!Product_Reviews_Core::uploads_enabled()) {
+            // Uploads switched off in the module settings: no field at all.
+        } elseif ($collapse_media) {
             echo '<details class="ffla-review-form__media-details">';
             echo '<summary class="ffla-review-form__media-summary">' . esc_html__('Add photos or a short video (optional)', 'ffl-funnels-addons') . '</summary>';
             echo '<div class="ffla-review-form__media-details-inner">';
@@ -267,13 +269,45 @@ class Product_Reviews_Frontend_Render
     }
 
     /**
-     * Net helpfulness. Sorting on `yes` alone lets a review with 40 up and 39
-     * down outrank one with 12 up and none.
+     * Top reviews by net helpfulness (helpful minus not helpful) across all of
+     * a product's reviews, pinned first, newest first on a tie. Sorting on
+     * `yes` alone lets a review with 40 up and 39 down outrank one with 12 up
+     * and none.
+     *
+     * @return array<int, \WP_Comment>
      */
-    private static function helpful_score(int $comment_id): int
+    private static function most_helpful_reviews(int $product_id, int $limit): array
     {
-        return (int) get_comment_meta($comment_id, 'ffla_helpful_yes', true)
-            - (int) get_comment_meta($comment_id, 'ffla_helpful_no', true);
+        global $wpdb;
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+        $ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT c.comment_ID
+             FROM {$wpdb->comments} c
+             LEFT JOIN {$wpdb->commentmeta} y ON y.comment_id = c.comment_ID AND y.meta_key = 'ffla_helpful_yes'
+             LEFT JOIN {$wpdb->commentmeta} n ON n.comment_id = c.comment_ID AND n.meta_key = 'ffla_helpful_no'
+             WHERE c.comment_post_ID = %d
+               AND c.comment_approved = '1'
+               AND c.comment_type = 'review'
+               AND c.comment_parent = 0
+             GROUP BY c.comment_ID
+             ORDER BY MAX(c.comment_karma = 1) DESC,
+                      (CAST(COALESCE(MAX(y.meta_value), '0') AS SIGNED) - CAST(COALESCE(MAX(n.meta_value), '0') AS SIGNED)) DESC,
+                      MAX(c.comment_date_gmt) DESC
+             LIMIT %d",
+            $product_id,
+            $limit
+        ));
+
+        if (empty($ids)) {
+            return [];
+        }
+
+        return get_comments([
+            'comment__in' => array_map('intval', $ids),
+            'orderby'     => 'comment__in',
+            'status'      => 'approve',
+        ]);
     }
 
     /**
@@ -302,33 +336,17 @@ class Product_Reviews_Frontend_Render
         // Pinned reviews lead regardless of sort. Pin state lives in the native
         // comment_karma column, so the ordering happens in SQL rather than by
         // re-sorting a page the query has already truncated.
-        $args = [
-            'post_id'        => $product_id,
-            'status'         => 'approve',
-            'type'           => 'review',
-            'parent'         => 0,
-            'number'         => ($order_by === 'recent') ? $per_page : 100,
-            'orderby'        => ['comment_karma' => 'DESC', 'comment_date_gmt' => 'DESC'],
-        ];
-        $reviews = get_comments($args);
-
         if ($order_by === 'helpful') {
-            usort($reviews, static function ($a, $b): int {
-                $a_pinned = (int) $a->comment_karma === 1 ? 1 : 0;
-                $b_pinned = (int) $b->comment_karma === 1 ? 1 : 0;
-                if ($a_pinned !== $b_pinned) {
-                    return $b_pinned <=> $a_pinned;
-                }
-
-                $a_score = self::helpful_score((int) $a->comment_ID);
-                $b_score = self::helpful_score((int) $b->comment_ID);
-                if ($a_score === $b_score) {
-                    return strcmp($b->comment_date_gmt, $a->comment_date_gmt);
-                }
-
-                return $b_score <=> $a_score;
-            });
-            $reviews = array_slice($reviews, 0, $per_page);
+            $reviews = self::most_helpful_reviews($product_id, $per_page);
+        } else {
+            $reviews = get_comments([
+                'post_id' => $product_id,
+                'status'  => 'approve',
+                'type'    => 'review',
+                'parent'  => 0,
+                'number'  => $per_page,
+                'orderby' => ['comment_karma' => 'DESC', 'comment_date_gmt' => 'DESC'],
+            ]);
         }
 
         if ($wrap) {

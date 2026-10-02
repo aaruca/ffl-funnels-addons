@@ -40,16 +40,29 @@ class Media_Cleaner_Admin
             true
         );
 
+        $skip_trash = !(new Media_Cleaner_Core())->uses_trash();
+
         wp_localize_script('ffla-media-cleaner', 'fflaMediaCleaner', [
-            'ajaxUrl' => admin_url('admin-ajax.php'),
-            'nonce'   => wp_create_nonce(Media_Cleaner_Ajax::NONCE),
-            'i18n'    => [
-                'confirmTrash'      => __('Move the selected items to the media trash? This is reversible.', 'ffl-funnels-addons'),
+            'ajaxUrl'   => admin_url('admin-ajax.php'),
+            'nonce'     => wp_create_nonce(Media_Cleaner_Ajax::NONCE),
+            'skipTrash' => $skip_trash,
+            'i18n'      => [
+                'confirmTrash'      => $skip_trash
+                    ? __('"Skip the trash" is on: the selected items will be deleted permanently. This cannot be undone. Continue?', 'ffl-funnels-addons')
+                    : __('Move the selected items to the media trash? This is reversible.', 'ffl-funnels-addons'),
                 'confirmDelete'     => __('Permanently delete the selected items? This cannot be undone.', 'ffl-funnels-addons'),
-                'confirmTrashAll'   => __("Move ALL %d items in this list to the media trash?\n\nThis is reversible — check your storefront afterwards and restore anything that was actually in use before you empty the trash.", 'ffl-funnels-addons'),
+                'confirmTrashAll'   => $skip_trash
+                    ? __("\"Skip the trash\" is on: ALL %d items in this list will be deleted permanently.\n\nThis cannot be undone. Continue?", 'ffl-funnels-addons')
+                    : __("Move ALL %d items in this list to the media trash?\n\nThis is reversible — check your storefront afterwards and restore anything that was actually in use before you empty the trash.", 'ffl-funnels-addons'),
                 'confirmEmptyTrash' => __('Permanently delete everything in the trash? This cannot be undone.', 'ffl-funnels-addons'),
-                'trashAll'          => __('Trash all', 'ffl-funnels-addons'),
-                'trashingLeft'      => __('Trashing… %d left', 'ffl-funnels-addons'),
+                'confirmScanBusy'   => __('Another scan is still running (in another tab or WP-CLI). Start over anyway?', 'ffl-funnels-addons'),
+                'trashAll'          => $skip_trash ? __('Delete all', 'ffl-funnels-addons') : __('Trash all', 'ffl-funnels-addons'),
+                'trashingLeft'      => $skip_trash ? __('Deleting… %d left', 'ffl-funnels-addons') : __('Trashing… %d left', 'ffl-funnels-addons'),
+                'trashSelected'     => $skip_trash ? __('Delete selected permanently', 'ffl-funnels-addons') : __('Trash selected', 'ffl-funnels-addons'),
+                'ignoreSelected'    => __('Ignore selected', 'ffl-funnels-addons'),
+                'unignoreSelected'  => __('Stop ignoring selected', 'ffl-funnels-addons'),
+                'restoreSelected'   => __('Restore selected', 'ffl-funnels-addons'),
+                'deleteSelected'    => __('Delete selected permanently', 'ffl-funnels-addons'),
                 'scanning'          => __('Scanning…', 'ffl-funnels-addons'),
                 'scanComplete'      => __('Scan complete.', 'ffl-funnels-addons'),
                 'scanError'         => __('The scan hit an error. It has been stopped.', 'ffl-funnels-addons'),
@@ -68,8 +81,28 @@ class Media_Cleaner_Admin
         $settings = Media_Cleaner_Core::get_settings();
         $saved    = isset($_GET['settings-updated']) && '1' === sanitize_text_field(wp_unslash($_GET['settings-updated']));
 
+        if (!current_user_can(Media_Cleaner_Ajax::CAP)) {
+            $this->render_intro();
+            FFLA_Admin::render_notice('info', __('Only administrators can scan, trash or delete media, and change these settings. Ask an administrator to run Media Cleaner.', 'ffl-funnels-addons'));
+            return;
+        }
+
         if ($saved) {
             FFLA_Admin::render_notice('success', __('Settings saved.', 'ffl-funnels-addons'));
+        }
+
+        // Once after updating: give trashed items that older versions lost
+        // track of a Trash entry again, so they can be restored.
+        if (get_option('ffla_mclean_adopted') !== '1') {
+            $recovered = (new Media_Cleaner_Manager(new Media_Cleaner_Core()))->adopt_stranded();
+            update_option('ffla_mclean_adopted', '1', false);
+            if ($recovered > 0) {
+                FFLA_Admin::render_notice('info', sprintf(
+                    /* translators: %d: number of items */
+                    _n('%d trashed item that an earlier version had lost track of is back in the Trash tab.', '%d trashed items that an earlier version had lost track of are back in the Trash tab.', $recovered, 'ffl-funnels-addons'),
+                    $recovered
+                ));
+            }
         }
 
         $this->render_intro();
@@ -136,7 +169,8 @@ class Media_Cleaner_Admin
         echo '<div class="ffla-mclean-toolbar">';
         echo '<input type="search" id="ffla-mclean-search" class="wb-input" placeholder="' . esc_attr__('Search by path…', 'ffl-funnels-addons') . '">';
         echo '<span class="ffla-mclean-toolbar__actions" id="ffla-mclean-bulk-actions"></span>';
-        echo '<button type="button" class="wb-btn wb-btn--warn ffla-mclean-trash-all" id="ffla-mclean-trash-all" hidden>' . esc_html__('Trash all', 'ffl-funnels-addons') . '</button>';
+        $skip = !(new Media_Cleaner_Core())->uses_trash();
+        echo '<button type="button" class="wb-btn ' . ($skip ? 'wb-btn--danger' : 'wb-btn--warn') . ' ffla-mclean-trash-all" id="ffla-mclean-trash-all" hidden>' . esc_html($skip ? __('Delete all', 'ffl-funnels-addons') : __('Trash all', 'ffl-funnels-addons')) . '</button>';
         echo '<button type="button" class="wb-btn wb-btn--danger" id="ffla-mclean-empty-trash" hidden>' . esc_html__('Empty trash', 'ffl-funnels-addons') . '</button>';
         echo '</div>';
 
@@ -185,14 +219,14 @@ class Media_Cleaner_Admin
             __('Scan the uploads folder for orphan files', 'ffl-funnels-addons'),
             'scan_filesystem',
             $settings['scan_filesystem'],
-            __('Finds files on disk that are not in the media library at all. More thorough, and higher risk — some plugins keep legitimate files outside the library.', 'ffl-funnels-addons')
+            __('Finds files in the year/month upload folders (and the top level of uploads) that are not in the media library. Other plugins\' own folders are skipped. Still higher risk than the library scan: review the list before trashing.', 'ffl-funnels-addons')
         );
 
         FFLA_Admin::render_toggle_field(
             __('Detect duplicate files', 'ffl-funnels-addons'),
             'detect_duplicates',
             $settings['detect_duplicates'],
-            __('Flags byte-for-byte identical files, keeping the first as the original.', 'ffl-funnels-addons')
+            __('Flags byte-for-byte identical copies that nothing uses, keeping the first as the original. A copy a page uses is never flagged.', 'ffl-funnels-addons')
         );
 
         echo '</div></div>';
@@ -205,7 +239,7 @@ class Media_Cleaner_Admin
             __('Skip the trash (delete immediately)', 'ffl-funnels-addons'),
             'skip_trash',
             $settings['skip_trash'],
-            __('Strongly discouraged. When on, "Trash" deletes permanently with no recovery. Leave off so removals move to a reversible trash first.', 'ffl-funnels-addons')
+            __('Strongly discouraged. When on, the Trash buttons become "Delete permanently" and remove files with no recovery. Leave off so removals move to a reversible trash first.', 'ffl-funnels-addons')
         );
 
         FFLA_Admin::render_select_field(
@@ -356,6 +390,11 @@ class Media_Cleaner_Admin
 
         if ($status === 'ignored') {
             return $btn('unignore', __('Stop ignoring', 'ffl-funnels-addons'));
+        }
+
+        if (!(new Media_Cleaner_Core())->uses_trash()) {
+            return $btn('trash', __('Delete permanently', 'ffl-funnels-addons'), 'is-danger')
+                . ' | ' . $btn('ignore', __('Ignore', 'ffl-funnels-addons'));
         }
 
         return $btn('trash', __('Trash', 'ffl-funnels-addons'))

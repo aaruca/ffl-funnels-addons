@@ -24,6 +24,9 @@ class Media_Cleaner_Core
     const ISSUE_ORPHAN_FILE = 'ORPHAN_FILE';  // File on disk, not in the library.
     const ISSUE_DUPLICATE   = 'DUPLICATE';    // Byte-identical to another file.
 
+    /** Origin type of the library index built for a filesystem scan. */
+    const ORIGIN_LIBRARY = 'MEDIA LIBRARY';
+
     /** Reference origin currently being scanned. */
     const METHOD_CONTENT = 'content';
     const METHOD_MEDIA   = 'media';
@@ -411,6 +414,16 @@ class Media_Cleaner_Core
             }
         }
 
+        // Copies WordPress keeps after an image is edited (crop, rotate, …).
+        $backups = get_post_meta($attachment_id, '_wp_attachment_backup_sizes', true);
+        if (is_array($backups)) {
+            foreach ($backups as $backup) {
+                if (is_array($backup) && !empty($backup['file']) && is_string($backup['file'])) {
+                    $paths[] = $subdir . basename($backup['file']);
+                }
+            }
+        }
+
         return array_values(array_unique($paths));
     }
 
@@ -545,15 +558,19 @@ class Media_Cleaner_Core
      *
      * @return string|false The origin_type when found, false when not.
      */
-    public function reference_exists(?string $file, ?int $media_id)
+    public function reference_exists(?string $file, ?int $media_id, bool $content_only = false)
     {
         global $wpdb;
         $table = Media_Cleaner_Database::refs_table();
 
+        // The library index (filesystem scan) and duplicate hashes are not
+        // "uses" of a file; the library checks must not count them.
+        $not_library = $content_only ? $wpdb->prepare(' AND origin_type NOT IN (%s, %s)', self::ORIGIN_LIBRARY, 'HASHDUP') : '';
+
         if (!empty($media_id)) {
-            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared
             $type = $wpdb->get_var($wpdb->prepare(
-                "SELECT origin_type FROM {$table} WHERE media_id = %d LIMIT 1",
+                "SELECT origin_type FROM {$table} WHERE media_id = %d{$not_library} LIMIT 1",
                 $media_id
             ));
             if ($type !== null) {
@@ -562,9 +579,9 @@ class Media_Cleaner_Core
         }
 
         if (!empty($file)) {
-            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared
             $type = $wpdb->get_var($wpdb->prepare(
-                "SELECT origin_type FROM {$table} WHERE media_url = %s LIMIT 1",
+                "SELECT origin_type FROM {$table} WHERE media_url = %s{$not_library} LIMIT 1",
                 $file
             ));
             if ($type !== null) {
@@ -573,6 +590,53 @@ class Media_Cleaner_Core
         }
 
         return false;
+    }
+
+    /**
+     * Is an attachment referenced by content (by ID or by any of its files)?
+     */
+    public function is_media_used(int $media_id): bool
+    {
+        if ($this->reference_exists(null, $media_id, true) !== false) {
+            return true;
+        }
+        foreach ($this->get_paths_from_attachment($media_id) as $path) {
+            if ($this->reference_exists($path, null, true) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Does any result already exist for this attachment (open, ignored or
+     * trashed)? Used so one attachment never gets two rows.
+     */
+    public function has_row_for_media(int $media_id): bool
+    {
+        global $wpdb;
+        $table = Media_Cleaner_Database::scan_table();
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
+        return (bool) $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$table} WHERE type = 1 AND post_id = %d LIMIT 1",
+            $media_id
+        ));
+    }
+
+    /**
+     * Is this loose file already ignored or in the trash? Ignored rows survive
+     * a rescan, so the same file is not reported again.
+     */
+    public function file_row_kept(string $relative_path): bool
+    {
+        global $wpdb;
+        $table = Media_Cleaner_Database::scan_table();
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
+        return (bool) $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$table} WHERE type = 0 AND path = %s AND (ignored = 1 OR deleted = 1) LIMIT 1",
+            $relative_path
+        ));
     }
 
     /* =====================================================================

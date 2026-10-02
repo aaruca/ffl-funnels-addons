@@ -4,7 +4,8 @@
  *
  * Every endpoint requires the manage_options capability and a valid nonce.
  * These operations delete media site-wide, so the gate is deliberately the
- * strict one, not a shop-manager capability.
+ * strict one, not a shop-manager capability. Shop managers can open the page
+ * but see a notice instead of the controls.
  *
  * @package FFL_Funnels_Addons
  */
@@ -77,7 +78,8 @@ class Media_Cleaner_Ajax
         // A fresh scan starts from a clean settings memo (the user may have just
         // saved new options on the same screen).
         Media_Cleaner_Core::flush_settings_memo();
-        wp_send_json_success(self::scanner()->start());
+        $force = !empty($_POST['force']);
+        wp_send_json_success(self::scanner()->start($force));
     }
 
     public static function scan_step(): void

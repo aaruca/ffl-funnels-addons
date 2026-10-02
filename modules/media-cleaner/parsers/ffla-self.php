@@ -87,20 +87,13 @@ function ffla_mclean_self_scan_once(): void
         $ffla_mclean->add_reference_id($review_ids, 'FFL Review Media');
     }
 
-    // --- Loadout: hero image, brand logo, per-tier-item images, cross-sells. ---
+    // --- Loadout: hero image, brand logo and cross-sell images. Tier items
+    // are products, whose images the WooCommerce parser already covers. ---
     $loadouts = $wpdb->prefix . 'ffla_loadouts';
     if (ffla_mclean_self_table_exists($loadouts)) {
         $ids = ffla_mclean_self_ids_from_table($loadouts, ['hero_image_id', 'brand_logo_id']);
         if (!empty($ids)) {
             $ffla_mclean->add_reference_id($ids, 'FFL Loadout');
-        }
-    }
-
-    $loadout_items = $wpdb->prefix . 'ffla_loadout_tier_items';
-    if (ffla_mclean_self_table_exists($loadout_items)) {
-        $ids = ffla_mclean_self_ids_from_table($loadout_items, ['image_id']);
-        if (!empty($ids)) {
-            $ffla_mclean->add_reference_id($ids, 'FFL Loadout Item');
         }
     }
 

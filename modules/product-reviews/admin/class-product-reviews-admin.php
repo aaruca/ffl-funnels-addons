@@ -55,21 +55,21 @@ class Product_Reviews_Admin
         echo '<option value="per_product"' . selected($mode, 'per_product', false) . '>' . esc_html__('One email per product (scheduled separately)', 'ffl-funnels-addons') . '</option>';
         echo '<option value="bundle"' . selected($mode, 'bundle', false) . '>' . esc_html__('One email per order (all products, single link)', 'ffl-funnels-addons') . '</option>';
         echo '</select>';
-        echo '<p class="wb-field__desc">' . esc_html__('Bundle mode uses signed links to your hub page; placeholders {review_order_url} and {product_names_list} are recommended in the template.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('Both modes send a signed link that opens the order review hub (Hub page below; without one, the link opens the home page with ?ffla_ro=, so put the hub on the home page or pick a Hub page). One email per order lists every product; with the default template it uses {review_order_url} and {product_names_list} automatically.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
         FFLA_Admin::render_toggle_field(
             __('Enable helpful votes', 'ffl-funnels-addons'),
             'enable_helpful_votes',
             $settings['enable_helpful_votes'] ?? '1',
-            __('Allow customers to mark a review as helpful.', 'ffl-funnels-addons')
+            __('Allow customers to mark a review as helpful. Each visitor (by IP address) can vote on a review once every 12 hours.', 'ffl-funnels-addons')
         );
 
         FFLA_Admin::render_toggle_field(
             __('Also allow “Not helpful” votes', 'ffl-funnels-addons'),
             'enable_not_helpful_votes',
             $settings['enable_not_helpful_votes'] ?? '0',
-            __('Adds a downvote button next to “Helpful”. Each visitor still gets one vote per review, in one direction only. Off by default: a negative button invites brigading, and the sort order already accounts for net score.', 'ffl-funnels-addons')
+            __('Adds a downvote button next to “Helpful”. A visitor’s vote on a review counts in one direction only, under the same 12-hour limit. Off by default: a negative button invites brigading, and the sort order already accounts for net score.', 'ffl-funnels-addons')
         );
 
         FFLA_Admin::render_toggle_field(
@@ -93,12 +93,26 @@ class Product_Reviews_Admin
             __('When enabled, every product review stays pending until an administrator approves it. Useful with or without media uploads.', 'ffl-funnels-addons')
         );
 
-        $mod_url = admin_url('edit-comments.php?comment_status=moderated');
+        FFLA_Admin::render_toggle_field(
+            __('Allow photo and video uploads', 'ffl-funnels-addons'),
+            'allow_media_uploads',
+            $settings['allow_media_uploads'] ?? '1',
+            __('Shows the upload field on review forms (up to 3 files, 5 MB each). Reviews with uploads are always held for moderation. Turn off to hide the field everywhere.', 'ffl-funnels-addons')
+        );
+
+        FFLA_Admin::render_text_field(
+            __('Review form title', 'ffl-funnels-addons'),
+            'form_title',
+            $settings['form_title'] ?? __('Write a review', 'ffl-funnels-addons'),
+            __('Heading of the review form in the WooCommerce Reviews tab. The Bricks Review Form element has its own Title.', 'ffl-funnels-addons')
+        );
+
+        $mod_url = Product_Reviews_Core::reviews_admin_url('moderated');
         echo '<p class="wb-field__desc">';
         echo wp_kses(
             sprintf(
-                /* translators: %s: URL to moderated comments screen */
-                __('Pending reviews appear under Comments → Pending. <a href="%s">Open moderated queue</a>.', 'ffl-funnels-addons'),
+                /* translators: %s: URL to the pending product reviews screen */
+                __('Pending reviews appear under Products → Reviews → Pending. <a href="%s">Open the pending queue</a>.', 'ffl-funnels-addons'),
                 esc_url($mod_url)
             ),
             [
@@ -150,10 +164,10 @@ class Product_Reviews_Admin
             __('Show replies under reviews', 'ffl-funnels-addons'),
             'show_replies',
             $settings['show_replies'] ?? '1',
-            __('Replies you leave from Comments → Reply are shown beneath the review, badged as a store response.', 'ffl-funnels-addons')
+            __('Replies you leave from Products → Reviews (Reply) are shown beneath the review, badged as a store response.', 'ffl-funnels-addons')
         );
 
-        echo '<p class="wb-field__desc">' . esc_html__('To feature a review at the top of the list, open Comments and use the “Pin review” row action.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('To feature a review at the top of the list, open Products → Reviews and use the “Pin review” row action.', 'ffl-funnels-addons') . '</p>';
 
         echo '</div></div>';
 
@@ -211,6 +225,13 @@ class Product_Reviews_Admin
             number_format_i18n($optout_count)
         )) . ' ' . esc_html__('Approval and reply notices are answers to something the customer did, so they ignore this list.', 'ffl-funnels-addons') . '</p>';
 
+        FFLA_Admin::render_text_field(
+            __('Re-subscribe an address', 'ffl-funnels-addons'),
+            'resubscribe_email',
+            '',
+            __('Only when the customer asks for review requests again: enter their email and save to remove it from the unsubscribed list.', 'ffl-funnels-addons')
+        );
+
         echo '</div></div>';
 
         echo '<div class="wb-card">';
@@ -250,7 +271,7 @@ class Product_Reviews_Admin
             __('Show extra rating criteria on hub forms', 'ffl-funnels-addons'),
             'order_review_show_criteria',
             $settings['order_review_show_criteria'] ?? '0',
-            __('Adds optional Quality and Value star groups on each product form on the hub page.', 'ffl-funnels-addons')
+            __('Adds the optional star groups from Rating criteria (above) to each product form on the hub page.', 'ffl-funnels-addons')
         );
 
         echo '</div></div>';
@@ -308,7 +329,7 @@ class Product_Reviews_Admin
         echo '<div class="wb-card__header"><h3>' . esc_html__('Bricks Elements', 'ffl-funnels-addons') . '</h3></div>';
         echo '<div class="wb-card__body">';
         echo '<p class="wb-field__desc">' . esc_html__('The module registers Bricks elements: Reviews Rating Badge, Reviews List, Review Form, and Order reviews hub.', 'ffl-funnels-addons') . '</p>';
-        echo '<p class="wb-field__desc">' . esc_html__('These elements are grouped under "FFL Funnels - Product Reviews".', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('In the Bricks element panel they are under "FFL Funnels". Their dynamic data tags are grouped under "FFL Funnels - Product Reviews".', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
         echo '<div class="wb-actions-bar">';
@@ -335,6 +356,14 @@ class Product_Reviews_Admin
         $new['replace_default_reviews_tab'] = isset($_POST['replace_default_reviews_tab']) ? '1' : '0';
         $new['hide_default_reviews_tab'] = isset($_POST['hide_default_reviews_tab']) ? '1' : '0';
         $new['moderate_all_reviews'] = isset($_POST['moderate_all_reviews']) ? '1' : '0';
+        $new['allow_media_uploads'] = isset($_POST['allow_media_uploads']) ? '1' : '0';
+        $form_title = isset($_POST['form_title']) ? sanitize_text_field(wp_unslash($_POST['form_title'])) : '';
+        $new['form_title'] = $form_title !== '' ? $form_title : __('Write a review', 'ffl-funnels-addons');
+
+        $resubscribe = isset($_POST['resubscribe_email']) ? sanitize_email(wp_unslash($_POST['resubscribe_email'])) : '';
+        if ($resubscribe !== '' && is_email($resubscribe)) {
+            Product_Reviews_Notifications::opt_in($resubscribe);
+        }
         $new['request_delay_days'] = isset($_POST['request_delay_days'])
             ? (string) max(0, absint($_POST['request_delay_days']))
             : '7';

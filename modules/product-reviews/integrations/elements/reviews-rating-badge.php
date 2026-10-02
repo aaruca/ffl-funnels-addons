@@ -19,12 +19,17 @@ class FFLA_Reviews_Rating_Badge extends \Bricks\Element
 
     public function set_controls()
     {
+        // Selects, not checkboxes: Bricks drops an unchecked checkbox's key,
+        // so a default-on checkbox could never be switched off.
         $this->controls['showNumber'] = [
-            'tab'     => 'content',
-            'label'   => esc_html__('Show average number', 'ffl-funnels-addons'),
-            'type'    => 'checkbox',
-            'default' => true,
-            'inline'  => true,
+            'tab'         => 'content',
+            'label'       => esc_html__('Average number', 'ffl-funnels-addons'),
+            'type'        => 'select',
+            'options'     => [
+                'show' => esc_html__('Show', 'ffl-funnels-addons'),
+                'hide' => esc_html__('Hide', 'ffl-funnels-addons'),
+            ],
+            'placeholder' => esc_html__('Show', 'ffl-funnels-addons'),
         ];
 
         $this->controls['productId'] = [
@@ -36,11 +41,14 @@ class FFLA_Reviews_Rating_Badge extends \Bricks\Element
         ];
 
         $this->controls['showCount'] = [
-            'tab'     => 'content',
-            'label'   => esc_html__('Show review count', 'ffl-funnels-addons'),
-            'type'    => 'checkbox',
-            'default' => true,
-            'inline'  => true,
+            'tab'         => 'content',
+            'label'       => esc_html__('Review count', 'ffl-funnels-addons'),
+            'type'        => 'select',
+            'options'     => [
+                'show' => esc_html__('Show', 'ffl-funnels-addons'),
+                'hide' => esc_html__('Hide', 'ffl-funnels-addons'),
+            ],
+            'placeholder' => esc_html__('Show', 'ffl-funnels-addons'),
         ];
 
         $this->controls['hideIfNoReviews'] = [
@@ -111,6 +119,22 @@ class FFLA_Reviews_Rating_Badge extends \Bricks\Element
             . '</span>';
     }
 
+    /**
+     * Missing key or `true` (older checkbox) = shown; "hide" = hidden.
+     */
+    private static function shown(array $settings, string $key): bool
+    {
+        if (!array_key_exists($key, $settings)) {
+            return true;
+        }
+        $value = $settings[$key];
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        return !in_array(strtolower(trim((string) $value)), ['hide', '0', 'false', 'off', 'no'], true);
+    }
+
     public function render()
     {
         $settings = $this->settings;
@@ -127,10 +151,13 @@ class FFLA_Reviews_Rating_Badge extends \Bricks\Element
             return;
         }
 
-        $average = (float) $product->get_average_rating();
-        $count   = (int) $product->get_review_count();
-        $show_number = !isset($settings['showNumber']) || !empty($settings['showNumber']);
-        $show_count = !isset($settings['showCount']) || !empty($settings['showCount']);
+        // Same numbers as the rating summary and the dynamic tags: approved
+        // top-level reviews with a rating.
+        $data    = \Product_Reviews_Core::get_rating_distribution($product_id);
+        $average = (float) $data['average'];
+        $count   = (int) $data['total'];
+        $show_number = self::shown($settings, 'showNumber');
+        $show_count  = self::shown($settings, 'showCount');
 
         if (!empty($settings['hideIfNoReviews']) && $count < 1) {
             $in_builder = (function_exists('bricks_is_builder') && bricks_is_builder())

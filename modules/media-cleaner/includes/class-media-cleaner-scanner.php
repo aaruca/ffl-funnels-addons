@@ -17,6 +17,9 @@ class Media_Cleaner_Scanner
 {
     const JOB_OPTION = 'ffla_mclean_job';
 
+    /** A job untouched this long is treated as abandoned (tab closed, CLI killed). */
+    const STALE_AFTER = 600;
+
     /** @var Media_Cleaner_Engine */
     private $engine;
 
@@ -32,10 +35,22 @@ class Media_Cleaner_Scanner
     /**
      * Plan a scan from the current settings and store it as the active job.
      *
-     * @return array The initial job/progress payload.
+     * A scan that another tab or WP-CLI is still driving is not restarted
+     * unless $force is true: two drivers would share one job and corrupt it.
+     *
+     * @return array The initial job/progress payload, or ['busy' => true, …].
      */
-    public function start(): array
+    public function start(bool $force = false): array
     {
+        if (!$force && $this->is_busy()) {
+            return [
+                'busy'    => true,
+                'running' => false,
+                'done'    => false,
+                'message' => __('Another scan is still running (in another tab or WP-CLI).', 'ffl-funnels-addons'),
+            ];
+        }
+
         $library    = '1' === Media_Cleaner_Core::get_setting('scan_media_library', '1');
         $filesystem = '1' === Media_Cleaner_Core::get_setting('scan_filesystem', '0');
         $duplicates = '1' === Media_Cleaner_Core::get_setting('detect_duplicates', '0');
@@ -54,9 +69,10 @@ class Media_Cleaner_Scanner
         $media_total = $this->engine->count_media();
 
         // Content references are needed whenever we decide "unused": for an
-        // unused-media scan, or to know which loose files content still points
-        // at. A pure broken-only or duplicates run can skip them.
-        $need_content_refs = $filesystem || ($library && $content);
+        // unused-media scan, to know which loose files content still points
+        // at, and to leave duplicates that a page uses alone. Only a pure
+        // broken-only run can skip them.
+        $need_content_refs = $filesystem || $duplicates || ($library && $content);
 
         $phases = [];
         $phases[] = ['key' => 'reset', 'label' => __('Preparing', 'ffl-funnels-addons'), 'kind' => 'single'];
@@ -64,13 +80,13 @@ class Media_Cleaner_Scanner
         if ($need_content_refs) {
             $phases[] = ['key' => 'refs_content', 'label' => __('Reading content', 'ffl-funnels-addons'), 'kind' => 'paged', 'total' => $post_total, 'batch' => $posts_batch, 'offset' => 0];
         }
-        if ($filesystem) {
-            $phases[] = ['key' => 'refs_library', 'label' => __('Indexing the library', 'ffl-funnels-addons'), 'kind' => 'paged', 'total' => $media_total, 'batch' => $media_batch, 'offset' => 0];
-        }
+        // The library is checked before it is indexed for the filesystem scan,
+        // so the index can never make unused media look used.
         if ($library) {
             $phases[] = ['key' => 'check_media', 'label' => __('Checking the media library', 'ffl-funnels-addons'), 'kind' => 'paged', 'total' => $media_total, 'batch' => $media_batch, 'offset' => 0];
         }
         if ($filesystem) {
+            $phases[] = ['key' => 'refs_library', 'label' => __('Indexing the library', 'ffl-funnels-addons'), 'kind' => 'paged', 'total' => $media_total, 'batch' => $media_batch, 'offset' => 0];
             $phases[] = ['key' => 'build_files', 'label' => __('Listing files', 'ffl-funnels-addons'), 'kind' => 'single'];
             $phases[] = ['key' => 'check_files', 'label' => __('Checking files on disk', 'ffl-funnels-addons'), 'kind' => 'paged', 'total' => 0, 'batch' => $files_batch, 'offset' => 0];
         }
@@ -86,6 +102,7 @@ class Media_Cleaner_Scanner
             'phase_index' => 0,
             'phases'      => $phases,
             'started'     => time(),
+            'updated'     => time(),
             'found'       => 0,
         ];
 
@@ -112,6 +129,20 @@ class Media_Cleaner_Scanner
         $job = $this->get_job();
 
         return $job && !empty($job['running']);
+    }
+
+    /**
+     * Is a scan running that was advanced recently?
+     */
+    public function is_busy(): bool
+    {
+        $job = $this->get_job();
+        if (!$job || empty($job['running'])) {
+            return false;
+        }
+        $last = (int) ($job['updated'] ?? $job['started'] ?? 0);
+
+        return (time() - $last) < self::STALE_AFTER;
     }
 
     /* =====================================================================
@@ -154,6 +185,7 @@ class Media_Cleaner_Scanner
             return $this->finish($job);
         }
 
+        $job['updated'] = time();
         update_option(self::JOB_OPTION, $job, false);
 
         return $this->progress($job);

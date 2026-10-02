@@ -168,6 +168,15 @@ class Media_Cleaner_Manager
             return $this->delete_permanently($issue_id);
         }
 
+        // A folder already named after this row holds files left behind by an
+        // older version. Re-home them first so the two can never mix.
+        if (Media_Cleaner_Trash::bucket_has_files((string) $issue_id)) {
+            $this->adopt_stranded();
+            if (Media_Cleaner_Trash::bucket_has_files((string) $issue_id)) {
+                return false;
+            }
+        }
+
         if ((int) $issue->type === self::TYPE_MEDIA) {
             return $this->trash_media((int) $issue->post_id, $issue_id);
         }
@@ -206,24 +215,22 @@ class Media_Cleaner_Manager
         if ((int) $issue->type === self::TYPE_MEDIA) {
             $post_id = (int) $issue->post_id;
 
-            // If trashed, bring the files back first so WordPress can delete
-            // them through its normal path (which also clears intermediate
-            // sizes). Best-effort: the bucket is pruned afterwards regardless,
-            // so nothing is left stranded in the trash.
             if ((int) $issue->deleted === 1) {
-                $this->move_media_files($post_id, false, $issue_id);
-                if (get_post_type($post_id) === Media_Cleaner_Trash::SENTINEL_POST_TYPE) {
-                    wp_update_post(['ID' => $post_id, 'post_type' => 'attachment']);
+                // Only delete the attachment while it is still hidden in the
+                // trash. If it is a live attachment again (restored through
+                // another result), this row is stale: drop the row, keep the
+                // media.
+                if ($post_id > 0 && get_post_type($post_id) === Media_Cleaner_Trash::SENTINEL_POST_TYPE) {
+                    $paths = $this->core->get_paths_from_attachment($post_id);
+                    $this->delete_attachment_keeping_uploads($post_id);
+                    foreach ($paths as $path) {
+                        Media_Cleaner_Trash::delete_from_trash($path, (string) $issue_id);
+                    }
                 }
-            }
-
-            if ($post_id > 0 && get_post($post_id)) {
-                wp_delete_attachment($post_id, true);
-            }
-
-            // Remove any files that could not be moved back out of the bucket.
-            if ((int) $issue->deleted === 1) {
                 Media_Cleaner_Trash::prune_bucket((string) $issue_id);
+            } elseif ($post_id > 0 && get_post_type($post_id) === 'attachment') {
+                // Skip-trash mode: a normal WordPress delete, files included.
+                wp_delete_attachment($post_id, true);
             }
 
             $wpdb->delete($table, ['id' => $issue_id], ['%d']);
@@ -317,6 +324,14 @@ class Media_Cleaner_Manager
             return false;
         }
 
+        // Already in the trash through another result (e.g. listed as both
+        // Unused and Duplicate): this row is redundant, so drop it.
+        if (get_post_type($post_id) === Media_Cleaner_Trash::SENTINEL_POST_TYPE) {
+            $this->delete_row($issue_id);
+
+            return true;
+        }
+
         // All-or-nothing: if any file cannot be moved, the rest are put back and
         // the attachment stays live, so no file is ever stranded in the trash
         // while its row still reads as active.
@@ -327,6 +342,10 @@ class Media_Cleaner_Manager
         // Hide from the library without destroying the row.
         wp_update_post(['ID' => $post_id, 'post_type' => Media_Cleaner_Trash::SENTINEL_POST_TYPE]);
         $this->mark_deleted($issue_id, true);
+
+        // One attachment, one trash entry: other open results for the same
+        // attachment are now meaningless.
+        $this->delete_other_rows($post_id, $issue_id, 0);
 
         return true;
     }
@@ -347,7 +366,204 @@ class Media_Cleaner_Manager
         wp_update_post(['ID' => $post_id, 'post_type' => 'attachment']);
         $this->mark_deleted($issue_id, false);
 
+        // Any other trash entry for this attachment (left by older versions)
+        // must not be able to delete it later.
+        $this->delete_other_rows($post_id, $issue_id, 1);
+
         return true;
+    }
+
+    /**
+     * Delete an attachment's database records without letting WordPress
+     * delete files at its uploads paths. Used for trashed media, whose files
+     * live in the trash: a new upload may since have taken the old path, and
+     * that file belongs to someone else.
+     */
+    private function delete_attachment_keeping_uploads(int $post_id): void
+    {
+        wp_update_post(['ID' => $post_id, 'post_type' => 'attachment']);
+
+        $block = static function () {
+            return '';
+        };
+        add_filter('wp_delete_file', $block, PHP_INT_MAX);
+        wp_delete_attachment($post_id, true);
+        remove_filter('wp_delete_file', $block, PHP_INT_MAX);
+    }
+
+    private function delete_row(int $issue_id): void
+    {
+        global $wpdb;
+        $wpdb->delete(Media_Cleaner_Database::scan_table(), ['id' => $issue_id], ['%d']);
+    }
+
+    /**
+     * Remove the other media rows for one attachment.
+     *
+     * @param int $deleted Which rows to remove: 0 = open results, 1 = trash entries.
+     */
+    private function delete_other_rows(int $post_id, int $keep_issue_id, int $deleted): void
+    {
+        global $wpdb;
+        $table = Media_Cleaner_Database::scan_table();
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $wpdb->query($wpdb->prepare(
+            "DELETE FROM {$table} WHERE type = %d AND post_id = %d AND id <> %d AND deleted = %d AND ignored = 0",
+            self::TYPE_MEDIA,
+            $post_id,
+            $keep_issue_id,
+            $deleted
+        ));
+    }
+
+    /* ---------------------------------------------------------------------
+     * Recovery of items whose results older versions lost
+     * ------------------------------------------------------------------- */
+
+    /**
+     * Give every trashed item without a result row a new Trash entry.
+     *
+     * Versions before 1.55.1 emptied the results table on every scan, which
+     * also removed the Trash entries: the files stayed in the trash folder and
+     * trashed attachments stayed hidden, with nothing in the plugin pointing at
+     * them. This finds them again, so they can be restored or deleted from the
+     * Trash tab. Each one moves to a folder named after its new row, so old
+     * and new folder numbers can never clash.
+     *
+     * @return int Number of entries recreated.
+     */
+    public function adopt_stranded(): int
+    {
+        global $wpdb;
+        $table = Media_Cleaner_Database::scan_table();
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $trashed_ids = array_map('intval', (array) $wpdb->get_col("SELECT id FROM {$table} WHERE deleted = 1"));
+        $trashed     = array_flip($trashed_ids);
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $owned_posts = array_flip(array_map('intval', (array) $wpdb->get_col(
+            $wpdb->prepare("SELECT post_id FROM {$table} WHERE deleted = 1 AND type = %d", self::TYPE_MEDIA)
+        )));
+
+        // Hidden attachments with no Trash entry, keyed by each file they own.
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+        $sentinels = array_map('intval', (array) $wpdb->get_col($wpdb->prepare(
+            "SELECT ID FROM {$wpdb->posts} WHERE post_type = %s",
+            Media_Cleaner_Trash::SENTINEL_POST_TYPE
+        )));
+        $lost_posts = [];
+        $by_path    = [];
+        foreach ($sentinels as $post_id) {
+            if (isset($owned_posts[$post_id])) {
+                continue;
+            }
+            $lost_posts[$post_id] = $this->core->get_paths_from_attachment($post_id);
+            foreach ($lost_posts[$post_id] as $path) {
+                $by_path[$path] = $post_id;
+            }
+        }
+
+        $created = 0;
+        $placed  = [];
+
+        foreach (Media_Cleaner_Trash::buckets() as $bucket) {
+            if (isset($trashed[$bucket])) {
+                continue;
+            }
+
+            $files = Media_Cleaner_Trash::files_in_bucket((string) $bucket);
+            if (empty($files)) {
+                Media_Cleaner_Trash::prune_bucket((string) $bucket);
+                continue;
+            }
+
+            $done = [];
+            foreach ($files as $file) {
+                if (isset($done[$file])) {
+                    continue;
+                }
+
+                if (isset($by_path[$file]) && !isset($placed[$by_path[$file]])) {
+                    $post_id = $by_path[$file];
+                    $new_id  = $this->insert_trash_row(self::TYPE_MEDIA, $this->core->clean_uploaded_filename((string) get_attached_file($post_id)), $post_id, $lost_posts[$post_id], (string) $bucket);
+                    if ($new_id <= 0) {
+                        continue;
+                    }
+                    foreach ($lost_posts[$post_id] as $path) {
+                        if (in_array($path, $files, true)) {
+                            Media_Cleaner_Trash::move_between($path, (string) $bucket, (string) $new_id);
+                            $done[$path] = true;
+                        }
+                    }
+                    $placed[$post_id] = true;
+                    $created++;
+                    continue;
+                }
+
+                $new_id = $this->insert_trash_row(self::TYPE_FILE, $file, null, [$file], (string) $bucket);
+                if ($new_id > 0 && Media_Cleaner_Trash::move_between($file, (string) $bucket, (string) $new_id)) {
+                    $created++;
+                } elseif ($new_id > 0) {
+                    $this->delete_row($new_id);
+                }
+                $done[$file] = true;
+            }
+        }
+
+        // Hidden attachments whose files were not found anywhere still get an
+        // entry, so they can at least be brought back into the library.
+        foreach ($lost_posts as $post_id => $paths) {
+            if (isset($placed[$post_id])) {
+                continue;
+            }
+            if ($this->insert_trash_row(self::TYPE_MEDIA, $paths[0] ?? ('#' . $post_id), $post_id, $paths) > 0) {
+                $created++;
+            }
+        }
+
+        $buckets = Media_Cleaner_Trash::buckets();
+        Media_Cleaner_Database::ensure_next_id_above($buckets ? (int) max($buckets) : 0);
+
+        return $created;
+    }
+
+    /**
+     * @param array<int,string> $paths  Files the entry owns (for its size).
+     * @param string|null       $bucket Trash folder the files sit in now.
+     */
+    private function insert_trash_row(int $type, string $path, ?int $post_id, array $paths, ?string $bucket = null): int
+    {
+        global $wpdb;
+
+        $size = 0;
+        if ($bucket !== null) {
+            foreach ($paths as $rel) {
+                $candidate = trailingslashit(Media_Cleaner_Trash::dir()) . absint($bucket) . '/' . ltrim($rel, '/');
+                if (file_exists($candidate)) {
+                    $size += (int) filesize($candidate);
+                }
+            }
+        }
+
+        $buckets = Media_Cleaner_Trash::buckets();
+        Media_Cleaner_Database::ensure_next_id_above($buckets ? (int) max($buckets) : 0);
+
+        $ok = $wpdb->insert(
+            Media_Cleaner_Database::scan_table(),
+            [
+                'time'    => current_time('mysql'),
+                'type'    => $type,
+                'post_id' => $post_id,
+                'path'    => $path,
+                'size'    => $size,
+                'deleted' => 1,
+                'issue'   => self::TYPE_MEDIA === $type ? Media_Cleaner_Core::ISSUE_NO_CONTENT : Media_Cleaner_Core::ISSUE_ORPHAN_FILE,
+            ],
+            ['%s', '%d', '%d', '%s', '%d', '%d', '%s']
+        );
+
+        return $ok ? (int) $wpdb->insert_id : 0;
     }
 
     /**

@@ -33,11 +33,16 @@ class Media_Cleaner_Engine
      * ================================================================== */
 
     /**
-     * Wipe both tables and prime the reference cache for a new run.
+     * Clear the open results and the reference cache for a new run.
+     *
+     * Trash and Ignored entries are kept (they are the user's decisions and
+     * the only way back to trashed files), and anything an older version left
+     * in the trash without an entry is given one first.
      */
     public function reset(): void
     {
-        Media_Cleaner_Database::truncate_scan();
+        (new Media_Cleaner_Manager($this->core))->adopt_stranded();
+        Media_Cleaner_Database::clear_open_issues();
         $this->core->reset_references();
     }
 
@@ -163,7 +168,7 @@ class Media_Cleaner_Engine
         foreach ($this->get_media($offset, $limit) as $media_id) {
             $paths = $this->core->get_paths_from_attachment($media_id);
             if (!empty($paths)) {
-                $this->core->add_reference_url($paths, 'MEDIA LIBRARY');
+                $this->core->add_reference_url($paths, Media_Cleaner_Core::ORIGIN_LIBRARY);
             }
         }
 
@@ -183,7 +188,7 @@ class Media_Cleaner_Engine
         $scan_content = '1' === Media_Cleaner_Core::get_setting('scan_content', '1');
 
         foreach ($this->get_media($offset, $limit) as $media_id) {
-            if ($this->core->is_media_ignored($media_id)) {
+            if ($this->core->is_media_ignored($media_id) || $this->core->has_row_for_media($media_id)) {
                 continue;
             }
 
@@ -198,8 +203,10 @@ class Media_Cleaner_Engine
                 continue;
             }
 
-            // ID reference (wp-image-N, gallery ids, ACF id fields, …).
-            if ($this->core->reference_exists(null, $media_id) !== false) {
+            // ID reference (wp-image-N, gallery ids, ACF id fields, …). The
+            // library index a filesystem scan builds is not a use, so it is
+            // excluded here (content_only).
+            if ($this->core->reference_exists(null, $media_id, true) !== false) {
                 continue;
             }
 
@@ -210,7 +217,7 @@ class Media_Cleaner_Engine
             $count = 0;
 
             foreach ($paths as $path) {
-                if (!$used && $this->core->reference_exists($path, null) !== false) {
+                if (!$used && $this->core->reference_exists($path, null, true) !== false) {
                     $used = true;
                 }
                 $filepath = trailingslashit($this->core->upload_path) . $path;
@@ -254,9 +261,29 @@ class Media_Cleaner_Engine
      * ================================================================== */
 
     /**
-     * All files under uploads (minus the trash dir and guard files), as
-     * uploads-relative paths. Materialised once per scan into an option so the
-     * batched checker can page through a stable list.
+     * Should the uploads-folder scan look at this file?
+     *
+     * Only where WordPress itself puts media: the year/month folders
+     * (2024/03/photo.jpg) and the top level of uploads (sites with year/month
+     * folders turned off). Other plugins keep their own folders in uploads
+     * (WooCommerce downloads and logs, form uploads, builder caches, backups);
+     * those files are not media library items and must never be reported.
+     * Filter: ffla_mclean_scan_file (bool $scan, string $relative_path).
+     */
+    public function is_scannable_file(string $rel): bool
+    {
+        $scan = (bool) preg_match('#^(\d{4}/\d{2}/)?[^/]+$#', $rel);
+        if (Media_Cleaner_Trash::is_trash_path($rel)) {
+            $scan = false;
+        }
+
+        return (bool) apply_filters('ffla_mclean_scan_file', $scan, $rel);
+    }
+
+    /**
+     * Media files under uploads (see is_scannable_file), as uploads-relative
+     * paths. Materialised once per scan into an option so the batched checker
+     * can page through a stable list.
      *
      * @return array<int,string>
      */
@@ -264,7 +291,6 @@ class Media_Cleaner_Engine
     {
         $files    = [];
         $base     = $this->core->upload_path;
-        $trash    = Media_Cleaner_Trash::TRASH_DIRNAME;
 
         if (!is_dir($base)) {
             update_option('ffla_mclean_file_list', [], false);
@@ -282,8 +308,8 @@ class Media_Cleaner_Engine
             }
             $rel = $this->core->clean_uploaded_filename($file->getPathname());
 
-            // Skip the trash tree and hidden/guard files.
-            if (strpos($rel, $trash . '/') === 0 || $rel === $trash) {
+            // Skip the trash tree, other plugins' folders and guard files.
+            if (!$this->is_scannable_file($rel)) {
                 continue;
             }
             $basename = basename($rel);
@@ -308,6 +334,11 @@ class Media_Cleaner_Engine
 
         $slice = array_slice($files, $offset, $limit);
         foreach ($slice as $rel) {
+            // Already ignored or in the trash: decided before, keep quiet.
+            if ($this->core->file_row_kept($rel)) {
+                continue;
+            }
+
             // Referenced directly, or via its resolution-stripped parent.
             if ($this->core->reference_exists($rel, null) !== false) {
                 continue;
@@ -337,6 +368,10 @@ class Media_Cleaner_Engine
      * Single-pass duplicate detection: the first attachment carrying a given
      * content hash is the keeper; later matches are flagged, pointing back to
      * the keeper via parent_id.
+     *
+     * A copy is only flagged when nothing uses it, it is not ignored, and it
+     * has no other result yet (so one attachment never gets two rows). A copy
+     * that a page uses is left alone: trashing it would break that page.
      */
     public function check_duplicates_batch(int $offset, int $limit): void
     {
@@ -366,6 +401,9 @@ class Media_Cleaner_Engine
             ));
 
             if ($keeper !== null && (int) $keeper !== $media_id) {
+                if ($this->core->is_media_ignored($media_id) || $this->core->has_row_for_media($media_id) || $this->core->is_media_used($media_id)) {
+                    continue;
+                }
                 $size = (int) filesize($fullpath);
                 $this->core->add_issue(Media_Cleaner_Core::ISSUE_DUPLICATE, 1, $this->media_label($media_id, $fullpath), $media_id, $size, (int) $keeper);
                 continue;

@@ -326,6 +326,11 @@ class Product_Reviews_Email
         return $name !== '' ? $name : __('Customer', 'ffl-funnels-addons');
     }
 
+    private static function normalize_template(string $template): string
+    {
+        return trim(preg_replace('/\s+/', ' ', str_replace("\r", '', $template)));
+    }
+
     private static function default_bundle_template(): string
     {
         return __("Hi {customer_name},\n\nWe would love your feedback on:\n{product_names_list}\n\nLeave your reviews here:\n{review_order_url}\n\nThank you!", 'ffl-funnels-addons');
@@ -350,7 +355,13 @@ class Product_Reviews_Email
 
         $heading  = sanitize_text_field($settings['email_heading'] ?? '');
         $template = (string) ($settings['email_template'] ?? '');
-        if ($template === '') {
+
+        // An empty template, or the untouched per-product default while one
+        // email per order is sent, uses the built-in text for this kind of
+        // email (otherwise a bundle email would say "your feedback on" one
+        // product name list with a per-product wording).
+        $stock_single = Product_Reviews_Core::get_default_settings()['email_template'];
+        if ($template === '' || (self::normalize_template($template) === self::normalize_template($stock_single) && $default_template !== $stock_single)) {
             $template = $default_template;
         }
 

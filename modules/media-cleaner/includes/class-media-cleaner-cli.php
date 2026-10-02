@@ -6,8 +6,8 @@
  *   wp ffla-media scan
  *   wp ffla-media status
  *   wp ffla-media list [--status=active|ignored|trashed] [--limit=50]
- *   wp ffla-media trash --all
- *   wp ffla-media empty-trash --yes
+ *   wp ffla-media trash --all [--yes]
+ *   wp ffla-media empty-trash --yes   (also: empty_trash)
  *
  * @package FFL_Funnels_Addons
  */
@@ -36,13 +36,19 @@ class Media_Cleaner_CLI
 
     /**
      * Run a full scan to completion.
+     *
+     * [--force]
+     * : Start even if a scan from the admin screen is still running.
      */
     public function scan($args, $assoc_args): void
     {
         Media_Cleaner_Core::flush_settings_memo();
         $f = $this->factory();
 
-        $progress = $f['scanner']->start();
+        $progress = $f['scanner']->start(!empty($assoc_args['force']));
+        if (!empty($progress['busy'])) {
+            \WP_CLI::error('Another scan is still running (admin screen or another WP-CLI process). Wait for it, or pass --force to start over.');
+        }
         \WP_CLI::log('Scanning…');
 
         $guard = 0;
@@ -108,15 +114,22 @@ class Media_Cleaner_CLI
     }
 
     /**
-     * Move issues to the trash.
+     * Move issues to the trash (deletes them when Skip the trash is on).
+     *
+     * With "Skip the trash" on, asks for confirmation first (or pass --yes).
      *
      * [<ids>...]
      * [--all]
+     * [--yes]
      */
     public function trash($args, $assoc_args): void
     {
         $f   = $this->factory();
         $ids = $this->resolve_ids($args, $assoc_args, $f['manager'], 'active');
+
+        if (!$f['core']->uses_trash()) {
+            \WP_CLI::confirm(sprintf('"Skip the trash" is on: %d item(s) will be deleted permanently. Continue?', count($ids)), $assoc_args);
+        }
 
         $done = 0;
         foreach ($ids as $id) {
@@ -124,13 +137,16 @@ class Media_Cleaner_CLI
                 $done++;
             }
         }
-        \WP_CLI::success(sprintf('Trashed %d item(s).', $done));
+        \WP_CLI::success(sprintf($f['core']->uses_trash() ? 'Trashed %d item(s).' : 'Deleted %d item(s).', $done));
     }
 
     /**
      * Empty the trash (permanent).
      *
      * [--yes]
+     *
+     * @subcommand empty-trash
+     * @alias empty_trash
      */
     public function empty_trash($args, $assoc_args): void
     {

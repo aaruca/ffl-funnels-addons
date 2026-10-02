@@ -61,6 +61,10 @@ class Media_Cleaner_Module extends FFLA_Module
         Media_Cleaner_Cron::init();
 
         if (is_admin()) {
+            // Creates the tables if they are missing (cheap version check),
+            // e.g. when the module was switched on without its activation step.
+            Media_Cleaner_Database::install();
+
             require_once $base . 'includes/class-media-cleaner-ajax.php';
             require_once $base . 'admin/class-media-cleaner-admin.php';
 

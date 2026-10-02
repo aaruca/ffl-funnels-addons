@@ -167,7 +167,8 @@ if (in_array('woo-sheets-sync', $ffla_active_modules, true)) {
 }
 
 // ── Product Reviews cleanup ─────────────────────────────────────────
-if (in_array('product-reviews', $ffla_active_modules, true)) {
+// Runs whenever its settings exist, even if the module was switched off first.
+if (in_array('product-reviews', $ffla_active_modules, true) || false !== get_option('ffla_product_reviews_settings', false)) {
     delete_option('ffla_product_reviews_settings');
 
     // `ffla_review_email_optouts` is deliberately NOT deleted. It is the record
@@ -213,11 +214,22 @@ if (in_array('loadout', $ffla_active_modules, true)) {
 }
 
 // ── Media Cleaner cleanup ──────────────────────────────────────────
-// Drop the tracking tables, options, and cron. The trash FOLDER
-// (uploads/ffla-media-trash) is deliberately left on disk: it holds real files
-// a shop chose to remove but could still restore, and uninstalling a plugin
-// must never permanently destroy media. Delete that folder by hand if wanted.
-if (in_array('media-cleaner', $ffla_active_modules, true)) {
+// Everything in the media trash is put back first: trashed attachments return
+// to the Media Library and their files to their folders, so deleting the plugin
+// never strands or destroys media. A file whose original name has since been
+// taken by a newer upload stays in the trash folder, which is then left on disk.
+// Runs whenever Media Cleaner data exists, even if the module was switched off.
+$mc_table = $wpdb->prefix . 'ffla_mclean_scan';
+$mc_has_data = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $mc_table)) === $mc_table
+    || false !== get_option('ffla_media_cleaner_settings', false)
+    || (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'ffla_mclean_trash'") > 0;
+if (in_array('media-cleaner', $ffla_active_modules, true) || $mc_has_data) {
+    $mc_restore = __DIR__ . '/modules/media-cleaner/includes/uninstall-restore.php';
+    if (file_exists($mc_restore)) {
+        require_once $mc_restore;
+        ffla_mclean_uninstall_restore();
+    }
+
     $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}ffla_mclean_scan");
     $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}ffla_mclean_refs");
 
@@ -225,6 +237,8 @@ if (in_array('media-cleaner', $ffla_active_modules, true)) {
     delete_option('ffla_media_cleaner_db_version');
     delete_option('ffla_mclean_job');
     delete_option('ffla_mclean_file_list');
+    delete_option('ffla_mclean_trash_dirname');
+    delete_option('ffla_mclean_adopted');
 
     $mc_ts = wp_next_scheduled('ffla_mclean_auto_empty');
     while ($mc_ts) {
