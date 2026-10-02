@@ -241,6 +241,12 @@ class FFLA_Wishlist_Button extends \Bricks\Element
             $icon_html = $this->get_default_icon_svg();
         }
 
+        if ($show_text) {
+            // The front-end script swaps the label with these after a click.
+            $this->set_attribute('_root', 'data-text-add', $add_text);
+            $this->set_attribute('_root', 'data-text-remove', $remove_text);
+        }
+
         $output = "<{$this->tag} {$this->render_attributes('_root')}>";
         $output .= $icon_html;
         if ($show_text) {

@@ -259,6 +259,8 @@ class FFLA_Wishlist_Count extends \Bricks\Element
         if ($hide_zero && $count === 0) {
             $badge_class .= ' hidden';
         }
+        // Tells the front-end script to keep the badge visible at 0.
+        $badge_attr = $hide_zero ? '' : ' data-hide-zero="0"';
 
         // Label text + position.
         $label_text     = isset($settings['labelText']) ? trim($settings['labelText']) : '';
@@ -269,10 +271,10 @@ class FFLA_Wishlist_Count extends \Bricks\Element
         if ($show_icon) {
             $icon_wrap  = '<span class="ffla-count-icon-wrap">';
             $icon_wrap .= $icon_html;
-            $icon_wrap .= '<span class="' . esc_attr($badge_class) . '">' . esc_html((string) $count) . '</span>';
+            $icon_wrap .= '<span class="' . esc_attr($badge_class) . '"' . $badge_attr . '>' . esc_html((string) $count) . '</span>';
             $icon_wrap .= '</span>';
         } else {
-            $icon_wrap = '<span class="' . esc_attr($badge_class) . '">' . esc_html((string) $count) . '</span>';
+            $icon_wrap = '<span class="' . esc_attr($badge_class) . '"' . $badge_attr . '>' . esc_html((string) $count) . '</span>';
         }
 
         $output  = "<{$this->tag} {$this->render_attributes('_root')}>";

@@ -11,6 +11,19 @@
  * Backward compatibility for Google Analytics for WooCommerce is retained for
  * stores that have not migrated yet, but no second Google tag is ever loaded.
  *
+ * MonsterInsights fallback scope: single product pages only. add_to_cart is
+ * reported for the page's product (or its chosen variation); an AJAX add of a
+ * different product on that page (related products, upsells) is not reported,
+ * because its item data is not available here.
+ *
+ * Known limits of the Google Analytics for WooCommerce path:
+ *  - products without an add-to-cart form (e.g. out of stock) get no view_item,
+ *    because the repair runs from woocommerce_after_add_to_cart_form;
+ *  - an AJAX add_to_cart is sent on the next page view (that plugin's own
+ *    restore step), not immediately;
+ *  - view_cart is not supported by that plugin;
+ *  - Site Kit's Analytics module must stay disconnected (one GA4 tag per site).
+ *
  * @package FFL_Funnels_Addons
  */
 
@@ -210,6 +223,9 @@ class Ga4_Bridge_Module extends FFLA_Module
             'fflaMonsterInsightsBridge',
             [
                 'measurementId' => $this->monsterinsights_measurement_id(),
+                // Lets the script tell this product's add-to-cart apart from
+                // buttons for other products shown on the page.
+                'productId'     => (string) $product->get_id(),
                 'currency'      => function_exists('get_woocommerce_currency') ? get_woocommerce_currency() : 'USD',
                 'value'         => wc_format_decimal($value, wc_get_price_decimals()),
                 'items'         => $items,
@@ -233,7 +249,7 @@ class Ga4_Bridge_Module extends FFLA_Module
         }
 
         echo '<div class="notice notice-warning"><p>';
-        echo esc_html__('MonsterInsights Compatibility is active, but MonsterInsights Pro with the eCommerce Addon and a GA4 connection was not detected. The module will not load a separate Google tag.', 'ffl-funnels-addons');
+        echo esc_html__('MonsterInsights Compatibility is active, but MonsterInsights with its eCommerce Addon and a GA4 measurement ID was not detected. The module will not load a separate Google tag.', 'ffl-funnels-addons');
         echo '</p></div>';
     }
 

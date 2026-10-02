@@ -24,9 +24,25 @@
             return;
         }
 
+        // Remember which vendor each item really has, to undo a refused change.
+        $container.find('.ffl-vendor-selector__item').each(function () {
+            var $item = $(this);
+            $item.data('fflConfirmed', $item.find('input[type="radio"]:checked').val() || '');
+        });
+
         // Unbind first to avoid duplicates after checkout refresh.
         $container.off('change.fflVendor', 'input[type="radio"]');
         $container.on('change.fflVendor', 'input[type="radio"]', onVendorChange);
+    }
+
+    /**
+     * Put the radio buttons back to the vendor the cart item actually has.
+     */
+    function restoreSelection($item) {
+        var confirmed = $item.data('fflConfirmed') || '';
+        $item.find('input[type="radio"]').each(function () {
+            this.checked = confirmed !== '' && this.value === confirmed;
+        });
     }
 
     /**
@@ -72,14 +88,17 @@
             },
             success: function (response) {
                 if (response.success) {
+                    $item.data('fflConfirmed', String(warehouseId));
                     // Trigger WooCommerce checkout refresh.
                     $(document.body).trigger('update_checkout');
                 } else {
                     // Revert selection on error.
+                    restoreSelection($item);
                     alert(response.data || 'Error updating vendor.');
                 }
             },
             error: function () {
+                restoreSelection($item);
                 alert('Network error. Please try again.');
             },
             complete: function () {

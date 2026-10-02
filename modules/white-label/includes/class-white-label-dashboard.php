@@ -5,7 +5,9 @@
  * Takes over /wp-admin/index.php: strips all dashboard widgets (default and
  * third-party), removes the welcome panel, Screen Options and Help buttons,
  * suppresses admin notices, and renders the branded client dashboard in their
- * place. Only active when enabled in the Dashboard settings tab.
+ * place. Only active when enabled in the Dashboard settings tab, and only for
+ * users who can edit theme options (the users WordPress shows the welcome panel
+ * to); everyone else keeps the standard dashboard.
  *
  * @package FFL_Funnels_Addons
  */
@@ -20,6 +22,12 @@ class White_Label_Dashboard
     const AJAX_NONCE  = 'ffla_wl_dashboard_analytics';
     const SOURCE_META = 'ffla_wl_dashboard_analytics_source';
     const RANGE_META  = 'ffla_wl_dashboard_analytics_range';
+
+    /**
+     * WordPress only prints the welcome panel (our render hook) for users with
+     * this capability, so the dashboard is taken over for them only.
+     */
+    const CAPABILITY = 'edit_theme_options';
 
     /** @var array<string, mixed> The 'dashboard' settings sub-array. */
     private $settings;
@@ -38,6 +46,16 @@ class White_Label_Dashboard
             return;
         }
 
+        // The endpoint checks the capability itself.
+        add_action('wp_ajax_' . self::AJAX_ACTION, [$this, 'ajax_analytics']);
+
+        // Other roles (e.g. Shop Manager) never get the welcome panel, so
+        // stripping their widgets would leave them an empty page: they keep the
+        // standard WordPress dashboard instead.
+        if (!current_user_can(self::CAPABILITY)) {
+            return;
+        }
+
         // Render our dashboard in place of the welcome panel.
         add_action('welcome_panel', [$this, 'render']);
 
@@ -50,7 +68,6 @@ class White_Label_Dashboard
         add_action('current_screen', [$this, 'clean_screen']);
 
         add_action('admin_enqueue_scripts', [$this, 'enqueue']);
-        add_action('wp_ajax_' . self::AJAX_ACTION, [$this, 'ajax_analytics']);
     }
 
     /**
@@ -64,8 +81,9 @@ class White_Label_Dashboard
     }
 
     /**
-     * On the dashboard screen: drop help tabs, hide Screen Options, and suppress
-     * admin notices.
+     * On the dashboard screen: drop help tabs, hide Screen Options, hide the
+     * WordPress version in the footer, and suppress admin notices. The agency
+     * footer credit (White_Label_Branding) intentionally stays on every page.
      *
      * @param WP_Screen $screen
      */
@@ -78,8 +96,7 @@ class White_Label_Dashboard
         $screen->remove_help_tabs();
         add_filter('screen_options_show_screen', '__return_false');
 
-        // Blank the admin footer credit + version on the dashboard.
-        add_filter('admin_footer_text', '__return_empty_string', 99);
+        // Blank the WordPress version on the right of the footer.
         add_filter('update_footer', '__return_empty_string', 99);
 
         // Notices are printed later, inside .wrap; remove them just before.
@@ -164,7 +181,7 @@ class White_Label_Dashboard
         // Match the cap that gates the custom dashboard itself (welcome_panel =
         // edit_theme_options), so store search analytics aren't exposed to any
         // logged-in user (e.g. WooCommerce customers, who all have `read`).
-        if (!check_ajax_referer(self::AJAX_NONCE, 'nonce', false) || !current_user_can('edit_theme_options')) {
+        if (!check_ajax_referer(self::AJAX_NONCE, 'nonce', false) || !current_user_can(self::CAPABILITY)) {
             wp_send_json_error(['message' => __('You do not have permission to view analytics.', 'ffl-funnels-addons')], 403);
             return;
         }
@@ -198,8 +215,11 @@ class White_Label_Dashboard
     {
         require_once __DIR__ . '/class-white-label-dashboard-data.php';
 
-        $from = gmdate('Y-m-d', strtotime('-29 days'));
-        $to   = gmdate('Y-m-d');
+        // Last 30 days including today, in the site's time zone (orders are
+        // bucketed by their site-local date, so the window must match).
+        $today = current_datetime();
+        $from  = $today->modify('-29 days')->format('Y-m-d');
+        $to    = $today->format('Y-m-d');
 
         // A nonce-guarded ?ffla_refresh=1 request bypasses the cache, pulls fresh
         // numbers from the database, and updates the stored cache.

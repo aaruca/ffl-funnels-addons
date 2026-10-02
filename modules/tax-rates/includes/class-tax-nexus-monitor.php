@@ -861,6 +861,20 @@ final class Tax_Nexus_Monitor
 
     private function get_destination($order): array
     {
+        // Local pickup is a sale at the store, as in the filing report.
+        if ($this->is_local_pickup_order($order) && function_exists('wc_get_base_location')) {
+            $base = wc_get_base_location();
+            $base_state = is_array($base) ? $this->normalize_state($base['state'] ?? '') : '';
+            $base_country = is_array($base) ? strtoupper($this->clean_text($base['country'] ?? '')) : '';
+            if ($base_state !== '' && $base_country !== '') {
+                return [
+                    'country'          => $base_country,
+                    'state'            => $base_state,
+                    'country_inferred' => false,
+                ];
+            }
+        }
+
         $shipping_state = method_exists($order, 'get_shipping_state')
             ? $this->normalize_state($order->get_shipping_state())
             : '';
@@ -887,6 +901,20 @@ final class Tax_Nexus_Monitor
             'state'            => $state,
             'country_inferred' => $country_inferred,
         ];
+    }
+
+    private function is_local_pickup_order($order): bool
+    {
+        if (!is_object($order) || !method_exists($order, 'get_items')) {
+            return false;
+        }
+        foreach ((array) $order->get_items('shipping') as $item) {
+            $method = is_object($item) && method_exists($item, 'get_method_id') ? (string) $item->get_method_id() : '';
+            if (in_array($method, ['local_pickup', 'legacy_local_pickup', 'pickup_location'], true)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function resolve_home_location(array $options): array

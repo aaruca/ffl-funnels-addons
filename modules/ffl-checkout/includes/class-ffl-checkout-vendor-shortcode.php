@@ -37,8 +37,7 @@ class FFL_Checkout_Vendor_Shortcode
             return '';
         }
 
-        $settings = get_option('ffl_checkout_settings', []);
-        if (($settings['vendor_selector_enabled'] ?? '0') !== '1') {
+        if (!FFL_Checkout_Vendor_Api::selector_enabled()) {
             return '';
         }
 
@@ -47,8 +46,7 @@ class FFL_Checkout_Vendor_Shortcode
             return '';
         }
 
-        ob_start();
-        $has_eligible = false;
+        $html = '';
 
         foreach ($cart_items as $cart_key => $cart_item) {
             $product_id = $cart_item['product_id'] ?? 0;
@@ -63,38 +61,44 @@ class FFL_Checkout_Vendor_Shortcode
             }
 
             $options = FFL_Checkout_Vendor_Api::get_warehouse_options($upc);
-            if (is_wp_error($options) || empty($options)) {
+            if (is_wp_error($options) || empty($options) || !is_array($options)) {
                 continue;
             }
 
-            $product          = wc_get_product($product_id);
-            $product_name     = $product ? $product->get_name() : '#' . $product_id;
-            $current_vendor   = $cart_item['custom_product_option'] ?? '';
-            $current_distid   = '';
+            $product        = wc_get_product($product_id);
+            $product_name   = $product ? $product->get_name() : '#' . $product_id;
+            // Session values are strings; API values may be numbers. Compare as text.
+            $current_vendor = isset($cart_item['custom_product_option']) ? (string) $cart_item['custom_product_option'] : '';
+            $current_distid = '';
 
             // Determine the current distributor ID from SKU.
-            $sku = $product ? $product->get_sku() : '';
-            if (!empty($sku)) {
-                $parts = explode('|', $sku);
-                $current_distid = $parts[0] ?? '';
+            $sku = $product ? (string) $product->get_sku() : '';
+            if ($sku !== '') {
+                $parts          = explode('|', $sku);
+                $current_distid = (string) ($parts[0] ?? '');
             }
 
-            $has_eligible = true;
-
-            self::render_item_selector($cart_key, $product_name, $options, $current_vendor, $current_distid);
+            ob_start();
+            self::render_item_selector((string) $cart_key, $product_name, $options, $current_vendor, $current_distid);
+            $html .= (string) ob_get_clean();
         }
 
-        if (!$has_eligible) {
+        if ($html === '') {
             return '';
         }
 
-        return '<div class="ffl-vendor-selector" id="ffl-vendor-selector">' . ob_get_clean() . '</div>';
+        return '<div class="ffl-vendor-selector" id="ffl-vendor-selector">' . $html . '</div>';
     }
 
     /* ── Render Single Item ──────────────────────────────────────────── */
 
     /**
      * Render the vendor selection table for a single cart item.
+     *
+     * The option already chosen for the cart item is checked; otherwise the
+     * one whose distributor ID matches the product SKU. When neither matches,
+     * nothing is checked, because the cart still uses the original vendor
+     * until the customer picks one.
      */
     private static function render_item_selector(
         string $cart_key,
@@ -117,59 +121,55 @@ class FFL_Checkout_Vendor_Shortcode
                 </thead>
                 <tbody>
                 <?php
-                $has_selection = false;
+                // Find the one option to check first, so at most one is checked.
+                $checked_index = null;
                 foreach ($options as $index => $option) {
-                    $warehouse_id   = $option['warehouse_id'] ?? '';
-                    $distid         = $option['distid'] ?? '';
-                    $option_sku     = $option['sku'] ?? '';
-                    $option_price   = $option['price'] ?? 0;
-                    $option_qty     = $option['qty'] ?? 0;
-                    $shipping_class = $option['shipping_class'] ?? '';
-
-                    // Determine checked state.
-                    $is_checked = false;
-                    if (!empty($current_vendor) && $current_vendor === $warehouse_id) {
-                        $is_checked = true;
-                    } elseif (empty($current_vendor) && !empty($current_distid) && $distid === $current_distid) {
-                        $is_checked = true;
+                    if (is_array($option) && $current_vendor !== '' && (string) ($option['warehouse_id'] ?? '') === $current_vendor) {
+                        $checked_index = $index;
+                        break;
                     }
-
-                    if ($is_checked) {
-                        $has_selection = true;
+                }
+                if ($checked_index === null && $current_vendor === '' && $current_distid !== '') {
+                    foreach ($options as $index => $option) {
+                        if (is_array($option) && (string) ($option['distid'] ?? '') === $current_distid) {
+                            $checked_index = $index;
+                            break;
+                        }
                     }
+                }
+
+                foreach ($options as $index => $option) {
+                    if (!is_array($option)) {
+                        continue;
+                    }
+                    $warehouse_id   = (string) ($option['warehouse_id'] ?? '');
+                    $option_sku     = (string) ($option['sku'] ?? '');
+                    $option_price   = (float) ($option['price'] ?? 0);
+                    $option_qty     = (string) ($option['qty'] ?? '0');
+                    $shipping_class = (string) ($option['shipping_class'] ?? '');
                     ?>
                     <tr>
                         <td class="ffl-vendor-selector__radio">
                             <input type="radio"
                                    name="ffl_vendor_<?php echo esc_attr($cart_key); ?>"
                                    value="<?php echo esc_attr($warehouse_id); ?>"
-                                   data-price="<?php echo esc_attr($option_price); ?>"
+                                   data-price="<?php echo esc_attr((string) $option_price); ?>"
                                    data-sku="<?php echo esc_attr($option_sku); ?>"
                                    data-shipping-class="<?php echo esc_attr($shipping_class); ?>"
-                                   <?php checked($is_checked); ?>>
+                                   <?php checked($index === $checked_index); ?>>
                         </td>
-                        <td><?php echo esc_html('Vendor ' . $warehouse_id); ?></td>
+                        <td><?php
+                            /* translators: %s: vendor/warehouse ID. */
+                            echo esc_html(sprintf(__('Vendor %s', 'ffl-funnels-addons'), $warehouse_id));
+                        ?></td>
                         <td class="ffl-vendor-selector__stock"><?php echo esc_html($option_qty); ?></td>
-                        <td class="ffl-vendor-selector__price">$<?php echo esc_html(number_format((float) $option_price, 2)); ?></td>
+                        <td class="ffl-vendor-selector__price"><?php echo wp_kses_post(function_exists('wc_price') ? wc_price($option_price) : number_format($option_price, 2)); ?></td>
                     </tr>
                     <?php
                 }
                 ?>
                 </tbody>
             </table>
-            <?php
-            // If no option matched, auto-select the first one.
-            if (!$has_selection && !empty($options)) {
-                ?>
-                <script>
-                    (function() {
-                        var radios = document.querySelectorAll('input[name="ffl_vendor_<?php echo esc_js($cart_key); ?>"]');
-                        if (radios.length > 0) radios[0].checked = true;
-                    })();
-                </script>
-                <?php
-            }
-            ?>
             <div class="ffl-vendor-selector__loading" style="display:none;">
                 <?php esc_html_e('Updating...', 'ffl-funnels-addons'); ?>
             </div>

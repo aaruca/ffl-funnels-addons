@@ -151,21 +151,4 @@ class WooSheets_Module extends FFLA_Module
                 break;
         }
     }
-
-    /**
-     * Admin notice when FFL Manager plugin is not active.
-     */
-    public function missing_ffl_manager_notice(): void
-    {
-        printf(
-            '<div class="notice notice-error"><p>%s</p></div>',
-            wp_kses_post(
-                sprintf(
-                    /* translators: %s: plugin name */
-                    esc_html__('%s requires the FFL Manager plugin to be installed and active.', 'ffl-funnels-addons'),
-                    '<strong>Woo Sheets Sync</strong>'
-                )
-            )
-        );
-    }
 }

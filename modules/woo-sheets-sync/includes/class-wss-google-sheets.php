@@ -106,10 +106,46 @@ class WSS_Google_Sheets
             $error_msg = $decoded['error']['message']
                 ?? $decoded['error']['status']
                 ?? sprintf(__('Google Sheets API error (HTTP %d)', 'ffl-funnels-addons'), $status_code);
-            return new WP_Error('wss_sheets_api', $error_msg);
+            // The HTTP status travels with the error so callers can tell a
+            // transient failure (429 / 5xx) from a permanent one.
+            return new WP_Error('wss_sheets_api', $error_msg, ['status' => $status_code]);
         }
 
         return $decoded ?? [];
+    }
+
+    /**
+     * Whether an error returned by request() is worth retrying later
+     * (rate limit, Google server error or a network failure).
+     *
+     * @param WP_Error $error
+     */
+    public static function is_retryable_error($error): bool
+    {
+        if (!is_wp_error($error)) {
+            return false;
+        }
+
+        if ($error->get_error_code() !== 'wss_sheets_api') {
+            // WP_Error from the HTTP layer (timeout, DNS, connection reset).
+            return $error->get_error_code() === 'http_request_failed';
+        }
+
+        $data   = $error->get_error_data();
+        $status = is_array($data) ? (int) ($data['status'] ?? 0) : 0;
+
+        return $status === 429 || ($status >= 500 && $status < 600);
+    }
+
+    /**
+     * Prepare a text value for a "user entered" write so Google keeps it as
+     * text: SKUs such as "00123" keep their leading zeros, and names starting
+     * with "=" or "+" are never turned into formulas. The apostrophe is not
+     * part of the stored value and reads back without it.
+     */
+    public static function as_text(string $value): string
+    {
+        return $value === '' ? '' : "'" . $value;
     }
 
     /**

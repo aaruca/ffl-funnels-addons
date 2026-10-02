@@ -137,15 +137,17 @@ class Tax_REST_API
             'totalQueries24h' => $total_queries,
             'successRate24h' => null,
             'avgDurationMs24h' => null,
+            // Cache hits are not written to the audit log (see
+            // Tax_Quote_Engine::audit()), so no hit ratio can be computed.
+            // The key stays for compatibility and is always null.
             'cacheHitRatio24h' => null,
+            'cacheHitsAudited' => false,
         ];
 
         if ($total_queries > 0) {
             $success_count = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$audit_table} WHERE requested_at > %s AND outcome_code IN ('SUCCESS','NO_SALES_TAX')", $since));
             $stats['successRate24h'] = round($success_count / $total_queries * 100, 1);
             $stats['avgDurationMs24h'] = (int) $wpdb->get_var($wpdb->prepare("SELECT AVG(duration_ms) FROM {$audit_table} WHERE requested_at > %s", $since));
-            $cache_hits = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$audit_table} WHERE requested_at > %s AND cache_hit = 1", $since));
-            $stats['cacheHitRatio24h'] = round($cache_hits / $total_queries * 100, 1);
         }
 
         return new \WP_REST_Response([
@@ -169,7 +171,7 @@ class Tax_REST_API
             "SELECT *
              FROM {$table}
              WHERE source_code = %s
-             ORDER BY source_code, state_code, loaded_at DESC
+             ORDER BY loaded_at DESC, id DESC
              LIMIT 50",
             Tax_Dataset_Pipeline::SHEET_SOURCE_CODE
         ), ARRAY_A) ?: [];

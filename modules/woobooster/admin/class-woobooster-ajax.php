@@ -94,15 +94,20 @@ class WooBooster_Ajax
         if (!$input) {
             wp_send_json_error(array('message' => 'Please enter a product ID or SKU.'));
         }
-        $product_id = absint($input);
-        if (!$product_id) {
+        // An all-digit value can be an ID or a numeric SKU: try the ID first,
+        // then the SKU.
+        $product_id = ctype_digit($input) ? absint($input) : 0;
+        if (!$product_id || !wc_get_product($product_id)) {
             $product_id = wc_get_product_id_by_sku($input);
         }
         if (!$product_id) {
-            wp_send_json_error(array('message' => 'Product not found.'));
+            wp_send_json_error(array('message' => __('Product not found.', 'ffl-funnels-addons')));
         }
         $matcher = new WooBooster_Matcher();
         $diagnostics = $matcher->get_diagnostics($product_id);
+        if (!empty($diagnostics['error'])) {
+            wp_send_json_error(array('message' => $diagnostics['error']));
+        }
         wp_send_json_success($diagnostics);
     }
 

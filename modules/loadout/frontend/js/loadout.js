@@ -1,110 +1,56 @@
 (function ($) {
     'use strict';
 
+    var cfg = window.loadoutFrontend || {};
+    var strings = cfg.strings || {};
+
+    function t(key, fallback) {
+        return strings[key] || fallback;
+    }
+
+    function escapeHtml(str) {
+        return String(str === undefined || str === null ? '' : str).replace(/[&<>"']/g, function (m) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
+        });
+    }
+
     $(document).ready(function () {
-        initProductTab();
-        initWidget();
         initGlobalHandlers();
         refreshAllCartSummaries();
     });
 
-    function initProductTab() {
-        var $tab = $('.ffla-loadout-tab');
-        if (!$tab.length) {
-            return;
-        }
-
-        $tab.on('click', '.ffla-loadout-tab__tier-btn', function () {
-            var $btn = $(this);
-            var slug = $btn.data('tier-slug');
-            $btn.siblings().removeClass('is-active');
-            $btn.addClass('is-active');
-            $tab.find('.ffla-loadout-tab__panel').removeClass('is-active');
-            $tab.find('.ffla-loadout-tab__panel[data-tier-slug="' + slug + '"]').addClass('is-active');
-        });
-
-        $tab.on('click', '.ffla-loadout-tab__add-btn', function () {
-            var $btn = $(this);
-            var $panel = $btn.closest('.ffla-loadout-tab__panel');
-            var $tabRoot = $btn.closest('.ffla-loadout-tab');
-            var data = {
-                action: 'loadout_add_item',
-                nonce: loadoutFrontend.nonce,
-                product_id: $btn.data('product-id'),
-                quantity: $btn.data('quantity') || 1,
-                discount_pct: $btn.data('discount-pct') || 0,
-                item_id: $btn.data('item-id') || 0,
-                tier_id: $panel.data('tier-id') || 0,
-                tier_slug: $panel.data('tier-slug') || '',
-                loadout_id: $tabRoot.data('loadout-id') || 0,
-                product_loadout_id: $tabRoot.data('product-loadout-id') || 0,
-                source: 'product_tab',
-            };
-            addToCart($btn, data);
-        });
-
-        $tab.on('click', '.ffla-loadout-tab__add-tier-btn', function () {
-            var $btn = $(this);
-            var $tabRoot = $btn.closest('.ffla-loadout-tab');
-            var data = {
-                action: 'loadout_add_tier',
-                nonce: loadoutFrontend.nonce,
-                tier_id: $btn.data('tier-id') || 0,
-                tier_slug: $btn.data('tier-slug') || '',
-                loadout_id: $tabRoot.data('loadout-id') || 0,
-                product_loadout_id: $tabRoot.data('product-loadout-id') || 0,
-                source: 'product_tab',
-            };
-            addToCart($btn, data);
-        });
-    }
-
-    function initWidget() {
-        // Monolithic widget: kept for backward compat with the existing Loadout element.
-        $('.ffla-loadout').not('.ffla-loadout--cart-only').not('.ffla-loadout--progress-only').each(function () {
-            var $widget = $(this);
-            // Only initialize widget-specific behaviors for full monolithic widgets that contain panels.
-            if (!$widget.find('.ffla-loadout__panel').length) {
-                return;
-            }
-        });
-    }
-
     function initGlobalHandlers() {
-        // Tier tab switching — global. Toggles all panels with matching data-tier-slug.
+        // Tier tab switching — page-wide: shows every panel with this tier slug,
+        // so tabs and panels may live in different elements.
         $(document).on('click', '.ffla-loadout__tier-btn', function () {
             var $btn = $(this);
             var slug = $btn.data('tier-slug');
-            // Toggle active state within this nav group.
             $btn.siblings('.ffla-loadout__tier-btn').removeClass('is-active').attr('aria-selected', 'false');
             $btn.addClass('is-active').attr('aria-selected', 'true');
-            // Toggle all panels (global) with matching slug visible, others hidden.
             $('.ffla-loadout__panel').removeClass('is-active');
             $('.ffla-loadout__panel[data-tier-slug="' + slug + '"]').addClass('is-active');
             refreshAllCartSummaries();
         });
 
-        // Add item — global.
+        // Add one item. The server validates everything against the stored
+        // configuration; these values only say which item was clicked.
         $(document).on('click', '.ffla-loadout__add-btn', function () {
             var $btn = $(this);
             if ($btn.is(':disabled')) return;
 
-            // Build data from button attributes first, fall back to ancestors.
             var $panel = $btn.closest('.ffla-loadout__panel');
             var $widgetRoot = $btn.closest('.ffla-loadout');
 
             var data = {
                 action: 'loadout_add_item',
-                nonce: loadoutFrontend.nonce,
+                nonce: cfg.nonce,
                 product_id: $btn.data('product-id'),
                 quantity: $btn.data('quantity') || 1,
-                discount_pct: $btn.data('discount-pct') || 0,
                 item_id: $btn.data('item-id') || 0,
                 tier_id: $btn.data('tier-id') || $panel.data('tier-id') || 0,
                 tier_slug: $btn.data('tier-slug') || $panel.data('tier-slug') || '',
                 loadout_id: $btn.data('loadout-id') || $widgetRoot.data('loadout-id') || 0,
                 product_loadout_id: $btn.data('product-loadout-id') || $widgetRoot.data('product-loadout-id') || 0,
-                source: $btn.data('source') || $widgetRoot.data('source') || 'widget',
             };
 
             if (!data.product_id) return;
@@ -112,19 +58,19 @@
             addToCart($btn, data, refreshAllCartSummaries);
         });
 
-        // Add entire tier — global.
+        // Add the entire tier as one cart line.
         $(document).on('click', '.ffla-loadout__add-tier-btn', function () {
             var $btn = $(this);
+            if ($btn.is(':disabled')) return;
             var $widgetRoot = $btn.closest('.ffla-loadout');
 
             var data = {
                 action: 'loadout_add_tier',
-                nonce: loadoutFrontend.nonce,
+                nonce: cfg.nonce,
                 tier_id: $btn.data('tier-id') || 0,
                 tier_slug: $btn.data('tier-slug') || '',
                 loadout_id: $btn.data('loadout-id') || $widgetRoot.data('loadout-id') || 0,
                 product_loadout_id: $btn.data('product-loadout-id') || $widgetRoot.data('product-loadout-id') || 0,
-                source: $btn.data('source') || 'widget',
             };
 
             addToCart($btn, data, refreshAllCartSummaries);
@@ -133,54 +79,52 @@
 
     function addToCart($btn, data, onSuccess) {
         var originalText = $btn.text();
-        $btn.prop('disabled', true).text(loadoutFrontend.strings.adding);
+        $btn.prop('disabled', true).text(t('adding', 'Adding...'));
+
+        function fail(message) {
+            $btn.text(t('addError', 'Could not add item.')).prop('disabled', false);
+            if (message) {
+                $btn.attr('title', message);
+            }
+            setTimeout(function () { $btn.text(originalText); }, 2000);
+        }
 
         $.ajax({
-            url: loadoutFrontend.ajaxUrl,
+            url: cfg.ajaxUrl,
             method: 'POST',
             data: data,
             success: function (response) {
                 if (!response || !response.success) {
-                    $btn.text(loadoutFrontend.strings.addError).prop('disabled', false);
-                    setTimeout(function () { $btn.text(originalText); }, 2000);
+                    fail(response && response.data && response.data.message ? response.data.message : '');
                     return;
                 }
 
                 var d = response.data || {};
 
-                // Two paths:
-                // 1. If we're on the cart or checkout page, WC's mini-cart fragments
-                //    don't update the cart-table itself — only a page reload does.
-                //    Reload so the customer sees the new line(s) immediately.
-                // 2. Otherwise, fire the standard WC events so the mini-cart widget
-                //    swaps its HTML and Cart Fragments cache updates.
+                // On the cart or checkout page the cart table only updates on a
+                // reload; elsewhere fire the standard WooCommerce events.
                 if (isCartOrCheckoutPage()) {
                     window.location.href = d.cart_url || window.location.href;
                     return;
                 }
 
-                // Update the WC fragments cache (powers persistent cart across pages).
                 if (d.fragments && window.sessionStorage) {
                     try {
-                        sessionStorage.setItem('wc_fragments_' + (window.wc_cart_fragments_params ? wc_cart_fragments_params.ajax_url_hash || '' : ''), JSON.stringify(d.fragments));
+                        sessionStorage.setItem('wc_fragments_' + (window.wc_cart_fragments_params ? window.wc_cart_fragments_params.ajax_url_hash || '' : ''), JSON.stringify(d.fragments));
                         sessionStorage.setItem('wc_cart_hash', d.cart_hash || '');
                     } catch (e) { /* sessionStorage may be unavailable */ }
                 }
 
-                // Replace each fragment in the DOM (mini-cart widget, counters, etc.)
                 if (d.fragments) {
                     $.each(d.fragments, function (selector, html) {
                         $(selector).replaceWith(html);
                     });
                 }
 
-                // Set the button to "Added!" state BEFORE triggering events
-                // (to prevent WC from replacing the button with a link before we can set the text)
-                $btn.prop('disabled', true).addClass('is-added').text(loadoutFrontend.strings.added);
+                // Set the "Added!" state before triggering events so WooCommerce
+                // never replaces the button with a "View cart" link.
+                $btn.removeAttr('title').prop('disabled', true).addClass('is-added').text(t('added', 'Added!'));
 
-                // Trigger the standard WC events so other plugins/themes hook in.
-                // Note: We pass empty array instead of $btn to prevent WooCommerce from
-                // replacing the button element with a "View cart" link.
                 $(document.body).trigger('wc_fragments_refreshed');
                 $(document.body).trigger('added_to_cart', [
                     d.fragments || {},
@@ -191,107 +135,167 @@
                 if (onSuccess) onSuccess();
             },
             error: function () {
-                $btn.text(loadoutFrontend.strings.addError).prop('disabled', false);
-                setTimeout(function () { $btn.text(originalText); }, 2000);
+                fail('');
             }
         });
     }
 
     function isCartOrCheckoutPage() {
-        if (typeof loadoutFrontend !== 'undefined' && loadoutFrontend.cartUrl) {
+        if (cfg.cartUrl) {
             var here = window.location.pathname.replace(/\/+$/, '');
             var cartPath = '';
             try {
-                cartPath = new URL(loadoutFrontend.cartUrl).pathname.replace(/\/+$/, '');
+                cartPath = new URL(cfg.cartUrl).pathname.replace(/\/+$/, '');
             } catch (e) { /* older browsers */ }
             if (cartPath && here === cartPath) return true;
         }
-        // Class-based detection (works for cart, checkout, and most themes/builders).
         return $('body').hasClass('woocommerce-cart')
             || $('body').hasClass('woocommerce-checkout')
             || $('form.woocommerce-cart-form').length > 0;
     }
 
+    function contextOf($root) {
+        return {
+            loadoutId: parseInt($root.data('loadout-id'), 10) || 0,
+            productLoadoutId: parseInt($root.data('product-loadout-id'), 10) || 0,
+        };
+    }
+
+    /**
+     * One summary request per loadout context per refresh, shared by every
+     * cart panel and progress bar of that context.
+     */
+    function makeFetcher() {
+        var cache = {};
+        return function (ctx) {
+            var key = ctx.loadoutId + ':' + ctx.productLoadoutId;
+            if (!cache[key]) {
+                cache[key] = $.ajax({
+                    url: cfg.ajaxUrl,
+                    method: 'POST',
+                    data: {
+                        action: 'loadout_get_cart_summary',
+                        nonce: cfg.nonce,
+                        loadout_id: ctx.loadoutId,
+                        product_loadout_id: ctx.productLoadoutId,
+                    },
+                });
+            }
+            return cache[key];
+        };
+    }
+
     function refreshAllCartSummaries() {
+        var fetchSummary = makeFetcher();
+
         $('.ffla-loadout__cart-summary').each(function () {
             var $summary = $(this);
-            var $widgetRoot = $summary.closest('.ffla-loadout');
-            refreshCartSummary($summary, $widgetRoot);
+            var ctx = contextOf($summary.closest('.ffla-loadout'));
+            fetchSummary(ctx).done(function (response) {
+                renderCartSummary($summary, response);
+            });
         });
 
-        // Refresh progress bars too.
         $('.ffla-loadout__progress-bar').each(function () {
             var $bar = $(this);
-            var $widgetRoot = $bar.closest('.ffla-loadout');
-            refreshProgress($bar, $widgetRoot);
+            var $root = $bar.closest('.ffla-loadout');
+            fetchSummary(contextOf($root)).done(function (response) {
+                renderProgress($bar, $root, response);
+            });
         });
     }
 
-    function refreshCartSummary($summary, $widgetRoot) {
-        var loadoutId = $widgetRoot.data('loadout-id') || 0;
-
-        $.ajax({
-            url: loadoutFrontend.ajaxUrl,
-            method: 'POST',
-            data: {
-                action: 'loadout_get_cart_summary',
-                nonce: loadoutFrontend.nonce,
-                loadout_id: loadoutId,
-            },
-            success: function (response) {
-                if (!response.success) return;
-                var d = response.data;
-                var html = '';
-                if (!d.items || d.items.length === 0) {
-                    html = '<p>' + 'Your cart is empty.' + '</p>';
-                } else {
-                    html = '<ul class="ffla-loadout__cart-list">';
-                    d.items.forEach(function (item) {
-                        html += '<li' + (item.is_bonus ? ' class="is-bonus"' : '') + '>';
-                        html += '<span class="item-name">' + item.name + '</span>';
-                        html += '<span class="item-qty">×' + item.quantity + '</span>';
-                        html += '<span class="item-price">' + item.current + '</span>';
-                        html += '</li>';
-                    });
-                    html += '</ul>';
-                    html += '<p class="ffla-loadout__cart-savings">Savings: ' + d.savings + '</p>';
-                    html += '<p class="ffla-loadout__cart-total">Total: ' + d.total + '</p>';
-                }
-                $summary.html(html);
-            }
-        });
+    function renderCartSummary($summary, response) {
+        if (!response || !response.success) return;
+        var d = response.data;
+        var html = '';
+        if (!d.items || d.items.length === 0) {
+            html = '<p>' + escapeHtml(t('emptyCart', 'Your cart is empty.')) + '</p>';
+        } else {
+            html = '<ul class="ffla-loadout__cart-list">';
+            d.items.forEach(function (item) {
+                html += '<li' + (item.is_bonus ? ' class="is-bonus"' : '') + '>';
+                html += '<span class="item-name">' + escapeHtml(item.name) + '</span>';
+                html += '<span class="item-qty">×' + (parseInt(item.quantity, 10) || 0) + '</span>';
+                // Prices are wc_price() HTML from the server.
+                html += '<span class="item-price">' + item.current + '</span>';
+                html += '</li>';
+            });
+            html += '</ul>';
+            html += '<p class="ffla-loadout__cart-savings">' + escapeHtml(t('savings', 'Savings:')) + ' ' + d.savings + '</p>';
+            html += '<p class="ffla-loadout__cart-total">' + escapeHtml(t('total', 'Total:')) + ' ' + d.total + '</p>';
+        }
+        $summary.html(html);
     }
 
-    function refreshProgress($bar, $widgetRoot) {
-        var loadoutId = $widgetRoot.data('loadout-id') || 0;
-        // Find the active panel anywhere to derive tier_id + threshold.
-        var $activePanel = $('.ffla-loadout__panel.is-active').first();
-        var $activeTab = $('.ffla-loadout__tier-btn.is-active').first();
-        var threshold = parseInt($activePanel.data('threshold'), 10) || 0;
-        var tierId = parseInt($activePanel.data('tier-id') || $activeTab.data('tier-id'), 10) || 0;
+    /**
+     * The tier the bar follows: the active panel in its own widget, else the
+     * active tab/panel of the same loadout on the page, else the first tier.
+     */
+    function activeTier($root) {
+        var ctx = contextOf($root);
+        var tiers = $root.data('tiers');
+        if (typeof tiers === 'string') {
+            try { tiers = JSON.parse(tiers); } catch (e) { tiers = null; }
+        }
+        tiers = Array.isArray(tiers) ? tiers : [];
 
-        $.ajax({
-            url: loadoutFrontend.ajaxUrl,
-            method: 'POST',
-            data: {
-                action: 'loadout_get_cart_summary',
-                nonce: loadoutFrontend.nonce,
-                loadout_id: loadoutId,
-            },
-            success: function (response) {
-                if (!response.success) return;
-                var d = response.data;
-                var count = (d.tier_counts && d.tier_counts[tierId]) || 0;
-                var pct = threshold > 0 ? Math.min(100, (count / threshold) * 100) : 0;
-                $bar.css('width', pct + '%');
-                var $label = $bar.closest('.ffla-loadout__progress').find('.ffla-loadout__progress-label');
-                if (threshold > 0 && count < threshold) {
-                    $label.text((threshold - count) + ' more item(s) to unlock perks');
-                } else if (threshold > 0) {
-                    $label.text('Perks unlocked!');
+        var $panel = $root.find('.ffla-loadout__panel.is-active').first();
+        if (!$panel.length) {
+            $('.ffla-loadout__panel.is-active').each(function () {
+                var other = contextOf($(this).closest('.ffla-loadout'));
+                if (!$panel.length && other.loadoutId === ctx.loadoutId && other.productLoadoutId === ctx.productLoadoutId) {
+                    $panel = $(this);
                 }
+            });
+        }
+        if ($panel.length) {
+            return {
+                id: parseInt($panel.data('tier-id'), 10) || 0,
+                slug: String($panel.data('tier-slug') || ''),
+                threshold: parseInt($panel.data('threshold'), 10) || 0,
+            };
+        }
+
+        var slug = '';
+        $('.ffla-loadout__tier-btn.is-active').each(function () {
+            var other = contextOf($(this).closest('.ffla-loadout'));
+            if (!slug && other.loadoutId === ctx.loadoutId && other.productLoadoutId === ctx.productLoadoutId) {
+                slug = String($(this).data('tier-slug') || '');
             }
         });
+        var found = null;
+        tiers.forEach(function (tier) {
+            if (!found && slug && String(tier.slug) === slug) found = tier;
+        });
+        if (!found && tiers.length) found = tiers[0];
+        if (!found) return null;
+        return {
+            id: parseInt(found.id, 10) || 0,
+            slug: String(found.slug || ''),
+            threshold: parseInt(found.threshold, 10) || 0,
+        };
+    }
+
+    function renderProgress($bar, $root, response) {
+        if (!response || !response.success) return;
+        var tier = activeTier($root);
+        if (!tier) return;
+
+        var d = response.data;
+        var count = tier.id
+            ? ((d.tier_counts && d.tier_counts[tier.id]) || 0)
+            : ((d.slug_counts && d.slug_counts[tier.slug]) || 0);
+        var threshold = tier.threshold;
+        var pct = threshold > 0 ? Math.min(100, (count / threshold) * 100) : 0;
+        $bar.css('width', pct + '%');
+
+        var $label = $bar.closest('.ffla-loadout__progress').find('.ffla-loadout__progress-label');
+        if (threshold > 0 && count < threshold) {
+            $label.text(t('moreToUnlock', '%d more item(s) to unlock perks').replace('%d', threshold - count));
+        } else if (threshold > 0) {
+            $label.text(t('unlocked', 'Perks unlocked!'));
+        }
     }
 
 })(jQuery);

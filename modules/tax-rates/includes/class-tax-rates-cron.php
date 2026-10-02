@@ -4,7 +4,7 @@
  *
  * Schedules:
  *   - Monthly rebuild of Google Sheet state datasets
- *   - Daily quote-cache cleanup
+ *   - Daily quote-cache cleanup and coverage routing check
  *   - Weekly audit-log purge
  *
  * @package FFL_Funnels_Addons
@@ -140,6 +140,12 @@ class Tax_Rates_Cron
     {
         if (class_exists('Tax_Resolver_DB')) {
             Tax_Resolver_DB::cleanup_cache();
+        }
+
+        // Self-heal routing: rows written by older versions of the sheet sync
+        // could leave USGeocoder states on the Sheet until settings changed.
+        if (class_exists('Tax_Coverage')) {
+            Tax_Coverage::reconcile_from_settings();
         }
     }
 

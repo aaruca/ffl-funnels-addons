@@ -17,6 +17,10 @@
         return;
     }
 
+    // The page product as printed by PHP, restored when a variation is cleared.
+    var baseItem = Object.assign({}, currentItems[0]);
+    var pageProductId = String(config.productId || baseItem.item_id || '');
+
     function tracker() {
         return typeof window.__gtagTracker === 'function' ? window.__gtagTracker : null;
     }
@@ -65,6 +69,12 @@
             }
 
             var parameters = command.parameters || {};
+            // Our own earlier fallback (e.g. a previous add to cart on this
+            // page) is not MonsterInsights' event for the current action.
+            if (parameters.ffla_bridge) {
+                continue;
+            }
+
             // A gtag event without send_to is broadcast to every configured
             // destination, including MonsterInsights, and is therefore also a
             // duplicate. With send_to present, only match its GA4 property.
@@ -173,6 +183,26 @@
             if (typeof variation.display_price !== 'undefined') {
                 currentItems[0].price = Number(variation.display_price || 0);
             }
+
+            // item_variant: the chosen options as the shopper sees them.
+            var labels = [];
+            $(this).find('select[name^="attribute_"]').each(function () {
+                var $select = $(this);
+                var label = String($select.find('option:selected').text() || '').trim();
+                if ($select.val() && label) {
+                    labels.push(label);
+                }
+            });
+            if (labels.length) {
+                currentItems[0].item_variant = labels.join(', ');
+            } else {
+                delete currentItems[0].item_variant;
+            }
+        });
+
+        // Choice cleared: back to the parent product's data.
+        $(document.body).on('reset_data.fflaMonsterInsightsBridge', 'form.variations_form', function () {
+            currentItems[0] = Object.assign({}, baseItem);
         });
 
         $(document.body).on('added_to_cart.fflaMonsterInsightsBridge', function (event, fragments, cartHash, $button) {
@@ -186,6 +216,21 @@
             var $form = $source.closest('form.cart');
             var quantity = Number($source.data('quantity') || $form.find('input.qty').val() || 1);
             var variationId = String($form.find('input[name="variation_id"]').val() || '');
+
+            // Which product was added? Loop buttons carry data-product_id; the
+            // product form names it in add-to-cart / product_id. Another
+            // product's button (related products, upsells) is skipped, because
+            // only this page's product data is available. When nothing names a
+            // product (a side-cart that passes no button), it is this page's.
+            var addedId = String(
+                $source.data('product_id') ||
+                $form.find('[name="add-to-cart"]').val() ||
+                $form.find('input[name="product_id"]').val() ||
+                ''
+            );
+            if (addedId && addedId !== pageProductId && addedId !== String(item.item_id) && addedId !== variationId) {
+                return;
+            }
 
             item.quantity = quantity > 0 ? quantity : 1;
             if (variationId && variationId !== '0') {

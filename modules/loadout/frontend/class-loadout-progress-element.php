@@ -9,7 +9,7 @@ if (!class_exists('\Bricks\Element')) {
 
 class Loadout_Progress_Element extends \Bricks\Element
 {
-    public $category = 'woocommerce';
+    public $category = 'FFL Funnels';
     public $name = 'loadout-progress';
     public $icon = 'ti-stats-up';
     public $scripts = ['loadout-frontend'];
@@ -31,14 +31,14 @@ class Loadout_Progress_Element extends \Bricks\Element
             'label'       => esc_html__('Loadout', 'ffl-funnels-addons'),
             'type'        => 'select',
             'options'     => $loadout_options,
-            'description' => esc_html__('Leave empty to auto-pick based on the current product\'s Loadout settings.', 'ffl-funnels-addons'),
+            'description' => esc_html__('Leave empty to auto-pick based on the current product\'s Loadout settings. The bar follows the tier selected in the tabs on the page (the first tier otherwise) and fills toward its Perk Threshold.', 'ffl-funnels-addons'),
         ];
 
         $this->controls['placeholder_label'] = [
             'tab' => 'content',
             'label' => esc_html__('Placeholder Label', 'ffl-funnels-addons'),
             'type' => 'text',
-            'default' => 'Add items to unlock perks',
+            'default' => esc_html__('Add items to unlock perks', 'ffl-funnels-addons'),
         ];
 
         $this->controls['bar_color'] = [
@@ -53,7 +53,11 @@ class Loadout_Progress_Element extends \Bricks\Element
     {
         $settings    = $this->settings;
         $loadout_id  = absint($settings['loadout_id'] ?? 0);
-        $placeholder = $settings['placeholder_label'] ?? 'Add items to unlock perks';
+        $placeholder = $settings['placeholder_label'] ?? __('Add items to unlock perks', 'ffl-funnels-addons');
+
+        if (class_exists('Loadout_Frontend')) {
+            Loadout_Frontend::enqueue();
+        }
 
         $resolved           = Loadout_Element_Helpers::resolve_tiers_for_current_context($loadout_id);
         $loadout_id_attr    = $resolved['loadout_id'];
@@ -66,6 +70,10 @@ class Loadout_Progress_Element extends \Bricks\Element
         if ($product_loadout_id) {
             $this->set_attribute('_root', 'data-product-loadout-id', $product_loadout_id);
         }
+        // Tier thresholds, so the bar also works without a tier panel on the page.
+        $this->set_attribute('_root', 'data-tiers', wp_json_encode(array_map(function ($tier) {
+            return ['id' => $tier['id'], 'slug' => $tier['slug'], 'threshold' => $tier['threshold']];
+        }, $resolved['tiers'])));
         ?>
         <div <?php echo $this->render_attributes('_root'); ?>>
             <div class="ffla-loadout__progress">

@@ -152,6 +152,10 @@
             (s.updated || 0),
             ' ',
             escapeHtml(t('updated', 'updated')),
+            ', ',
+            (s.created || 0),
+            ' ',
+            escapeHtml(t('created', 'created')),
             '.'
         ];
 
@@ -165,9 +169,18 @@
                     if (g.error) {
                         return label + ' (\u2014 ' + escapeHtml(String(g.error)) + ')';
                     }
+                    if (g.skipped) {
+                        return label + ' (' + escapeHtml(t('skipped', 'skipped')) + ')';
+                    }
                     var w2 = g.woo_to_sheet || {};
                     var s2 = g.sheet_to_woo || {};
-                    return label + ' (W\u2192S ' + (w2.updated || 0) + '/' + (w2.appended || 0) + ', S\u2192W ' + (s2.updated || 0) + ')';
+                    return label + ' (' +
+                        escapeHtml(t('wooToSheet', 'Woo\u2192Sheet:')) + ' ' +
+                        (w2.updated || 0) + ' ' + escapeHtml(t('updated', 'updated')) + ', ' +
+                        (w2.appended || 0) + ' ' + escapeHtml(t('appended', 'appended')) + '; ' +
+                        escapeHtml(t('sheetToWoo', 'Sheet\u2192Woo:')) + ' ' +
+                        (s2.updated || 0) + ' ' + escapeHtml(t('updated', 'updated')) + ', ' +
+                        (s2.created || 0) + ' ' + escapeHtml(t('created', 'created')) + ')';
                 }).join('; ')
             );
         }
@@ -350,12 +363,19 @@
         root.addEventListener('click', function (e) {
             var rm = e.target.closest('.wss-remove-group-btn');
             if (rm && !rm.disabled) {
-                if (!confirm(t('confirmRemoveGroup', 'Remove this sheet tab group? Products may remain in other tabs.'))) return;
+                if (!confirm(t('confirmRemoveGroup', 'Remove this sheet tab group? Its products stop syncing to this tab unless another group includes them.'))) return;
                 var card = rm.closest('.wss-sync-group');
                 if (!card) return;
+                var tabInput = card.querySelector('.wss-group-tab-name');
+                var tabName = tabInput ? tabInput.value.trim() : '';
+                // Deleting the Google tab is a separate, explicit choice.
+                var deleteTab = tabName !== '' && confirm(
+                    t('confirmDeleteTab', 'Also delete the tab "%s" from the Google Sheet? Click Cancel to keep the tab and its rows.').replace('%s', tabName)
+                );
                 var fd = new FormData();
                 fd.append('op', 'remove_group');
                 fd.append('group_id', getGroupId(card));
+                fd.append('delete_tab', deleteTab ? '1' : '0');
                 syncGroupsAjax(fd);
                 return;
             }

@@ -5,13 +5,13 @@
  * Tracks how many real HTTP calls we make against the paid USGeocoder API
  * so store owners can estimate their monthly bill and catch runaway usage.
  *
- * Two views are surfaced:
- *   - A `YYYY-MM` history kept in a single wp_option (trimmed to the last
- *     24 months) that survives even after the audit table is purged. Split
- *     per-month into success / failed / total so invalid keys are visible.
- *   - A live rolling 30-day total derived from `wp_ffla_tax_quotes_audit`
- *     filtered on `source_code = 'usgeocoder_api'` + `cache_hit = 0`. Uses
- *     the existing `idx_requested` index for a cheap scan.
+ * Two views are surfaced, both kept in a single wp_option:
+ *   - A `YYYY-MM` history (trimmed to the last 24 months) that survives even
+ *     after the audit table is purged. Split per-month into success / failed
+ *     / total so invalid keys are visible.
+ *   - A rolling 30-day total from per-day counts (`_days`, last 31 days).
+ *     The first 30 days after the daily counts start (`_days_since`) also
+ *     consult the audit log, so calls made before an update are not lost.
  *
  * Cache hits never reach `Tax_Quote_Engine::run_resolver()` so they cannot
  * inflate this counter; every recorded increment maps to a real HTTP call.
@@ -27,6 +27,9 @@ class Tax_USGeocoder_Usage
 {
     public const OPTION_KEY    = 'ffla_tax_usgeocoder_usage';
     public const HISTORY_CAP   = 24; // Keep 24 months max in the option.
+    public const DAYS_KEY      = '_days';
+    public const DAYS_SINCE_KEY = '_days_since';
+    public const DAYS_CAP      = 31;
 
     /**
      * Record a real HTTP call to the USGeocoder API.
@@ -36,7 +39,9 @@ class Tax_USGeocoder_Usage
     public static function record_call(bool $success): void
     {
         $month   = gmdate('Y-m');
+        $day     = gmdate('Y-m-d');
         $history = self::read_history();
+        [$days, $since] = self::read_days();
 
         if (!isset($history[$month]) || !is_array($history[$month])) {
             $history[$month] = ['total' => 0, 'success' => 0, 'failed' => 0];
@@ -47,6 +52,13 @@ class Tax_USGeocoder_Usage
         $history[$month]['failed']  = (int) $history[$month]['failed'] + ($success ? 0 : 1);
 
         $history = self::trim_history($history);
+
+        $days[$day] = (int) ($days[$day] ?? 0) + 1;
+        krsort($days);
+        $days = array_slice($days, 0, self::DAYS_CAP, true);
+
+        $history[self::DAYS_KEY]       = $days;
+        $history[self::DAYS_SINCE_KEY] = $since !== '' ? $since : $day;
 
         update_option(self::OPTION_KEY, $history, false);
     }
@@ -82,23 +94,47 @@ class Tax_USGeocoder_Usage
     }
 
     /**
-     * Get the live rolling 30-day call count from the audit table.
+     * Get the rolling 30-day count of real USGeocoder calls.
      *
-     * Falls back to the history option if the audit table is unavailable.
+     * Every call recorded by record_call() counts, including calls whose
+     * answer was unusable and then fell back to the Sheet, so it matches the
+     * monthly history.
      */
     public static function get_last_30d(): int
     {
+        [$days, $since] = self::read_days();
+        $cutoff = gmdate('Y-m-d', time() - 29 * DAY_IN_SECONDS);
+
+        $total = 0;
+        foreach ($days as $day => $count) {
+            if ($day >= $cutoff) {
+                $total += (int) $count;
+            }
+        }
+
+        // Daily counts cover the whole window once they are 30 days old.
+        if ($since !== '' && $since <= $cutoff) {
+            return $total;
+        }
+
+        // Earlier calls are only in the audit log (or the month history).
+        return max($total, self::last_30d_from_audit());
+    }
+
+    /**
+     * Rolling 30-day count from the audit table (previous method).
+     *
+     * Falls back to the history option if the audit table is unavailable.
+     */
+    private static function last_30d_from_audit(): int
+    {
         global $wpdb;
 
-        if (!class_exists('Tax_Resolver_DB')) {
+        if (!class_exists('Tax_Resolver_DB') || !isset($wpdb)) {
             return self::last_30d_from_history();
         }
 
         $table = Tax_Resolver_DB::table('quotes_audit');
-
-        if (!$table) {
-            return self::last_30d_from_history();
-        }
 
         $count = $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM {$table}
@@ -114,6 +150,32 @@ class Tax_USGeocoder_Usage
         }
 
         return max(0, (int) $count);
+    }
+
+    /**
+     * Per-day counts (newest first) and the first day they were kept.
+     *
+     * @return array{0:array<string,int>,1:string}
+     */
+    private static function read_days(): array
+    {
+        $raw = get_option(self::OPTION_KEY, []);
+        $raw = is_array($raw) ? $raw : [];
+
+        $days = [];
+        foreach ((is_array($raw[self::DAYS_KEY] ?? null) ? $raw[self::DAYS_KEY] : []) as $day => $count) {
+            if (is_string($day) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $day)) {
+                $days[$day] = max(0, (int) $count);
+            }
+        }
+        krsort($days);
+
+        $since = (string) ($raw[self::DAYS_SINCE_KEY] ?? '');
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $since)) {
+            $since = '';
+        }
+
+        return [$days, $since];
     }
 
     /**

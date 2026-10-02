@@ -265,13 +265,18 @@ class Tax_Dataset_Pipeline
             $deleted_versions++;
         }
 
-        Tax_Resolver_DB::clear_state_cache($state_code);
-        Tax_Coverage::update_state(
-            $state_code,
-            Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED,
-            'sheet_zip_dataset',
-            'State removed from store selection; local sheet dataset was deleted.'
-        );
+        Tax_Resolver_DB::clear_state_sheet_cache($state_code);
+        if (Tax_Coverage::desired_route($state_code) === Tax_Coverage::SOURCE_STRATEGY_USGEOCODER) {
+            // Keep a live-API state on the API; only its fallback data is gone.
+            Tax_Coverage::reconcile_state($state_code);
+        } else {
+            Tax_Coverage::update_state(
+                $state_code,
+                Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED,
+                'sheet_zip_dataset',
+                'State removed from store selection; local sheet dataset was deleted.'
+            );
+        }
 
         return [
             'state'            => $state_code,
@@ -420,7 +425,11 @@ class Tax_Dataset_Pipeline
         $checksum = self::build_checksum($dataset);
 
         if (self::active_checksum_exists(self::SHEET_SOURCE_CODE, $state_code, $checksum)) {
-            Tax_Resolver_DB::clear_state_cache($state_code);
+            // The source still holds exactly this data: record that it was
+            // verified now, so an unchanged sheet never ages into "stale".
+            // Cached quotes stay valid because the data did not change.
+            self::touch_active_version(self::SHEET_SOURCE_CODE, $state_code, $checksum);
+            self::prune_superseded_versions(self::SHEET_SOURCE_CODE, $state_code);
             self::mark_state_supported($state_code, $dataset, true);
 
             $result['success'] = true;
@@ -464,7 +473,8 @@ class Tax_Dataset_Pipeline
         }
 
         self::promote_version($version_id, self::SHEET_SOURCE_CODE, $state_code);
-        Tax_Resolver_DB::clear_state_cache($state_code);
+        self::prune_superseded_versions(self::SHEET_SOURCE_CODE, $state_code);
+        Tax_Resolver_DB::clear_state_sheet_cache($state_code);
         self::mark_state_supported($state_code, $dataset);
 
         $result['success']    = true;
@@ -988,6 +998,14 @@ class Tax_Dataset_Pipeline
      */
     private static function mark_state_supported(string $state_code, array $dataset, bool $unchanged = false): void
     {
+        // A state routed to the live API stays on it: the imported data is
+        // only its fallback. Never let a sync switch it to the Sheet.
+        if (class_exists('Tax_Coverage')
+            && Tax_Coverage::desired_route($state_code) === Tax_Coverage::SOURCE_STRATEGY_USGEOCODER) {
+            Tax_Coverage::reconcile_state($state_code);
+            return;
+        }
+
         $is_zero_tax = self::dataset_is_zero_tax($dataset);
         $prefix = $unchanged
             ? 'Google Sheet ZIP dataset already current.'
@@ -1364,6 +1382,61 @@ class Tax_Dataset_Pipeline
             ['status' => 'active'],
             ['id' => $version_id]
         );
+    }
+
+    /**
+     * Mark the active version with this checksum as verified against the
+     * source now. Freshness is measured from loaded_at.
+     */
+    private static function touch_active_version(string $source_code, string $state_code, string $checksum): void
+    {
+        global $wpdb;
+
+        $table = Tax_Resolver_DB::table('dataset_versions');
+        $wpdb->query($wpdb->prepare(
+            "UPDATE {$table}
+             SET loaded_at = %s
+             WHERE source_code = %s
+               AND state_code = %s
+               AND checksum = %s
+               AND status = 'active'",
+            current_time('mysql'),
+            $source_code,
+            strtoupper($state_code),
+            $checksum
+        ));
+    }
+
+    /**
+     * Delete superseded versions of a state's dataset, keeping the most recent
+     * ones for comparison. Their rate rows are deleted with them.
+     */
+    private static function prune_superseded_versions(string $source_code, string $state_code, int $keep = 1): void
+    {
+        global $wpdb;
+
+        $versions_table = Tax_Resolver_DB::table('dataset_versions');
+        $rates_table    = Tax_Resolver_DB::table('jurisdiction_rates');
+
+        $ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT id
+             FROM {$versions_table}
+             WHERE source_code = %s
+               AND state_code = %s
+               AND status = 'superseded'
+             ORDER BY loaded_at DESC, id DESC",
+            $source_code,
+            strtoupper($state_code)
+        ));
+
+        $ids = array_slice(array_map('intval', is_array($ids) ? $ids : []), max(0, $keep));
+        foreach ($ids as $version_id) {
+            if ($version_id <= 0) {
+                continue;
+            }
+            $wpdb->delete($rates_table, ['dataset_version_id' => $version_id], ['%d']);
+            $wpdb->delete($versions_table, ['id' => $version_id], ['%d']);
+        }
     }
 
     /**

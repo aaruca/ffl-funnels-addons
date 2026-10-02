@@ -8,7 +8,6 @@ class Loadout_Ajax
     public function init(): void
     {
         add_action('wp_ajax_loadout_search_products', [$this, 'search_products']);
-        add_action('wp_ajax_loadout_toggle_status', [$this, 'toggle_status']);
     }
 
     /**
@@ -46,15 +45,18 @@ class Loadout_Ajax
     {
         check_ajax_referer('loadout_admin', 'nonce');
         if (!current_user_can('manage_woocommerce')) {
-            wp_send_json_error(['message' => 'Permission denied.']);
+            wp_send_json_error(['message' => __('Permission denied.', 'ffl-funnels-addons')]);
         }
 
         $search = isset($_POST['search']) ? sanitize_text_field(wp_unslash($_POST['search'])) : '';
         $page = isset($_POST['page']) ? absint($_POST['page']) : 1;
         $per_page = 20;
 
+        // Simple products and fully specified variations: both can be put in
+        // the cart directly. Variable parents (and "any" variations) cannot,
+        // so they are left out below.
         $args = [
-            'post_type' => 'product',
+            'post_type' => ['product', 'product_variation'],
             'post_status' => 'publish',
             'posts_per_page' => $per_page,
             'paged' => $page,
@@ -76,6 +78,15 @@ class Loadout_Ajax
 
         foreach ($query->posts as $pid) {
             $product = wc_get_product($pid);
+            if (!$product || $product->is_type('variable')) {
+                continue;
+            }
+            if ($product->is_type('variation')) {
+                $parent = wc_get_product($product->get_parent_id());
+                if (!$parent || $parent->get_status() !== 'publish' || in_array('', (array) $product->get_variation_attributes(), true)) {
+                    continue;
+                }
+            }
             if ($product) {
                 $results[] = [
                     'id'             => $pid,
@@ -95,26 +106,6 @@ class Loadout_Ajax
             'page' => $page,
             'pages' => $query->max_num_pages,
             'has_more' => $page < $query->max_num_pages,
-        ]);
-    }
-
-    public function toggle_status(): void
-    {
-        check_ajax_referer('loadout_admin', 'nonce');
-        if (!current_user_can('manage_woocommerce')) {
-            wp_send_json_error(['message' => 'Permission denied.']);
-        }
-
-        $loadout_id = isset($_POST['loadout_id']) ? absint($_POST['loadout_id']) : 0;
-        $loadout = Loadout::get($loadout_id);
-        if (!$loadout) {
-            wp_send_json_error(['message' => 'Loadout not found.']);
-        }
-
-        $loadout->toggle_status();
-        wp_send_json_success([
-            'status' => $loadout->get_status(),
-            'label' => $loadout->get_status() ? 'Active' : 'Inactive',
         ]);
     }
 }

@@ -105,15 +105,9 @@ class Alg_Wishlist_Shortcodes
 
         if (!empty($atts['icon'])) {
             if (strpos($atts['icon'], '<svg') !== false) {
-                $icon_html = wp_kses($atts['icon'], array(
-                    'svg'  => array('xmlns' => true, 'viewBox' => true, 'width' => true, 'height' => true, 'fill' => true, 'stroke' => true, 'stroke-width' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'class' => true),
-                    'path' => array('d' => true, 'fill' => true, 'stroke' => true),
-                    'circle' => array('cx' => true, 'cy' => true, 'r' => true, 'fill' => true, 'stroke' => true),
-                    'rect' => array('x' => true, 'y' => true, 'width' => true, 'height' => true, 'rx' => true, 'ry' => true, 'fill' => true, 'stroke' => true),
-                    'line' => array('x1' => true, 'y1' => true, 'x2' => true, 'y2' => true, 'stroke' => true),
-                    'polyline' => array('points' => true, 'fill' => true, 'stroke' => true),
-                    'polygon' => array('points' => true, 'fill' => true, 'stroke' => true),
-                ));
+                // Same allowlist as the settings icon (keeps the lowercase
+                // 'viewbox' key wp_kses matches, so scaling survives).
+                $icon_html = wp_kses($atts['icon'], Alg_Wishlist_Core::svg_allowlist());
             }
         }
 
@@ -181,7 +175,9 @@ class Alg_Wishlist_Shortcodes
 
         // F1 parity: Choose <a> or <div> based on is_link attribute
         $is_link = strtolower($atts['is_link']) !== 'no';
-        $page_url = esc_url(get_permalink(Alg_Wishlist_Core::get_wishlist_page_id()));
+        $page_id = Alg_Wishlist_Core::get_wishlist_page_id();
+        $page_url = $page_id ? get_permalink($page_id) : '';
+        $page_url = $page_url ? esc_url($page_url) : '#';
 
         $items = Alg_Wishlist_Core::get_wishlist_items();
         $count = is_array($items) ? count($items) : 0;
@@ -189,29 +185,27 @@ class Alg_Wishlist_Shortcodes
         if ($count === 0) {
             $badge_class .= ' hidden';
         }
+        $badge = '<span class="' . esc_attr($badge_class) . '">' . esc_html((string) $count) . '</span>';
 
-        ob_start();
-        if ($is_link) {
-        ?>
-        <a href="<?php echo $page_url; ?>"
-            class="alg-wishlist-counter-link <?php echo esc_attr($atts['class']); ?>" style="<?php echo esc_attr($style); ?>">
-            <?php echo $icon_html; ?>
-            <span class="<?php echo esc_attr($badge_class); ?>"><?php echo esc_html((string) $count); ?></span>
-        </a>
-        <?php
-        } else {
-        ?>
-        <div class="alg-wishlist-counter-link <?php echo esc_attr($atts['class']); ?>" style="<?php echo esc_attr($style); ?>">
-            <?php echo $icon_html; ?>
-            <span class="<?php echo esc_attr($badge_class); ?>"><?php echo esc_html((string) $count); ?></span>
-        </div>
-        <?php
-        }
-        return ob_get_clean();
+        // Icon and badge share a wrapper so the badge sits on the icon's corner
+        // (as in the Bricks counter); without an icon the badge is inline.
+        $inner = $icon_html !== ''
+            ? '<span class="ffla-count-icon-wrap">' . $icon_html . $badge . '</span>'
+            : $badge;
+
+        $tag = $is_link ? 'a' : 'div';
+        $href = $is_link ? ' href="' . $page_url . '"' : '';
+
+        return '<' . $tag . $href . ' class="alg-wishlist-counter-link ' . esc_attr($atts['class']) . '" style="' . esc_attr($style) . '">'
+            . $inner // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- icon sanitised in Alg_Wishlist_Core, badge escaped above.
+            . '</' . $tag . '>';
     }
 
     public function render_page($atts)
     {
+        // One visitor's products: keep this page out of full-page caches.
+        Alg_Wishlist_Core::disable_page_cache();
+
         $items = Alg_Wishlist_Core::get_wishlist_items();
 
         // Pre-warm WP object cache to avoid N+1 queries.

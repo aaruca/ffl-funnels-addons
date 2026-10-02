@@ -22,7 +22,107 @@ class WooBooster_Activator
         self::migrate_tables();
         self::set_default_options();
         self::migrate_settings_autoload();
+        self::migrate_rule_dates();
         update_option('woobooster_version', WOOBOOSTER_VERSION);
+    }
+
+    /**
+     * Admin-side upkeep, hooked on admin_init.
+     *
+     * Runs pending schema migrations, recreates the tables when they are
+     * missing (a module switched on without its activation routine used to
+     * be left with `woobooster_db_version` set and no tables at all), and
+     * runs one-off data migrations.
+     */
+    public static function maybe_upgrade()
+    {
+        self::migrate_tables();
+
+        // The table check costs one query, so only run it on WooBooster's own
+        // screens, where the missing tables would otherwise break every page.
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $page = isset($_GET['page']) ? sanitize_key(wp_unslash($_GET['page'])) : '';
+        if (0 === strpos($page, 'ffla-woobooster') && !self::tables_exist()) {
+            self::create_tables();
+        }
+
+        self::migrate_rule_dates();
+    }
+
+    /**
+     * Whether every WooBooster table exists.
+     */
+    public static function tables_exist(): bool
+    {
+        global $wpdb;
+
+        $expected = array(
+            'woobooster_rules', 'woobooster_rule_conditions', 'woobooster_rule_actions', 'woobooster_rule_index',
+            'woobooster_bundles', 'woobooster_bundle_items', 'woobooster_bundle_actions', 'woobooster_bundle_conditions', 'woobooster_bundle_index',
+        );
+
+        $found = $wpdb->get_col($wpdb->prepare(
+            'SHOW TABLES LIKE %s',
+            $wpdb->esc_like($wpdb->prefix . 'woobooster_') . '%'
+        ));
+        $found = array_flip((array) $found);
+
+        foreach ($expected as $table) {
+            if (!isset($found[$wpdb->prefix . $table])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * One-off: rule schedules used to be saved exactly as typed and then
+     * compared with UTC, so a rule set to start at 10:00 in New York started
+     * at 10:00 UTC. They are now stored in GMT (like bundle schedules), so
+     * convert the dates saved the old way once. The flag lives inside
+     * `woobooster_settings`, so uninstall removes it with the settings.
+     */
+    public static function migrate_rule_dates()
+    {
+        $settings = get_option('woobooster_settings', array());
+        if (!is_array($settings)) {
+            $settings = array();
+        }
+        if (!empty($settings['rule_dates_gmt'])) {
+            return;
+        }
+
+        global $wpdb;
+        $rules_table = $wpdb->prefix . 'woobooster_rules';
+
+        // Nothing to convert yet (fresh install or tables still missing): just
+        // mark it done once the table exists, so later rules are not shifted.
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $rules_table)) !== $rules_table) {
+            return;
+        }
+
+        // Mark first so a concurrent request cannot convert the dates twice.
+        $settings['rule_dates_gmt'] = '1';
+        update_option('woobooster_settings', $settings, false);
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $rows = $wpdb->get_results("SELECT id, start_date, end_date FROM {$rules_table} WHERE start_date IS NOT NULL OR end_date IS NOT NULL");
+        foreach ((array) $rows as $row) {
+            $data = array();
+            foreach (array('start_date', 'end_date') as $col) {
+                if (!empty($row->$col) && '0000-00-00 00:00:00' !== $row->$col) {
+                    $data[$col] = get_gmt_from_date($row->$col);
+                }
+            }
+            if ($data) {
+                $wpdb->update($rules_table, $data, array('id' => (int) $row->id));
+            }
+        }
+
+        if (!empty($rows) && class_exists('WooBooster_Matcher')) {
+            WooBooster_Matcher::invalidate_recommendation_cache();
+        }
     }
 
     /**
@@ -234,8 +334,14 @@ class WooBooster_Activator
         global $wpdb;
         $current_db_version = get_option('woobooster_db_version');
 
-        if (version_compare($current_db_version, WOOBOOSTER_DB_VERSION, '<')) {
+        if (version_compare((string) $current_db_version, WOOBOOSTER_DB_VERSION, '<')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+
+            // Make sure every table exists before altering any of them. dbDelta
+            // only adds what is missing, so this is safe on current schemas.
+            // Without it, an install whose tables were never created got its
+            // version bumped anyway and stayed without tables for good.
+            self::create_tables();
 
             $rules_table = $wpdb->prefix . 'woobooster_rules';
             $conditions_table = $wpdb->prefix . 'woobooster_rule_conditions';

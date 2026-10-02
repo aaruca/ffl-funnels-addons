@@ -92,7 +92,7 @@ $render_field = static function (string $key, string $label, array $values, arra
 <div class="wb-card">
     <div class="wb-card__body">
         <p class="wb-field__desc">
-            <?php esc_html_e('Set a Light and a Dark colour for each item. The sun/moon toggle in the top bar switches between them. Leave a colour blank to keep the WordPress default; hover/current backgrounds inherit the Primary colour when left blank.', 'ffl-funnels-addons'); ?>
+            <?php esc_html_e('Set a Light and a Dark colour for each item. The sun/moon toggle in the top bar switches between them. wp-admin keeps its stock look until at least one colour (or the corner radius) is saved; from then on, a blank field uses the default shown in it, and blank hover/current colours follow the Primary colour.', 'ffl-funnels-addons'); ?>
         </p>
     </div>
 </div>

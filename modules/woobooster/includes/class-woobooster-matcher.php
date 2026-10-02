@@ -647,13 +647,17 @@ class WooBooster_Matcher
         // Build the IN clause safely.
         $placeholders = implode(', ', array_fill(0, count($condition_keys), '%s'));
 
-        // Get ALL candidate rule IDs (distinct, ordered by priority).
+        // Get ALL candidate rule IDs, lowest priority first. GROUP BY instead of
+        // DISTINCT + ORDER BY a column outside the select list (rejected by
+        // some MySQL modes); the rule ID breaks priority ties, so with equal
+        // priorities the oldest rule wins every time.
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
         $candidate_ids = $wpdb->get_col(
             $wpdb->prepare(
-                "SELECT DISTINCT rule_id FROM {$index_table}
+                "SELECT rule_id FROM {$index_table}
                 WHERE condition_key IN ({$placeholders})
-                ORDER BY priority ASC",
+                GROUP BY rule_id
+                ORDER BY MIN(priority) ASC, rule_id ASC",
                 ...$condition_keys
             )
         );
@@ -1625,11 +1629,21 @@ class WooBooster_Matcher
                 );
 
             case 'attribute':
+                // "Same Attribute": action_value is the attribute taxonomy (e.g.
+                // 'pa_caliber'); the terms come from the viewed product. Nothing
+                // to match without a valid taxonomy or when the product has no
+                // value for it.
+                $taxonomy = sanitize_key((string) $action->action_value);
+                if ('' === $taxonomy || !taxonomy_exists($taxonomy)) {
+                    return null;
+                }
+                $slugs = $this->find_term_slug_from_product($taxonomy, $terms);
+                if ('' === $slugs || array() === $slugs) {
+                    return null;
+                }
                 return array(
-                    // If source is 'attribute', action_value contains property name (e.g., 'pa_brand').
-                    'taxonomy' => $action->action_value,
-                    // We need to find the term slug from the current product's terms.
-                    'term' => $this->find_term_slug_from_product($action->action_value, $terms),
+                    'taxonomy' => $taxonomy,
+                    'term'     => $slugs,
                 );
 
             case 'attribute_value':
@@ -1732,21 +1746,43 @@ class WooBooster_Matcher
         $rule = $this->find_matching_rule($condition_keys, $terms, $product_id);
 
         if ($rule) {
+            // Readable condition groups for the Rule Tester ("product_cat is handguns").
+            $condition_groups = array();
+            foreach ($this->get_conditions_cached((int) $rule->id) as $conditions) {
+                $parts = array();
+                foreach ((array) $conditions as $cond) {
+                    $op = (isset($cond->condition_operator) && 'not_equals' === $cond->condition_operator) ? 'is not' : 'is';
+                    $attr = (string) $cond->condition_attribute;
+                    $parts[] = '__store_all' === $attr
+                        ? ('is not' === $op ? 'not entire store' : 'entire store')
+                        : trim($attr . ' ' . $op . ' ' . $cond->condition_value);
+                }
+                if ($parts) {
+                    $condition_groups[] = implode(' AND ', $parts);
+                }
+            }
+
             $result['matched_rule'] = array(
                 'id' => $rule->id,
                 'name' => $rule->name,
                 'priority' => $rule->priority,
+                'conditions' => $condition_groups,
             );
 
             // Step 4: Execute actions.
             $action_groups = WooBooster_Rule::get_actions($rule->id);
+            $group_number  = 0;
             foreach ($action_groups as $group_actions) {
+                $group_number++;
                 foreach ($group_actions as $action) {
                     $resolved = $this->resolve_action($action, $terms);
 
                     $action_debug = array(
+                        'group' => $group_number,
                         'source' => $action->action_source,
-                        'value' => $action->action_value,
+                        'value' => 'specific_products' === $action->action_source
+                            ? (string) ($action->action_products ?? '')
+                            : $action->action_value,
                         'limit' => $action->action_limit,
                         'orderby' => $action->action_orderby,
                         'resolved_query' => $resolved,

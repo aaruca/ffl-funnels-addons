@@ -43,7 +43,9 @@ class Loadout_List extends WP_List_Table
         $per_page = 20;
         $current_page = $this->get_pagenum();
 
-        $this->process_bulk_action();
+        // Row and bulk actions are handled on admin_init by
+        // Loadout_Admin::handle_list_actions(), before any output, so their
+        // redirects work.
 
         $orderby = isset($_GET['orderby']) ? sanitize_key($_GET['orderby']) : 'name';
         $order = isset($_GET['order']) ? sanitize_key($_GET['order']) : 'ASC';
@@ -138,54 +140,6 @@ class Loadout_List extends WP_List_Table
             'bulk_activate'   => __('Activate', 'ffl-funnels-addons'),
             'bulk_deactivate' => __('Deactivate', 'ffl-funnels-addons'),
         ];
-    }
-
-    private function process_bulk_action()
-    {
-        if (!current_user_can('manage_woocommerce')) {
-            return;
-        }
-
-        if ('delete' === $this->current_action()) {
-            $loadout_id = isset($_GET['loadout_id']) ? absint($_GET['loadout_id']) : 0;
-            if ($loadout_id && check_admin_referer('loadout_delete_' . $loadout_id)) {
-                Loadout::delete($loadout_id);
-                wp_safe_redirect(admin_url('admin.php?page=ffla-loadouts&deleted=1'));
-                exit;
-            }
-        }
-
-        $action = $this->current_action();
-        if (in_array($action, ['bulk_delete', 'bulk_activate', 'bulk_deactivate'], true)) {
-            if (!isset($_POST['_wpnonce']) || !wp_verify_nonce(sanitize_key($_POST['_wpnonce']), 'bulk-loadouts')) {
-                return;
-            }
-
-            $loadout_ids = isset($_POST['loadout_ids']) ? array_map('absint', $_POST['loadout_ids']) : [];
-
-            foreach ($loadout_ids as $lid) {
-                $loadout = Loadout::get($lid);
-                if (!$loadout) {
-                    continue;
-                }
-                switch ($action) {
-                    case 'bulk_delete':
-                        Loadout::delete($lid);
-                        break;
-                    case 'bulk_activate':
-                        $loadout->set_status(1);
-                        $loadout->save();
-                        break;
-                    case 'bulk_deactivate':
-                        $loadout->set_status(0);
-                        $loadout->save();
-                        break;
-                }
-            }
-
-            wp_safe_redirect(admin_url('admin.php?page=ffla-loadouts'));
-            exit;
-        }
     }
 
     public function no_items()

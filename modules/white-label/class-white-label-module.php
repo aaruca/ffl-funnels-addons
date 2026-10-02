@@ -33,7 +33,7 @@ class White_Label_Module extends FFLA_Module
 
     public function get_description(): string
     {
-        return __('Brand and lock down wp-admin per user — login/admin styling, per-role menus, admin-bar control, and access restrictions.', 'ffl-funnels-addons');
+        return __('Brand and lock down wp-admin for client logins — light/dark admin colours, agency branding, client menu order, hidden and blocked admin screens and admin-bar items, and an optional client dashboard.', 'ffl-funnels-addons');
     }
 
     public function get_icon_svg(): string

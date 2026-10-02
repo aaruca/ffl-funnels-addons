@@ -25,7 +25,13 @@ class WooBooster_AI_Tools
     /** Smart sources need no action value. */
     const SMART_SOURCES = array('copurchase', 'trending', 'similar', 'recently_viewed');
 
-    const OPERATORS = array('equals', 'not_equals', 'contains');
+    /**
+     * Condition operators the engine applies. `contains` used to be listed
+     * too, but the matcher never did substring matching (it behaved like
+     * `equals`), so it is accepted only for compatibility and saved as
+     * `equals` with a warning.
+     */
+    const OPERATORS = array('equals', 'not_equals');
 
     const ORDERBY = array('rand', 'bestselling', 'price', 'price_desc', 'date', 'rating');
 
@@ -240,8 +246,14 @@ class WooBooster_AI_Tools
             $errors[] = sprintf('condition_attribute "%s" is not supported. Use product_cat, product_tag, specific_product or an existing pa_* attribute.', $attr);
         }
 
+        if ('contains' === $n['condition_operator']) {
+            $n['condition_operator'] = 'equals';
+            $warnings[] = 'condition_operator "contains" is not supported (it matches the exact term like "equals"); saved as equals.';
+        } elseif ('' === $n['condition_operator']) {
+            $n['condition_operator'] = 'equals';
+        }
         if (!in_array($n['condition_operator'], self::OPERATORS, true)) {
-            $errors[] = 'condition_operator must be equals, not_equals or contains.';
+            $errors[] = 'condition_operator must be equals or not_equals.';
         }
 
         // Action.

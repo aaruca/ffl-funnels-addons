@@ -77,3 +77,49 @@
 .alg-wishlist-count.hidden {
     display: none;
 }
+/* A badge that is not inside an icon wrapper (no icon shown) sits inline
+   next to the label instead of floating over a random ancestor. */
+.alg-wishlist-counter-link > .alg-wishlist-count {
+    position: static;
+    transform: none;
+    display: inline-flex;
+}
+
+.alg-wishlist-counter-link > .alg-wishlist-count.hidden {
+    display: none;
+}
+
+/* Toast message. Styled here (not inline) so the Custom CSS setting can
+   override it with #alg-wishlist-toast { ... }. */
+#alg-wishlist-toast {
+    position: fixed;
+    top: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #ff4343;
+    color: #ffffff;
+    padding: 16px 32px;
+    border-radius: 8px;
+    z-index: 9999999;
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    box-shadow: 0 10px 30px rgba(255, 67, 67, 0.4);
+    transition: opacity 0.4s ease, top 0.4s ease;
+    opacity: 0;
+    pointer-events: none;
+    text-align: center;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    min-width: 250px;
+}
+
+#alg-wishlist-toast.is-visible {
+    display: flex;
+}
+
+#alg-wishlist-toast.is-shown {
+    opacity: 1;
+    top: 60px;
+}

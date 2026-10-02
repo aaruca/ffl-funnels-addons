@@ -115,19 +115,29 @@ class WooBooster_Cron
         $trending_deleted = $wpdb->query(
             $wpdb->prepare(
                 "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
-                '_transient_wb_trending_%',
-                '_transient_timeout_wb_trending_%'
+                $wpdb->esc_like('_transient_wb_trending_') . '%',
+                $wpdb->esc_like('_transient_timeout_wb_trending_') . '%'
             )
         );
 
-        // Delete similar transients.
-        $similar_deleted = $wpdb->query(
+        // Delete cached recommendation results. They are stored as
+        // `wbrc_<md5>` transients when there is no persistent object cache
+        // (Similar Products results included); `wb_similar_*` is the name an
+        // older version used. Bumping the cache version below also retires
+        // entries kept in a persistent object cache.
+        $cache_deleted = $wpdb->query(
             $wpdb->prepare(
-                "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
-                '_transient_wb_similar_%',
-                '_transient_timeout_wb_similar_%'
+                "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s",
+                $wpdb->esc_like('_transient_wbrc_') . '%',
+                $wpdb->esc_like('_transient_timeout_wbrc_') . '%',
+                $wpdb->esc_like('_transient_wb_similar_') . '%',
+                $wpdb->esc_like('_transient_timeout_wb_similar_') . '%'
             )
         );
+
+        if (class_exists('WooBooster_Matcher')) {
+            WooBooster_Matcher::invalidate_recommendation_cache();
+        }
 
         // Clear build stats.
         delete_option('woobooster_last_build');
@@ -135,7 +145,7 @@ class WooBooster_Cron
         return array(
             'copurchase' => (int) $copurchase_deleted,
             'trending' => (int) $trending_deleted,
-            'similar' => (int) $similar_deleted,
+            'cache' => (int) $cache_deleted,
         );
     }
 }

@@ -9,7 +9,7 @@ if (!class_exists('\Bricks\Element')) {
 
 class Loadout_Tier_Tabs_Element extends \Bricks\Element
 {
-    public $category = 'woocommerce';
+    public $category = 'FFL Funnels';
     public $name = 'loadout-tier-tabs';
     public $icon = 'ti-layout-tab';
     public $scripts = ['loadout-frontend'];
@@ -31,14 +31,16 @@ class Loadout_Tier_Tabs_Element extends \Bricks\Element
             'label'       => esc_html__('Loadout', 'ffl-funnels-addons'),
             'type'        => 'select',
             'options'     => $loadout_options,
-            'description' => esc_html__('Leave empty to auto-pick based on the current product\'s Loadout settings (linked global Loadout or per-product config).', 'ffl-funnels-addons'),
+            'description' => esc_html__('Leave empty to auto-pick based on the current product\'s Loadout settings (linked global Loadout or per-product config). Inactive loadouts are not shown.', 'ffl-funnels-addons'),
         ];
 
         $this->controls['default_tier_index'] = [
-            'tab'     => 'content',
-            'label'   => esc_html__('Default Tier Index', 'ffl-funnels-addons'),
-            'type'    => 'number',
-            'default' => 0,
+            'tab'         => 'content',
+            'label'       => esc_html__('Default Tier Index', 'ffl-funnels-addons'),
+            'type'        => 'number',
+            'default'     => 0,
+            'min'         => 0,
+            'description' => esc_html__('Tier shown first, counting from 0. Falls back to the first tier when it does not exist.', 'ffl-funnels-addons'),
         ];
 
         $this->controls['show_products'] = [
@@ -46,7 +48,7 @@ class Loadout_Tier_Tabs_Element extends \Bricks\Element
             'label'       => esc_html__('Show products under tabs', 'ffl-funnels-addons'),
             'type'        => 'checkbox',
             'default'     => true,
-            'description' => esc_html__('Render the recommended products for each tier directly below the tabs. Turn off if you place a separate "Loadout: Products" element elsewhere on the page.', 'ffl-funnels-addons'),
+            'description' => esc_html__('Render the recommended products for each tier directly below the tabs. Turn off to show only the tabs, for example when a Loadout element elsewhere on the page shows the products (tabs switch every panel with the same tier on the page).', 'ffl-funnels-addons'),
         ];
     }
 
@@ -56,6 +58,10 @@ class Loadout_Tier_Tabs_Element extends \Bricks\Element
         $loadout_id    = absint($settings['loadout_id'] ?? 0);
         $default_index = absint($settings['default_tier_index'] ?? 0);
         $show_products = !isset($settings['show_products']) || $settings['show_products'];
+
+        if (class_exists('Loadout_Frontend')) {
+            Loadout_Frontend::enqueue();
+        }
 
         $data               = Loadout_Element_Helpers::resolve_full_tiers_for_current_context($loadout_id);
         $loadout_id_attr    = $data['loadout_id'];
@@ -80,19 +86,7 @@ class Loadout_Tier_Tabs_Element extends \Bricks\Element
             return;
         }
 
-        echo '<nav class="ffla-loadout__tiers">';
-        foreach ($tiers as $i => $tier) {
-            $active = $i === $default_index;
-            printf(
-                '<button type="button" class="ffla-loadout__tier-btn%s" data-tier-slug="%s" data-tier-id="%d" aria-selected="%s">%s</button>',
-                $active ? ' is-active' : '',
-                esc_attr($tier['slug']),
-                esc_attr($tier['id']),
-                $active ? 'true' : 'false',
-                esc_html($tier['name'])
-            );
-        }
-        echo '</nav>';
+        Loadout_Element_Helpers::render_tabs($tiers, $default_index);
 
         if ($show_products) {
             Loadout_Element_Helpers::render_recommended_section($tiers, $default_index);

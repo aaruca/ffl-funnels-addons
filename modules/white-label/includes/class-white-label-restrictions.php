@@ -4,10 +4,14 @@
  *
  * For non-exempt users only (the caller registers this class only for them). It
  * hides the chosen admin-menu items AND blocks them by direct URL, plus hides
- * this plugin's own menu so a client can't reach the White Label settings.
+ * this plugin's own menu and blocks every page registered under it (the FFL
+ * Funnels dashboard and each module's settings page, White Label included).
  *
  * Hiding a menu is only cosmetic — the page still opens by URL — so every hidden
- * item is also enforced with an admin_init redirect guard.
+ * item is also enforced with an admin_init redirect guard. Hiding a post type's
+ * list screen (e.g. Pages) also blocks creating and editing that post type
+ * (post-new.php / post.php), so the content cannot be reached another way
+ * through the admin screens.
  *
  * @package FFL_Funnels_Addons
  */
@@ -65,14 +69,26 @@ class White_Label_Restrictions
      */
     public function block_pages(): void
     {
-        if ($this->request_matches(self::FFLA_MENU_SLUG)) {
-            $this->redirect_away();
+        // The FFL Funnels menu is hidden, so every page under it is blocked too.
+        foreach ($this->ffla_page_slugs() as $slug) {
+            if ($this->request_matches($slug)) {
+                $this->redirect_away();
+            }
         }
 
         foreach ($this->hidden_slugs() as $slug) {
             // A submenu slug is "parent::child"; the child is the real page.
             $target = false !== strpos($slug, '::') ? explode('::', $slug, 2)[1] : $slug;
             if ($this->request_matches($target)) {
+                $this->redirect_away();
+            }
+        }
+
+        // A hidden post-type list also blocks that post type's editor screens.
+        $pagenow = isset($GLOBALS['pagenow']) ? (string) $GLOBALS['pagenow'] : '';
+        if ('post-new.php' === $pagenow || 'post.php' === $pagenow) {
+            $type = $this->requested_post_type($pagenow);
+            if ('' !== $type && in_array($type, $this->hidden_post_types(), true)) {
                 $this->redirect_away();
             }
         }
@@ -84,11 +100,9 @@ class White_Label_Restrictions
      */
     public function remove_admin_bar_nodes(WP_Admin_Bar $bar): void
     {
-        $hidden     = $this->hidden_slugs();
+        // Nodes linking to an FFL Funnels page go too: those pages are blocked.
+        $hidden     = array_merge($this->hidden_slugs(), $this->ffla_page_slugs());
         $hidden_ids = $this->hidden_adminbar_ids();
-        if (empty($hidden) && empty($hidden_ids)) {
-            return;
-        }
 
         $nodes = $bar->get_nodes();
         if (!is_array($nodes)) {
@@ -125,6 +139,84 @@ class White_Label_Restrictions
             : [];
 
         return array_values(array_filter(array_map('strval', $slugs)));
+    }
+
+    /**
+     * The FFL Funnels top-level slug plus every page registered under it. The
+     * submenu stays in $submenu after hide_menus() removes the top-level item
+     * (only $menu is touched), so this works at admin_init and later.
+     *
+     * @return array<int, string>
+     */
+    private function ffla_page_slugs(): array
+    {
+        $slugs = [self::FFLA_MENU_SLUG];
+
+        $submenu = isset($GLOBALS['submenu'][self::FFLA_MENU_SLUG]) && is_array($GLOBALS['submenu'][self::FFLA_MENU_SLUG])
+            ? $GLOBALS['submenu'][self::FFLA_MENU_SLUG]
+            : [];
+        foreach ($submenu as $item) {
+            $slug = is_array($item) && isset($item[2]) ? (string) $item[2] : '';
+            if ('' !== $slug) {
+                $slugs[] = $slug;
+            }
+        }
+
+        return array_values(array_unique($slugs));
+    }
+
+    /**
+     * Post types whose list screen is hidden: "edit.php" (Posts),
+     * "edit.php?post_type=<type>" and "upload.php" (Media).
+     *
+     * @return array<int, string>
+     */
+    private function hidden_post_types(): array
+    {
+        $types = [];
+        foreach ($this->hidden_slugs() as $entry) {
+            $target = false !== strpos($entry, '::') ? explode('::', $entry, 2)[1] : $entry;
+            $target = trim(html_entity_decode($target));
+
+            if ('edit.php' === $target) {
+                $types[] = 'post';
+            } elseif ('upload.php' === $target) {
+                $types[] = 'attachment';
+            } elseif (0 === strpos($target, 'edit.php?')) {
+                parse_str((string) substr($target, strlen('edit.php?')), $query);
+                // Only a plain post-type list, not a filtered view of one.
+                if (array_keys($query) === ['post_type'] && is_string($query['post_type']) && '' !== $query['post_type']) {
+                    $types[] = sanitize_key($query['post_type']);
+                }
+            }
+        }
+
+        return array_values(array_unique($types));
+    }
+
+    /**
+     * The post type the current post-new.php / post.php request creates or edits.
+     */
+    private function requested_post_type(string $pagenow): string
+    {
+        $args = $this->current_request_args();
+
+        if ('post-new.php' === $pagenow) {
+            return isset($args['post_type']) && '' !== $args['post_type'] ? sanitize_key($args['post_type']) : 'post';
+        }
+
+        $post_id = isset($args['post']) ? absint($args['post']) : 0;
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- read-only access check; the save itself is nonce-checked by core.
+        if (!$post_id && isset($_POST['post_ID']) && is_scalar($_POST['post_ID'])) {
+            $post_id = absint(wp_unslash($_POST['post_ID'])); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+        }
+        if (!$post_id) {
+            return '';
+        }
+
+        $type = get_post_type($post_id);
+
+        return is_string($type) ? $type : '';
     }
 
     /**

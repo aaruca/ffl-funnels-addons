@@ -20,7 +20,6 @@ class WSS_Google_OAuth implements WSS_Token_Provider
     private const TOKEN_OPTION      = 'wss_google_tokens';
     private const TOKEN_ENDPOINT    = 'https://oauth2.googleapis.com/token';
     private const REVOKE_ENDPOINT   = 'https://oauth2.googleapis.com/revoke';
-    private const USERINFO_ENDPOINT = 'https://www.googleapis.com/oauth2/v2/userinfo';
 
     /**
      * Proxy URL — where the OAuth consent flow is handled.
@@ -83,16 +82,6 @@ class WSS_Google_OAuth implements WSS_Token_Provider
         }
 
         return self::decrypt_maybe_plain($encrypted);
-    }
-
-    /**
-     * Credentials are always available via the proxy.
-     * Returns true if we already have stored credentials from a previous connection,
-     * or true by default (since the proxy provides them).
-     */
-    public function credentials_defined(): bool
-    {
-        return true;
     }
 
     /**

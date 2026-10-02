@@ -35,10 +35,9 @@ Product recommendations, product bundles and cart coupon rules for WooCommerce. 
 |---|---|---|
 | Enable Recommendations | Turns rule and Smart recommendations on or off. When off, classic product pages show WooCommerce's related products and Bricks loops and the shortcode use their fallback. Bundles and coupon rules keep working. | On |
 | Frontend Section Title | Heading above recommendations on classic product pages and in the shortcode. Bricks loops do not use it. | You May Also Like |
-| Rendering Method | *Bricks Query Loop (recommended)* or *WooCommerce Hook (fallback)*. Saved, but no code reads it: both outputs work whichever is chosen. | Bricks Query Loop |
 | Exclude Out of Stock | Leaves out-of-stock products out of rule results, Smart results, bundle dynamic items and the shortcode. Bricks loops have their own checkbox. | On |
 | Debug Mode | Writes rule matching, cache hits and query arguments to **WooCommerce → Status → Logs** (source `woobooster`). | Off |
-| Delete Data on Uninstall | Deletes WooBooster's tables and settings when the plugin is deleted ([details](#data-and-uninstall)). | Off |
+| Delete Data on Uninstall | Deletes WooBooster's rules, bundles, settings and Smart data when the plugin is deleted ([details](#data-and-uninstall)). | Off |
 | AI Provider | OpenAI, DeepSeek or NVIDIA NIM. | OpenAI |
 | API Key | Key for the selected provider. Replaced by a note when `FFLA_WOOBOOSTER_AI_KEY` is set in `wp-config.php`. | Empty |
 | Model Override | Model ID to use instead of the provider default (`gpt-5.6-luna`, `deepseek-chat`, `deepseek-ai/deepseek-v3.2`). | Blank |
@@ -48,18 +47,19 @@ Product recommendations, product bundles and cart coupon rules for WooCommerce. 
 | Bought Together | Schedules the daily co-purchase build. | Off |
 | Trending Products | Schedules the trending build every 6 hours. | Off |
 | Recently Viewed | Records the products each visitor views in a cookie. Without it the Recently Viewed source has nothing to show. | Off |
-| Similar Products | Saved, but not checked anywhere: Similar Products works either way. | Off |
 | Similar: key attributes | Comma-separated attribute taxonomies that make two products "the same kind", e.g. `pa_caliber, pa_platform`. Blank uses whichever of `pa_caliber`, `pa_caliber-gauge`, `pa_gauge`, `pa_cartridge`, `pa_platform`, `pa_model`, `pa_action`, `pa_manufacturer` exist. | Blank (auto-detect) |
 | Days to Analyze | Order-history window for Bought Together, Trending and Similar's popularity signal. Field accepts 7–365. | 90 |
 | Max Relations Per Product | Bought Together products stored per product. Field accepts 5–50. | 20 |
 
-Below them: **Rebuild Now** runs the enabled builds immediately (always a full rebuild, and it says why a build came back empty); **Clear All Data** deletes the co-purchase lists, trending lists and build stats.
+Similar Products needs no index or tracking, so it is always available (it has no switch). Classic product templates always use the WooCommerce-hook output and Bricks templates use the query loops, so there is no rendering-method setting.
+
+Below the settings: **Rebuild Now** runs the enabled builds immediately (always a full rebuild, and it says why a build came back empty); **Clear All Data** deletes the co-purchase lists, trending lists, build stats and cached recommendation results.
 
 ## How it works
 
 ### Rule matching
 
-- Candidate rules come from a lookup index. Only active rules inside their **Schedule** are checked, lowest **Priority** number first; the first rule whose conditions match is used. Give rules different priorities: with equal numbers the winner is not guaranteed. Rule schedule times are compared in UTC.
+- Candidate rules come from a lookup index. Only active rules inside their **Schedule** are checked, lowest **Priority** number first (the oldest rule first when priorities are equal); the first rule whose conditions match is used. Schedule times are entered and shown in the store's time zone.
 - Condition groups are joined with OR, conditions inside a group with AND. Action groups work the same way: OR groups are merged and de-duplicated, an AND group returns only products matching every action in it.
 - Each action has its own **Limit**. A Bricks **Max Products (override)** or the shortcode `limit` replaces every action's limit and caps the total.
 
@@ -76,20 +76,20 @@ Each condition is **is** or **is not**. **Condition Exclusions** (**Exclude Cate
 |---|---|
 | Category / Tag | Products in that term; **+ Children** on categories includes subcategories. |
 | Attribute | Products with a chosen attribute term, e.g. Caliber = 9mm. |
-| Same Attribute | Meant to match the viewed product's own value of an attribute, but the form has no field to choose the attribute, so it returns nothing as built. |
+| Same Attribute | Products that share the viewed product's value of the chosen attribute (pick the attribute, e.g. Caliber: a 9mm product gets other 9mm products). Nothing when the product has no value for it. |
 | Bought Together, Trending, Recently Viewed, Similar Products | See [Smart strategies](#smart-strategies). |
 | Specific Products | Hand-picked products, in the order chosen. |
 | Apply Coupon | No products; applies a coupon to the cart (below). |
 
 - **Order By:** Random, Newest, Price (Low to High), Price (High to Low), Bestselling, Rating. *Random* picks at random among the best sellers of the matching set (a pool of at least 40), not the whole catalog.
 - **Action Exclusions:** **Exclude Categories** and **Exclude Products** remove products; **Price Range Filter** keeps only products inside the range.
-- The rule form's **Exclude Out of Stock** toggle ("Override global setting for this rule") is saved but ignored by matching; the global setting or the Bricks loop's checkbox decides.
+- Out-of-stock products follow the global **Exclude Out of Stock** setting, or the Bricks loop's own checkbox. (The old per-rule toggle never had an effect and is no longer shown.)
 
 ### Apply Coupon rules
 
-- Pick an existing coupon (**Marketing → Coupons**) and optionally a **Custom Cart Message**. These rules are checked against the cart on every totals calculation, not against the product page.
+- Pick an existing coupon (**Marketing → Coupons**) and optionally a **Custom Cart Message**, shown when the coupon is applied (default: "Coupon "CODE" has been automatically applied based on your cart!"). These rules are checked against the cart on every totals calculation, not against the product page.
 - For each condition, the quantities of matching, non-excluded cart items are added up and must reach the small **Qty** box beside it ("Min cart qty"), e.g. 3 boxes of ammo. Every matching rule applies its coupon; priority does not pick one winner. A coupon WooBooster applied is removed when the cart stops matching.
-- Unpublished, expired or used-up coupons are skipped, and WooCommerce's own coupon checks still run. **Entire store** conditions never match a cart: use a category, tag, attribute or product condition.
+- With **Entire store**, every cart item counts (minus condition exclusions), so "any 3 items" works. Unpublished, expired or used-up coupons are skipped, and WooCommerce's own coupon checks still run.
 
 ### Smart strategies
 
@@ -103,32 +103,32 @@ Each condition is **is** or **is not**. **Condition Exclusions** (**Exclude Cate
 
 | Field | Behaviour |
 |---|---|
-| Bundle Items (Manual) | Products always in the bundle; the picker hides out-of-stock products. **Qty** sets units per item: the cart charges each item's bundle price × Qty, while the widget's totals show one of each. **Optional** is saved but not used on the storefront. |
-| Bundle Items (Dynamic) | Same sources as rule actions except Apply Coupon, resolved for the product being viewed. |
+| Bundle Items (Manual) | Products in the bundle; the picker hides out-of-stock products. **Qty** sets units per item; the widget shows "2 × Name" and its totals, like the cart, count every unit. Items not marked **Optional** are required: their box is ticked and locked, and the cart refuses the bundle without them. |
+| Bundle Items (Dynamic) | Same sources as rule actions except Apply Coupon, resolved for the product being viewed. The shopper may untick them. |
 | Conditions | Which product pages show the bundle: the rule condition types plus **User Role** (Guest or any WordPress role). Leave empty for a bundle you only show by pinning it in Bricks. |
-| Pricing Mode | **Discount on items**: *Percentage* off each item, or *Fixed Amount* off the set, split across items by price. **Fixed bundle price**: one total split across items by price; a total at or above the items' combined price gives no discount. |
+| Pricing Mode | **Discount on items**: *Percentage* off each item, or *Fixed Amount* off the whole set (every unit), split across items by price. **Fixed bundle price**: one total for the whole set, quantities included, split across items by price; a total at or above the set's combined price gives no discount. Prices are rounded per unit, so totals can differ by a cent. |
 | Bundle Image | Replaces the first product's thumbnail in the cart and checkout. |
-| Priority, Status, Schedule | Lowest priority wins when several bundles match. Bundle schedule times are entered in store time. |
+| Priority, Status, Schedule | Lowest priority wins when several bundles match (the oldest on a tie). Schedule times are in the store's time zone. |
 
-- Every item shows ticked and the shopper can untick any. Prices are always worked out over the full bundle, so unticking one does not change the others.
+- Every item shows ticked; the shopper can untick optional and dynamic items. Prices are always worked out over the full bundle, so unticking one does not change the others. If a required item is out of stock or needs a variation choice, the bundle cannot be added.
 - The bundle goes into the cart as one line on the first selected product (the "representative"), named after the bundle, with an **Includes** list, priced at the bundle total. Raising its quantity buys whole bundles; the line cannot be split.
-- WooCommerce tracks stock, tax class and shipping for the representative product only; the others are recorded on the line as **Bundle contents**. Variable products need default attributes. If a bundle is switched off or its schedule ends while in a cart, the line loses the bundle price.
+- WooCommerce tracks stock, tax class and shipping for the representative product only; the others are recorded on the line as **Bundle contents**. Variable products need default attributes. If a bundle is switched off, deleted or its schedule ends while in a cart, the line is removed with a notice.
 
 ### AI assistant
 
 - **Generate with AI** on **WB Rules** or **Products Bundles**. The assistant searches your catalog (products by title, description or SKU; categories, tags, attribute terms), lists existing rules or bundles, and searches the web when a Tavily key is set.
-- Rules are checked against the catalog before they are proposed; **Create This Rule** validates again and saves the rule inactive. **Create This Bundle** saves the bundle inactive. A proposal carrying a `rule_id` updates that rule, rewriting it as one condition and one action.
+- Rules are checked against the catalog before they are proposed; **Create This Rule** validates again and saves the rule inactive. **Create This Bundle** checks the products and condition against the catalog and saves the bundle inactive. A proposal carrying a `rule_id` updates that rule, rewriting it as one condition and one action.
 - At most 5 model calls per message (reply "continue" if it stops there); searches are reused for 15 minutes per user; AI-created rules get a limit of 1–24. Chat history stays in your browser (last 20 messages); **Clear** erases it.
 
 ### Caching and performance
 
-- Rule and Smart results are cached for 1 hour (including "no rule matched"), Similar Products for 6 hours. Without Redis or Memcached they are also stored as transients so the cache outlives the request. Results that use Recently Viewed are never cached.
-- Saving, switching or deleting a rule or bundle, and saving settings, clear the cache at once. Product edits (stock, price, categories) do not: results catch up within the cache time.
+- Rule and Smart results are cached for 1 hour (including "no rule matched"), Similar Products for 6 hours. Without Redis or Memcached they are also stored as transients so the cache outlives the request. Results that use Recently Viewed are never cached, and neither are pinned bundles with a Recently Viewed source.
+- Saving, switching or deleting a rule or bundle, saving settings and **Clear All Data** clear the cache at once. Product edits (stock, price, categories) do not: results catch up within the cache time.
 - A **+ Children** condition indexes up to 500 child terms. Bought Together and Trending work with HPOS and posts order storage, using WooCommerce's analytics lookup table when present and order item meta otherwise.
 
 ### Analytics attribution
 
-- Products shown by a rule (or a Smart loop) are remembered in the shopper's WooCommerce session, up to 500. When one of them is added to the cart later in that session, from any page, the cart line is tagged with that rule, counted in the month's add-to-carts and carried onto the order line.
+- Products shown by a rule (or a Smart loop) are remembered in the shopper's WooCommerce session, up to 500. When one of them is added to the cart later in that session, from any page, the cart line is tagged with that rule, counted in that day's add-to-carts and carried onto the order line.
 - **WB Analytics** sums the line subtotals of tagged lines in completed and processing orders, scanning at most 5,000 orders per period. Bundle widgets do not register recommendations.
 
 ## Where it shows up
@@ -136,9 +136,9 @@ Each condition is **is** or **is not**. **Condition Exclusions** (**Exclude Cate
 | Place | What appears |
 |---|---|
 | **FFL Funnels → WB Settings** | Settings, Index Diagnostics (orders in window, multi-item vs single-item orders), **Rebuild Now**, **Clear All Data**, last build stats. |
-| **… → WB Rules** | Rule list: search, sort, edit, duplicate (copies start inactive), activate/deactivate, delete. **Export**, **Import** (adds to existing rules; up to 500 per file, 2 MB), **Delete All** (rules only), **Generate with AI**. |
+| **… → WB Rules** | Rule list: search, sort, edit, duplicate (copies start inactive), activate/deactivate, delete, and the same as bulk actions. **Export** (every rule), **Import** (adds to existing rules; up to 500 per file, 2 MB), **Delete All** (rules only), **Generate with AI**. |
 | **… → Products Bundles** | Bundle list and form, **Generate with AI**. |
-| **… → WB Diagnostics** | Rule Tester: matched rule, recommended products, time taken and condition keys for a product ID or SKU. |
+| **… → WB Diagnostics** | Rule Tester for a product ID or SKU: matched rule with its condition groups, what each action found, the final recommendations, time taken and condition keys. |
 | **… → WB Analytics** | Completed and processing orders in a date range (default last 30 days, with presets): WB revenue, tax, items, share of revenue, WB orders, average order, add-to-carts and conversion rate, with trends against the previous period; revenue charts; top 10 rules and products. |
 | **… → WB Docs** | Short in-admin guide. |
 | Classic product template | Replaces WooCommerce's related products on `woocommerce_after_single_product_summary` with `<section class="woobooster-related products">` using the theme's product cards. With no match, WooCommerce's related products (4, random). |
@@ -158,27 +158,27 @@ Each condition is **is** or **is not**. **Condition Exclusions** (**Exclude Cate
 | Data | Contents |
 |---|---|
 | Tables | `{prefix}woobooster_rules`, `_rule_conditions`, `_rule_actions`, `_rule_index`; `{prefix}woobooster_bundles`, `_bundle_items`, `_bundle_actions`, `_bundle_conditions`, `_bundle_index`. |
-| Options | `woobooster_settings` (not autoloaded; may hold API keys), `woobooster_version`, `woobooster_db_version` (`1.10.0`), `woobooster_last_build`, `woobooster_atc_counter` (monthly add-to-carts per rule), `woobooster_cache_version`. |
+| Options | `woobooster_settings` (not autoloaded; may hold API keys; also holds the `rule_dates_gmt` migration flag), `woobooster_version`, `woobooster_db_version` (`1.10.0`), `woobooster_last_build`, `woobooster_atc_counter` (add-to-carts per rule per day; older versions wrote per month), `woobooster_cache_version`. |
 | Meta | Product: `_woobooster_copurchased`. Order item: `_wb_source_rule`, `_woobooster_bundle_id`, **Bundle contents**. |
 | Transients | `wbrc_*` (cached results), `wb_trending_cat_{term_id}` and `wb_trending_global` (2 days), `wb_ai_*` (15 minutes). |
 | Session, cookie, browser | WooCommerce session keys `woobooster_recommendations` and `woobooster_auto_coupons`; cookie `woobooster_recently_viewed`; localStorage `wb_ai_chat_history`, `wb_ai_bundle_history`. |
 | Cron | `woobooster_copurchase_event` (daily) and `woobooster_trending_event` (schedule `woobooster_6hours`), added or removed to match the Smart toggles. |
 
-- Switching the module off only unschedules the cron events. Schema updates run when it is switched on and on the next admin page load after an update.
+- Switching the module off only unschedules the cron events. Schema updates run when it is switched on and on the next admin page load after an update; missing tables are recreated when a WooBooster screen is opened. Rule schedules saved by older versions (stored as typed and read as UTC) are converted to GMT once, on the first admin page load, so they now mean store time.
 - Deleting the plugin cleans up WooBooster only if the module is on at that moment. The cron events are always cleared. With **Delete Data on Uninstall** on, it also drops the nine tables and deletes the options above, the `_woobooster_copurchased` meta and two legacy update transients. Order item meta stays; the other transients expire on their own.
 
 ## Troubleshooting
 
-- **No recommendations on a product:** test it in **WB Diagnostics**. "No rule matched." means no active rule's conditions fit: check status, schedule (UTC), exclusions and priorities. If a rule matches but returns nothing, check stock and the action's value and exclusions. **Debug Mode** logs the full query.
+- **No recommendations on a product:** test it in **WB Diagnostics**. "No rule matched." means no active rule's conditions fit: check status, schedule, exclusions and priorities. If a rule matches but returns nothing, check stock and the action's value and exclusions. **Debug Mode** logs the full query.
 - **Changes not showing yet:** results are cached up to an hour (6 hours for Similar). Saving a rule or the settings clears the cache; product edits do not.
 - **Bought Together or Trending empty:** **Index Diagnostics** says "No eligible orders." (raise **Days to Analyze** or add your order status with the status filters) or that all orders have a single product (Bought Together cannot pair anything; Trending is unaffected). **Rebuild Now** shows the reason next to its counts. Without working WP-Cron the indexes are built only by that button.
 - **"OpenAI API Key is required…"** (or DeepSeek / NVIDIA NIM): add the key under **AI Assistant** or define `FFLA_WOOBOOSTER_AI_KEY`.
 - **"AI service error. Please try again.":** the provider rejected the call; with `WP_DEBUG` on, its message goes to the PHP error log.
 - **MCP status "Needs WordPress 6.9 or newer" or "no MCP server is running":** update WordPress, or install the MCP Adapter plugin (or one that includes it, such as Novamira).
-- **Import fails:** "Import payload too large (max 2 MB).", "Invalid JSON file." or "Maximum 500 rules per import." Imported rules keep the status they had in the file; coupon actions, condition exclusions, min quantities and schedules are not imported.
-- **Coupon not applied:** the coupon must be published, unexpired and not used up; the cart must reach each condition's Qty; the rule must not use **Entire store**.
-- **Bundle add-to-cart errors:** "This bundle offer is not currently available." means it is outside its schedule; "…requires choosing a variation…" means the variable product has no default attributes; "Product #… is not available." means out of stock or not purchasable.
-- **"This range contains more than 5,000 orders" in WB Analytics:** narrow the range; the figures shown are partial. Add-to-carts are counted per calendar month, so a range inside a month shows the whole month's add-to-carts.
+- **Import fails:** "Import payload too large (max 2 MB).", "Invalid JSON file." or "Maximum 500 rules per import." Imported rules keep everything in the file, including their status (active rules go live at once), schedules, exclusions, min quantities and action groups. Apply Coupon actions are matched by coupon code first, so the coupon must exist on the importing site.
+- **Coupon not applied:** the coupon must be published, unexpired and not used up, pass WooCommerce's own checks, and the cart must reach each condition's Qty.
+- **Bundle add-to-cart errors:** "This bundle offer is not currently available." means it is outside its schedule; "Bundle requires all items to be selected." means a required item was left out; "…requires choosing a variation…" means the variable product has no default attributes; "Product #… is not available." means out of stock or not purchasable (fatal for a required item).
+- **"This range contains more than 5,000 orders" in WB Analytics:** narrow the range; the figures shown are partial. Add-to-carts are counted per day; those recorded by older versions are per month and count when their month overlaps the range.
 - **"WooBooster admin could not be loaded.":** switch the module off and on in **FFL Funnels → Dashboard**.
 
 ## For developers
@@ -210,6 +210,7 @@ No public actions, WP-CLI commands or REST routes of its own. The cron hooks can
 - `->get_recommendations_by_rule( $rule_id, $product_id, $args )` and `->get_smart_recommendations( $product_id, $source, $args )` with `$source` = `copurchase`, `trending`, `recently_viewed` or `similar`.
 - `WooBooster_Matcher::invalidate_recommendation_cache()` clears every cached result.
 - `( new WooBooster_Bundle_Matcher() )->get_bundles_for_product( $product_id )` returns matching bundles with `->resolved_items`.
+- `WooBooster_Bundle::calculate_item_prices( $bundle, $product_ids, $quantities = null )` returns per-unit original and discounted prices (quantities default to the bundle's item quantities); `WooBooster_Bundle::get_required_product_ids( $bundle_id )` lists the items not marked Optional.
 - `woobooster_get_option( $key, $default )` reads one setting.
 
 **AJAX** (`admin-ajax.php`)
@@ -229,8 +230,8 @@ No public actions, WP-CLI commands or REST routes of its own. The cron hooks can
 | `woobooster/set-rule-status` | Turns a rule on or off (`rule_id`, `active`). |
 | `woobooster/diagnose-product` | Matched rule, per-action counts and final recommendations. |
 
-AI and MCP rule fields: `condition_attribute` is `product_cat`, `product_tag`, `specific_product` or a `pa_*` taxonomy; `condition_operator` is `equals`, `not_equals` or `contains` (`contains` currently matches like `equals`); `action_source` is `category`, `tag`, `attribute_value` (`pa_x:term`), `specific_products` (IDs in `action_products`), `copurchase`, `trending`, `similar` or `recently_viewed`.
+AI and MCP rule fields: `condition_attribute` is `product_cat`, `product_tag`, `specific_product` or a `pa_*` taxonomy; `condition_operator` is `equals` or `not_equals` (a legacy `contains` is accepted, saved as `equals` with a warning); `action_source` is `category`, `tag`, `attribute_value` (`pa_x:term`), `specific_products` (IDs in `action_products`), `copurchase`, `trending`, `similar` or `recently_viewed`.
 
 **Constants:** `FFLA_WOOBOOSTER_AI_KEY` and `FFLA_WOOBOOSTER_TAVILY_KEY` in `wp-config.php` take priority over the saved keys. Compatibility constants: `WOOBOOSTER_VERSION` (= `FFLA_VERSION`), `WOOBOOSTER_DB_VERSION`, `WOOBOOSTER_PATH`, `WOOBOOSTER_URL`, `WOOBOOSTER_FILE`, `WOOBOOSTER_BASENAME`.
 
-**Tests:** `php tests/smoke/woobooster-smart-smoke.php` (Bought Together and Trending scoring) and `tests/unit/BundleDiscountMathTest.php` (PHPUnit, bundle discount math).
+**Tests:** `php tests/smoke/woobooster-smart-smoke.php` (Bought Together and Trending scoring), `php tests/smoke/woobooster-bundle-pricing-smoke.php` (bundle pricing with quantities) and `tests/unit/BundleDiscountMathTest.php` (PHPUnit, bundle discount math).

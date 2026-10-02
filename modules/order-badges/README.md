@@ -41,7 +41,7 @@ Shows colour-coded badges on WooCommerce orders, taken from the product tags of 
 - **Variations** use the parent product's tags.
 - **Deleted products** get no badge and do not count as Online Only.
 - **Same label, one badge**: labels are compared ignoring case, spaces and punctuation, so *Online only*, *Online-Only* and the Online Only badge appear once (the first one keeps its colour). Accents, symbols and non-Latin letters are kept, so *Tienda Física* and *Tienda Fisica*, or *日本* and *中国*, stay separate.
-- **Look**: a soft tint of the chosen colour with darker text in the same hue, and each word of the label capitalised on screen.
+- **Look**: a soft tint of the chosen colour with darker text in the same hue. Labels are shown exactly as the tag is written.
 - **Speed**: the products and tags of an order are loaded in one go, and each product is classified once per page load.
 - Badges are admin-only. Nothing is added to the storefront, My Account or emails.
 

@@ -36,6 +36,12 @@ class White_Label_Admin
     /** Caches the full admin-bar node list, captured inside admin_bar_menu. */
     const ADMINBAR_CACHE = 'ffla_wl_adminbar_nodes';
 
+    /** Redirect flag: the last save/import added the current user's email to the exempt list. */
+    const SELF_EXEMPT_FLAG = 'ffla_wl_self_exempt';
+
+    /** @var bool Set by keep_current_user_exempt() when it had to add the current user. */
+    private $self_exempted = false;
+
     /**
      * Register admin hooks.
      */
@@ -438,6 +444,11 @@ class White_Label_Admin
             'dashboard'     => $this->get_dashboard_settings(),
             'superusers_defined' => defined(White_Label_Access::SUPERUSERS_CONSTANT),
             'was_saved'     => $this->just_saved(),
+            // Live preview: the theme stylesheet only loads once Styles are saved,
+            // so the preview loads it itself on a site that is not themed yet.
+            'theme_active'  => '' !== $this->build_style_variables_css(),
+            'theme_css_url' => add_query_arg('ver', FFLA_VERSION, FFLA_URL . 'modules/white-label/admin/css/white-label-theme.css'),
+            'self_exempt_email' => $this->self_exempt_email(),
             'form_action'   => esc_url(admin_url('admin-post.php')),
             'save_action'   => self::SAVE_ACTION,
             'nonce_action'  => self::NONCE_ACTION,
@@ -662,10 +673,12 @@ class White_Label_Admin
         // phpcs:ignore WordPress.Security.NonceVerification.Missing -- verified above.
         $tab = isset($_POST['active_tab']) ? sanitize_key(wp_unslash($_POST['active_tab'])) : 'styles';
 
-        wp_safe_redirect(add_query_arg(
-            ['page' => self::PAGE_SLUG, 'settings-updated' => '1', 'tab' => $tab],
-            admin_url('admin.php')
-        ));
+        $args = ['page' => self::PAGE_SLUG, 'settings-updated' => '1', 'tab' => $tab];
+        if ($this->self_exempted) {
+            $args[self::SELF_EXEMPT_FLAG] = '1';
+        }
+
+        wp_safe_redirect(add_query_arg($args, admin_url('admin.php')));
         exit;
     }
 
@@ -820,10 +833,28 @@ class White_Label_Admin
         }
 
         // Not covered: append the current user's email so they can't self-lock.
+        // The settings page then says so, so the addition is never silent.
         $emails[] = $email;
         $settings['restrictions']['exempt_emails'] = array_values(array_unique($emails));
+        $this->self_exempted = true;
 
         return $settings;
+    }
+
+    /**
+     * The current user's email when the last save/import added it to the exempt
+     * list (read from the redirect flag), for the settings-page notice.
+     */
+    private function self_exempt_email(): string
+    {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only UI state.
+        if (!isset($_GET[self::SELF_EXEMPT_FLAG])) {
+            return '';
+        }
+
+        $user = wp_get_current_user();
+
+        return $user->exists() ? (string) $user->user_email : '';
     }
 
     /**
@@ -870,6 +901,19 @@ class White_Label_Admin
         $menu         = isset($incoming['menu']) && is_array($incoming['menu']) ? $incoming['menu'] : [];
         $dashboard    = isset($incoming['dashboard']) && is_array($incoming['dashboard']) ? $incoming['dashboard'] : [];
 
+        // Exports made before light/dark modes hold one flat set of colours.
+        // Keep them as the dark palette, exactly as get_styles() reads them,
+        // instead of dropping them in sanitize_styles().
+        if (!isset($styles['light']) && !isset($styles['dark'])) {
+            $flat = $styles;
+            unset($flat['dashRadius']);
+            $migrated = ['dark' => $flat];
+            if (isset($styles['dashRadius'])) {
+                $migrated['dashRadius'] = $styles['dashRadius'];
+            }
+            $styles = $migrated;
+        }
+
         // sanitize_restrictions expects the form shape (exempt_emails as text).
         if (isset($restrictions['exempt_emails']) && is_array($restrictions['exempt_emails'])) {
             $restrictions['exempt_emails'] = implode("\n", $restrictions['exempt_emails']);
@@ -888,10 +932,12 @@ class White_Label_Admin
      */
     private function redirect_after_import(string $status): void
     {
-        wp_safe_redirect(add_query_arg(
-            ['page' => self::PAGE_SLUG, 'tab' => 'import-export', 'ffla_wl_import' => $status],
-            admin_url('admin.php')
-        ));
+        $args = ['page' => self::PAGE_SLUG, 'tab' => 'import-export', 'ffla_wl_import' => $status];
+        if ($this->self_exempted) {
+            $args[self::SELF_EXEMPT_FLAG] = '1';
+        }
+
+        wp_safe_redirect(add_query_arg($args, admin_url('admin.php')));
         exit;
     }
 
@@ -911,10 +957,11 @@ class White_Label_Admin
         switch (sanitize_key(wp_unslash($_GET['ffla_wl_import']))) {
             case 'success':
                 return ['type' => 'success', 'message' => __('Settings imported.', 'ffl-funnels-addons')];
+            // 'danger' is the shared admin shell's error style ('error' has none).
             case 'empty':
-                return ['type' => 'error', 'message' => __('No file or JSON was provided.', 'ffl-funnels-addons')];
+                return ['type' => 'danger', 'message' => __('No file or JSON was provided.', 'ffl-funnels-addons')];
             case 'invalid':
-                return ['type' => 'error', 'message' => __('That file is not a valid White Label export.', 'ffl-funnels-addons')];
+                return ['type' => 'danger', 'message' => __('That file is not a valid White Label export.', 'ffl-funnels-addons')];
             default:
                 return null;
         }

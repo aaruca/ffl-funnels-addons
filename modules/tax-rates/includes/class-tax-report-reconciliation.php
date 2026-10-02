@@ -142,6 +142,7 @@ class Tax_Report_Reconciliation
             );
 
             $result['warnings'] = $this->build_warnings($scope, $ffla, $woocommerce);
+            $result['notes'] = $this->build_notes($woocommerce);
             if ($split_payment) {
                 $result['warnings'][] = 'Review split-payment-sales and receipt audit exports against individual captures and refunds. Analytics counts may represent payment orders rather than underlying sales.';
             }
@@ -215,6 +216,7 @@ class Tax_Report_Reconciliation
             'woocommerce' => [],
             'checks' => [],
             'warnings' => [],
+            'notes' => [],
             'recommendations' => [],
             'meta' => [
                 'precision' => $this->precision,
@@ -389,10 +391,16 @@ class Tax_Report_Reconciliation
         $order_states = $order_state_result['states'];
         $tax_lines = isset($report['tax_lines']) && is_array($report['tax_lines']) ? $report['tax_lines'] : [];
         $refunds = isset($report['refunds']) && is_array($report['refunds']) ? $report['refunds'] : [];
-        $has_detail = !empty($tax_lines)
-            || !empty($refunds)
-            || !empty($report['orders'])
-            || (isset($report['stats']['orders']) && (int) $report['stats']['orders'] === 0);
+        // Only an advanced report carries every tax line and refund. A filing
+        // report may still list orders (PII audit) without their tax lines,
+        // which must not be read as "no product or shipping tax".
+        $report_detail = (string) ($report['manifest']['report_detail']
+            ?? ($report['manifest']['filters']['report_detail'] ?? ''));
+        $empty_period = isset($report['stats']['orders']) && (int) $report['stats']['orders'] === 0
+            && (int) ($report['stats']['refunds'] ?? 0) === 0;
+        $has_detail = $report_detail === 'advanced'
+            || $empty_period
+            || ($report_detail === '' && (!empty($tax_lines) || !empty($refunds)));
         $gross_product_tax = 0;
         $gross_shipping_tax = 0;
         $taxed_order_ids = [];
@@ -780,7 +788,9 @@ class Tax_Report_Reconciliation
 
     private function order_location($order): array
     {
-        $based_on = function_exists('get_option') ? (string) get_option('woocommerce_tax_based_on', 'shipping') : 'shipping';
+        $based_on = class_exists('Tax_Report_Service')
+            ? Tax_Report_Service::order_tax_basis($order)
+            : (function_exists('get_option') ? (string) get_option('woocommerce_tax_based_on', 'shipping') : 'shipping');
         $local_pickup = false;
         if (method_exists($order, 'get_items')) {
             foreach ((array) $order->get_items('shipping') as $shipping_item) {
@@ -985,9 +995,6 @@ class Tax_Report_Reconciliation
         if (empty($woocommerce['available'])) {
             $warnings[] = (string) ($woocommerce['error'] ?? 'WooCommerce tax data is unavailable.');
         }
-        if (($woocommerce['source'] ?? '') !== 'woocommerce_analytics_tax_datastore') {
-            $warnings[] = (string) ($woocommerce['scope_note'] ?? 'A bounded WooCommerce order query was used instead of the Analytics tax DataStore.');
-        }
         if (!empty($woocommerce['truncated'])) {
             $warnings[] = 'The WooCommerce order query reached its safety cap; partial totals are not comparable.';
         }
@@ -1008,6 +1015,23 @@ class Tax_Report_Reconciliation
         }
 
         return array_values(array_unique(array_filter($warnings)));
+    }
+
+    /**
+     * Informational notes that do not affect the status.
+     */
+    private function build_notes(array $woocommerce): array
+    {
+        $notes = [];
+        if (!empty($woocommerce['available'])
+            && ($woocommerce['source'] ?? '') !== 'woocommerce_analytics_tax_datastore') {
+            $notes[] = (string) ($woocommerce['scope_note'] ?? 'WooCommerce tax was totalled from the orders themselves (HPOS-compatible order API) instead of the Analytics tax DataStore.');
+            if (!empty($woocommerce['analytics_error'])) {
+                $notes[] = (string) $woocommerce['analytics_error'];
+            }
+        }
+
+        return array_values(array_unique(array_filter($notes)));
     }
 
     private function build_recommendations(
@@ -1047,11 +1071,11 @@ class Tax_Report_Reconciliation
         if (isset($checks['tax_total']) && $checks['tax_total']['status'] === 'warn' && !empty($checks['tax_total']['comparable'])) {
             $recommendations[] = 'Regenerate WooCommerce Analytics lookup data, then verify order statuses, late refunds, and the configured Analytics date basis.';
         }
-        if ((isset($checks['product_tax']) && $checks['product_tax']['status'] === 'warn')
-            || (isset($checks['shipping_tax']) && $checks['shipping_tax']['status'] === 'warn')) {
+        if ((isset($checks['product_tax']) && $checks['product_tax']['status'] === 'warn' && !empty($checks['product_tax']['comparable']))
+            || (isset($checks['shipping_tax']) && $checks['shipping_tax']['status'] === 'warn' && !empty($checks['shipping_tax']['comparable']))) {
             $recommendations[] = 'Review WooCommerce tax lines and refund items to confirm tax is classified between order items/fees and shipping consistently.';
         }
-        if (isset($checks['order_count']) && $checks['order_count']['status'] === 'warn') {
+        if (isset($checks['order_count']) && $checks['order_count']['status'] === 'warn' && !empty($checks['order_count']['comparable'])) {
             $recommendations[] = 'Check for orders missing Analytics tax lookup rows and confirm the same order statuses are selected in both reports.';
         }
         if (empty($ffla['components_available']) || empty($ffla['orders_count_available'])) {
@@ -1067,18 +1091,28 @@ class Tax_Report_Reconciliation
         return array_values(array_unique($recommendations));
     }
 
+    /**
+     * Reconciled when the range, date basis and total tax agree and every
+     * other check that could be compared agrees too. A check that cannot be
+     * compared (for example product/shipping split on a filing-detail
+     * report) does not block the result; it is listed as not compared.
+     */
     private function overall_status(array $checks, array $warnings): string
     {
-        if (!empty($warnings)) {
+        if (!empty($warnings) || empty($checks)) {
             return 'warn';
         }
-        foreach ($checks as $check) {
+        foreach ($checks as $id => $check) {
+            $required = in_array($id, ['date_range', 'date_basis', 'tax_total'], true);
+            if (!$required && empty($check['comparable'])) {
+                continue;
+            }
             if (($check['status'] ?? 'warn') !== 'pass') {
                 return 'warn';
             }
         }
 
-        return !empty($checks) ? 'pass' : 'warn';
+        return 'pass';
     }
 
     private function public_totals(array $totals): array

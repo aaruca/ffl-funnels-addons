@@ -12,7 +12,9 @@
  *   3. If neither is available, return '' so callers fall back to no map.
  *
  * The borrowed token is cached in a transient so we don't hit the vendor on
- * every checkout page load.
+ * every checkout page load. The cache remembers which g-FFL key it was
+ * borrowed with, so a changed or removed key never keeps serving the old
+ * token.
  *
  * @package FFL_Funnels_Addons
  */
@@ -80,11 +82,31 @@ class FFL_Checkout_Mapbox
     }
 
     /**
-     * Drop the cached borrowed token (e.g. after a failed map load).
+     * Drop the cached borrowed token and the failure back-off.
      */
     public static function flush_cache(): void
     {
         delete_transient(self::BORROW_TRANSIENT);
+        delete_transient(self::BORROW_FAIL_TRANSIENT);
+    }
+
+    /**
+     * Flush the borrowed token whenever g-FFL Checkout's API key changes.
+     */
+    public static function init(): void
+    {
+        add_action('update_option_' . self::FFL_API_KEY_OPTION, [__CLASS__, 'flush_cache'], 10, 0);
+        add_action('add_option_' . self::FFL_API_KEY_OPTION, [__CLASS__, 'flush_cache'], 10, 0);
+        add_action('delete_option_' . self::FFL_API_KEY_OPTION, [__CLASS__, 'flush_cache'], 10, 0);
+    }
+
+    /**
+     * Token borrowed from g-FFL Checkout (cached), or '' when none can be
+     * borrowed right now. Used by the settings page to report the real state.
+     */
+    public static function borrowed_token(): string
+    {
+        return self::borrow_token();
     }
 
     /**
@@ -92,20 +114,30 @@ class FFL_Checkout_Mapbox
      */
     private static function borrow_token(): string
     {
+        $api_key = self::ffl_api_key();
+        if ($api_key === '') {
+            return '';
+        }
+        $key_hash = self::key_fingerprint($api_key);
+
+        // Only a token borrowed with the current key counts. Older cache
+        // entries (a bare string) carry no key and are refreshed once.
         $cached = get_transient(self::BORROW_TRANSIENT);
-        if (is_string($cached) && $cached !== '') {
-            return $cached;
+        if (
+            is_array($cached)
+            && isset($cached['token'], $cached['key'])
+            && is_string($cached['token'])
+            && $cached['token'] !== ''
+            && hash_equals((string) $cached['key'], $key_hash)
+        ) {
+            return $cached['token'];
         }
 
         // This runs while the checkout page is rendering. Only successes were
         // cached, so a vendor outage meant every single render re-issued the
         // request and blocked for the full timeout. Back off instead.
-        if (false !== get_transient(self::BORROW_FAIL_TRANSIENT)) {
-            return '';
-        }
-
-        $api_key = self::ffl_api_key();
-        if ($api_key === '') {
+        $failed_for = get_transient(self::BORROW_FAIL_TRANSIENT);
+        if (false !== $failed_for && (string) $failed_for === $key_hash) {
             return '';
         }
 
@@ -122,26 +154,34 @@ class FFL_Checkout_Mapbox
         ]);
 
         if (is_wp_error($response)) {
-            set_transient(self::BORROW_FAIL_TRANSIENT, 1, self::BORROW_FAIL_TTL);
+            set_transient(self::BORROW_FAIL_TRANSIENT, $key_hash, self::BORROW_FAIL_TTL);
             return '';
         }
         if ((int) wp_remote_retrieve_response_code($response) !== 200) {
-            set_transient(self::BORROW_FAIL_TRANSIENT, 1, self::BORROW_FAIL_TTL);
+            set_transient(self::BORROW_FAIL_TRANSIENT, $key_hash, self::BORROW_FAIL_TTL);
             return '';
         }
 
         $data  = json_decode(wp_remote_retrieve_body($response), true);
         $token = self::extract_token($data);
         if ($token === '') {
-            set_transient(self::BORROW_FAIL_TRANSIENT, 1, self::BORROW_FAIL_TTL);
+            set_transient(self::BORROW_FAIL_TRANSIENT, $key_hash, self::BORROW_FAIL_TTL);
             return '';
         }
 
         // Clear any stale failure sentinel now that the vendor is healthy again.
         delete_transient(self::BORROW_FAIL_TRANSIENT);
 
-        set_transient(self::BORROW_TRANSIENT, $token, self::BORROW_TTL);
+        set_transient(self::BORROW_TRANSIENT, ['token' => $token, 'key' => $key_hash], self::BORROW_TTL);
         return $token;
+    }
+
+    /**
+     * Non-reversible marker of the g-FFL key a cached token belongs to.
+     */
+    private static function key_fingerprint(string $api_key): string
+    {
+        return hash('sha256', 'ffla_mapbox|' . $api_key);
     }
 
     /**

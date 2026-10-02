@@ -135,6 +135,18 @@ class FFL_Checkout_Vendor_Api
         return '';
     }
 
+    /* ── Setting ─────────────────────────────────────────────────────── */
+
+    /**
+     * Whether "Enable Vendor Selector" is on. The selector, its AJAX endpoint
+     * and the cart/order vendor hooks only run while it is.
+     */
+    public static function selector_enabled(): bool
+    {
+        $settings = get_option('ffl_checkout_settings', []);
+        return is_array($settings) && ($settings['vendor_selector_enabled'] ?? '0') === '1';
+    }
+
     /* ── Eligibility Check ───────────────────────────────────────────── */
 
     /**

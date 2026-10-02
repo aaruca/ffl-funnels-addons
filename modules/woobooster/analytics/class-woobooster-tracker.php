@@ -3,7 +3,8 @@
  * WooBooster Tracker — Attribution & Conversion Tracking.
  *
  * Tracks which WooBooster recommendations lead to add-to-cart and purchases.
- * Uses JS attribution via wp_localize_script to intercept WooCommerce AJAX events.
+ * Attribution is session-based: products shown by a rule are remembered in the
+ * WooCommerce session and tagged when they are added to the cart.
  *
  * @package FFL_Funnels_Addons
  */
@@ -15,14 +16,20 @@ if (!defined('ABSPATH')) {
 class WooBooster_Tracker
 {
 
-    private static $recommendations = array();
-
     const SESSION_KEY = 'woobooster_recommendations';
 
     /**
      * Option key for the add-to-cart counter.
+     *
+     * Shape: date key => [rule_id => count]. New counts use day keys
+     * ('Y-m-d'); older versions wrote month keys ('Y-m'), which stay readable.
      */
     const COUNTER_OPTION = 'woobooster_atc_counter';
+
+    /**
+     * Day keys kept in the counter (older ones are pruned on write).
+     */
+    const COUNTER_DAYS_KEPT = 400;
 
     /**
      * Pseudo rule ID for Smart Recommendations served by the Bricks
@@ -38,9 +45,6 @@ class WooBooster_Tracker
      */
     public function init()
     {
-        // Frontend: output tracking JS data.
-        add_action('wp_footer', array($this, 'output_tracking_data'), 99);
-
         // Cart: capture attribution from AJAX add-to-cart.
         add_filter('woocommerce_add_cart_item_data', array($this, 'capture_cart_item_data'), 10, 2);
 
@@ -67,11 +71,6 @@ class WooBooster_Tracker
 
         $pids = array_map('absint', $product_ids);
 
-        self::$recommendations[] = array(
-            'rule_id'     => $rule_id,
-            'product_ids' => $pids,
-        );
-
         if (function_exists('WC') && WC()->session) {
             $stored = WC()->session->get(self::SESSION_KEY, array());
             if (!is_array($stored)) {
@@ -85,28 +84,6 @@ class WooBooster_Tracker
             }
             WC()->session->set(self::SESSION_KEY, $stored);
         }
-    }
-
-    /**
-     * Output tracking data as wp_localize_script in the footer.
-     */
-    public function output_tracking_data()
-    {
-        if (empty(self::$recommendations)) {
-            return;
-        }
-
-        wp_enqueue_script(
-            'woobooster-tracking',
-            plugin_dir_url(dirname(__FILE__)) . 'assets/js/woobooster-tracking.js',
-            array('jquery'),
-            FFLA_VERSION,
-            true
-        );
-
-        wp_localize_script('woobooster-tracking', 'WooBoosterTracking', array(
-            'recommendations' => self::$recommendations,
-        ));
     }
 
     /**
@@ -159,16 +136,30 @@ class WooBooster_Tracker
         }
 
         $counter = get_option(self::COUNTER_OPTION, array());
-        $month_key = gmdate('Y-m');
-
-        if (!isset($counter[$month_key])) {
-            $counter[$month_key] = array();
-        }
-        if (!isset($counter[$month_key][$rule_id])) {
-            $counter[$month_key][$rule_id] = 0;
+        if (!is_array($counter)) {
+            $counter = array();
         }
 
-        $counter[$month_key][$rule_id]++;
+        // Count per day (store time) so the analytics date range can be exact;
+        // month totals were all that older versions could report.
+        $day_key = wp_date('Y-m-d');
+
+        if (!isset($counter[$day_key])) {
+            $counter[$day_key] = array();
+
+            // Prune day keys past the retention window (month keys are kept).
+            $cutoff = wp_date('Y-m-d', time() - self::COUNTER_DAYS_KEPT * DAY_IN_SECONDS);
+            foreach (array_keys($counter) as $key) {
+                if (10 === strlen((string) $key) && (string) $key < $cutoff) {
+                    unset($counter[$key]);
+                }
+            }
+        }
+        if (!isset($counter[$day_key][$rule_id])) {
+            $counter[$day_key][$rule_id] = 0;
+        }
+
+        $counter[$day_key][$rule_id]++;
         update_option(self::COUNTER_OPTION, $counter, false);
     }
 

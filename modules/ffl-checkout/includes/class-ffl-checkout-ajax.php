@@ -2,7 +2,7 @@
 /**
  * FFL Checkout — AJAX Handlers.
  *
- * Provides the Mapbox token and vendor selection endpoints via AJAX.
+ * Vendor selection endpoint (the vendor selector's radio buttons).
  *
  * @package FFL_Funnels_Addons
  */
@@ -18,69 +18,15 @@ class FFL_Checkout_Ajax
      */
     public static function init(): void
     {
-        // Note: ffl_get_mapbox_token and ffl_get_vendor_options are intentionally
-        // not registered. No client code calls them, and exposing them (to
-        // unauthenticated users especially) only widened the attack surface —
-        // vendor-option enumeration and API-quota drain. The Mapbox token is
-        // already provided inline via wp_localize_script.
+        // The Mapbox token reaches the browser through wp_localize_script and
+        // vendor options are rendered server-side, so the only endpoint is the
+        // vendor update. It is registered only while the vendor selector is on.
+        if (!FFL_Checkout_Vendor_Api::selector_enabled()) {
+            return;
+        }
 
         add_action('wp_ajax_ffl_update_cart_vendor', [__CLASS__, 'update_cart_vendor']);
         add_action('wp_ajax_nopriv_ffl_update_cart_vendor', [__CLASS__, 'update_cart_vendor']);
-    }
-
-    /* ── Mapbox Token ────────────────────────────────────────────────── */
-
-    /**
-     * Return the resolved Mapbox token via AJAX.
-     *
-     * Uses the same "Auto + override" resolution as the asset loader: the
-     * admin's own token if set, otherwise one borrowed from g-FFL Checkout.
-     */
-    public static function get_mapbox_token(): void
-    {
-        check_ajax_referer('ffl_checkout_nonce', 'security');
-
-        $token = FFL_Checkout_Mapbox::resolve_token();
-
-        if (empty($token)) {
-            wp_send_json_error('Mapbox token not configured.');
-        }
-
-        wp_send_json_success($token);
-    }
-
-    /* ── Vendor Options ──────────────────────────────────────────────── */
-
-    /**
-     * Fetch warehouse options for a product via the Garidium API.
-     */
-    public static function get_vendor_options(): void
-    {
-        check_ajax_referer('ffl_checkout_nonce', 'security');
-
-        // phpcs:ignore WordPress.Security.NonceVerification.Missing
-        $product_id = absint($_POST['product_id'] ?? 0);
-
-        if (!$product_id) {
-            wp_send_json_error('Missing product ID.');
-        }
-
-        if (!FFL_Checkout_Vendor_Api::is_eligible($product_id)) {
-            wp_send_json_error('Product is not eligible for vendor selection.');
-        }
-
-        $upc = FFL_Checkout_Vendor_Api::get_upc_for_product($product_id);
-        if (empty($upc)) {
-            wp_send_json_error('Product UPC not found.');
-        }
-
-        $options = FFL_Checkout_Vendor_Api::get_warehouse_options($upc);
-
-        if (is_wp_error($options)) {
-            wp_send_json_error($options->get_error_message());
-        }
-
-        wp_send_json_success($options);
     }
 
     /* ── Update Cart Vendor ──────────────────────────────────────────── */

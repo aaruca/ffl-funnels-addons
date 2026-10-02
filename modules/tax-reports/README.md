@@ -1,6 +1,6 @@
 # Sales Tax Reports
 
-Builds sales tax filing reports from the values stored on WooCommerce orders and refunds, for store managers and the accountants who prepare the returns. The reports cover totals per state and per local jurisdiction, taxable sales including taxed shipping, tax collected against tax calculated from the stored rate, and an optional order audit. The module also adds a WooCommerce Analytics reconciliation, an advisory economic-nexus monitor, a monthly email to your accountant, a tool to combine reports from several stores, and a permanent fiscal snapshot of each order.
+Builds sales tax filing reports from the values stored on WooCommerce orders and refunds, for store managers and the accountants who prepare the returns. The reports cover totals per state and per local jurisdiction, taxable sales including taxed shipping, tax collected against tax calculated from the stored rate, and an optional order audit. The module also adds a reconciliation against WooCommerce's own tax totals, an advisory economic-nexus monitor, a monthly email to your accountant, a tool to combine reports from several stores, and a permanent fiscal snapshot of each order.
 
 Module ID: `tax-reports`, off until it is switched on in **FFL Funnels → Dashboard** (stores that already had Sales Tax Resolver on when the two modules were split had it switched on once automatically). It works without the [Sales Tax Resolver](../tax-rates/README.md); when the resolver is on, its saved rate quote and exemption evidence make the reports more precise. Requires WooCommerce; monthly email needs a working mail transport and WooCommerce's Action Scheduler or WP-Cron.
 
@@ -25,7 +25,7 @@ Module ID: `tax-reports`, off until it is switched on in **FFL Funnels → Dashb
 3. Read **Overview**: the *Complete tax filing table*, *Filing totals* and *Items to review*. Open **States** and **Jurisdictions** for rows marked *Needs review*.
 4. Click **Download filing report** for the ZIP package. Choose *Advanced audit package* when your accountant needs order-level detail. Leave **Include optional order audit with shipping addresses** off unless they need customer names and addresses.
 5. Optional, for monthly email: open **Delivery & History**, fill in **Recipients**, **Day of month** and **Send time**, tick **Enable monthly delivery**, click **Save email schedule**, then **Send test report**. Configure a transactional SMTP service; the history shows whether WordPress handed the email over, not whether it arrived.
-6. Optional: use **Nexus Monitor** for a period that matches each state's measurement period, and **Reconciliation** to compare with WooCommerce Analytics.
+6. Optional: use **Nexus Monitor** for a period that matches each state's measurement period, and **Reconciliation** to compare with WooCommerce's own tax totals.
 
 ## Settings
 
@@ -39,9 +39,9 @@ Module ID: `tax-reports`, off until it is switched on in **FFL Funnels → Dashb
 | **Included order statuses** | Order statuses to include. Refunds created in the period are included whatever their order's status. | Processing, Completed, On hold, Refunded |
 | **Report detail** | *Filing summary*, or *Advanced audit package* (adds orders, line items, tax lines, refunds, products, payments and exceptions). | Filing summary |
 | **Include negative-total orders** | Includes orders whose final total is below zero (manual adjustments). | Off |
-| **Include optional order audit with shipping addresses** | Adds the *Order Audit* worksheet and CSV with customer names and the full shipping address. Off masks names, street, email, phone, transaction ID and customer note everywhere in the package. | Ticked when the page first opens |
+| **Include optional order audit with shipping addresses** | Adds the *Order Audit* worksheet and CSV with customer names and the full shipping address. Off masks names, street, email, phone, transaction ID and customer note everywhere in the package. | Off |
 
-**Preview filing report** shows the tabs on screen; **Download filing report** builds the ZIP. Nothing is stored on the server except a generation history entry without customer data.
+**Preview filing report** shows the tabs on screen; **Download filing report** builds the ZIP. Nothing is stored on the server except a generation history entry without customer data (filters, counts, currencies, file names and each file's SHA-256 checksum).
 
 ### Monthly email delivery (*Delivery & History* tab)
 
@@ -71,7 +71,7 @@ Both send buttons work while monthly delivery is off, but need at least one reci
 | Field | What it does |
 |---|---|
 | **FFLA report packages or jurisdiction CSV files** | Up to 10 `.zip` or `.csv` files, 10 MB each, 50 MB in total. |
-| **Optional state filing template** | One CSV whose rows and columns should receive the combined totals. |
+| **Optional state filing template** | One CSV whose rows and columns should receive the combined totals. Template rows without sales get 0; a jurisdiction with sales but no template row stops the download. |
 | **Optional template column mapping** | Exact template header text for the keys (**Jurisdiction code key**, **County key**, **City key**, **Jurisdiction name key**, **State key**, **Currency key**) and outputs (**Orders output**, **Total taxable sales output (including shipping)**, **Net tax output**, **Calculated tax output**, **Over / under output**). Blank fields are auto-detected. |
 
 ## How it works
@@ -85,7 +85,7 @@ Both send buttons work while monthly delivery is off, but need at least one reci
 
 ### Which state an order belongs to
 
-The state follows WooCommerce's current **Calculate tax based on** setting (today's value, not the value when the order was placed):
+The state follows WooCommerce's **Calculate tax based on** setting as it was when the order's first fiscal snapshot was saved (stored on the order as `_ffla_tax_based_on`). Orders without that record — placed before this version or while the module was off — use the current setting:
 
 - *Customer shipping address*: the shipping address, or the billing address when the order has no shipping country.
 - *Customer billing address*: the billing address.
@@ -153,19 +153,19 @@ The jurisdiction row holds the **whole tax of the order** (state and local toget
 
 ### Reconciliation
 
-Compares the report's tax totals with WooCommerce: total tax, product and fee tax, shipping tax and the taxed order count. The tolerance is one minor unit (1 cent).
+Compares the report's tax totals with WooCommerce's own: total tax, product and fee tax, shipping tax and the taxed order count. The tolerance is one minor unit (1 cent).
 
-- **WooCommerce Analytics** tax data is used only for a single-currency report with no **States** filter and **Include negative-total orders** ticked. Otherwise a bounded WooCommerce order query (up to 10,000 records) is used, with a note.
-- Money checks are compared only for the same dates, one currency, no Split Payment sales, and WooCommerce Analytics' date type set to *Date created* (the report's basis).
-- Product, shipping and order-count checks need order detail (*Advanced audit package* or the order audit option).
-- *Reconciled* appears only when every check passes and there are no warnings; anything else shows *Review needed* with recommended steps.
+- **WooCommerce Analytics** tax data is used only for a single-currency report with no **States** filter and **Include negative-total orders** ticked. Otherwise (including the default filters) the totals come from the WooCommerce orders themselves, up to 10,000 records; this is listed under *Notes* and does not count against the result.
+- Money checks are compared only for the same dates, one currency, no Split Payment sales, and WooCommerce Analytics' date type set to *Date created* (the report's basis; the order query also follows Analytics' date type).
+- Product, shipping and order-count checks need an *Advanced audit package*; on a filing summary they show *not compared*.
+- *Reconciled* appears when the date range, date basis and total tax pass, every other check that was compared passes, and there are no warnings (truncated queries, unlinked refunds, multiple currencies and similar). Anything else shows *Review needed* with recommended steps.
 
 ### Nexus monitor
 
 - Uses the report's period, statuses and negative-order setting, not its **States** filter.
 - **Revenue** per state is order totals minus collected tax, net of refunds created in the period (refunded tax excluded). Shipping and fees are included. Revenue can be customised with filters.
 - **Transactions** are sales counted, so a Split Payment sale counts once.
-- The state is the shipping state, else the billing state. Local pickup is not moved to the store's state here.
+- The state is the shipping state, else the billing state. Local pickup orders count in the store's state, as in the filing report.
 - Thresholds come from `modules/tax-rates/assets/nexus-thresholds.csv`: one row for each state and DC, taken from a third-party reference and marked `unverified_seed`, with no effective date. DE, MT, NH and OR have no threshold. Each row has a revenue and/or transaction threshold, an AND/OR rule and an "approaching" percentage (80 by default).
 - Each state shows its progress and a status:
   - `below_threshold`, `approaching_threshold` or `threshold_exceeded`;
@@ -182,17 +182,19 @@ Compares the report's tax totals with WooCommerce: total tax, product and fee ta
 - **Retries**: a failed scheduled send is retried after 15 minutes, 1 hour and 6 hours.
 - **Overlap**: only one report email is generated at a time; a second run is skipped (scheduled runs retry).
 - **Cleanup**: temporary files are deleted after each attempt.
-- **Recent email history** shows the last 10 attempts: status `sent`, `sent_summary_only`, `failed` or `skipped`, mode, period, number of recipients, attachment and details.
+- **Recent email history** shows the last 10 attempts: status `sent`, `sent_summary_only`, `failed` or `skipped`, mode, period, number of recipients, attachment and details. Only the number of recipients is stored, not their addresses; entries saved by older versions are converted the next time an attempt is recorded.
 
 ### Combining reports
 
 - **ZIP files** must be FFLA packages containing exactly one `jurisdiction-summary.csv`. Reading them requires PHP's ZipArchive.
-- **CSV files** need `state` and `currency` columns and one of jurisdiction code, county, city or jurisdiction name.
+- **CSV files** need `state` and `currency` columns and one of jurisdiction code, county, city or jurisdiction name. Common other header names are recognised (for example `tax_collected` is read as net tax when the file has no `net_tax` column).
 - **Duplicates** are skipped: packages with a report ID already read, and identical CSVs. A package whose `jurisdiction-summary.csv` does not match its manifest checksum, or a report ID seen with different data, is an error.
 - **Matching**: rows merge by state, currency and jurisdiction code, or else by the exact type, name, county and city. Different rates show as `mixed`.
-- **Output**: orders, taxable sales, taxed shipping, net tax, calculated tax and over/under are added up, with the sites, report IDs and files each row came from. Exempt and needs-review sales are not in `jurisdiction-summary.csv`, so they are 0 in the combined file.
+- **Output**: orders, gross sales, taxable sales, taxed shipping, tax collected, tax refunded, net tax, calculated tax and over/under are added up, with the sites, report IDs and files each row came from. A total column that none of the uploaded files has is left out instead of being shown as 0 (`jurisdiction-summary.csv` has no exempt or needs-review sales, so those columns only appear for other CSVs that carry them). When only some files have a column, the diagnostics warn that the others count as 0.
 - **Template mapping** matches each template row to a combined row by jurisdiction code, then county, then city, then name, narrowed by state and currency, and writes the output columns into it.
-  - Every template data row must match exactly one combined row. A template that also lists jurisdictions without sales therefore fails, and an error or ambiguous row stops the download too; diagnostics are shown instead.
+  - A template row without a matching combined row is a jurisdiction with no sales: its total columns are written as 0 and it is counted in the diagnostics.
+  - Every combined jurisdiction of the template's states (from its state column, or else from the rows it matched) must land in the template. One that has no template row would leave its sales out of the filing, so the download stops and the diagnostics list it with its net tax.
+  - The download also stops when two template rows match the same jurisdiction (it would be counted twice), when a row matches several jurisdictions, when nothing matches at all, or on any other error.
   - A template with only a header row is filled with one row per combined jurisdiction.
 - **Limits**: one tool run per site at a time, and a 10-second pause per user between runs. Uploads are not stored, and cells that start like a spreadsheet formula are neutralised.
 
@@ -232,9 +234,10 @@ The report shows snapshot coverage and flags orders without one (older orders, o
 | Data | Where | Kept for |
 |---|---|---|
 | Email settings | Option `ffla_tax_report_email_settings` | Until deleted by hand |
-| Email history (includes recipient addresses) | Option `ffla_tax_report_email_history`, last 50 | Until deleted by hand |
-| Generation history (filters, counts, currencies, file names; no customer data) | Option `ffla_tax_report_runs`, last 50 | Until deleted by hand |
+| Email history (number of recipients, no addresses) | Option `ffla_tax_report_email_history`, last 50 | Until deleted by hand |
+| Generation history (filters, counts, currencies, file names and checksums; no customer data) | Option `ffla_tax_report_runs`, last 50 | Until deleted by hand |
 | Fiscal snapshots | Order meta `_ffla_tax_report_snapshot`, `_ffla_tax_report_snapshot_hash`, one `_ffla_tax_report_snapshot_revision` per revision | Permanently, with the order |
+| Tax basis at the first snapshot | Order meta `_ffla_tax_based_on` (`shipping`, `billing` or `base`) | Permanently, with the order |
 | Report packages | Temporary files | Deleted after the download or email attempt |
 | Tool lock, diagnostics, rate limit | Option `ffla_tax_report_tool_lock`; transients `ffla_tax_report_tool_diag_{user}` (10 minutes), `ffla_tax_report_tool_rate_{user}` (10 seconds), `ffla_tax_report_email_lock` (30 minutes) | Short-lived |
 
@@ -252,10 +255,10 @@ The report shows snapshot coverage and flags orders without one (older orders, o
 | A state shows *Needs review* | Look at *Sales needing review* and the state's jurisdictions, then **Items to review**. Untaxed sales into states where you do not collect count as needing review. |
 | *Unmapped Georgia jurisdiction* | The order's tax components did not match a Georgia county or special code. Check the order's quote or tax line labels. |
 | **Orders** tab is empty | Choose *Advanced audit package* or tick the order audit option, then preview again. |
-| Reconciliation always says *Review needed* | Read the checks and warnings. A direct Analytics comparison needs no **States** filter, one currency, **Include negative-total orders** ticked, Analytics' date type *Date created*, order detail, and no Split Payment sales. |
+| Reconciliation says *Review needed* | Read the checks and warnings. Most often WooCommerce Analytics' date type is not *Date created* (**Analytics → Settings → Date type**), the report has Split Payment sales, or the period does not match the report's dates. |
 | Nexus shows `indeterminate` or *Currency review* | Orders in another currency than the threshold's need conversion, or a Split Payment sale needs review. |
 | Monthly email did not arrive | Check **Recent email history** and **Next scheduled run** (*Not currently scheduled* means delivery is off). Check Action Scheduler (WooCommerce → Status → Scheduled Actions, group `ffla-tax-reports`) or WP-Cron, and your SMTP logs. `sent` only means WordPress handed it to the mail transport. |
-| Tools produced no file | **Most recent tool diagnostics** shows each error (shown once). Typical causes: a ZIP without exactly one `jurisdiction-summary.csv`, ZipArchive missing on the server, missing `state`/`currency` columns, or unmatched template rows. |
+| Tools produced no file | **Most recent tool diagnostics** shows each error (shown once). Typical causes: a ZIP without exactly one `jurisdiction-summary.csv`, ZipArchive missing on the server, missing `state`/`currency` columns, a jurisdiction with sales that has no row in the template (*Report jurisdictions missing from the template*), or template keys that match nothing. |
 | `missing_fiscal_snapshot` on old orders | Normal for orders from before the module was on; figures still come from the order. |
 
 ## For developers
@@ -302,9 +305,12 @@ The code lives in `modules/tax-rates/` (`includes/class-tax-report-*.php`, `incl
 - `(new Tax_Report_Reconciliation())->reconcile($report, $options)`.
 - `(new Tax_Nexus_Monitor())->generate($filters, ['forecast' => true])`.
 - `Tax_Report_Snapshot::capture($order)`.
+- `Tax_Report_Service::order_tax_basis($order)` returns the **Calculate tax based on** value used for an order.
+- Failures of snapshots and scheduled emails are written with `ffla_tax_log()` to the WooCommerce log, source `ffla-tax` (WooCommerce → Status → Logs).
 
-**Tests** (run from the plugin folder; they use fixtures, no database or payments; all run in CI and before release):
+**Tests** (run from the plugin folder; they use fixtures, no database or payments):
 
 - `php tests/smoke/tax-report-jurisdiction-smoke.php`: Georgia codes and consolidation.
 - `php tests/smoke/tax-split-payment-smoke.php`: Split Payment, nexus, reconciliation basis.
 - `php tests/smoke/tax-report-shipping-fee-smoke.php`: FPPC shipping fees.
+- `php tests/smoke/tax-report-fixes-smoke.php`: reconciliation status with default filters, combining FFLA summaries, template mapping with jurisdictions without sales, and email history without addresses.

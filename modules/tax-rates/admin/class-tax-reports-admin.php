@@ -475,7 +475,7 @@ class Tax_Reports_Admin
 
     private static function limit_diagnostics_for_storage(array $diagnostics): array
     {
-        foreach (['errors', 'warnings', 'duplicate_report_ids', 'unmatched', 'ambiguous'] as $key) {
+        foreach (['errors', 'warnings', 'duplicate_report_ids', 'unmatched', 'ambiguous', 'no_activity'] as $key) {
             if (isset($diagnostics[$key]) && is_array($diagnostics[$key])) {
                 $diagnostics[$key] = array_slice($diagnostics[$key], 0, 50);
             }
@@ -498,7 +498,8 @@ class Tax_Reports_Admin
         $has_preview = !empty($input['run_report']) && !in_array($active_tab, ['delivery', 'tools'], true);
         $filters = Tax_Report_Service::default_filters();
         $filters['_period_preset'] = 'year_to_date';
-        $filters['include_pii'] = true;
+        // The shipping-address audit is opt-in, like the service and email defaults.
+        $filters['include_pii'] = false;
         $report = null;
         $error = '';
 
@@ -837,7 +838,7 @@ class Tax_Reports_Admin
             echo '<td><code>' . esc_html((string) ($entry['status'] ?? '')) . '</code></td>';
             echo '<td>' . esc_html((string) ($entry['mode'] ?? '') . ' #' . (string) ($entry['attempt'] ?? 0)) . '</td>';
             echo '<td>' . esc_html($period) . '</td>';
-            echo '<td>' . esc_html((string) count((array) ($entry['recipients'] ?? []))) . '</td>';
+            echo '<td>' . esc_html((string) (isset($entry['recipients_count']) ? (int) $entry['recipients_count'] : count((array) ($entry['recipients'] ?? [])))) . '</td>';
             echo '<td>' . esc_html((string) ($entry['attachment_name'] ?? '')) . '</td>';
             echo '<td>' . esc_html((string) ($entry['message'] ?? '')) . '</td></tr>';
         }
@@ -1015,8 +1016,8 @@ class Tax_Reports_Admin
 
     private static function render_reconciliation_panel(array $report): void
     {
-        echo '<div class="wb-card"><div class="wb-card__header"><h3>' . esc_html__('WooCommerce Analytics reconciliation', 'ffl-funnels-addons') . '</h3></div><div class="wb-card__body">';
-        echo '<p class="wb-field__desc">' . esc_html__('The reconciliation compares the selected scope with WooCommerce Analytics. Split Payment uses captured-payment dates and unique original sales; Analytics may use a different date, status or order-count basis. Such comparisons require receipt-level review.', 'ffl-funnels-addons') . '</p>';
+        echo '<div class="wb-card"><div class="wb-card__header"><h3>' . esc_html__('WooCommerce reconciliation', 'ffl-funnels-addons') . '</h3></div><div class="wb-card__body">';
+        echo '<p class="wb-field__desc">' . esc_html__('The reconciliation compares the report with WooCommerce\'s own tax totals for the same dates and statuses: the WooCommerce Analytics tax data for a store-wide, single-currency report that includes negative orders, otherwise the orders themselves. It shows Reconciled when the date range, date basis and total tax agree and every other check that can be compared agrees too. Product/shipping tax and the taxed order count are compared only on an Advanced report. Split Payment uses captured-payment dates and unique original sales; such comparisons require receipt-level review.', 'ffl-funnels-addons') . '</p>';
         if (!class_exists('Tax_Report_Reconciliation')) {
             echo '<div class="notice notice-warning inline"><p>' . esc_html__('The reconciliation engine is unavailable.', 'ffl-funnels-addons') . '</p></div>';
         } else {
@@ -1042,7 +1043,7 @@ class Tax_Reports_Admin
         foreach ((array) ($result['checks'] ?? []) as $check) {
             $rows[] = [
                 'check'       => (string) ($check['label'] ?? ''),
-                'status'      => (string) ($check['status'] ?? 'warn'),
+                'status'      => empty($check['comparable']) ? __('not compared', 'ffl-funnels-addons') : (string) ($check['status'] ?? 'warn'),
                 'ffla'        => $check['ffla'] ?? '',
                 'woocommerce' => $check['woocommerce'] ?? '',
                 'difference'  => $check['difference'] ?? '',
@@ -1056,6 +1057,7 @@ class Tax_Reports_Admin
         );
 
         self::render_message_list(__('Warnings', 'ffl-funnels-addons'), (array) ($result['warnings'] ?? []), 'warning');
+        self::render_message_list(__('Notes', 'ffl-funnels-addons'), (array) ($result['notes'] ?? []), 'info');
         self::render_message_list(__('Recommended review steps', 'ffl-funnels-addons'), (array) ($result['recommendations'] ?? []), 'info');
     }
 
@@ -1186,7 +1188,7 @@ class Tax_Reports_Admin
         echo '<input type="file" name="report_files[]" accept=".zip,.csv,application/zip,text/csv" multiple required>';
         echo '<span class="ffla-tax-report-file-status" data-file-status></span></label>';
         echo '<label class="ffla-tax-report-dropzone" data-tax-report-dropzone><strong class="ffla-tax-report-dropzone__title">' . esc_html__('Optional state filing template', 'ffl-funnels-addons') . '</strong>';
-        echo '<span class="ffla-tax-report-dropzone__help">' . esc_html__('Add one CSV template to map the combined totals into its existing rows and columns.', 'ffl-funnels-addons') . '</span>';
+        echo '<span class="ffla-tax-report-dropzone__help">' . esc_html__('Add one CSV template to map the combined totals into its existing rows and columns. Template rows without sales get 0; a report jurisdiction with no template row stops the download.', 'ffl-funnels-addons') . '</span>';
         echo '<input type="file" name="template_file" accept=".csv,text/csv">';
         echo '<span class="ffla-tax-report-file-status" data-file-status></span></label>';
         echo '</div>';
@@ -1249,8 +1251,19 @@ class Tax_Reports_Admin
         if (isset($diagnostics['mapping']) && is_array($diagnostics['mapping'])) {
             $mapping = $diagnostics['mapping'];
             echo '<p><strong>' . esc_html__('Template matches:', 'ffl-funnels-addons') . '</strong> ' . esc_html((string) ($mapping['matched'] ?? 0))
-                . ' · <strong>' . esc_html__('Unmatched:', 'ffl-funnels-addons') . '</strong> ' . esc_html((string) count((array) ($mapping['unmatched'] ?? [])))
+                . ' · <strong>' . esc_html__('Template rows with no sales (written as 0):', 'ffl-funnels-addons') . '</strong> ' . esc_html((string) ($mapping['no_activity_count'] ?? count((array) ($mapping['no_activity'] ?? []))))
+                . ' · <strong>' . esc_html__('Report jurisdictions missing from the template:', 'ffl-funnels-addons') . '</strong> ' . esc_html((string) count((array) ($mapping['unmatched'] ?? [])))
                 . ' · <strong>' . esc_html__('Ambiguous:', 'ffl-funnels-addons') . '</strong> ' . esc_html((string) count((array) ($mapping['ambiguous'] ?? []))) . '</p>';
+            $missing = [];
+            foreach ((array) ($mapping['unmatched'] ?? []) as $issue) {
+                $identifiers = is_array($issue) ? (array) ($issue['identifiers'] ?? []) : [];
+                $missing[] = [
+                    'code'    => 'missing_from_template',
+                    'message' => implode(' / ', array_map('strval', $identifiers))
+                        . (isset($issue['net_tax']) && $issue['net_tax'] !== '' ? ' — ' . __('net tax', 'ffl-funnels-addons') . ' ' . $issue['net_tax'] : ''),
+                ];
+            }
+            self::render_diagnostic_issues(__('Report jurisdictions missing from the template', 'ffl-funnels-addons'), $missing, 'error');
             self::render_diagnostic_issues(__('Mapping errors', 'ffl-funnels-addons'), (array) ($mapping['errors'] ?? []), 'error');
             self::render_diagnostic_issues(__('Mapping warnings', 'ffl-funnels-addons'), (array) ($mapping['warnings'] ?? []), 'warning');
         }

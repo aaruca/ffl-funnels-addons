@@ -86,16 +86,20 @@ class FFL_Checkout_Admin
         );
 
         // Show which token source is currently active so the operator knows
-        // whether the "Auto" fallback will work.
+        // whether the "Auto" fallback will work. The borrow is actually tried
+        // (cached for 50 minutes; a failure is retried after a minute).
         $has_own         = trim((string) $s['mapbox_public_token']) !== '';
         $borrow_possible = class_exists('FFL_Checkout_Mapbox') && FFL_Checkout_Mapbox::is_borrow_available();
 
         if ($has_own) {
             $status_class = 'success';
             $status_text  = __('Active source: your own Mapbox token.', 'ffl-funnels-addons');
-        } elseif ($borrow_possible) {
+        } elseif ($borrow_possible && FFL_Checkout_Mapbox::borrowed_token() !== '') {
             $status_class = 'success';
             $status_text  = __('Active source: borrowed from g-FFL Checkout (no token entered).', 'ffl-funnels-addons');
+        } elseif ($borrow_possible) {
+            $status_class = 'warning';
+            $status_text  = __('g-FFL Checkout is set up, but no token could be borrowed right now. Enter your own token, or reload this page in a minute.', 'ffl-funnels-addons');
         } else {
             $status_class = 'warning';
             $status_text  = __('No token available — enter your own above, or configure the g-FFL Checkout plugin so a token can be borrowed.', 'ffl-funnels-addons');
@@ -131,7 +135,7 @@ class FFL_Checkout_Admin
         echo '<div class="wb-card__header"><h3>' . esc_html__('Shortcodes', 'ffl-funnels-addons') . '</h3></div>';
         echo '<div class="wb-card__body">';
         echo '<p class="wb-section-desc">' . esc_html__('Place these shortcodes in your Bricks checkout template:', 'ffl-funnels-addons') . '</p>';
-        echo '<p><code>[ffl_dealer_finder]</code> &mdash; ' . esc_html__('FFL Dealer Finder widget (requires g-FFL Checkout plugin).', 'ffl-funnels-addons') . '</p>';
+        echo '<p><code>[ffl_dealer_finder]</code> &mdash; ' . esc_html__('FFL Dealer Finder widget (requires g-FFL Checkout plugin). Only the first copy on a page is shown, and none when g-FFL Checkout shows its own widget there.', 'ffl-funnels-addons') . '</p>';
         echo '<p><code>[ffl_vendor_selector]</code> &mdash; ' . esc_html__('Vendor/warehouse selector for eligible cart items.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 

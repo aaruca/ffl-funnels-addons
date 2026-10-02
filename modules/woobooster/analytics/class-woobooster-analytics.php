@@ -106,10 +106,10 @@ class WooBooster_Analytics
         // phpcs:enable
 
         if (!$from || !strtotime($from)) {
-            $from = gmdate('Y-m-d', strtotime('-30 days'));
+            $from = wp_date('Y-m-d', strtotime('-30 days'));
         }
         if (!$to || !strtotime($to)) {
-            $to = gmdate('Y-m-d');
+            $to = wp_date('Y-m-d');
         }
 
         if (strtotime($from) > strtotime($to)) {
@@ -280,22 +280,33 @@ class WooBooster_Analytics
 
     /**
      * Get conversion rate using ATC counter + pre-computed purchased count.
+     *
+     * Day keys ('Y-m-d') are counted when they fall inside the range. Month
+     * keys ('Y-m') come from older versions, which only counted per month;
+     * they are included when the month overlaps the range.
      */
     private function get_conversion_rate($date_from, $date_to, $purchased_items)
     {
         $counter = get_option(WooBooster_Tracker::COUNTER_OPTION, array());
         $atc_total = 0;
 
-        $start = new DateTime($date_from);
-        $end = new DateTime($date_to);
-        $end->modify('first day of next month');
-        $interval = new DateInterval('P1M');
-        $period = new DatePeriod($start->modify('first day of this month'), $interval, $end);
+        if (is_array($counter)) {
+            $from_month = substr($date_from, 0, 7);
+            $to_month   = substr($date_to, 0, 7);
 
-        foreach ($period as $dt) {
-            $month_key = $dt->format('Y-m');
-            if (isset($counter[$month_key])) {
-                foreach ($counter[$month_key] as $count) {
+            foreach ($counter as $key => $rules) {
+                $key = (string) $key;
+                if (10 === strlen($key)) {
+                    $in_range = $key >= $date_from && $key <= $date_to;
+                } elseif (7 === strlen($key)) {
+                    $in_range = $key >= $from_month && $key <= $to_month;
+                } else {
+                    $in_range = false;
+                }
+                if (!$in_range || !is_array($rules)) {
+                    continue;
+                }
+                foreach ($rules as $count) {
                     $atc_total += absint($count);
                 }
             }
@@ -525,20 +536,20 @@ class WooBooster_Analytics
                         list($label, $span) = $preset;
 
                         if ($span === 'week') {
-                            $preset_from = gmdate('Y-m-d', strtotime('monday this week'));
-                            $preset_to = gmdate('Y-m-d');
+                            $preset_from = wp_date('Y-m-d', strtotime('monday this week'));
+                            $preset_to = wp_date('Y-m-d');
                         } elseif ($span === 'month') {
-                            $preset_from = gmdate('Y-m-01');
-                            $preset_to = gmdate('Y-m-d');
+                            $preset_from = wp_date('Y-m-01');
+                            $preset_to = wp_date('Y-m-d');
                         } elseif ($span === 0) {
-                            $preset_from = gmdate('Y-m-d');
-                            $preset_to = gmdate('Y-m-d');
+                            $preset_from = wp_date('Y-m-d');
+                            $preset_to = wp_date('Y-m-d');
                         } elseif ($span === 1) {
-                            $preset_from = gmdate('Y-m-d', strtotime('-1 day'));
-                            $preset_to = gmdate('Y-m-d', strtotime('-1 day'));
+                            $preset_from = wp_date('Y-m-d', strtotime('-1 day'));
+                            $preset_to = wp_date('Y-m-d', strtotime('-1 day'));
                         } else {
-                            $preset_from = gmdate('Y-m-d', strtotime("-{$span} days"));
-                            $preset_to = gmdate('Y-m-d');
+                            $preset_from = wp_date('Y-m-d', strtotime("-{$span} days"));
+                            $preset_to = wp_date('Y-m-d');
                         }
 
                         $url = add_query_arg(array('page' => 'ffla-woobooster-analytics', 'wb_from' => $preset_from, 'wb_to' => $preset_to), admin_url('admin.php'));

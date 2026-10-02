@@ -59,9 +59,21 @@ class Wishlist_Module extends FFLA_Module
         $ajax = new Alg_Wishlist_Ajax();
         add_action('wp_ajax_alg_add_to_wishlist', [$ajax, 'add_to_wishlist']);
         add_action('wp_ajax_nopriv_alg_add_to_wishlist', [$ajax, 'add_to_wishlist']);
+        add_action('wp_ajax_alg_wishlist_state', [$ajax, 'get_state']);
+        add_action('wp_ajax_nopriv_alg_wishlist_state', [$ajax, 'get_state']);
 
-        // Session.
+        // Session: merge a guest list on sign-in, forget the list state on sign-out.
         add_action('init', ['Alg_Wishlist_Core', 'init_session']);
+        add_action('wp_logout', ['Alg_Wishlist_Core', 'clear_state_cookie']);
+
+        // The wishlist page shows one visitor's products: never cache it.
+        add_action('template_redirect', [$this, 'maybe_disable_page_cache']);
+
+        // Daily cleanup of guest lists whose cookie has expired.
+        add_action(Alg_Wishlist_Core::CLEANUP_HOOK, ['Alg_Wishlist_Core', 'cleanup_guest_lists']);
+        if (!wp_next_scheduled(Alg_Wishlist_Core::CLEANUP_HOOK)) {
+            wp_schedule_event(time() + HOUR_IN_SECONDS, 'daily', Alg_Wishlist_Core::CLEANUP_HOOK);
+        }
 
         // Admin.
         if (is_admin()) {
@@ -95,6 +107,19 @@ class Wishlist_Module extends FFLA_Module
     }
 
     /**
+     * Keep the configured wishlist page out of full-page caches. Caches that
+     * honour DONOTCACHEPAGE (WP Rocket, W3 Total Cache, WP Super Cache, ...)
+     * or Cache-Control: no-cache skip it.
+     */
+    public function maybe_disable_page_cache(): void
+    {
+        $page_id = Alg_Wishlist_Core::get_wishlist_page_id();
+        if ($page_id && is_page($page_id)) {
+            Alg_Wishlist_Core::disable_page_cache();
+        }
+    }
+
+    /**
      * Ensure tables exist (self-healing).
      */
     public function verify_database_tables(): void
@@ -123,7 +148,7 @@ class Wishlist_Module extends FFLA_Module
 
     public function deactivate(): void
     {
-        // Nothing to clean up on deactivate.
+        wp_clear_scheduled_hook('alg_wishlist_cleanup_guests');
     }
 
     /* ── Admin Pages ───────────────────────────────────────────────── */

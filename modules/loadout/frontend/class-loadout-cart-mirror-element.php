@@ -9,7 +9,7 @@ if (!class_exists('\Bricks\Element')) {
 
 class Loadout_Cart_Mirror_Element extends \Bricks\Element
 {
-    public $category = 'woocommerce';
+    public $category = 'FFL Funnels';
     public $name = 'loadout-cart-mirror';
     public $icon = 'ti-shopping-cart-full';
     public $scripts = ['loadout-frontend'];
@@ -31,14 +31,14 @@ class Loadout_Cart_Mirror_Element extends \Bricks\Element
             'label'       => esc_html__('Filter by Loadout', 'ffl-funnels-addons'),
             'type'        => 'select',
             'options'     => $loadout_options,
-            'description' => esc_html__('Leave empty to auto-pick based on the current product, or show all loadouts if not on a product page.', 'ffl-funnels-addons'),
+            'description' => esc_html__('Leave empty to auto-pick based on the current product, or to list every loadout item in the cart when not on a product page. Other cart items are never listed.', 'ffl-funnels-addons'),
         ];
 
         $this->controls['heading'] = [
             'tab' => 'content',
             'label' => esc_html__('Heading', 'ffl-funnels-addons'),
             'type' => 'text',
-            'default' => 'Your Cart',
+            'default' => esc_html__('Your Cart', 'ffl-funnels-addons'),
         ];
     }
 
@@ -46,14 +46,22 @@ class Loadout_Cart_Mirror_Element extends \Bricks\Element
     {
         $settings   = $this->settings;
         $loadout_id = absint($settings['loadout_id'] ?? 0);
-        $heading    = $settings['heading'] ?? 'Your Cart';
+        $heading    = $settings['heading'] ?? __('Your Cart', 'ffl-funnels-addons');
 
-        $resolved        = Loadout_Element_Helpers::resolve_tiers_for_current_context($loadout_id);
-        $loadout_id_attr = $resolved['loadout_id'];
+        if (class_exists('Loadout_Frontend')) {
+            Loadout_Frontend::enqueue();
+        }
+
+        $resolved           = Loadout_Element_Helpers::resolve_tiers_for_current_context($loadout_id);
+        $loadout_id_attr    = $resolved['loadout_id'];
+        $product_loadout_id = $resolved['product_loadout_id'];
 
         $this->set_attribute('_root', 'class', 'ffla-loadout ffla-loadout--cart-only');
         if ($loadout_id_attr) {
             $this->set_attribute('_root', 'data-loadout-id', $loadout_id_attr);
+        }
+        if ($product_loadout_id) {
+            $this->set_attribute('_root', 'data-product-loadout-id', $product_loadout_id);
         }
         ?>
         <div <?php echo $this->render_attributes('_root'); ?>>

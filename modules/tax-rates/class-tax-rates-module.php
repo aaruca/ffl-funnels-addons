@@ -49,6 +49,7 @@ class Tax_Rates_Module extends FFLA_Module
         $base = $this->get_path();
 
         // Core classes.
+        require_once $base . 'includes/functions-tax-log.php';
         require_once $base . 'includes/class-tax-resolver-db.php';
         require_once $base . 'includes/class-tax-coverage.php';
         require_once $base . 'includes/class-tax-address-normalizer.php';
@@ -132,7 +133,6 @@ class Tax_Rates_Module extends FFLA_Module
             update_option('ffla_tax_resolver_settings', [
                 'cache_ttl'       => 86400,    // 24 hours
                 'auto_sync'       => '1',
-                'sync_schedule'   => 'monthly',
                 'restrict_states' => '0',
                 'enabled_states'  => [],
                 'rate_source'     => 'auto',

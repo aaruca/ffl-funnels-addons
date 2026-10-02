@@ -76,11 +76,29 @@ class WooBooster_Admin
             wp_enqueue_media();
         }
 
+        // Attribute taxonomies and user roles for rows the JS builds (a new
+        // bundle has no server-rendered row to copy the options from).
+        $attribute_taxonomies = array();
+        if (function_exists('wc_get_attribute_taxonomies')) {
+            foreach ((array) wc_get_attribute_taxonomies() as $attribute) {
+                $attribute_taxonomies[wc_attribute_taxonomy_name($attribute->attribute_name)] = $attribute->attribute_label;
+            }
+        }
+        $user_roles = array();
+        if (function_exists('wp_roles')) {
+            foreach (wp_roles()->roles as $slug => $role_def) {
+                $user_roles[$slug] = translate_user_role($role_def['name']);
+            }
+        }
+
         // Localize the module script (enqueued by FFLA_Admin).
         wp_localize_script('woobooster-module', 'wooboosterAdmin', array(
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('woobooster_admin'),
+            'attributeTaxonomies' => (object) $attribute_taxonomies,
+            'userRoles' => (object) $user_roles,
             'i18n' => array(
+                'guestRole'            => __('Guest (logged out)', 'ffl-funnels-addons'),
                 'confirmDelete'        => __('Are you sure you want to delete this rule?', 'ffl-funnels-addons'),
                 'confirmDeleteBundle'  => __('Are you sure you want to delete this bundle?', 'ffl-funnels-addons'),
                 'confirmDeleteAll'     => __('Are you sure you want to DELETE ALL RULES? This action cannot be undone.', 'ffl-funnels-addons'),
@@ -178,19 +196,12 @@ class WooBooster_Admin
             __('Frontend Section Title', 'ffl-funnels-addons'),
             'woobooster_section_title',
             isset($options['section_title']) ? $options['section_title'] : __('You May Also Like', 'ffl-funnels-addons'),
-            __('The heading displayed above the recommended products on the product page.', 'ffl-funnels-addons')
+            __('The heading above recommendations on classic product pages and in the [woobooster] shortcode. Bricks loops use their own heading.', 'ffl-funnels-addons')
         );
 
-        FFLA_Admin::render_select_field(
-            __('Rendering Method', 'ffl-funnels-addons'),
-            'woobooster_render_method',
-            isset($options['render_method']) ? $options['render_method'] : 'bricks',
-            array(
-                'bricks' => __('Bricks Query Loop (recommended)', 'ffl-funnels-addons'),
-                'woo_hook' => __('WooCommerce Hook (fallback)', 'ffl-funnels-addons'),
-            ),
-            __('Choose how recommendations are rendered on the frontend.', 'ffl-funnels-addons')
-        );
+        // "Rendering Method" was removed: no code ever read it. Classic product
+        // pages always get the WooCommerce-hook output and Bricks templates use
+        // the query loops. A saved `render_method` value is left untouched.
 
         // AI fields moved to dedicated render_ai_settings_section() card below.
 
@@ -198,7 +209,7 @@ class WooBooster_Admin
             __('Exclude Out of Stock', 'ffl-funnels-addons'),
             'woobooster_exclude_outofstock',
             isset($options['exclude_outofstock']) ? $options['exclude_outofstock'] : '1',
-            __('Globally exclude out-of-stock products from recommendations.', 'ffl-funnels-addons')
+            __('Leave out-of-stock products out of rule and Smart recommendations, bundle dynamic items and the shortcode. Bricks loops have their own checkbox.', 'ffl-funnels-addons')
         );
 
         FFLA_Admin::render_toggle_field(
@@ -212,7 +223,7 @@ class WooBooster_Admin
             __('Delete Data on Uninstall', 'ffl-funnels-addons'),
             'woobooster_delete_data',
             isset($options['delete_data_uninstall']) ? $options['delete_data_uninstall'] : '0',
-            __('Remove all WooBooster data (rules, settings) when the plugin is uninstalled.', 'ffl-funnels-addons')
+            __('Remove all WooBooster data (rules, bundles, settings and Smart Recommendations data) when the plugin is deleted.', 'ffl-funnels-addons')
         );
 
         echo '</div></div>';
@@ -405,7 +416,7 @@ class WooBooster_Admin
             </div>
             <div class="wb-card__body">
                 <p class="wb-field__desc" style="margin-bottom:20px;">
-                    <?php esc_html_e('Enable intelligent recommendation strategies. These work as new Action Sources in your rules. Zero extra database tables.', 'ffl-funnels-addons'); ?>
+                    <?php esc_html_e('Smart strategies work as action sources in your rules, in bundle dynamic items and in the Bricks "WooBooster Smart Recommendations" loop. Bought Together and Trending need their index; Recently Viewed needs view tracking.', 'ffl-funnels-addons'); ?>
                 </p>
 
                 <div id="wb-smart-settings-form">
@@ -419,7 +430,7 @@ class WooBooster_Admin
                                 <span class="wb-toggle__slider"></span>
                             </label>
                             <p class="wb-field__desc">
-                                <?php esc_html_e('Analyze orders to find products bought together more often than chance, so items that are in most orders anyway (ammo, fees) do not top every list. Runs nightly via WP-Cron and skips the run when no orders changed.', 'ffl-funnels-addons'); ?>
+                                <?php esc_html_e('Analyze completed and processing orders to find products bought together more often than chance, so items that are in most orders anyway (ammo, fees) do not top every list. Runs daily via WP-Cron and skips the run when no orders changed.', 'ffl-funnels-addons'); ?>
                             </p>
                         </div>
                     </div>
@@ -450,18 +461,14 @@ class WooBooster_Admin
                         </div>
                     </div>
 
-                    <div class="wb-field">
-                        <label class="wb-field__label"><?php esc_html_e('Similar Products', 'ffl-funnels-addons'); ?></label>
-                        <div class="wb-field__control">
-                            <label class="wb-toggle">
-                                <input type="checkbox" name="woobooster_smart_similar" value="1" <?php checked(!empty($options['smart_similar']), true); ?>>
-                                <span class="wb-toggle__slider"></span>
-                            </label>
-                            <p class="wb-field__desc">
-                                <?php esc_html_e('Find products with similar price range and category, ordered by sales.', 'ffl-funnels-addons'); ?>
-                            </p>
-                        </div>
-                    </div>
+                    <?php
+                    // Similar Products needs no index or tracking, so it is
+                    // always available (it never had a working on/off switch;
+                    // a saved `smart_similar` value is left untouched).
+                    ?>
+                    <p class="wb-field__desc">
+                        <?php esc_html_e('Similar Products is always available: it scores products that share a brand, key attribute, category or tag with the viewed product, on price closeness and recent sales. It needs no index.', 'ffl-funnels-addons'); ?>
+                    </p>
 
                     <?php
                     $similar_attrs = isset($options['similar_key_attributes']) ? (string) $options['similar_key_attributes'] : '';
@@ -499,7 +506,7 @@ class WooBooster_Admin
                                 value="<?php echo esc_attr($smart_days); ?>" min="7" max="365" class="wb-input wb-input--sm"
                                 style="width:100px;">
                             <p class="wb-field__desc">
-                                <?php esc_html_e('How many days of order history to scan for co-purchase and trending data.', 'ffl-funnels-addons'); ?>
+                                <?php esc_html_e('How many days of order history to scan for co-purchase and trending data (and the recent-sales signal of Similar Products).', 'ffl-funnels-addons'); ?>
                             </p>
                         </div>
                     </div>
@@ -739,7 +746,7 @@ class WooBooster_Admin
             </div>
             <div class="wb-card__body">
                 <h3><?php esc_html_e('Getting Started', 'ffl-funnels-addons'); ?></h3>
-                <p><?php esc_html_e('WooBooster automatically displays recommended products based on your rules. By default, it replaces the standard WooCommerce "Related Products" section.', 'ffl-funnels-addons'); ?>
+                <p><?php esc_html_e('WooBooster shows recommended products based on your rules. On classic product templates it replaces the standard WooCommerce "Related Products" section; when no rule matches, WooCommerce\'s related products are shown instead.', 'ffl-funnels-addons'); ?>
                 </p>
 
                 <hr class="wb-hr">
@@ -747,52 +754,56 @@ class WooBooster_Admin
                 <h3><?php esc_html_e('Shortcode Usage', 'ffl-funnels-addons'); ?></h3>
                 <p><?php esc_html_e('Use the shortcode to display recommendations anywhere on your site:', 'ffl-funnels-addons'); ?>
                 </p>
-                <code class="wb-code">[woobooster product_id="123" limit="4"]</code>
+                <code class="wb-code">[woobooster product_id="123" limit="4" fallback="bestselling"]</code>
                 <ul class="wb-list">
                     <li><strong>product_id</strong>:
-                        <?php esc_html_e('(Optional) ID of the product to base recommendations on. Defaults to current product.', 'ffl-funnels-addons'); ?>
+                        <?php esc_html_e('(Optional) ID of the product to base recommendations on. Defaults to the current product.', 'ffl-funnels-addons'); ?>
                     </li>
                     <li><strong>limit</strong>:
-                        <?php esc_html_e('(Optional) Number of products to show. Default: 4.', 'ffl-funnels-addons'); ?>
+                        <?php esc_html_e('(Optional) Maximum number of products. When left out, the matched rule\'s own action limits apply.', 'ffl-funnels-addons'); ?>
+                    </li>
+                    <li><strong>fallback</strong>:
+                        <?php esc_html_e('(Optional) What to show when no rule matches: none (default), woo_related, recent or bestselling.', 'ffl-funnels-addons'); ?>
                     </li>
                 </ul>
 
                 <hr class="wb-hr">
 
                 <h3><?php esc_html_e('Bricks Builder Integration', 'ffl-funnels-addons'); ?></h3>
-                <p><?php esc_html_e('WooBooster is fully compatible with Bricks Builder.', 'ffl-funnels-addons'); ?></p>
                 <ol class="wb-list">
-                    <li><?php esc_html_e('Add a "Query Loop" element to your template.', 'ffl-funnels-addons'); ?></li>
-                    <li><?php esc_html_e('Set the Query Type to "WooBooster Recommendations" (rules-based) or "WooBooster Smart Recommendations" (single strategy: similar, co-purchase, trending, recently viewed).', 'ffl-funnels-addons'); ?></li>
+                    <li><?php esc_html_e('Add a "Query Loop" element (Container, Block or Div) to your template.', 'ffl-funnels-addons'); ?></li>
+                    <li><?php esc_html_e('Set the Query Type to "WooBooster Recommendations" (rules-based), "WooBooster Smart Recommendations" (one strategy: similar, bought together, trending or recently viewed) or "WooBooster Bundles".', 'ffl-funnels-addons'); ?></li>
                     <li><?php esc_html_e('Customize your layout using standard Bricks elements.', 'ffl-funnels-addons'); ?></li>
                 </ol>
                 <p class="wb-field__desc">
-                    <?php esc_html_e('Smart Recommendations loops skip rule matching and roll up to a single "Smart (all)" row in the analytics dashboard.', 'ffl-funnels-addons'); ?>
+                    <?php esc_html_e('Smart Recommendations loops skip rule matching and roll up to a single "Smart (all)" row in the analytics dashboard. Bundles are shown with the "WooBooster Bundle" element.', 'ffl-funnels-addons'); ?>
                 </p>
 
                 <hr class="wb-hr">
 
                 <h3><?php esc_html_e('Rules Engine', 'ffl-funnels-addons'); ?></h3>
-                <p><?php esc_html_e('Rules are processed in order from top to bottom. The first rule that matches the current product will be used to generate recommendations.', 'ffl-funnels-addons'); ?>
+                <p><?php esc_html_e('Active rules inside their schedule are checked by priority: the lowest number first, and the oldest rule first when two share a priority. The first rule whose conditions match the viewed product generates the recommendations. Schedules use the store\'s time zone.', 'ffl-funnels-addons'); ?>
+                </p>
+                <p><?php esc_html_e('Apply Coupon actions work on the cart instead: every matching coupon rule applies its coupon while the cart matches.', 'ffl-funnels-addons'); ?>
                 </p>
 
                 <hr class="wb-hr">
 
                 <h3><?php esc_html_e('Smart Recommendations', 'ffl-funnels-addons'); ?></h3>
-                <p><?php esc_html_e('WooBooster includes four intelligent recommendation strategies that go beyond simple taxonomy matching. Enable them in WB Settings.', 'ffl-funnels-addons'); ?>
+                <p><?php esc_html_e('Four strategies that go beyond simple taxonomy matching. Bought Together, Trending and Recently Viewed are switched on in WB Settings; Similar Products is always available.', 'ffl-funnels-addons'); ?>
                 </p>
                 <ul class="wb-list">
                     <li><strong><?php esc_html_e('Bought Together', 'ffl-funnels-addons'); ?></strong>:
-                        <?php esc_html_e('Analyzes completed orders to find products frequently purchased together.', 'ffl-funnels-addons'); ?>
+                        <?php esc_html_e('Analyzes completed and processing orders to find products bought together more often than chance.', 'ffl-funnels-addons'); ?>
                     </li>
                     <li><strong><?php esc_html_e('Trending', 'ffl-funnels-addons'); ?></strong>:
-                        <?php esc_html_e('Tracks bestselling products per category based on recent sales data.', 'ffl-funnels-addons'); ?>
+                        <?php esc_html_e('Ranks products per category by recent orders, weighted toward the last two weeks.', 'ffl-funnels-addons'); ?>
                     </li>
                     <li><strong><?php esc_html_e('Recently Viewed', 'ffl-funnels-addons'); ?></strong>:
-                        <?php esc_html_e('Shows products the visitor has recently browsed via browser cookie.', 'ffl-funnels-addons'); ?>
+                        <?php esc_html_e('Shows products the visitor has recently browsed, from a browser cookie.', 'ffl-funnels-addons'); ?>
                     </li>
                     <li><strong><?php esc_html_e('Similar Products', 'ffl-funnels-addons'); ?></strong>:
-                        <?php esc_html_e('Finds products with similar price in the same category.', 'ffl-funnels-addons'); ?>
+                        <?php esc_html_e('Scores products that share a brand, key attribute, category or tag, on price closeness and recent sales.', 'ffl-funnels-addons'); ?>
                     </li>
                 </ul>
             </div>
@@ -823,7 +834,6 @@ class WooBooster_Admin
         $options = array_merge($existing, array(
             'enabled' => isset($_POST['woobooster_enabled']) ? '1' : '0',
             'section_title' => isset($_POST['woobooster_section_title']) ? sanitize_text_field(wp_unslash($_POST['woobooster_section_title'])) : '',
-            'render_method' => isset($_POST['woobooster_render_method']) ? sanitize_key($_POST['woobooster_render_method']) : 'bricks',
             'ai_provider' => isset($_POST['woobooster_ai_provider']) ? sanitize_key($_POST['woobooster_ai_provider']) : 'openai',
             'ai_api_key' => isset($_POST['woobooster_ai_api_key']) ? sanitize_text_field(wp_unslash($_POST['woobooster_ai_api_key'])) : ($existing['ai_api_key'] ?? ''),
             'ai_model' => isset($_POST['woobooster_ai_model']) ? sanitize_text_field(wp_unslash($_POST['woobooster_ai_model'])) : '',
@@ -839,7 +849,6 @@ class WooBooster_Admin
             $options['smart_copurchase'] = isset($_POST['woobooster_smart_copurchase']) ? '1' : '0';
             $options['smart_trending'] = isset($_POST['woobooster_smart_trending']) ? '1' : '0';
             $options['smart_recently_viewed'] = isset($_POST['woobooster_smart_recently_viewed']) ? '1' : '0';
-            $options['smart_similar'] = isset($_POST['woobooster_smart_similar']) ? '1' : '0';
             $options['smart_days'] = isset($_POST['woobooster_smart_days']) ? absint($_POST['woobooster_smart_days']) : 90;
             $options['smart_max_relations'] = isset($_POST['woobooster_smart_max_relations']) ? absint($_POST['woobooster_smart_max_relations']) : 20;
 
@@ -875,19 +884,34 @@ class WooBooster_Admin
             wp_send_json_error(array('message' => __('Permission denied.', 'ffl-funnels-addons')));
         }
 
-        $rules = WooBooster_Rule::get_all();
+        $rules = WooBooster_Rule::get_all(array('limit' => 10000));
         $export_rules = array();
 
         foreach ($rules as $rule) {
             $rule_data = (array) $rule;
             $rule_data['conditions'] = WooBooster_Rule::get_conditions($rule->id);
-            $rule_data['actions'] = WooBooster_Rule::get_actions($rule->id);
+
+            // Coupon IDs differ between sites, so export the code as well; the
+            // importer resolves the code first.
+            $action_groups = WooBooster_Rule::get_actions($rule->id);
+            foreach ($action_groups as $gid => $group) {
+                foreach ((array) $group as $i => $action) {
+                    if (!empty($action->action_coupon_id)) {
+                        $code = function_exists('wc_get_coupon_code_by_id') ? wc_get_coupon_code_by_id((int) $action->action_coupon_id) : '';
+                        $action_groups[$gid][$i] = (object) array_merge((array) $action, array('action_coupon_code' => (string) $code));
+                    }
+                }
+            }
+            $rule_data['actions'] = $action_groups;
             $export_rules[] = $rule_data;
         }
 
         $export_data = array(
             'version' => WOOBOOSTER_VERSION,
             'date' => gmdate('Y-m-d H:i:s'),
+            // Rule schedules in this file are GMT. Files without this marker
+            // come from versions that stored the time as typed (store time).
+            'schedule_dates' => 'gmt',
             'rules' => $export_rules,
         );
 
@@ -937,9 +961,11 @@ class WooBooster_Admin
             'name', 'priority', 'status',
             'condition_attribute', 'condition_operator', 'condition_value', 'include_children',
             'action_source', 'action_value', 'action_orderby', 'action_limit',
+            'start_date', 'end_date',
         );
         $max_conditions_per_group = 50;
         $max_actions_per_rule     = 50;
+        $dates_are_gmt            = isset($data['schedule_dates']) && 'gmt' === $data['schedule_dates'];
 
         $count = 0;
         foreach ($data['rules'] as $rule_data) {
@@ -956,6 +982,17 @@ class WooBooster_Admin
                 continue;
             }
 
+            // Schedules: keep only real datetimes; files from older versions
+            // hold store time and are converted to GMT.
+            foreach (array('start_date', 'end_date') as $date_key) {
+                $value = isset($rule_data[$date_key]) ? sanitize_text_field((string) $rule_data[$date_key]) : '';
+                if ('' === $value || !preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/', $value) || 0 === strpos($value, '0000')) {
+                    unset($rule_data[$date_key]);
+                    continue;
+                }
+                $rule_data[$date_key] = $dates_are_gmt ? $value : get_gmt_from_date($value);
+            }
+
             $rule_id = WooBooster_Rule::create($rule_data);
             if ($rule_id) {
                 if (!empty($conditions)) {
@@ -965,22 +1002,25 @@ class WooBooster_Admin
                             continue;
                         }
                         $group_arr = array();
-                        $allowed_ops = array('equals', 'not_equals');
                         foreach ($group as $cond) {
                             if (count($group_arr) >= $max_conditions_per_group) {
                                 break;
                             }
                             $cond = (array) $cond;
-                            $op = sanitize_key($cond['condition_operator'] ?? 'equals');
-                            if (!in_array($op, $allowed_ops, true)) {
-                                $op = 'equals';
-                            }
-                            $group_arr[] = array(
+                            $row = array(
                                 'condition_attribute' => sanitize_key($cond['condition_attribute'] ?? ''),
-                                'condition_operator' => $op,
+                                // Only "is" / "is not" exist; a legacy "contains" matched like "is".
+                                'condition_operator' => 'not_equals' === sanitize_key($cond['condition_operator'] ?? '') ? 'not_equals' : 'equals',
                                 'condition_value' => sanitize_text_field($cond['condition_value'] ?? ''),
                                 'include_children' => absint($cond['include_children'] ?? 0),
+                                'min_quantity' => max(1, absint($cond['min_quantity'] ?? 1)),
                             );
+                            foreach (array('exclude_categories', 'exclude_products', 'exclude_price_min', 'exclude_price_max') as $opt_key) {
+                                if (isset($cond[$opt_key]) && '' !== $cond[$opt_key] && null !== $cond[$opt_key]) {
+                                    $row[$opt_key] = sanitize_text_field((string) $cond[$opt_key]);
+                                }
+                            }
+                            $group_arr[] = $row;
                         }
                         if (!empty($group_arr)) {
                             $clean_conditions[absint($group_id)] = $group_arr;
@@ -992,28 +1032,56 @@ class WooBooster_Admin
                 }
 
                 if (!empty($actions)) {
-                    $clean_actions = array();
-                    foreach ($actions as $action) {
-                        if (count($clean_actions) >= $max_actions_per_rule) {
-                            break;
+                    // Exports group actions by group ID; very old files have a flat list.
+                    $groups = array();
+                    foreach ($actions as $group_id => $group) {
+                        if (is_array($group) && isset($group['action_source'])) {
+                            $groups[0][] = $group;          // Flat list of action arrays.
+                        } elseif (is_object($group)) {
+                            $groups[0][] = (array) $group;  // Flat list of action objects.
+                        } elseif (is_array($group)) {
+                            $groups[absint($group_id)] = $group;
                         }
-                        $action = (array) $action;
-                        $row = array(
-                            'action_source' => sanitize_key($action['action_source'] ?? 'category'),
-                            'action_value' => sanitize_text_field($action['action_value'] ?? ''),
-                            'action_limit' => absint($action['action_limit'] ?? 4),
-                            'action_orderby' => sanitize_key($action['action_orderby'] ?? 'rand'),
-                            'include_children' => absint($action['include_children'] ?? 0),
-                        );
-                        foreach (array('action_products', 'exclude_categories', 'exclude_products', 'exclude_price_min', 'exclude_price_max') as $opt_key) {
-                            if (isset($action[$opt_key]) && '' !== $action[$opt_key]) {
-                                $row[$opt_key] = sanitize_text_field($action[$opt_key]);
-                            }
-                        }
-                        $clean_actions[] = $row;
                     }
-                    if (!empty($clean_actions)) {
-                        WooBooster_Rule::save_actions($rule_id, $clean_actions);
+
+                    $clean_groups = array();
+                    $total        = 0;
+                    foreach ($groups as $group_id => $group) {
+                        foreach ((array) $group as $action) {
+                            if ($total >= $max_actions_per_rule) {
+                                break 2;
+                            }
+                            $action = (array) $action;
+                            $row = array(
+                                'action_source' => sanitize_key($action['action_source'] ?? 'category'),
+                                'action_value' => sanitize_text_field($action['action_value'] ?? ''),
+                                'action_limit' => absint($action['action_limit'] ?? 4),
+                                'action_orderby' => sanitize_key($action['action_orderby'] ?? 'rand'),
+                                'include_children' => absint($action['include_children'] ?? 0),
+                            );
+                            foreach (array('action_products', 'exclude_categories', 'exclude_products', 'exclude_price_min', 'exclude_price_max', 'action_coupon_message') as $opt_key) {
+                                if (isset($action[$opt_key]) && '' !== $action[$opt_key] && null !== $action[$opt_key]) {
+                                    $row[$opt_key] = sanitize_text_field((string) $action[$opt_key]);
+                                }
+                            }
+                            if ('apply_coupon' === $row['action_source']) {
+                                $coupon_id = 0;
+                                if (!empty($action['action_coupon_code']) && function_exists('wc_get_coupon_id_by_code')) {
+                                    $coupon_id = (int) wc_get_coupon_id_by_code(sanitize_text_field((string) $action['action_coupon_code']));
+                                }
+                                if (!$coupon_id && !empty($action['action_coupon_id']) && 'shop_coupon' === get_post_type(absint($action['action_coupon_id']))) {
+                                    $coupon_id = absint($action['action_coupon_id']);
+                                }
+                                if ($coupon_id) {
+                                    $row['action_coupon_id'] = $coupon_id;
+                                }
+                            }
+                            $clean_groups[$group_id][] = $row;
+                            $total++;
+                        }
+                    }
+                    if (!empty($clean_groups)) {
+                        WooBooster_Rule::save_actions($rule_id, $clean_groups);
                     }
                 }
 
@@ -1098,7 +1166,7 @@ class WooBooster_Admin
         }
 
         $counts = WooBooster_Cron::purge_all();
-        $total = $counts['copurchase'] + $counts['trending'] + $counts['similar'];
+        $total = $counts['copurchase'] + $counts['trending'] + $counts['cache'];
 
         wp_send_json_success(array(
             'message' => sprintf(__('Cleared %d items.', 'ffl-funnels-addons'), $total),
@@ -1336,7 +1404,7 @@ Condition (`condition_attribute` + `condition_operator` + `condition_value`):
 - `product_cat` / `product_tag` with a term slug, e.g. \"handguns\"
 - a `pa_*` attribute taxonomy with a term slug, e.g. `pa_caliber` = \"9mm\"
 - `specific_product` with product ID(s)
-- operators: `equals` (most common), `not_equals`, `contains`
+- operators: `equals` (most common) or `not_equals`
 
 Action (`action_source`):
 - `category` / `tag` — `action_value` is the slug
@@ -1787,7 +1855,7 @@ A bundle has THREE parts:
 ### Discount Types:
 - `none` — No discount (default)
 - `percentage` — Percentage off each item (e.g. 10 = 10% off)
-- `fixed` — Fixed amount off each item (e.g. 5 = \$5 off each)
+- `fixed` — Fixed amount off the whole bundle, split across the items by price (e.g. 15 = \$15 off the set)
 
 ## Your Workflow (INTERACTIVE — always confirm before creating)
 
@@ -1919,6 +1987,13 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
     {
         require_once WOOBOOSTER_PATH . 'includes/class-woobooster-bundle.php';
 
+        // Check the proposal against the real catalog first, like AI rules:
+        // never save a bundle built on a guessed product ID or slug.
+        $errors = $this->validate_ai_bundle($args);
+        if (!empty($errors)) {
+            return array('success' => false, 'message' => 'Bundle not created: ' . implode(' ', $errors));
+        }
+
         $bundle_data = array(
             'name' => sanitize_text_field($args['name'] ?? ''),
             'priority' => absint($args['priority'] ?? 10),
@@ -1974,6 +2049,65 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
             'bundle_id' => $bundle_id,
             'edit_url' => $edit_url,
         );
+    }
+
+    /**
+     * Problems with an AI bundle proposal (empty when it can be saved).
+     *
+     * @param array $args Proposal: name, items, condition_*, discount_*.
+     * @return string[]
+     */
+    private function validate_ai_bundle(array $args): array
+    {
+        $errors = array();
+
+        if ('' === trim(sanitize_text_field((string) ($args['name'] ?? '')))) {
+            $errors[] = 'A bundle name is required.';
+        }
+
+        $items = array_values(array_filter(array_map('absint', (array) ($args['items'] ?? array()))));
+        if (empty($items)) {
+            $errors[] = 'The bundle needs at least one product.';
+        }
+        $missing = array();
+        foreach ($items as $pid) {
+            if ('product' !== get_post_type($pid) || 'publish' !== get_post_status($pid)) {
+                $missing[] = $pid;
+            }
+        }
+        if ($missing) {
+            $errors[] = sprintf('Products not found or not published: %s.', implode(', ', $missing));
+        }
+
+        $attr = sanitize_key((string) ($args['condition_attribute'] ?? ''));
+        $val  = trim(sanitize_text_field((string) ($args['condition_value'] ?? '')));
+        if ('' !== $attr && '' !== $val) {
+            if ('specific_product' === $attr) {
+                $ids = array_filter(array_map('absint', preg_split('/[\s,]+/', $val)));
+                foreach ($ids as $pid) {
+                    if ('product' !== get_post_type($pid) || 'publish' !== get_post_status($pid)) {
+                        $errors[] = sprintf('Condition product %d not found or not published.', $pid);
+                    }
+                }
+            } elseif (in_array($attr, array('product_cat', 'product_tag'), true) || (0 === strpos($attr, 'pa_') && taxonomy_exists($attr))) {
+                $term = get_term_by('slug', sanitize_title($val), $attr);
+                if (!$term || is_wp_error($term)) {
+                    $errors[] = sprintf('No %s term "%s" exists.', $attr, $val);
+                }
+            } else {
+                $errors[] = sprintf('condition_attribute "%s" is not supported.', $attr);
+            }
+        }
+
+        $type  = sanitize_key((string) ($args['discount_type'] ?? 'none'));
+        $value = (float) ($args['discount_value'] ?? 0);
+        if (!in_array($type, array('none', 'percentage', 'fixed'), true)) {
+            $errors[] = 'discount_type must be none, percentage or fixed.';
+        } elseif ('percentage' === $type && ($value < 0 || $value > 100)) {
+            $errors[] = 'A percentage discount must be between 0 and 100.';
+        }
+
+        return $errors;
     }
 
     /**

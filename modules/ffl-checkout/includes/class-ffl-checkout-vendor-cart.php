@@ -23,6 +23,12 @@ class FFL_Checkout_Vendor_Cart
      */
     public static function init(): void
     {
+        // Only while "Enable Vendor Selector" is on; otherwise g-FFL Cockpit's
+        // own hooks (if active) handle its vendor data alone.
+        if (!FFL_Checkout_Vendor_Api::selector_enabled()) {
+            return;
+        }
+
         // Reapply vendor data when the cart is loaded from session.
         add_filter('woocommerce_get_cart_item_from_session', [__CLASS__, 'reapply_vendor_from_session'], 20, 2);
 

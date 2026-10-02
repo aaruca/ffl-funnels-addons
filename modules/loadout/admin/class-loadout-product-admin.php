@@ -159,18 +159,28 @@ class Loadout_Product_Admin
         $custom_tiers = $custom_tiers_json ? json_decode($custom_tiers_json, true) : [];
 
         $all_loadouts = Loadout::get_all(['status' => 1]);
+
+        // Keep a linked loadout selectable even when it is inactive, otherwise
+        // saving the product would silently drop the link.
+        $linked_inactive = null;
+        if ((int) $linked_id > 0) {
+            $linked = Loadout::get((int) $linked_id);
+            if ($linked && !$linked->get_status()) {
+                $linked_inactive = $linked;
+            }
+        }
         ?>
         <div id="loadout_product_data" class="panel woocommerce_options_panel">
             <details class="loadout-help-box" style="margin:12px;">
                 <summary><strong><?php esc_html_e('How the Loadout config works', 'ffl-funnels-addons'); ?></strong></summary>
                 <div class="loadout-help-content" style="padding:8px 12px;">
-                    <p><?php esc_html_e('Attach a tiered cross-sell configuration to this product. The tiers and items you set up here are rendered by the Loadout Bricks elements (drop them into your product template). Customers can add curated items (with optional discounts and a free bonus) alongside the main product.', 'ffl-funnels-addons'); ?></p>
+                    <p><?php esc_html_e('Attach tiers of recommended products to this product. The Loadout Bricks elements in your product template show them. Customers add items one at a time (with their discounts) or a whole tier at once with the Add cart button, which also puts this product in the cart as the main item.', 'ffl-funnels-addons'); ?></p>
                     <ul>
-                        <li><?php esc_html_e('Either pick a saved Loadout config or build a per-product one below.', 'ffl-funnels-addons'); ?></li>
-                        <li><strong><?php esc_html_e('Accessory Discount %', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('Discount applied to each item the customer adds individually.', 'ffl-funnels-addons'); ?></li>
-                        <li><strong><?php esc_html_e('Set Discount %', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('Extra discount when the customer adds the whole tier at once.', 'ffl-funnels-addons'); ?></li>
-                        <li><strong><?php esc_html_e('Perk Threshold + Perks + Bonus', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('Add N items to unlock perks and get a free bonus product. Set threshold to 0 to disable.', 'ffl-funnels-addons'); ?></li>
-                        <li><strong><?php esc_html_e('Pre-checked', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('The item is selected by default for the customer.', 'ffl-funnels-addons'); ?></li>
+                        <li><?php esc_html_e('Either link a saved Loadout or build tiers for this product below.', 'ffl-funnels-addons'); ?></li>
+                        <li><strong><?php esc_html_e('Accessory Discount %', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('Added to each item\'s own Discount %, whether the item is added on its own or with the whole tier.', 'ffl-funnels-addons'); ?></li>
+                        <li><strong><?php esc_html_e('Set Discount %', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('Extra discount on the tier\'s items when the customer adds the whole tier at once. Only given when every item of the tier is available.', 'ffl-funnels-addons'); ?></li>
+                        <li><strong><?php esc_html_e('Perk Threshold + Perks + Bonus', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('When the cart holds this many items from the tier, the bonus product is added free (one unit), and removed again if the cart drops below it. 0 = no bonus. Perks are display text only.', 'ffl-funnels-addons'); ?></li>
+                        <li><?php esc_html_e('Discounts are taken off the regular price; a deeper sale price is kept.', 'ffl-funnels-addons'); ?></li>
                     </ul>
                 </div>
             </details>
@@ -185,14 +195,22 @@ class Loadout_Product_Admin
                                 <?php echo esc_html($loadout->get_name()); ?>
                             </option>
                         <?php endforeach; ?>
+                        <?php if ($linked_inactive): ?>
+                            <option value="<?php echo esc_attr($linked_inactive->get_id()); ?>" selected>
+                                <?php
+                                /* translators: %s: loadout name */
+                                echo esc_html(sprintf(__('%s (inactive)', 'ffl-funnels-addons'), $linked_inactive->get_name()));
+                                ?>
+                            </option>
+                        <?php endif; ?>
                     </select>
-                    <span class="description"><?php esc_html_e('Optional. If you pick a saved Loadout here, that config drives the tab and any per-product config below is ignored. Use this when many products should share the same tier setup.', 'ffl-funnels-addons'); ?></span>
+                    <span class="description"><?php esc_html_e('Optional. If you pick a saved Loadout here, it is used for this product and the per-product tiers below are ignored. Use this when many products share the same tiers. An inactive Loadout stays linked but shows nothing until it is activated again.', 'ffl-funnels-addons'); ?></span>
                 </p>
             </div>
 
             <div class="options_group">
                 <h4 style="padding:0 12px;"><?php esc_html_e('Per-Product Configuration', 'ffl-funnels-addons'); ?></h4>
-                <p style="padding:0 12px;color:#666;"><?php esc_html_e('Used only when no global loadout is linked above. Each tier is a separate "package level" shown as a tab on the product page.', 'ffl-funnels-addons'); ?></p>
+                <p style="padding:0 12px;color:#666;"><?php esc_html_e('Used only when no global Loadout is linked above. Each tier is a "package level" shown as a tab on the product page.', 'ffl-funnels-addons'); ?></p>
 
                 <div id="loadout-product-tiers" class="loadout-repeater" style="padding:0 12px;">
                     <?php foreach ($custom_tiers as $tier_index => $tier_data): ?>
@@ -214,7 +232,9 @@ class Loadout_Product_Admin
         jQuery(document).ready(function ($) {
             $('#add-product-tier').on('click', function () {
                 var $container = $('#loadout-product-tiers');
-                var index = $container.find('.loadout-tier-row').length;
+                var index = window.loadoutNextIndex
+                    ? window.loadoutNextIndex($container, '.loadout-tier-row')
+                    : $container.find('.loadout-tier-row').length;
                 var template = $('#tmpl-loadout-product-tier').html();
                 if (template) {
                     // Replace BOTH the form-name index AND data-tier-index/data-index
@@ -232,24 +252,17 @@ class Loadout_Product_Admin
                 var tierIndex = $btn.data('tier-index');
                 var $row = $btn.closest('.loadout-tier-row');
                 var $items = $row.find('.loadout-tier-items');
-                var itemIndex = $items.find('.loadout-item-row').length;
+                var itemIndex = window.loadoutNextIndex
+                    ? window.loadoutNextIndex($items, '.loadout-item-row')
+                    : $items.find('.loadout-item-row').length;
                 var template = $('#tmpl-loadout-product-item').html();
                 if (template) {
                     var html = template.replace(/product_tiers\[0\]\[items\]\[0\]/g, 'product_tiers[' + tierIndex + '][items][' + itemIndex + ']');
                     $items.append(html);
                 }
             });
-            $(document).on('click', '.loadout-tier-remove', function () {
-                if (confirm('Remove this tier?')) {
-                    $(this).closest('.loadout-tier-row').remove();
-                }
-            });
-            $(document).on('click', '.loadout-item-remove', function () {
-                $(this).closest('.loadout-item-row').remove();
-            });
-            $(document).on('input', '.loadout-tier-name-input', function () {
-                $(this).closest('.loadout-tier-row').find('.loadout-tier-name').text($(this).val() || 'New Tier');
-            });
+            // Tier/item removal and the tier title preview are handled by
+            // loadout-admin.js, which is loaded on this screen too.
         });
         </script>
         <?php
@@ -267,6 +280,7 @@ class Loadout_Product_Admin
         $bonus_label         = $tier_data['bonus_label'] ?? '';
         $bonus_display_value = $tier_data['bonus_display_value'] ?? '';
         $items               = $tier_data['items'] ?? [];
+        $slug                = $tier_data['slug'] ?? '';
 
         $bonus_name = '';
         $bonus_price_html = '';
@@ -281,6 +295,7 @@ class Loadout_Product_Admin
         }
         ?>
         <div class="loadout-tier-row" data-index="<?php echo esc_attr($index); ?>">
+            <input type="hidden" name="product_tiers[<?php echo esc_attr($index); ?>][slug]" value="<?php echo esc_attr($slug); ?>">
             <div class="loadout-tier-header">
                 <h4 class="loadout-tier-name"><?php echo esc_html($name ?: __('New Tier', 'ffl-funnels-addons')); ?></h4>
                 <button type="button" class="button-link loadout-tier-remove"><?php esc_html_e('Remove Tier', 'ffl-funnels-addons'); ?></button>
@@ -295,29 +310,29 @@ class Loadout_Product_Admin
                 <div class="loadout-field">
                     <label><?php esc_html_e('Accessory Discount %', 'ffl-funnels-addons'); ?></label>
                     <input type="number" name="product_tiers[<?php echo esc_attr($index); ?>][accessory_discount]" value="<?php echo esc_attr($accessory_discount); ?>" min="0" max="100" step="0.01">
-                    <span class="loadout-help"><?php esc_html_e('Per-item discount applied when customer adds items individually.', 'ffl-funnels-addons'); ?></span>
+                    <span class="loadout-help"><?php esc_html_e('Added to each item\'s Discount % (item added on its own or with the whole tier).', 'ffl-funnels-addons'); ?></span>
                 </div>
                 <div class="loadout-field">
                     <label><?php esc_html_e('Set Discount %', 'ffl-funnels-addons'); ?></label>
                     <input type="number" name="product_tiers[<?php echo esc_attr($index); ?>][set_discount_pct]" value="<?php echo esc_attr($set_discount); ?>" min="0" max="100" step="0.01">
-                    <span class="loadout-help"><?php esc_html_e('Extra discount when the customer adds the whole tier together.', 'ffl-funnels-addons'); ?></span>
+                    <span class="loadout-help"><?php esc_html_e('Extra discount when the customer adds the whole tier at once (Add cart).', 'ffl-funnels-addons'); ?></span>
                 </div>
                 <div class="loadout-field">
                     <label><?php esc_html_e('Perk Threshold', 'ffl-funnels-addons'); ?></label>
                     <input type="number" name="product_tiers[<?php echo esc_attr($index); ?>][threshold_items]" value="<?php echo esc_attr($threshold_items); ?>" min="0">
-                    <span class="loadout-help"><?php esc_html_e('Items the customer must add to unlock perks/bonus. 0 = always unlocked.', 'ffl-funnels-addons'); ?></span>
+                    <span class="loadout-help"><?php esc_html_e('Items from this tier the cart must hold to get the bonus product. 0 = no bonus.', 'ffl-funnels-addons'); ?></span>
                 </div>
             </div>
 
             <div class="loadout-field loadout-field--full">
                 <label><?php esc_html_e('Perks (one per line)', 'ffl-funnels-addons'); ?></label>
                 <textarea name="product_tiers[<?php echo esc_attr($index); ?>][perks]" rows="3" placeholder="<?php esc_attr_e("10% OFF accessories&#10;Priority Order Processing&#10;Free Upgraded Shipping", 'ffl-funnels-addons'); ?>"><?php echo esc_textarea($perks_text); ?></textarea>
-                <span class="loadout-help"><?php esc_html_e('Cosmetic benefits shown when the threshold is met (display-only — these don\'t change cart pricing on their own).', 'ffl-funnels-addons'); ?></span>
+                <span class="loadout-help"><?php esc_html_e('Benefits listed in the tier panel. Display only — they don\'t change prices.', 'ffl-funnels-addons'); ?></span>
             </div>
 
             <div class="loadout-tier-bonus">
                 <h5><?php esc_html_e('Bonus Item (Free Gift)', 'ffl-funnels-addons'); ?></h5>
-                <p class="loadout-help" style="margin:0 0 8px;"><?php esc_html_e('Free product auto-added to the cart at $0 when the customer hits the Perk Threshold. Auto-removed if they drop below threshold. Leave Bonus Product empty if you don\'t want a free gift.', 'ffl-funnels-addons'); ?></p>
+                <p class="loadout-help" style="margin:0 0 8px;"><?php esc_html_e('Free product (one unit at $0) added to the cart when it reaches the Perk Threshold, and removed again if it drops below. Needs a Perk Threshold above 0. Leave Bonus Product empty for no gift.', 'ffl-funnels-addons'); ?></p>
                 <input type="hidden" class="loadout-bonus-id" name="product_tiers[<?php echo esc_attr($index); ?>][bonus_product_id]" value="<?php echo esc_attr($bonus_product_id); ?>">
                 <div class="loadout-bonus-row">
                     <div class="loadout-field loadout-field--product">
@@ -335,7 +350,7 @@ class Loadout_Product_Admin
                     <div class="loadout-field">
                         <label><?php esc_html_e('Bonus Label', 'ffl-funnels-addons'); ?></label>
                         <input type="text" name="product_tiers[<?php echo esc_attr($index); ?>][bonus_label]" value="<?php echo esc_attr($bonus_label); ?>" placeholder="<?php esc_attr_e('FREE Kinetic Armory', 'ffl-funnels-addons'); ?>">
-                        <span class="loadout-help"><?php esc_html_e('Custom display text for the bonus.', 'ffl-funnels-addons'); ?></span>
+                        <span class="loadout-help"><?php esc_html_e('Heading of the bonus block. Defaults to "FREE Bonus Item".', 'ffl-funnels-addons'); ?></span>
                     </div>
                     <div class="loadout-field">
                         <label><?php esc_html_e('Display Value', 'ffl-funnels-addons'); ?></label>
@@ -401,10 +416,8 @@ class Loadout_Product_Admin
                     <label><?php esc_html_e('Discount %', 'ffl-funnels-addons'); ?></label>
                     <input type="number" name="product_tiers[<?php echo esc_attr($tier_index); ?>][items][<?php echo esc_attr($item_index); ?>][discount_pct]" value="<?php echo esc_attr($discount_pct); ?>" min="0" max="100" step="0.01">
                 </div>
-                <div class="loadout-field loadout-field--required">
-                    <label><?php esc_html_e('Pre-checked', 'ffl-funnels-addons'); ?></label>
-                    <input type="checkbox" name="product_tiers[<?php echo esc_attr($tier_index); ?>][items][<?php echo esc_attr($item_index); ?>][is_required]" value="1" <?php checked($is_required, 1); ?>>
-                </div>
+                <?php // "Pre-checked" is not used by the storefront; the stored value is kept as-is. ?>
+                <input type="hidden" name="product_tiers[<?php echo esc_attr($tier_index); ?>][items][<?php echo esc_attr($item_index); ?>][is_required]" value="<?php echo esc_attr((int) $is_required); ?>">
                 <div class="loadout-field loadout-field--remove">
                     <button type="button" class="button-link loadout-item-remove"><?php esc_html_e('Remove', 'ffl-funnels-addons'); ?></button>
                 </div>
@@ -437,6 +450,7 @@ class Loadout_Product_Admin
         // re-key to sequential 0..N so the JSON stays clean.
         $tiers_raw = isset($_POST['product_tiers']) && is_array($_POST['product_tiers']) ? $_POST['product_tiers'] : [];
         $custom_tiers = [];
+        $used_slugs   = [];
         foreach ($tiers_raw as $tier_data) {
             if (!is_array($tier_data)) {
                 continue;
@@ -472,9 +486,21 @@ class Loadout_Product_Admin
                 $perks = array_values(array_filter(array_map('trim', preg_split('/\R/', $perks_raw))));
             }
 
+            // Keep the slug a tier already had (cart lines refer to it), so a
+            // rename does not break them; new tiers get one from the name.
+            // Slugs are unique per product so tabs never collide.
+            $posted_slug = isset($tier_data['slug']) ? sanitize_title(wp_unslash($tier_data['slug'])) : '';
+            $base_slug   = $posted_slug !== '' ? $posted_slug : (sanitize_title($effective_name) ?: ('tier-' . (count($custom_tiers) + 1)));
+            $slug        = $base_slug;
+            $suffix      = 2;
+            while (isset($used_slugs[$slug])) {
+                $slug = $base_slug . '-' . $suffix++;
+            }
+            $used_slugs[$slug] = true;
+
             $custom_tiers[] = [
                 'name'                => $effective_name,
-                'slug'                => sanitize_title($effective_name) ?: ('tier-' . (count($custom_tiers) + 1)),
+                'slug'                => $slug,
                 'accessory_discount'  => isset($tier_data['accessory_discount']) ? floatval($tier_data['accessory_discount']) : 0,
                 'set_discount_pct'    => isset($tier_data['set_discount_pct']) ? floatval($tier_data['set_discount_pct']) : 0,
                 'threshold_items'     => isset($tier_data['threshold_items']) ? absint($tier_data['threshold_items']) : 0,
@@ -506,6 +532,44 @@ class Loadout_Product_Admin
     }
 
     /**
+     * Slug of a per-product tier (stored, or derived from its name).
+     */
+    public static function custom_tier_slug(array $tier): string
+    {
+        if (isset($tier['slug']) && (string) $tier['slug'] !== '') {
+            return (string) $tier['slug'];
+        }
+        return sanitize_title((string) ($tier['name'] ?? ''));
+    }
+
+    /**
+     * A per-product tier by slug, only when the product actually uses its
+     * per-product tiers (no active global Loadout linked). The returned array
+     * always has 'slug' set.
+     */
+    public static function find_custom_tier(int $product_id, string $slug): ?array
+    {
+        if ($product_id <= 0 || $slug === '') {
+            return null;
+        }
+        $config = self::get_product_config($product_id);
+        if ($config['type'] !== 'custom') {
+            return null;
+        }
+        foreach ((array) $config['tiers'] as $tier) {
+            if (!is_array($tier) || (string) ($tier['name'] ?? '') === '') {
+                continue;
+            }
+            $tier_slug = self::custom_tier_slug($tier);
+            if ($tier_slug === $slug) {
+                $tier['slug'] = $tier_slug;
+                return $tier;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Get the active loadout config for a product.
      * Returns ['type' => 'global'|'custom'|'disabled', 'loadout' => Loadout|null, 'tiers' => array]
      *
@@ -530,6 +594,9 @@ class Loadout_Product_Admin
 
         $custom_json = get_post_meta($product_id, self::META_CUSTOM_TIERS, true);
         $custom_tiers = $custom_json ? json_decode($custom_json, true) : [];
+        if (!is_array($custom_tiers)) {
+            $custom_tiers = [];
+        }
 
         return [
             'type' => $custom_tiers ? 'custom' : 'disabled',

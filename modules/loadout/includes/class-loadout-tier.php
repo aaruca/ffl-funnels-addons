@@ -135,6 +135,7 @@ class Loadout_Tier
             $table,
             [
                 'name'               => $this->name,
+                'slug'               => $this->slug,
                 'sort_order'         => $this->sort_order,
                 'accessory_discount' => $this->accessory_discount,
                 'set_discount_pct'   => $this->set_discount_pct,
@@ -146,7 +147,7 @@ class Loadout_Tier
             ],
             ['id' => $this->id],
             [
-                '%s', '%d', '%f', '%f', '%s', '%d', '%s', '%f', '%d'
+                '%s', '%s', '%d', '%f', '%f', '%s', '%d', '%s', '%f', '%d'
             ],
             ['%d']
         );
@@ -231,6 +232,14 @@ class Loadout_Tier
     public function get_slug()
     {
         return $this->slug;
+    }
+
+    public function set_slug($slug): void
+    {
+        $slug = sanitize_title($slug);
+        if ($slug !== '') {
+            $this->slug = $slug;
+        }
     }
 
     public function get_sort_order()

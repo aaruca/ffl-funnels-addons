@@ -2,7 +2,7 @@
 
 Brands wp-admin for client stores and limits what client logins can reach. It recolours the admin with a light and a dark palette (each user switches with a sun/moon button), adds FFL Funnels branding, reorders the sidebar for clients, hides and blocks admin screens and admin-bar items for clients, and can replace the WordPress dashboard with a branded client dashboard. Clients usually log in as Administrators, so the module tells your staff and clients apart by **email address**, not by role. Module ID: `white-label`, off until it is switched on in **FFL Funnels → Dashboard**. Like every module it needs WooCommerce active; MonsterInsights and SnapFind are optional data sources for the dashboard.
 
-> **Read this first.** Restrictions do nothing until at least one **Exempt email pattern** is saved (or `FFLA_WL_SUPERUSERS` in `wp-config.php` lists at least one address). From then on every logged-in user who does not match is a client: the FFL Funnels menu disappears for them, they cannot open these settings, and every restriction applies. Save the exempt list while logged in as yourself: if the list would not cover the person saving it, their email is added automatically.
+> **Read this first.** Restrictions do nothing until at least one **Exempt email pattern** is saved (or `FFLA_WL_SUPERUSERS` in `wp-config.php` lists at least one address). From then on every logged-in user who does not match is a client: the FFL Funnels menu disappears for them, they cannot open these settings, and every restriction applies. Save the exempt list while logged in as yourself: if the list would not cover the person saving it, their email is added automatically and the page shows a notice saying so.
 
 ## What it does
 
@@ -20,7 +20,7 @@ Brands wp-admin for client stores and limits what client logins can reach. It re
    ```php
    define( 'FFLA_WL_SUPERUSERS', [ 'you@agency.com' ] );
    ```
-3. **Styles** tab: set the colours you want for Light and Dark. Edits preview live on the page once a first colour has been saved.
+3. **Styles** tab: set the colours you want for Light and Dark. Edits preview live on the page.
 4. **Menu** tab: drag the top-level items into order and add dividers.
 5. **Restrictions** tab: tick the menu items and admin-bar items clients should not see.
 6. **Dashboard** tab: switch on **Replace the WordPress dashboard** and fill in the quick-link URLs.
@@ -94,13 +94,13 @@ Type a hex colour (`#rgb` or `#rrggbb`) or pick one with the swatch; anything el
 | Setting | What it does | Default |
 |---|---|---|
 | Exempt email patterns | One per line. `*` matches any run of characters; the whole address must match; case is ignored. `*@fflfunnels.com`, `adeel*` or a full address. Matching users keep full access and the native menu. | Empty (restrictions off) |
-| Menu visibility | Tick any menu item or sub-item to hide it from clients and block its page by URL. Grouped by top-level menu. | Nothing hidden |
+| Menu visibility | Tick any menu item or sub-item to hide it from clients and block its page by URL; hiding a content list also blocks adding and editing that content. Grouped by top-level menu. | Nothing hidden |
 | Admin bar | Tick top-level admin-bar items to remove for clients, listed with their node ID. Only needed for items that do not link to a page hidden above (dropdowns, custom URLs). | Nothing removed |
 
 ### Import / Export
 
 - **Export settings** shows the configuration as JSON, with **Download .json** (file `white-label-<host>-<YYYYMMDD>.json`) and **Copy to clipboard**.
-- **Import settings** takes a `.json` file (**Choose a .json file**) or pasted JSON (**…or paste JSON**); the file is used when both are given. After a confirmation it **replaces** the Styles, Menu, Dashboard and Restrictions settings; a section missing from the file is reset to empty. It cannot be undone, so export first. Imported data goes through the same checks as the form.
+- **Import settings** takes a `.json` file (**Choose a .json file**) or pasted JSON (**…or paste JSON**); the file is used when both are given. After a confirmation it **replaces** the Styles, Menu, Dashboard and Restrictions settings; a section missing from the file is reset to empty. It cannot be undone, so export first. Imported data goes through the same checks as the form. Exports from before light/dark mode (one flat set of colours) import as the dark palette, the way those settings were already shown.
 
 ## How it works
 
@@ -109,7 +109,7 @@ Type a hex colour (`#rgb` or `#rrggbb`) or pick one with the swatch; anything el
 - A user is **exempt** when their email matches an exempt pattern or `FFLA_WL_SUPERUSERS`, or when they are a multisite super admin. Everyone else who is logged in is a client, whatever their role.
 - Restrictions (hidden menu items, blocked pages, removed admin-bar items, the hidden FFL Funnels menu, locked White Label settings) start only once there is at least one exempt pattern or a non-empty `FFLA_WL_SUPERUSERS`.
 - Once they are active, only exempt staff can open, save, import or export these settings. Clients get "You do not have permission to access these settings."
-- **No self-lockout.** On every save and import, if the resulting list would switch restrictions on without covering you, your email is added to the exempt patterns. `FFLA_WL_SUPERUSERS` only counts as cover when it matches you.
+- **No self-lockout.** On every save and import, if the resulting list would switch restrictions on without covering you, your email is added to the exempt patterns and the page shows "Your email address (…) was added to the exempt staff list so you keep access to these settings." `FFLA_WL_SUPERUSERS` only counts as cover when it matches you.
 - Until the first pattern is saved nobody is exempt, so the menu order and dividers apply to everyone, you included.
 
 ### Colours and dark mode
@@ -119,7 +119,7 @@ Type a hex colour (`#rgb` or `#rrggbb`) or pick one with the swatch; anything el
 - The content area of every admin page uses the light **Dashboard → Page background** in both modes, so third-party plugin screens keep their light contrast.
 - Plugin SVG menu icons are recoloured through WordPress's own icon painter with the sidebar icon colours and repaint instantly when the mode changes. Plugin icons shipped as images are shown as a light or dark silhouette.
 - With colours active, WordPress buttons, inputs, cards and notices get square corners (fixed in the stylesheet, not a setting).
-- The Styles tab previews edits to the sidebar, top bar, submenus, buttons and borders on the page itself; dashboard colours show on the dashboard. The preview lasts until reload; click **Save Settings** to keep it. On a site where nothing has been saved yet, the admin stylesheet is not loaded, so the preview only starts working after the first save.
+- The Styles tab previews edits to the sidebar, top bar, submenus, buttons and borders on the page itself; dashboard colours show on the dashboard. The preview lasts until reload; click **Save Settings** to keep it. On a site with no saved colours, the preview stays on the stock look until you enter a first colour (or the radius), exactly as saving would.
 
 ### Sidebar order
 
@@ -130,20 +130,22 @@ Type a hex colour (`#rgb` or `#rrggbb`) or pick one with the swatch; anything el
 
 - Ticking a top-level item ticks all its sub-items. Unticking one sub-item unticks the top-level box; the other sub-items stay hidden.
 - A hidden item is removed from the sidebar and blocked by URL. Opening it redirects to the Dashboard; if the Dashboard is hidden too, to Profile; if both are hidden, the client sees "Access to this area of the dashboard is restricted."
-- Blocking matches the menu page's own address (`plugins.php`, `edit.php?post_type=page`, `admin.php?page=<slug>`). Screens at other addresses, such as editing a single post (`post.php`), are not blocked.
-- The **FFL Funnels** menu is always hidden from clients and its dashboard page is blocked. Other FFL Funnels module pages are **not** blocked automatically: tick them under **FFL Funnels** in **Menu visibility** if clients must not reach them by URL. The White Label page always refuses clients.
-- Admin-bar items that link to a hidden page are removed automatically, in wp-admin and on the front end. Removal runs after every plugin has added its items, so very late ones (for example WP Rocket) are caught.
+- Blocking matches the menu page's own address (`plugins.php`, `edit.php?post_type=page`, `admin.php?page=<slug>`).
+- Hiding a content list also blocks adding and editing that content: hiding **Posts** (`edit.php`), **Media** (`upload.php`) or any `edit.php?post_type=<type>` list (Pages, Products…) blocks `post-new.php` and `post.php` for that post type. A filtered list (more than a `post_type` in the address) does not.
+- The **FFL Funnels** menu is always hidden from clients, and every page under it (the FFL Funnels dashboard and each module's settings page, White Label included) is blocked by URL.
+- Admin-bar items that link to a hidden or blocked page are removed automatically, in wp-admin and on the front end. Removal runs after every plugin has added its items, so very late ones (for example WP Rocket) are caught.
+- Restrictions work on the admin screens. They do not change what the user's role may do through other routes, such as the REST API.
 - The **Admin bar** list is captured from the admin bar as staff see it in wp-admin and kept for a day, so items that only appear on the front end are not listed.
 
 ### Client dashboard
 
 When **Replace the WordPress dashboard** is on, `/wp-admin/` shows a greeting, the quick-link cards that have a URL, and:
 
-- **Business at a glance**: **Sales**, **Orders** and **Average order value** for the last 30 days (including today), with change against the previous 30 days, and a daily **Sales overview** chart. Sales are the full totals of shop orders in WooCommerce's paid statuses, by order creation date; refunds are not subtracted. Cached for 10 minutes.
+- **Business at a glance**: **Sales**, **Orders** and **Average order value** for the last 30 days including today, in the site's time zone, with change against the previous 30 days, and a daily **Sales overview** chart. Sales are the full totals of shop orders in WooCommerce's paid statuses, by order creation date; refunds are not subtracted. Cached for 10 minutes.
 - **Analytics** with **MonsterInsights** and **SnapFind** tabs and a 7 / 30 / 90-day range. Each user's last tab and range are remembered. Tables sort by clicking a heading or with Enter/Space.
 - The refresh icon next to the date range recalculates the sales figures and bypasses the analytics caches.
-- WordPress and plugin widgets, the welcome panel, Screen Options, Help and admin notices are removed on this page, and the WordPress version is hidden from its footer.
-- The dashboard is printed through WordPress's welcome panel, which WordPress only shows to users who can edit theme options (Administrators); the analytics requests require the same capability. Other roles, such as Shop Manager, get an empty dashboard because the widgets are still removed.
+- WordPress and plugin widgets, the welcome panel, Screen Options, Help and admin notices are removed on this page, and the WordPress version is hidden from its footer. The FFL Funnels footer credit stays, as on every admin page.
+- The branded dashboard is shown to users who can edit theme options: Administrators, and Shop Managers (WooCommerce gives them that capability). The analytics requests require the same capability. Users without it, such as Editors, keep the standard WordPress dashboard with its widgets.
 
 **MonsterInsights tab.** Reads reports through MonsterInsights' existing Google connection; it adds no Google tag, tracking event or Google sign-in.
 
@@ -168,7 +170,7 @@ When **Replace the WordPress dashboard** is on, `/wp-admin/` shows a greeting, t
 | All of wp-admin | Colours (once one is saved) | Everyone |
 | Admin sidebar | Order, dividers, no default separators | Clients |
 | Sidebar, admin bar (wp-admin and front end), page URLs | Hidden and blocked items, hidden FFL Funnels menu | Clients, once restrictions are active |
-| `/wp-admin/` | Client dashboard (when switched on) | Users who can edit theme options |
+| `/wp-admin/` | Client dashboard (when switched on) | Users who can edit theme options (Administrators, Shop Managers) |
 
 ## Data and uninstall
 
@@ -176,7 +178,7 @@ When **Replace the WordPress dashboard** is on, `/wp-admin/` shows a greeting, t
 - **Per user** (user meta): `ffla_wl_theme_mode` (light/dark), `ffla_wl_dashboard_analytics_source` and `ffla_wl_dashboard_analytics_range` (last dashboard tab and range).
 - **Caches** (transients): `ffla_wl_adminbar_nodes` (admin-bar list, 1 day), `ffla_wl_dash_*` (sales and SnapFind, 10 minutes), `ffla_wl_mi_*` (MonsterInsights, 10 minutes or 30 seconds after a failure).
 - Switching the module off keeps everything, so switching it on again restores the configuration.
-- Deleting the plugin does **not** remove any White Label data: the option and user meta stay, and the transients expire on their own.
+- Deleting the plugin removes the option, the three user meta keys and the cached transients.
 - An export contains your exempt email patterns and the site address. Treat the file accordingly.
 
 ## Troubleshooting
@@ -184,11 +186,11 @@ When **Replace the WordPress dashboard** is on, `/wp-admin/` shows a greeting, t
 - **My menu order, dividers or hidden items don't show.** You are exempt staff; you keep the native menu. Check with a client login.
 - **Restrictions don't apply to a client.** No exempt pattern is saved yet, or the client's email matches a pattern (wildcards match more than you might expect), or they are a multisite super admin.
 - **Locked out of White Label.** Add your email to `FFLA_WL_SUPERUSERS` in `wp-config.php`; that list is always exempt.
-- **A client can still open a page.** Blocking only covers the menu page's own address; tick the specific sub-item too, and remember other screens (such as `post.php`) are not blocked. FFL Funnels module pages need ticking under **FFL Funnels**.
+- **A client can still open a page.** Blocking covers the menu page's own address (and, for content lists, adding and editing that content). If a sub-page has its own address, tick that sub-item too.
 - **An admin-bar item is still there.** It does not link to a hidden page; tick it under **Admin bar**. If the list says "No admin-bar items detected", reload the page as staff: the list is captured from the admin bar as staff load wp-admin pages.
 - **Colours don't change.** Nothing applies until one valid colour or the radius is saved. Values that are not `#rgb` or `#rrggbb` are dropped on save.
 - **Everyone sees the dark palette.** Dark is the default for every user until they click the sun/moon button.
-- **The dashboard is empty for a Shop Manager.** The branded dashboard only shows to users who can edit theme options.
+- **Some users see the standard dashboard.** The branded dashboard only shows to users who can edit theme options (Administrators, Shop Managers); Editors and other roles keep the WordPress dashboard.
 - **Import errors.** "No file or JSON was provided." or "That file is not a valid White Label export." The file must be a White Label export or a settings object with at least one of `styles`, `restrictions`, `menu`, `dashboard`.
 - **MonsterInsights tab messages.**
   - "Activate and connect MonsterInsights…": MonsterInsights is not active.
@@ -217,4 +219,5 @@ When **Replace the WordPress dashboard** is on, `/wp-admin/` shows a greeting, t
 - **Export envelope**: `{ marker: "ffla_white_label", version, exported (UTC ISO 8601), site, settings }`. Import also accepts a bare settings object.
 - **Endpoints**: `admin-post.php` actions `ffla_wl_save_settings`, `ffla_wl_export`, `ffla_wl_import` (`manage_woocommerce`, exempt once restrictions are active, nonces). AJAX `ffla_wl_toggle_theme` (POST `mode`, nonce `ffla_wl_theme_mode`) and `ffla_wl_dashboard_analytics` (POST `source` = `google` | `snapfind`, `range` = 7 | 30 | 90, optional `force=1`; needs `edit_theme_options`). The MonsterInsights tab is `google` internally.
 - **DOM**: admin-bar node `ffla-wl-theme-toggle`; sidebar brand `#ffla-wl-brand`.
-- **Tests**: `php tests/smoke/white-label-monsterinsights-smoke.php [legacy|missing|no-addon]` (offline report checks) and `tests/smoke/white-label-monsterinsights-ui-smoke.js` (Playwright, offline fixtures).
+- **Redirect flags** on the settings page: `settings-updated=1`, `ffla_wl_import=success|empty|invalid`, and `ffla_wl_self_exempt=1` when the save or import added the current user to the exempt list.
+- **Tests**: `php tests/smoke/white-label-smoke.php` (blocking of FFL Funnels pages and hidden post types, admin-bar removal, flat-format import, self-exempt flag, dashboard capability, site time zone sales window), `php tests/smoke/white-label-monsterinsights-smoke.php [legacy|missing|no-addon]` (offline report checks) and `tests/smoke/white-label-monsterinsights-ui-smoke.js` (Playwright, offline fixtures).

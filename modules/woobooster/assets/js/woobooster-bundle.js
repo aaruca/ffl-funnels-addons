@@ -68,8 +68,9 @@
       var $cb = $item.find('input[type="checkbox"]');
       if (!$cb.is(':checked')) return;
 
-      totalOriginal += parseFloat($item.data('original-price')) || 0;
-      totalDiscounted += parseFloat($item.data('price')) || 0;
+      var qty = parseInt($item.data('qty'), 10) || 1;
+      totalOriginal += (parseFloat($item.data('original-price')) || 0) * qty;
+      totalDiscounted += (parseFloat($item.data('price')) || 0) * qty;
     });
 
     var $total = $bundle.find('.wb-bundle-total__prices');
@@ -119,8 +120,11 @@
       }
     }
 
-    // Checkbox changes.
+    // Checkbox changes. Required items stay ticked.
     $bundle.on('change', 'input[type="checkbox"]', function () {
+      if ($(this).data('required')) {
+        $(this).prop('checked', true);
+      }
       recalculate($bundle);
     });
 

@@ -27,7 +27,7 @@ Looks up the US sales tax rate for the customer's address and applies it in the 
    - Optional: paste a **USGeocoder Auth Key**, click **Test key**, then choose the **Tax rate source**.
    - Click **Save Settings**.
 4. Open **Datasets** and click **Sync Sheet Data** if you do not want to wait for the scheduled import. When it finishes, **Active Imported Datasets** lists one row per state. The sheet is also the fallback in USGeocoder mode, so keep it imported.
-5. If you offer local pickup, check the store address in WooCommerce → Settings → General (address line 1, city, state, postcode). Pickup orders are taxed at that address.
+5. If you offer local pickup, or **Calculate tax based on** is the shop base address, check the store address in WooCommerce → Settings → General (address line 1, city, state, postcode). Those orders are taxed at that address.
 6. Use **Quote Lookup** with a few real addresses (street, city, state, ZIP). In USGeocoder mode each uncached lookup is a billed API call.
 7. On staging, place a test order with a product in the standard tax class. The order should show one **Sales Tax** line, and **Audit Log** should show a `SUCCESS` row.
 8. Optional: set up [exemptions](#tax-exemption-rules) and [tax holidays](#tax-holidays), then switch on **Sales Tax Reports** for filing reports.
@@ -52,7 +52,7 @@ All settings are on **FFL Funnels → Sales Tax Resolver → Settings** and are 
 | **USGeocoder Auth Key** | Your USGeocoder key (masked field). Empty means sheet mode. Adding, changing or removing it empties the cache. The card badge shows *Sheet Mode (free)*, *USGeocoder Mode (live API)* or *USGeocoder Mode (key invalid)* after a failed test. | Empty |
 | **Test key** (button) | Looks up USGeocoder's documented sample address with the key typed in the field. This is a real, billed call; a successful result for the same key is reused for one hour. | — |
 
-With a key saved, an **API Usage** card shows the calls of the last 30 days and the last six months (with failed calls). Cached quotes are not counted.
+With a key saved, an **API Usage** card shows the calls of the last 30 days and the last six months (with failed calls). Every real call counts, including calls whose answer was unusable and fell back to the sheet; cached quotes do not. The 30-day figure comes from daily counts; during the first 30 days after updating to this version it also consults the audit log, so earlier calls are not missed.
 
 ### Google Sheet source
 
@@ -65,7 +65,7 @@ With a key saved, an **API Usage** card shows the calls of the last 30 days and 
 | Setting | What it does | Default |
 |---|---|---|
 | **Limit resolver to selected states** | When on, only checked states are quoted, synced and shown as *On* in the Coverage Matrix. | Off |
-| State checkboxes (**Select All**, **Select Covered**, **Clear**) | The states the resolver runs for. **Unchecking a previously checked state and saving deletes that state's imported sheet data**, whether or not the toggle is on. Changes empty the cache. | None checked |
+| State checkboxes (**Select All**, **Select Covered**, **Clear**) | The states the resolver runs for. While the toggle is on, **unchecking a previously checked state and saving deletes that state's imported sheet data**. With the toggle off the checkboxes have no effect and nothing is deleted. Changes empty the cache. | None checked |
 
 ### Tax holidays
 
@@ -99,7 +99,7 @@ With exemptions on, an active rule without a customer or role, or without a cate
 | Tool | What it does |
 |---|---|
 | **Clear cache now** | Empties the address cache after a confirmation. Every address is looked up again on its next checkout. |
-| **Delete Old Tax Database** | Deletes **all** imported sheet datasets (including the current ones the sheet source and the USGeocoder fallback use), the address cache and the audit log. Sheet lookups fail until the next sync. |
+| **Delete Old Tax Database** (card *Delete Local Tax Data*) | Deletes **all** imported sheet datasets (including the current ones the sheet source and the USGeocoder fallback use), the address cache and the audit log, after a confirmation. Sheet states then show *Awaiting Sync* in the Coverage Matrix and sheet lookups fail until the next sync. Not needed for routine cleanup: each sync already deletes old dataset versions. |
 
 ## How it works
 
@@ -107,7 +107,7 @@ With exemptions on, an active rule without a customer or role, or without a cate
 
 | Tax rate source | No USGeocoder key | With a key |
 |---|---|---|
-| Automatic | Sheet for every state | USGeocoder for every state, or only for checked states when states are limited; the state routing is stored in the Coverage Matrix |
+| Automatic | Sheet for every state | USGeocoder for every state, or only for checked states when states are limited; the state routing is stored in the Coverage Matrix. A sheet sync never changes it, and the daily maintenance job repairs it if it ever differs from the settings |
 | Google Sheet ZIP dataset | Sheet | Sheet (the key is not used) |
 | USGeocoder API (live) → Sheet fallback | Sheet (the USGeocoder step fails without a key and falls back) | USGeocoder, then sheet |
 
@@ -119,7 +119,7 @@ The sheet fallback runs when USGeocoder is unreachable, returns an invalid respo
 - A city fallback per normalized city name, using the highest ZIP rate in that city.
 - A statewide floor: the most common state rate across the state's ZIPs.
 
-Lookups try the ZIP, then the city, then the state floor. The street is not used. Imported data counts as current for 45 days after it was loaded; older data is not used (`DATASET_STALE`). An import whose content is unchanged keeps the existing version. A state whose imported rates are all zero is marked *No sales tax* in the Coverage Matrix; the resolver does not quote states with that status, so WooCommerce's own table applies.
+Lookups try the ZIP, then the city, then the state floor. The street is not used. Imported data counts as current for 45 days after the last sync that loaded or confirmed it; older data is not used (`DATASET_STALE`). An import whose content is unchanged keeps the existing version and records the new check date, so a sheet that simply did not change never goes stale while the sync runs. Each state keeps its active version and the one before it; older versions are deleted by the sync. A state whose imported rates are all zero is marked *No sales tax* in the Coverage Matrix and is quoted at 0% (`NO_SALES_TAX`).
 
 **USGeocoder.** Sends the street line and the 5-digit ZIP (the city is not sent). The breakdown comes from the response's Total Collection data, or Mandatory Collection when that is all the plan returns. Every real HTTP call is counted in **API Usage**.
 
@@ -127,21 +127,24 @@ Lookups try the ZIP, then the city, then the state floor. The street is not used
 
 - Successful quotes for **Cache TTL**; "no match" and "no usable rate" answers for 1 hour; outages are not cached.
 - Expired rows are removed daily.
-- The cache is also emptied by the setting changes noted above, by **Clear cache now** and **Auto-clear cache**, and per state on every sheet sync (including unchanged imports and addresses resolved by USGeocoder).
+- The cache is also emptied by the setting changes noted above and by **Clear cache now** and **Auto-clear cache**. When a sync imports changed data for a state, that state's cached sheet results and failed answers are removed; cached USGeocoder answers are kept, and an unchanged import removes nothing.
 - Every lookup that is not a cache hit (Quote Lookup, REST, cart and checkout) writes an audit row; rows older than 90 days are deleted weekly.
 
 ### At checkout
 
-WooCommerce asks for tax rates for each calculation. The module only handles US destinations with a state and the standard tax class; products and shipping in other tax classes keep WooCommerce's rates. For those:
+WooCommerce asks for tax rates for each calculation. The module only handles US destinations with a state:
 
-1. A customer with a full-order exemption gets no tax at all.
-2. A state that is not enabled, or not supported in the Coverage Matrix, keeps WooCommerce's rates.
-3. Otherwise the address is quoted. The street follows WooCommerce's **Calculate tax based on**: shipping street (billing street when empty), billing street, or none for the shop base address.
-4. A rate above zero becomes one rate labelled **Sales Tax** (rate ID `990000`, code `US-{STATE}-FFLA-TOTAL`, not compound, also applied to shipping). A zero rate adds no tax line. If the quote fails, WooCommerce's own matched rates are kept.
+1. A customer with a full-order exemption gets no tax at all, in every tax class.
+2. Products and shipping in a tax class other than the standard one keep WooCommerce's rates.
+3. A state that is not enabled, or not supported in the Coverage Matrix, keeps WooCommerce's rates. States marked *No sales tax* are supported.
+4. Otherwise the address is quoted, once per destination per calculation. The street follows WooCommerce's **Calculate tax based on**: shipping street (billing street when empty), billing street, or the store's address line 1 (WooCommerce → Settings → General) for the shop base address. A customer street is used only when that address has the ZIP being looked up; the lookup WooCommerce makes for the store's own location (for example for prices entered with tax) uses the store street.
+5. A rate above zero becomes one rate labelled **Sales Tax** (rate ID `990000`, code `US-{STATE}-FFLA-TOTAL`, not compound, also applied to shipping). A zero rate adds no tax line. If the quote fails, WooCommerce's own matched rates are kept.
 
-The last quote of the checkout session is saved on the order (classic checkout and Checkout Blocks).
+These decisions are made on every rate lookup, after WooCommerce's own rate cache, so a persistent object cache never hands one customer's rate or exemption to another customer at the same ZIP.
 
-A quote needs a street and a ZIP. Until the customer has entered a street (for example in the cart's shipping calculator), the quote fails with `VALIDATION_ERROR` and WooCommerce's own rates apply. With **Calculate tax based on** set to the shop base address, no street is passed, so the resolver never quotes and WooCommerce's own rates apply.
+The quote for the order's own destination (state and ZIP) is saved on the order (classic checkout and Checkout Blocks). When the session has no quote for that destination — a non-US address, an exempt customer, a state that is not quoted — nothing is saved, and a quote left by an earlier attempt to place the same order is removed.
+
+A quote needs a street and a ZIP. Until the customer has entered a street (for example in the cart's shipping calculator), the quote fails with `VALIDATION_ERROR` and WooCommerce's own rates apply. With **Calculate tax based on** set to the shop base address, fill in the store's address line 1, or every quote fails the same way.
 
 ### Local pickup
 
@@ -151,8 +154,8 @@ When the chosen shipping method is a local pickup method (WooCommerce's pickup m
 
 When WooCommerce recalculates a stored order — subscription or Split Payment renewals built in the background, admin **Recalculate**, FPPC final-shipping and early-payoff orders — the module uses the order instead of the browser session. This applies to orders that carry a saved quote and to FPPC plan orders, never to the order currently being checked out.
 
-- The address is WooCommerce's taxable address for that order. The street is taken from the order's address only when its state and ZIP match. Pickup orders use the store address.
-- Exemptions are decided for the order's own customer; the order's exemption evidence is updated.
+- The address is WooCommerce's taxable address for that order. The street is taken from the order's address only when its state and ZIP match; with the shop base address it is the store's street. Pickup orders use the store address.
+- Exemptions are decided for the order's own customer and apply to every tax class; the order's exemption evidence is updated.
 - If the order's saved quote was successful and is for the same address, it is reused with no new lookup, so every payment of a plan uses the deposit's rate. Otherwise the order is quoted once and the new quote is saved.
 - If that fails, WooCommerce's own rates are kept and a warning is written to the WooCommerce log (source `ffla-tax`).
 - Existing orders are not recalculated by the module; this applies the next time WooCommerce calculates an order. Other orders keep the session-based behaviour.
@@ -167,7 +170,7 @@ With **Limit resolver to selected states** on:
 
 ### Exemptions
 
-- **Full-order exemptions** (customers and roles) give the order no tax at a US address in the standard tax class, shipping included. The order stores `_ffla_tax_full_order_exempt = yes` and the customer ID and roles used.
+- **Full-order exemptions** (customers and roles) give the order no tax at a US address, in every tax class, shipping included. The order stores `_ffla_tax_full_order_exempt = yes` and the customer ID and roles used.
 - **Conditional rules** make only the matching product lines non-taxable. Shipping and unrelated products keep their tax. Each exempt line stores the rule IDs, names and a snapshot of the match, so reports stay stable if a rule is later renamed or deleted.
 - The customer is the WooCommerce customer, else the logged-in user. Recalculating an order in the admin uses that order's customer.
 - Conditional rules and tax holidays mark products non-taxable for WooCommerce itself, so they also apply where WooCommerce's own rates are used. Product edit screens always show the stored tax status.
@@ -203,12 +206,12 @@ With **Limit resolver to selected states** on:
 - **FFL Funnels → Sales Tax Resolver** (page *Tax Resolver*), with these tabs:
   - **Quote Lookup**: total rate, breakdown, coverage, source, version, confidence, cache hit and limitations for an address.
   - **Tax Reports**: link to WooCommerce → Sales Tax Reports, shown only when that module is on.
-  - **Coverage Matrix**: one cell per state. *+* imported and ready, *~* awaiting sync, *R* USGeocoder live, *0* no sales tax, *!* degraded. *On* / *Off* is shown when states are limited. The summary counts USGeocoder states under *Awaiting Sync*.
+  - **Coverage Matrix**: one cell per state, with a legend. *+* imported and ready, *~* awaiting sync, *R* USGeocoder live (sheet fallback), *0* no sales tax (quoted at 0%), *!* degraded. *On* / *Off* is shown when states are limited. The summary counts imported, USGeocoder and zero-tax states as *Ready* and states without a dataset as *Awaiting Sync*. The source note above the grid describes the current mode (sheet, USGeocoder or forced source).
   - **Datasets**: the CSV source, which states the monthly rebuild covers, **Sync Sheet Data**, and active datasets with their age against the 45-day limit (marked stale when older).
   - **Audit Log**: the last 50 lookups.
   - **Settings**.
 - **Admin notices**: WooCommerce taxes disabled; settings saved; datasets removed for unchecked states; cache emptied and why.
-- **WooCommerce → Status → Logs**, source `ffla-tax`: rate fallbacks during order recalculations.
+- **WooCommerce → Status → Logs**, source `ffla-tax`: errors during cart and checkout lookups, and rate fallbacks during order recalculations.
 - **Sales Tax Reports**: reads the saved quote and exemption evidence.
 
 ## Data and uninstall
@@ -217,10 +220,10 @@ With **Limit resolver to selected states** on:
 |---|---|---|
 | Settings | Option `ffla_tax_resolver_settings` | Until uninstall |
 | State routing | Table `{prefix}ffla_tax_coverage_rules` | Until uninstall |
-| Imported sheet data | Tables `{prefix}ffla_tax_dataset_versions`, `{prefix}ffla_tax_jurisdiction_rates`. Replaced versions are kept as *superseded*. | Until the state is unchecked, **Delete Old Tax Database**, or uninstall |
+| Imported sheet data | Tables `{prefix}ffla_tax_dataset_versions`, `{prefix}ffla_tax_jurisdiction_rates`. The version before the active one is kept as *superseded*; older ones are deleted by the sync. | Until the state is unchecked (while states are limited), **Delete Old Tax Database**, or uninstall |
 | Address cache (normalized address including street, quote) | Table `{prefix}ffla_tax_address_cache` | Cache TTL; emptied as described above |
 | Audit log (address entered, matched address, result) | Table `{prefix}ffla_tax_quotes_audit` | 90 days |
-| USGeocoder call counts | Option `ffla_tax_usgeocoder_usage` (24 months) | Until uninstall |
+| USGeocoder call counts | Option `ffla_tax_usgeocoder_usage` (24 months, plus daily counts for the last 31 days) | Until uninstall |
 | Order evidence: quote (with the address quoted), exemption and holiday evidence | Order, line and shipping-line meta (see [For developers](#for-developers)) | Permanently, with the order |
 
 - **Switching the module off** stops it at once. Checkout and recalculations use WooCommerce's own tax table again. The scheduled jobs are removed and all data stays.
@@ -233,21 +236,20 @@ With **Limit resolver to selected states** on:
 | No tax at checkout | Is **Enable tax rates and calculations** on? Is the state enabled (Coverage Matrix *On*) and imported (**Datasets**)? Is the product in the standard tax class? Is the customer exempt, or a holiday active? Has the customer entered a street? Then read the outcome in **Audit Log**. |
 | Tax differs from the expected rate | Run **Quote Lookup** for the same address and compare the breakdown and source. Sheet results are ZIP-level and may use the city or state fallback (*medium* confidence). After rate changes, **Clear cache now**. |
 | Wrong rate on pickup orders | Check the store address in WooCommerce → Settings → General. Pickup is taxed there. |
-| Dataset marked stale, `DATASET_STALE` | The state's data was loaded more than 45 days ago. Click **Sync Sheet Data**. An unchanged import keeps the old load date, so if it stays stale the shared sheet has not been updated for that state. |
+| Dataset marked stale, `DATASET_STALE` | No sync has loaded or confirmed the state's data for 45 days. Click **Sync Sheet Data**; a successful sync resets the age even when the data did not change. If it stays stale, the sync fails for that state (see the next row) or **Auto sheet sync** is off. |
 | Sync errors | The message names the state and cause. "The shared tax sheet returned HTTP …": check that the sheet is shared publicly and that **Sheet URL** is right. "has no usable ZIP rows for XX": the sheet has no rows with that state code, a ZIP and a combined rate. |
-| States that should use USGeocoder show *Sheet* in the Coverage Matrix | A sheet sync marks every synced state as a sheet state. Under **Tax rate source** = *Automatic*, those states then use the sheet until the routing is rebuilt (on activation, or when a saved setting actually changes). Choose *USGeocoder API (live) → Sheet fallback* to always try USGeocoder first. |
 | **Test key** fails | `http_error`: the key is invalid or inactive. `network_error`: the site cannot reach api.usgeocoder.com. `no_rate`: the account returned no rate. |
-| More USGeocoder calls than expected | Each uncached address is a call, including Quote Lookup and REST. The cache is emptied by key, state or source changes, a shorter TTL, **Clear cache now**, **Auto-clear cache** and every sheet sync. A longer **Cache TTL** reduces calls. |
-| Quote Lookup says `STATE_UNSUPPORTED` for a state without sales tax | States whose imported sheet data is all zero are marked *No sales tax* and are not quoted. WooCommerce's own table applies. |
+| More USGeocoder calls than expected | Each uncached address is a call, including Quote Lookup and REST. The cache is emptied by key, state or source changes, a shorter TTL, **Clear cache now** and **Auto-clear cache**; sheet syncs keep cached USGeocoder answers. A longer **Cache TTL** reduces calls. |
+| Every quote fails with `VALIDATION_ERROR` while tax is based on the shop base address | Fill in the store's address line 1 in WooCommerce → Settings → General; the quote needs a street. |
 
 Outcome codes (Quote Lookup, Audit Log, REST):
 
 | Code | Meaning | What happens at checkout |
 |---|---|---|
 | `SUCCESS` | Rate found | **Sales Tax** at that rate |
-| `NO_SALES_TAX` | Rate found and it is zero | No tax |
+| `NO_SALES_TAX` | Rate found and it is zero (including states marked *No sales tax*) | No tax |
 | `STATE_DISABLED` | State not checked while states are limited | WooCommerce's own rates |
-| `STATE_UNSUPPORTED` | The Coverage Matrix does not mark the state as supported (this includes states marked *No sales tax*) | WooCommerce's own rates |
+| `STATE_UNSUPPORTED` | The Coverage Matrix does not mark the state as supported | WooCommerce's own rates |
 | `SOURCE_UNAVAILABLE` | No dataset imported for the state, or USGeocoder unavailable and the sheet fallback failed too | WooCommerce's own rates |
 | `DATASET_STALE` | Sheet data older than 45 days | WooCommerce's own rates |
 | `RATE_NOT_DETERMINABLE` | No match and no state floor, or USGeocoder found no rate | WooCommerce's own rates |
@@ -274,9 +276,9 @@ The module also honours WooCommerce's `woocommerce_apply_base_tax_for_local_pick
 |---|---|---|
 | POST | `/quote` | JSON body with `street`, `city`, `state`, `zip`, or a one-line `address`. 200 on success, 422 when the outcome is not a success, 429 above 60 requests per minute per IP. `totalRate` is a decimal (`0.0825` = 8.25%). |
 | POST | `/quote/batch` | Body `{"addresses": [...]}`, at most 25; 30 requests per minute per IP. Returns `{count, results}`. |
-| GET | `/coverage` | Coverage Matrix per state: status, resolver, notes, enabled for store, source strategy. |
-| GET | `/health` | Active datasets with age and freshness, coverage summary, sheet source, resolvers, and 24-hour lookup stats. Cache hits are not audited, so `cacheHitRatio24h` stays 0. |
-| GET | `/datasets` | Up to 50 sheet dataset versions, sorted by state, then newest load. |
+| GET | `/coverage` | Coverage Matrix per state: status, resolver, notes, enabled for store, source strategy, and `dataset` (version label, effective date, load date, age in days, freshness limit, fresh or not; `null` without a dataset). |
+| GET | `/health` | Active datasets with age and freshness, coverage summary, sheet source, resolvers, and 24-hour lookup stats. Cache hits are not audited, so `cacheHitRatio24h` is always `null` and `cacheHitsAudited` is `false`. |
+| GET | `/datasets` | The 50 most recently loaded sheet dataset versions, newest first. |
 | POST | `/admin/sync` | Runs the sheet sync now, like **Sync Sheet Data**. |
 | GET | `/admin/audit` | Recent audit rows; `?limit=1..100` (default 25), `?state=XX`. |
 
@@ -285,7 +287,7 @@ The module also honours WooCommerce's `woocommerce_apply_base_tax_for_local_pick
 | Hook | When |
 |---|---|
 | `ffla_tax_dataset_sync` | Every 30 days (`ffla_monthly`) while **Auto sheet sync** is on |
-| `ffla_tax_cache_cleanup` | Daily; removes expired cache rows |
+| `ffla_tax_cache_cleanup` | Daily; removes expired cache rows and re-checks the Coverage Matrix routing against the settings |
 | `ffla_tax_audit_purge` | Weekly; removes audit rows older than 90 days |
 | `ffla_tax_cache_flush` | Daily, weekly or monthly per **Auto-clear cache**; not scheduled for *Never* |
 
@@ -300,15 +302,21 @@ The module also honours WooCommerce's `woocommerce_apply_base_tax_for_local_pick
   - `_ffla_tax_holiday_exempt_items`, `_ffla_tax_holiday_exempt_sales`, `_ffla_tax_holiday_exempt_shipping`, `_ffla_tax_holiday_rules`, `_ffla_tax_holiday_snapshot`.
 - Line-item meta: `_ffla_tax_exempt`, `_ffla_tax_exemption_rule_ids`, `_ffla_tax_exemption_rule_names`, `_ffla_tax_exemption_snapshot`, `_ffla_tax_exemption_type` (`audience`, `holiday`, `audience+holiday`), `_ffla_tax_audience_rule_names`, `_ffla_tax_holiday_rule_ids`, `_ffla_tax_holiday_rule_names`, `_ffla_tax_holiday_snapshot`.
 - Shipping-line meta: `_ffla_tax_holiday_exempt_amount`, `_ffla_tax_holiday_rule_names`, `_ffla_tax_holiday_snapshot`, plus `_ffla_tax_exempt` / `_ffla_tax_exemption_type = holiday` when fully exempt.
-- WooCommerce session: `ffla_last_tax_quote`, `ffla_runtime_tax_rates`.
+- WooCommerce session: `ffla_last_tax_quote`, `ffla_tax_quotes_by_location` (quotes of the last 10 destinations, keyed `US|STATE|ZIP5`), `ffla_runtime_tax_rates`.
 - Options and transients: `ffla_tax_resolver_settings`, `ffla_tax_resolver_db_version` (schema `1.4.0`), `ffla_tax_usgeocoder_usage`, `ffla_tax_last_cache_flush`; transients `ffla_tax_key_validation` (1 hour), `ffla_tax_reconcile_lock` (30 seconds).
 
 **PHP entry points**
 
 - `Tax_Quote_Engine::quote(['street' => …, 'city' => …, 'state' => …, 'zip' => …])` returns a `Tax_Quote_Result` (`->is_success()`, `->to_array()`).
 - `Tax_Dataset_Pipeline::sync('google_sheet_zip_rates')` imports the sheet.
-- `Tax_Coverage::reconcile_from_settings()` rebuilds the state routing.
+- `Tax_Coverage::reconcile_from_settings()` rebuilds the state routing; `Tax_Coverage::desired_route('GA')` returns the source family a state should use (`usgeocoder_api` or `sheet_zip_dataset`).
+- `ffla_tax_log($level, $message, $context = [])` writes to the WooCommerce log, source `ffla-tax` (shared with Sales Tax Reports).
 
 **Code layout.** The Sales Tax Reports classes (`includes/class-tax-report-*.php`, `includes/class-tax-nexus-monitor.php`, `admin/class-tax-reports-admin.php`, `assets/nexus-thresholds.csv`) live in this folder but are loaded only by the `tax-reports` module.
 
-**Tests** (run from the plugin folder): `php tests/smoke/tax-order-context-smoke.php` covers renewals, admin Recalculate, pickup, exemptions on stored orders and the native fallback, and runs in CI. `php tests/smoke/tax-policy-smoke.php` covers the holiday engine (category inheritance, state and price limits) and is not part of CI.
+**Tests** (run from the plugin folder, no WordPress needed):
+
+- `php tests/smoke/tax-order-context-smoke.php`: renewals, admin Recalculate, pickup, exemptions on stored orders and the native fallback (runs in CI).
+- `php tests/smoke/tax-resolver-fixes-smoke.php`: checkout lookups after WooCommerce's rate cache, exemptions in every tax class, shop base address, street/ZIP pairing, zero-tax states, which quote is saved on the order, and the logger.
+- `php tests/smoke/tax-resolver-units-smoke.php`: source routing, zero-tax support, the sheet-only cache clear and the API usage counter.
+- `php tests/smoke/tax-policy-smoke.php`: the holiday engine (category inheritance, state and price limits).

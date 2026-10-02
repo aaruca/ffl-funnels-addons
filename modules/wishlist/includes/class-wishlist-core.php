@@ -17,8 +17,19 @@ class Alg_Wishlist_Core
     private static $session_cookie_name = 'alg_wishlist_session';
 
     /**
-     * Initialize user session (Guest or Logged in)
+     * Readable (not HttpOnly) cookie holding a short hash of the visitor's
+     * saved product IDs ('0' for none). The front-end script compares it with
+     * the state printed in the page to spot a page served from a full-page
+     * cache for someone else, and only then asks the server for the real list.
      */
+    const STATE_COOKIE = 'alg_wishlist_state';
+
+    /** Lifetime of the guest and state cookies. Renewed on every change. */
+    const COOKIE_LIFETIME = 30 * DAY_IN_SECONDS;
+
+    /** Daily cron that deletes guest lists nobody can reach any more. */
+    const CLEANUP_HOOK = 'alg_wishlist_cleanup_guests';
+
     /**
      * Allowed DB field names for owner queries.
      */
@@ -32,29 +43,141 @@ class Alg_Wishlist_Core
         return in_array($field, self::$allowed_owner_fields, true) ? $field : 'user_id';
     }
 
+    /**
+     * Merge a guest list into the account after sign-in.
+     *
+     * Guests get their session cookie only when they first save a product
+     * (ensure_guest_session()), not on every page view: a Set-Cookie on every
+     * response stops many page caches from caching the page, and crawlers
+     * never need one.
+     */
     public static function init_session()
     {
         if (is_user_logged_in()) {
-            // Check if there was a guest session and merge
             self::merge_guest_wishlist();
-        } else {
-            // Ensure guest has a session ID cookie
-            if (!isset($_COOKIE[self::$session_cookie_name])) {
-                $session_id = wp_generate_password(32, false);
-                if (headers_sent()) {
-                    return;
-                }
-                setcookie(self::$session_cookie_name, $session_id, [
-                    'expires' => time() + 30 * DAY_IN_SECONDS,
-                    'path' => COOKIEPATH,
-                    'domain' => COOKIE_DOMAIN,
-                    'secure' => is_ssl(),
-                    'httponly' => true,
-                    'samesite' => 'Lax',
-                ]);
-                $_COOKIE[self::$session_cookie_name] = $session_id; // Set for immediate use
-            }
         }
+    }
+
+    /**
+     * Set a cookie for the wishlist (no-op once output has started).
+     */
+    private static function set_cookie(string $name, string $value, int $expires, bool $httponly): void
+    {
+        if (headers_sent()) {
+            return;
+        }
+        setcookie($name, $value, [
+            'expires'  => $expires,
+            'path'     => COOKIEPATH,
+            'domain'   => COOKIE_DOMAIN,
+            'secure'   => is_ssl(),
+            'httponly' => $httponly,
+            'samesite' => 'Lax',
+        ]);
+    }
+
+    /**
+     * Give a guest a session ID cookie (or renew it), so the 30 days count
+     * from the last change rather than the first visit.
+     *
+     * @return string The session ID, '' for signed-in users.
+     */
+    public static function ensure_guest_session(): string
+    {
+        if (is_user_logged_in()) {
+            return '';
+        }
+        $session_id = isset($_COOKIE[self::$session_cookie_name])
+            ? sanitize_text_field(wp_unslash($_COOKIE[self::$session_cookie_name]))
+            : '';
+        if ($session_id === '') {
+            $session_id = wp_generate_password(32, false);
+        }
+        self::set_cookie(self::$session_cookie_name, $session_id, time() + self::COOKIE_LIFETIME, true);
+        $_COOKIE[self::$session_cookie_name] = $session_id; // For the rest of this request.
+        return $session_id;
+    }
+
+    /**
+     * Short, order-independent hash of a list of product IDs ('0' when empty).
+     */
+    public static function state_hash(array $ids): string
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+        if (empty($ids)) {
+            return '0';
+        }
+        sort($ids, SORT_NUMERIC);
+        return substr(md5(implode(',', $ids)), 0, 12);
+    }
+
+    /**
+     * Store the visitor's current list hash in the readable state cookie.
+     */
+    public static function set_state_cookie(array $ids): void
+    {
+        $hash = self::state_hash($ids);
+        self::set_cookie(self::STATE_COOKIE, $hash, time() + self::COOKIE_LIFETIME, false);
+        $_COOKIE[self::STATE_COOKIE] = $hash;
+    }
+
+    /**
+     * Forget the state cookie (sign-out), so the guest view does not ask the
+     * server for a list it does not have.
+     */
+    public static function clear_state_cookie(): void
+    {
+        self::set_cookie(self::STATE_COOKIE, '', time() - HOUR_IN_SECONDS, false);
+        unset($_COOKIE[self::STATE_COOKIE]);
+    }
+
+    /**
+     * Mark a list as changed (drives the guest-list cleanup).
+     */
+    private static function touch_list(int $wishlist_id): void
+    {
+        global $wpdb;
+        $wpdb->update(
+            $wpdb->prefix . 'alg_wishlists',
+            ['last_updated' => current_time('mysql')],
+            ['id' => $wishlist_id],
+            ['%s'],
+            ['%d']
+        );
+    }
+
+    /**
+     * Delete guest lists that no browser can reach any more: the guest cookie
+     * lasts 30 days from the last change, so a guest list unchanged for longer
+     * is orphaned. Runs daily in batches.
+     *
+     * @return int Lists deleted.
+     */
+    public static function cleanup_guest_lists(int $batch = 500): int
+    {
+        global $wpdb;
+        $lists  = $wpdb->prefix . 'alg_wishlists';
+        $items  = $wpdb->prefix . 'alg_wishlist_items';
+        $cutoff = gmdate('Y-m-d H:i:s', (int) current_time('timestamp') - self::COOKIE_LIFETIME - DAY_IN_SECONDS);
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT id FROM {$lists} WHERE user_id = 0 AND session_id <> '' AND last_updated < %s ORDER BY id ASC LIMIT %d",
+            $cutoff,
+            max(1, $batch)
+        ));
+        if (empty($ids)) {
+            return 0;
+        }
+
+        $ids          = array_map('intval', $ids);
+        $placeholders = implode(',', array_fill(0, count($ids), '%d'));
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders
+        $wpdb->query($wpdb->prepare("DELETE FROM {$items} WHERE wishlist_id IN ({$placeholders})", $ids));
+        $wpdb->query($wpdb->prepare("DELETE FROM {$lists} WHERE id IN ({$placeholders})", $ids));
+        // phpcs:enable
+
+        return count($ids);
     }
 
     /**
@@ -88,6 +211,12 @@ class Alg_Wishlist_Core
     {
         global $wpdb;
         $owner = self::get_current_owner();
+
+        if (empty($owner['value']) && $create_if_missing && !is_user_logged_in()) {
+            // First save by a guest: this is when they get a session cookie.
+            self::ensure_guest_session();
+            $owner = self::get_current_owner();
+        }
 
         if (empty($owner['value']))
             return false;
@@ -184,6 +313,11 @@ class Alg_Wishlist_Core
         if (false === $inserted)
             return 'exists';
 
+        self::touch_list((int) $wishlist_id);
+        if (!is_user_logged_in()) {
+            self::ensure_guest_session(); // Renew the 30 days.
+        }
+
         return 'added';
     }
 
@@ -208,6 +342,10 @@ class Alg_Wishlist_Core
                 'variation_id' => $variation_id
             )
         );
+        self::touch_list((int) $wishlist_id);
+        if (!is_user_logged_in()) {
+            self::ensure_guest_session(); // Renew the 30 days.
+        }
 
         return 'removed';
     }
@@ -256,6 +394,7 @@ class Alg_Wishlist_Core
              WHERE i.wishlist_id = %d
                AND p.post_type = 'product'
                AND p.post_status = 'publish'
+             ORDER BY i.item_id ASC
              LIMIT 500",
             $wishlist_id
         ));
@@ -314,20 +453,29 @@ class Alg_Wishlist_Core
 
                 // Delete old guest list
                 $wpdb->delete($table, array('id' => $guest_list_id));
+                self::touch_list((int) $user_list_id);
             }
 
-            // Clear cookie
-            if (headers_sent()) {
-                return;
-            }
-            setcookie(self::$session_cookie_name, '', [
-                'expires' => time() - 3600,
-                'path' => COOKIEPATH,
-                'domain' => COOKIE_DOMAIN,
-                'secure' => is_ssl(),
-                'httponly' => true,
-                'samesite' => 'Lax',
-            ]);
+            // The account list changed: tell the browser, then drop the guest cookie.
+            self::set_state_cookie(self::get_wishlist_items());
+        }
+
+        // Clear the guest cookie (also when it never led to a list).
+        self::set_cookie(self::$session_cookie_name, '', time() - HOUR_IN_SECONDS, true);
+        unset($_COOKIE[self::$session_cookie_name]);
+    }
+
+    /**
+     * Ask page caches not to store the current page (it holds one visitor's
+     * wishlist). Sends no-cache headers when still possible.
+     */
+    public static function disable_page_cache(): void
+    {
+        if (!defined('DONOTCACHEPAGE')) {
+            define('DONOTCACHEPAGE', true);
+        }
+        if (!headers_sent()) {
+            nocache_headers();
         }
     }
 

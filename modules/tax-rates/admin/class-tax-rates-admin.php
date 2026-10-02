@@ -93,9 +93,9 @@ class Tax_Rates_Admin
                 'syncFailed'           => __('Sync failed.', 'ffl-funnels-addons'),
                 'syncSheetData'        => __('Sync Sheet Data', 'ffl-funnels-addons'),
                 'sheetSyncFailed'      => __('Sheet sync request failed.', 'ffl-funnels-addons'),
-                'confirmPurgeLegacy'   => __('This will permanently delete old local tax datasets, quote cache, and audit logs. Continue?', 'ffl-funnels-addons'),
+                'confirmPurgeLegacy'   => __('This permanently deletes every imported Google Sheet dataset (including the ones in use and the USGeocoder fallback), the address cache and the audit log. Sheet lookups fail until the next sync. Continue?', 'ffl-funnels-addons'),
                 'deletingOldDatabase'  => __('Deleting old database…', 'ffl-funnels-addons'),
-                'deletingLegacyData'   => __('Deleting legacy local tax data.', 'ffl-funnels-addons'),
+                'deletingLegacyData'   => __('Deleting local tax datasets, cache and audit log.', 'ffl-funnels-addons'),
                 'cleanupFinished'      => __('Cleanup finished.', 'ffl-funnels-addons'),
                 'cleanupCompleted'     => __('Cleanup completed.', 'ffl-funnels-addons'),
                 'cleanupRequestFailed' => __('Cleanup request failed.', 'ffl-funnels-addons'),
@@ -250,8 +250,6 @@ class Tax_Rates_Admin
             'cache_ttl'       => max(60, (int) ($_POST['cache_ttl'] ?? 86400)),
             'cache_flush_interval' => $flush_interval,
             'auto_sync'       => isset($_POST['auto_sync']) ? '1' : '0',
-            'sync_schedule'   => 'monthly',
-            'wc_auto_sync'    => '0',
             'restrict_states' => isset($_POST['restrict_states']) ? '1' : '0',
             'enabled_states'  => $enabled_states,
             'rate_source'     => $rate_source,
@@ -265,7 +263,12 @@ class Tax_Rates_Admin
             'tax_holiday_rules'    => $tax_holiday_rules,
         ];
 
-        $removed_states = array_values(array_diff($previous_enabled_states, $enabled_states));
+        // Checked states only matter while "Limit resolver to selected states"
+        // is on; unticking a state with the limit off disables nothing, so its
+        // dataset (also the USGeocoder fallback) is kept.
+        $removed_states = $settings['restrict_states'] === '1'
+            ? array_values(array_diff($previous_enabled_states, $enabled_states))
+            : [];
         $purged_states  = 0;
 
         foreach ($removed_states as $state_code) {
@@ -499,9 +502,12 @@ class Tax_Rates_Admin
 
         $result = Tax_Resolver_DB::purge_legacy_local_data();
 
+        // Sheet states no longer have data: show them as awaiting sync.
+        Tax_Coverage::reconcile_from_settings();
+
         wp_send_json_success([
             'message' => sprintf(
-                __('Legacy local tax data deleted. Datasets: %1$d, rates: %2$d, cache: %3$d, audit: %4$d.', 'ffl-funnels-addons'),
+                __('Local tax data deleted. Datasets: %1$d, rates: %2$d, cache: %3$d, audit: %4$d. Run Sync Sheet Data to rebuild the datasets.', 'ffl-funnels-addons'),
                 (int) ($result['dataset_versions_deleted'] ?? 0),
                 (int) ($result['jurisdiction_rates_deleted'] ?? 0),
                 (int) ($result['address_cache_deleted'] ?? 0),
@@ -713,8 +719,14 @@ class Tax_Rates_Admin
         echo '</div>';
         echo '<div class="wb-card__body">';
 
+        $settings = (array) get_option(self::SETTINGS_KEY, []);
+        $ttl = max(60, (int) ($settings['cache_ttl'] ?? 86400));
         echo '<p class="wb-field__desc">'
-            . esc_html__('Counts every real call against the USGeocoder API. Cached quotes do not count — the local 24-hour address cache absorbs repeats for free.', 'ffl-funnels-addons')
+            . esc_html(sprintf(
+                /* translators: %s: cache lifetime, e.g. "1 day". */
+                __('Counts every real call against the USGeocoder API, including calls whose answer was unusable and fell back to the Sheet. Cached quotes do not count — the address cache (%s) absorbs repeats for free.', 'ffl-funnels-addons'),
+                human_time_diff(0, $ttl)
+            ))
             . '</p>';
 
         if (empty($history)) {
@@ -1160,6 +1172,8 @@ class Tax_Rates_Admin
                 'api_key_removed'        => __('USGeocoder key removed', 'ffl-funnels-addons'),
                 'api_key_changed'        => __('USGeocoder key changed', 'ffl-funnels-addons'),
                 'enabled_states_changed' => __('enabled states changed', 'ffl-funnels-addons'),
+                'rate_source_changed'    => __('tax rate source changed', 'ffl-funnels-addons'),
+                'cache_ttl_reduced'      => __('cache TTL reduced', 'ffl-funnels-addons'),
             ];
             $labels = array_intersect_key($labels, array_flip($reasons));
 
@@ -1177,7 +1191,7 @@ class Tax_Rates_Admin
         if (get_option('woocommerce_calc_taxes') !== 'yes') {
             FFLA_Admin::render_notice(
                 'warning',
-                __('WooCommerce taxes are disabled. Enable them in <strong>WooCommerce -> Settings -> Tax</strong> for resolved rates to apply at checkout.', 'ffl-funnels-addons')
+                __('WooCommerce taxes are disabled. Tick <strong>Enable tax rates and calculations</strong> in <strong>WooCommerce -> Settings -> General</strong> for resolved rates to apply at checkout.', 'ffl-funnels-addons')
             );
         }
 
@@ -1244,7 +1258,7 @@ class Tax_Rates_Admin
         echo '<div class="wb-card__header"><h3>' . esc_html__('Tax Quote Lookup', 'ffl-funnels-addons') . '</h3></div>';
         echo '<div class="wb-card__body">';
         echo '<p class="wb-field__desc" style="margin-bottom:var(--wb-spacing-lg)">';
-        echo esc_html__('Enter a US address to look up the applicable sales tax rate and jurisdictional breakdown from the local Google Sheet dataset stored in WordPress.', 'ffl-funnels-addons');
+        echo esc_html__('Enter a US address to look up the applicable sales tax rate and jurisdictional breakdown with the same resolver checkout uses.', 'ffl-funnels-addons');
         echo '</p>';
 
         if ($state_filter_active) {
@@ -1286,10 +1300,31 @@ class Tax_Rates_Admin
 
         echo '</div>';
 
-        FFLA_Admin::render_notice(
-            'info',
-            __('This tool resolves from the local ZIP dataset imported from your shared Google Sheet. ZIP matches are used first, then city fallback, then the state floor for that state.', 'ffl-funnels-addons')
-        );
+        FFLA_Admin::render_notice('info', self::source_model_notice());
+    }
+
+    /**
+     * Describe where quotes come from under the current settings.
+     */
+    private static function source_model_notice(): string
+    {
+        $settings = (array) get_option(self::SETTINGS_KEY, []);
+        $source = (string) ($settings['rate_source'] ?? 'auto');
+        $sheet = __('the local ZIP dataset imported from your shared Google Sheet (ZIP matches first, then city fallback, then the state floor)', 'ffl-funnels-addons');
+
+        if ($source === 'sheet_zip_dataset') {
+            /* translators: %s: description of the Google Sheet dataset. */
+            return sprintf(__('Tax rate source is set to the Google Sheet: every state resolves from %s.', 'ffl-funnels-addons'), $sheet);
+        }
+
+        $has_key = trim((string) ($settings['usgeocoder_auth_key'] ?? '')) !== '';
+        if ($source === 'usgeocoder_api' || ($has_key && $source === 'auto')) {
+            /* translators: %s: description of the Google Sheet dataset. */
+            return sprintf(__('Every state enabled for this store resolves with the USGeocoder live API. When the API fails or has no usable rate, quotes come from %s.', 'ffl-funnels-addons'), $sheet);
+        }
+
+        /* translators: %s: description of the Google Sheet dataset. */
+        return sprintf(__('No USGeocoder key is set, so every state resolves from %s.', 'ffl-funnels-addons'), $sheet);
     }
 
     private function render_coverage_tab(): void
@@ -1307,10 +1342,10 @@ class Tax_Rates_Admin
         foreach ($matrix as $row) {
             switch ($row['coverage_status']) {
                 case Tax_Coverage::SUPPORTED_ADDRESS_RATE:
+                case Tax_Coverage::SUPPORTED_WITH_REMOTE:
                 case Tax_Coverage::NO_SALES_TAX:
                     $ready++;
                     break;
-                case Tax_Coverage::SUPPORTED_WITH_REMOTE:
                 case Tax_Coverage::SUPPORTED_CONTEXT_REQUIRED:
                     $awaiting_sync++;
                     break;
@@ -1330,7 +1365,7 @@ class Tax_Rates_Admin
         }
 
         echo '<div class="ffla-tax-stats">';
-        echo '<div class="ffla-tax-stat ffla-tax-stat--supported"><span class="ffla-tax-stat__value">' . esc_html($ready) . '</span><span class="ffla-tax-stat__label">' . esc_html__('Imported And Ready', 'ffl-funnels-addons') . '</span></div>';
+        echo '<div class="ffla-tax-stat ffla-tax-stat--supported"><span class="ffla-tax-stat__value">' . esc_html($ready) . '</span><span class="ffla-tax-stat__label">' . esc_html__('Ready', 'ffl-funnels-addons') . '</span></div>';
         echo '<div class="ffla-tax-stat ffla-tax-stat--disabled"><span class="ffla-tax-stat__value">' . esc_html($awaiting_sync) . '</span><span class="ffla-tax-stat__label">' . esc_html__('Awaiting Sync', 'ffl-funnels-addons') . '</span></div>';
         echo '<div class="ffla-tax-stat ffla-tax-stat--enabled"><span class="ffla-tax-stat__value">' . esc_html($enabled_for_store) . '</span><span class="ffla-tax-stat__label">' . esc_html__('Enabled For Store', 'ffl-funnels-addons') . '</span></div>';
         echo '<div class="ffla-tax-stat ffla-tax-stat--disabled"><span class="ffla-tax-stat__value">' . esc_html($disabled_for_store) . '</span><span class="ffla-tax-stat__label">' . esc_html__('Disabled For Store', 'ffl-funnels-addons') . '</span></div>';
@@ -1344,10 +1379,7 @@ class Tax_Rates_Admin
             );
         }
 
-        FFLA_Admin::render_notice(
-            'info',
-            __('Source model: every state now resolves from a local dataset imported from the shared Google Sheet. ZIP rows are primary, city rows are fallback, and unmatched locations fall back to the imported state floor.', 'ffl-funnels-addons')
-        );
+        FFLA_Admin::render_notice('info', __('Source model:', 'ffl-funnels-addons') . ' ' . self::source_model_notice());
 
         echo '<div class="wb-card">';
         echo '<div class="wb-card__header"><h3>' . esc_html__('State Coverage Matrix', 'ffl-funnels-addons') . '</h3></div>';
@@ -1421,9 +1453,11 @@ class Tax_Rates_Admin
         echo '</div></div>';
 
         echo '<div class="ffla-tax-legend">';
-        echo '<span class="ffla-tax-legend__item"><span class="ffla-tax-legend__dot ffla-tax-legend__dot--supported"></span> ' . esc_html__('Imported And Ready', 'ffl-funnels-addons') . '</span>';
-        echo '<span class="ffla-tax-legend__item"><span class="ffla-tax-legend__dot ffla-tax-legend__dot--context"></span> ' . esc_html__('Awaiting Sync', 'ffl-funnels-addons') . '</span>';
-        echo '<span class="ffla-tax-legend__item"><span class="ffla-tax-legend__dot ffla-tax-legend__dot--degraded"></span> ' . esc_html__('Degraded', 'ffl-funnels-addons') . '</span>';
+        echo '<span class="ffla-tax-legend__item"><span class="ffla-tax-legend__dot ffla-tax-legend__dot--supported"></span> ' . esc_html__('+ Sheet dataset imported and ready', 'ffl-funnels-addons') . '</span>';
+        echo '<span class="ffla-tax-legend__item"><span class="ffla-tax-legend__dot ffla-tax-legend__dot--remote"></span> ' . esc_html__('R USGeocoder live API (Sheet fallback)', 'ffl-funnels-addons') . '</span>';
+        echo '<span class="ffla-tax-legend__item"><span class="ffla-tax-legend__dot ffla-tax-legend__dot--no-tax"></span> ' . esc_html__('0 No sales tax (quoted at 0%)', 'ffl-funnels-addons') . '</span>';
+        echo '<span class="ffla-tax-legend__item"><span class="ffla-tax-legend__dot ffla-tax-legend__dot--context"></span> ' . esc_html__('~ Awaiting Sync', 'ffl-funnels-addons') . '</span>';
+        echo '<span class="ffla-tax-legend__item"><span class="ffla-tax-legend__dot ffla-tax-legend__dot--degraded"></span> ' . esc_html__('! Degraded', 'ffl-funnels-addons') . '</span>';
         echo '<span class="ffla-tax-legend__item"><span class="ffla-tax-legend__dot ffla-tax-legend__dot--unsupported"></span> ' . esc_html__('Not Supported', 'ffl-funnels-addons') . '</span>';
         if ($state_filter_active) {
             echo '<span class="ffla-tax-legend__item"><span class="ffla-tax-legend__dot ffla-tax-legend__dot--disabled"></span> ' . esc_html__('Disabled For Store', 'ffl-funnels-addons') . '</span>';
@@ -1588,8 +1622,6 @@ class Tax_Rates_Admin
             'cache_ttl'            => 86400,
             'cache_flush_interval' => 'never',
             'auto_sync'            => '1',
-            'sync_schedule'        => 'monthly',
-            'wc_auto_sync'         => '0',
             'restrict_states'      => '0',
             'enabled_states'       => [],
             'rate_source'          => 'auto',
@@ -1756,9 +1788,9 @@ class Tax_Rates_Admin
         echo '</div></div>';
 
         echo '<div class="wb-card" style="margin-top:var(--wb-spacing-xl)">';
-        echo '<div class="wb-card__header"><h3>' . esc_html__('Legacy Data Cleanup', 'ffl-funnels-addons') . '</h3></div>';
+        echo '<div class="wb-card__header"><h3>' . esc_html__('Delete Local Tax Data', 'ffl-funnels-addons') . '</h3></div>';
         echo '<div class="wb-card__body">';
-        echo '<p class="wb-field__desc">' . esc_html__('Use this only after migrating to USGeocoder. It deletes old local tax datasets, cached quotes, and audit rows created by the legacy local dataset workflow.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('Deletes every imported Google Sheet dataset (including the ones in use), every cached quote and the whole audit log. Sheet-based quotes and the USGeocoder fallback stop working until you run Sync Sheet Data again. This is not routine cleanup — superseded dataset versions are already removed by each sync.', 'ffl-funnels-addons') . '</p>';
         echo '<button type="button" id="ffla-purge-legacy-btn" class="wb-btn wb-btn--danger">' . esc_html__('Delete Old Tax Database', 'ffl-funnels-addons') . '</button>';
         echo '<div id="ffla-purge-legacy-status" class="ffla-tax-upload-status" style="display:none;margin-top:var(--wb-spacing-sm)"></div>';
         echo '</div></div>';

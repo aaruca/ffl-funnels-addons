@@ -7,7 +7,7 @@ Fills in two GA4 storefront events, `view_item` and AJAX `add_to_cart`, that can
 ## What it does
 
 - **`view_item`** on single product pages, when no `view_item` is already in the page's `dataLayer`.
-- **`add_to_cart`** after an AJAX add to cart on a single product page, when MonsterInsights has not just sent one.
+- **`add_to_cart`** after an AJAX add to cart of the page's product on a single product page, when MonsterInsights has not just sent one.
 - Sends both through MonsterInsights' own tracker, to MonsterInsights' GA4 property only.
 - Keeps an older path for stores still on Google Analytics for WooCommerce (see below).
 
@@ -44,10 +44,10 @@ When MonsterInsights is ready, a small script is added to single product pages (
 ### `add_to_cart`
 
 - Triggered by WooCommerce's `added_to_cart` browser event on the product page and sent about 0.2 seconds later, through the same tracker wait.
-- Quantity comes from the button's `data-quantity` or the quantity field; the value is price × quantity. When a variation is chosen, the item ID and price switch to that variation.
-- Skipped when an `add_to_cart` event addressed to MonsterInsights (or with no `send_to`) is among the last six `dataLayer` entries before the cart event, or is added before the fallback is sent.
+- Quantity comes from the button's `data-quantity` or the quantity field; the value is price × quantity. When a variation is chosen, the item ID and price switch to that variation and `item_variant` lists the chosen options as shown to the shopper (for example "Red, XL"); clearing the choice goes back to the parent product.
+- Only the page's own product is reported. When the button or form names a different product (`data-product_id`, `add-to-cart` or `product_id`), as related-product and upsell buttons do, no fallback is sent, because that product's details are not on the page. An `added_to_cart` that names no product (a side-cart that passes no button) counts as the page's product.
+- Skipped when an `add_to_cart` event addressed to MonsterInsights (or with no `send_to`) is among the last six `dataLayer` entries before the cart event, or is added before the fallback is sent. The module's own earlier fallbacks do not count, so adding to the cart twice in a row sends two events. The check is not tied to the item, because MonsterInsights may identify items differently (for example by SKU).
 - Only single product pages are covered. Adding to cart from the shop, category or search pages gets no fallback.
-- On a product page, every `added_to_cart` is reported as the page's product, including add-to-cart buttons for other products shown on that page (related products, upsells).
 
 ### Who does what
 
@@ -64,7 +64,7 @@ When MonsterInsights is not ready but Google Analytics for WooCommerce is active
 - **`view_item`**: after the add-to-cart form on a single product page, it runs WooCommerce's `woocommerce_before_single_product` and `woocommerce_after_single_product` actions if the template did not (each at most once). Products without an add-to-cart form get no repair.
 - **`add_to_cart`**: during an AJAX add to cart it stores the product, formatted by Google Analytics for WooCommerce, in the customer's session so that plugin sends it on the next page view. Only one pending event is kept at a time.
 
-As soon as MonsterInsights is ready, these repairs stop, so having both plugins during a migration does not double the events.
+As soon as MonsterInsights is ready, these repairs stop, so having both plugins during a migration does not double the events. On this path `view_cart` is not supported by that plugin, and Site Kit's Analytics module must stay disconnected (one GA4 tag per site).
 
 ### Safety
 
@@ -87,14 +87,14 @@ As soon as MonsterInsights is ready, these repairs stop, so having both plugins 
 
 ## Troubleshooting
 
-- **"MonsterInsights Compatibility is active, but MonsterInsights Pro with the eCommerce Addon and a GA4 connection was not detected."** MonsterInsights is not loaded, the eCommerce Addon is not active, or no valid `G-` measurement ID is set. The module does nothing until that is fixed and never loads its own tag.
+- **"MonsterInsights Compatibility is active, but MonsterInsights with its eCommerce Addon and a GA4 measurement ID was not detected."** MonsterInsights is not loaded, the eCommerce Addon is not active, or no valid `G-` measurement ID is set. The module does nothing until that is fixed and never loads its own tag.
 - **No fallback event.**
   - Check that you are on a single product page.
   - Test as a visitor MonsterInsights tracks; excluded roles get nothing.
   - MonsterInsights' tracker must load within about 10 seconds.
   - The event may simply already be in the `dataLayer`, which is the intended result.
 - **Duplicate events.** The module only sees events in `window.dataLayer`. An event sent another way, or a `view_item` sent with `send_to` to a different property, is not recognised as a duplicate.
-- **`add_to_cart` names the wrong product.** An add-to-cart button for another product was used on a product page; see the limitation above.
+- **No `add_to_cart` for a related product or upsell added from a product page.** Expected: only the page's own product is reported (see above).
 - **Add to cart from category pages is missing.** Not covered by this module.
 - **Purchases or refunds are missing or doubled.** That is MonsterInsights' order tracking; this module does not touch it.
 
@@ -102,8 +102,8 @@ As soon as MonsterInsights is ready, these repairs stop, so having both plugins 
 
 - **No filters or actions** of its own. Hooks used: `woocommerce_after_add_to_cart_form` (99), `woocommerce_add_to_cart` (99, 5 args), `wp_enqueue_scripts` (99), `admin_notices`.
 - **Script**: handle `ffla-monsterinsights-bridge` (`assets/js/monsterinsights-bridge.js`), depends on `jquery`, loaded in the footer.
-- **Config**: `window.fflaMonsterInsightsBridge` = `{ measurementId, currency, value, items }`. Each item has `item_id`, `item_name`, `price`, `quantity`, and when available `item_category`…`item_category5` and `item_brand`.
+- **Config**: `window.fflaMonsterInsightsBridge` = `{ measurementId, productId, currency, value, items }`. Each item has `item_id`, `item_name`, `price`, `quantity`, and when available `item_category`…`item_category5` and `item_brand`; `item_variant` is added in the browser when a variation is chosen.
 - **Sent parameters**: `currency`, `value`, `items`, `send_to` (the measurement ID) and `ffla_bridge: "monsterinsights_compatibility"`, through `window.__gtagTracker('event', name, params)`.
-- **Browser events listened to**: `found_variation` on `form.variations_form` and `added_to_cart` on `document.body`, both in the `.fflaMonsterInsightsBridge` jQuery namespace.
+- **Browser events listened to**: `found_variation` and `reset_data` on `form.variations_form`, and `added_to_cart` on `document.body`, all in the `.fflaMonsterInsightsBridge` jQuery namespace.
 - **Legacy session key**: `_ga_pending_added_to_cart` (Google Analytics for WooCommerce's own pending-event key).
-- **Tests**: `node tests/smoke/monsterinsights-bridge-smoke.js` (fallback, duplicate and broadcast checks).
+- **Tests**: `node tests/smoke/monsterinsights-bridge-smoke.js` (fallback, duplicate, broadcast, other-product buttons, repeated adds and variation checks).

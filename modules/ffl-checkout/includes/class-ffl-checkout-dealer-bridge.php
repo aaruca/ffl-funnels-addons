@@ -43,8 +43,17 @@ class FFL_Checkout_Dealer_Bridge
      */
     public static function render($atts = []): string
     {
-        // Bail if not on checkout or if WooCommerce is unavailable.
+        // Bail without a cart. The widget's scripts come from g-FFL Checkout,
+        // which loads them on checkout pages only.
         if (!function_exists('WC') || !WC()->cart) {
+            return '';
+        }
+
+        // One widget per page: g-FFL Checkout's script drives a single
+        // #ffl_container, so a second copy (shortcode + Bricks element) is
+        // left out instead of duplicating IDs and settings.
+        static $rendered = false;
+        if ($rendered) {
             return '';
         }
 
@@ -66,6 +75,7 @@ class FFL_Checkout_Dealer_Bridge
         }
 
         // ── Build the widget output ──────────────────────────────────
+        $rendered = true;
         ob_start();
         self::render_styles();
         self::render_ffl_map($api_key);
@@ -97,7 +107,7 @@ class FFL_Checkout_Dealer_Bridge
         ?>
         <style id="ffla-dealer-finder-styles">
             div .selectedFFLDivButton {
-                border: solid var(--success) 1px !important;
+                border: solid var(--success, #16a34a) 1px !important;
                 background: #09fa003d !important;
                 color: white !important;
             }
@@ -279,43 +289,83 @@ class FFL_Checkout_Dealer_Bridge
             }
         }
 
-        // Container div.
-        echo '<div id="ffl_container"></div>';
+        // Container div. Marked so the script below can tell it apart from a
+        // container printed by g-FFL Checkout itself on the same page.
+        echo '<div id="ffl_container" data-ffla-dealer-finder="1"></div>';
 
-        // JS variables + initialisation (mirrors ffl_init_map exactly).
+        // Settings for g-FFL Checkout's widget script (same names and values
+        // as its own ffl_init_map). They are set as window properties instead
+        // of `let` declarations: a second `let aKey` on the page (g-FFL
+        // Checkout's own widget) would otherwise stop the script with
+        // "Identifier has already been declared". g-FFL's script reads them
+        // as globals either way.
+        //
+        // aKey is g-FFL Checkout's API key. g-FFL Checkout prints the same key
+        // in its own widget, and its script refuses to start without it, so it
+        // cannot be left out here.
+        $config = [
+            'g_ffl_plugin_directory'       => $plugin_dir,
+            'aKey'                         => $api_key,
+            'wMes'                         => $wMes,
+            'wMesAmmo'                     => $wMesAmmo,
+            'hok'                          => $hok,
+            'fflLocalPickup'               => $ffl_local_pickup,
+            'candrOverride'                => $candr_override,
+            'fflIncludeMap'                => $ffl_include_map ? '1' : '',
+            'mixedCartSupport'             => $mixed_cart_support,
+            'isMixedCart'                  => (bool) $is_mixed_cart,
+            'isAmmoCompliance'             => $is_ammo_compliance,
+            'complianceMode'               => $compliance_mode,
+            'licenseSearchValue'           => '',
+            'customerFavoriteFFL'          => $customer_favorite_ffl,
+            'mixedCartNoticeText'          => $mixed_cart_notice_text,
+            'firstLastNameNoticeText'      => $first_last_name_notice_text,
+            'mixedCartNoticeBgColor'       => $mixed_cart_notice_bg_color,
+            'mixedCartNoticeTextColor'     => $mixed_cart_notice_text_color,
+            'firstLastNameNoticeBgColor'   => $first_last_name_notice_bg_color,
+            'firstLastNameNoticeTextColor' => $first_last_name_notice_text_color,
+            'ammoCheckoutMessageBgColor'   => $ammo_checkout_msg_bg_color,
+            'ammoCheckoutMessageTextColor' => $ammo_checkout_msg_text_color,
+            'checkoutMessageBgColor'       => $checkout_msg_bg_color,
+            'checkoutMessageTextColor'     => $checkout_msg_text_color,
+            'restrictedStatesMessage'      => $restricted_states_message,
+        ];
         ?>
         <script type="text/javascript">
-            let g_ffl_plugin_directory = <?php echo wp_json_encode($plugin_dir); ?>;
-            let aKey = <?php echo wp_json_encode($api_key); ?>;
-            let wMes = <?php echo wp_json_encode($wMes); ?>;
-            let wMesAmmo = <?php echo wp_json_encode($wMesAmmo); ?>;
-            let hok = <?php echo wp_json_encode($hok); ?>;
-            let fflLocalPickup = <?php echo wp_json_encode($ffl_local_pickup); ?>;
-            let candrOverride = <?php echo wp_json_encode($candr_override); ?>;
-            let fflIncludeMap = <?php echo wp_json_encode($ffl_include_map ? '1' : ''); ?>;
-            let mixedCartSupport = <?php echo $mixed_cart_support ? 'true' : 'false'; ?>;
-            let isMixedCart = <?php echo $is_mixed_cart ? 'true' : 'false'; ?>;
-            let isAmmoCompliance = <?php echo $is_ammo_compliance ? 'true' : 'false'; ?>;
-            let complianceMode = <?php echo wp_json_encode($compliance_mode); ?>;
-            let licenseSearchValue = "";
-            let customerFavoriteFFL = <?php echo wp_json_encode($customer_favorite_ffl); ?>;
-            let mixedCartNoticeText = <?php echo wp_json_encode($mixed_cart_notice_text); ?>;
-            let firstLastNameNoticeText = <?php echo wp_json_encode($first_last_name_notice_text); ?>;
-            let mixedCartNoticeBgColor = <?php echo wp_json_encode($mixed_cart_notice_bg_color); ?>;
-            let mixedCartNoticeTextColor = <?php echo wp_json_encode($mixed_cart_notice_text_color); ?>;
-            let firstLastNameNoticeBgColor = <?php echo wp_json_encode($first_last_name_notice_bg_color); ?>;
-            let firstLastNameNoticeTextColor = <?php echo wp_json_encode($first_last_name_notice_text_color); ?>;
-            let ammoCheckoutMessageBgColor = <?php echo wp_json_encode($ammo_checkout_msg_bg_color); ?>;
-            let ammoCheckoutMessageTextColor = <?php echo wp_json_encode($ammo_checkout_msg_text_color); ?>;
-            let checkoutMessageBgColor = <?php echo wp_json_encode($checkout_msg_bg_color); ?>;
-            let checkoutMessageTextColor = <?php echo wp_json_encode($checkout_msg_text_color); ?>;
-            let restrictedStatesMessage = <?php echo wp_json_encode($restricted_states_message); ?>;
-            localStorage.removeItem("selectedFFL");
-            document.addEventListener("DOMContentLoaded", function() {
-                if (typeof initFFLJs === "function") {
-                    initFFLJs(aKey, hok);
+            (function (config) {
+                var natives = document.querySelectorAll('[id="ffl_container"]:not([data-ffla-dealer-finder])');
+                if (natives.length) {
+                    // g-FFL Checkout already placed its own widget on this page.
+                    var own = document.querySelector('[data-ffla-dealer-finder]');
+                    if (own && own.parentNode) {
+                        own.parentNode.removeChild(own);
+                    }
+                    return;
                 }
-            });
+                Object.keys(config).forEach(function (name) {
+                    window[name] = config[name];
+                });
+                try {
+                    window.localStorage.removeItem("selectedFFL");
+                } catch (e) {}
+                function start() {
+                    if (document.querySelectorAll('[id="ffl_container"]:not([data-ffla-dealer-finder])').length) {
+                        var mine = document.querySelector('[data-ffla-dealer-finder]');
+                        if (mine && mine.parentNode) {
+                            mine.parentNode.removeChild(mine);
+                        }
+                        return;
+                    }
+                    if (typeof window.initFFLJs === "function") {
+                        window.initFFLJs(window.aKey, window.hok);
+                    }
+                }
+                if (document.readyState === "loading") {
+                    document.addEventListener("DOMContentLoaded", start);
+                } else {
+                    start();
+                }
+            })(<?php echo wp_json_encode($config, JSON_HEX_TAG | JSON_HEX_AMP); ?>);
         </script>
         <?php
     }

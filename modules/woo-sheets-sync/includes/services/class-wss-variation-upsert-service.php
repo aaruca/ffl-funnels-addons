@@ -29,12 +29,19 @@ class WSS_Variation_Upsert_Service
     }
 
     /**
+     * Create or update a variation under a variable parent.
+     *
+     * Target: "variation_id" when given (must be a variation of the parent),
+     * otherwise the variation matched by SKU or by the complete attribute set,
+     * otherwise a new variation.
+     *
      * @param array<string,mixed> $payload
      * @return array<string,mixed>|WP_Error
      */
     public function upsert_variation(int $parent_id, array $payload)
     {
-        $parent = wc_get_product($parent_id);
+        $payload = WSS_Product_Upsert_Service::normalize_payload($payload);
+        $parent  = wc_get_product($parent_id);
         if (!$parent || !$parent->is_type('variable')) {
             return new WP_Error(
                 'wss_variation',
@@ -45,6 +52,19 @@ class WSS_Variation_Upsert_Service
             );
         }
 
+        $existing_by_id = 0;
+        $variation_id   = (int) ($payload['variation_id'] ?? 0);
+        if ($variation_id > 0) {
+            $by_id = wc_get_product($variation_id);
+            if (!$by_id || !$by_id->is_type('variation') || (int) $by_id->get_parent_id() !== $parent_id) {
+                return new WP_Error(
+                    'wss_variation',
+                    sprintf(__('Variation #%1$d does not exist or does not belong to product #%2$d.', 'ffl-funnels-addons'), $variation_id, $parent_id)
+                );
+            }
+            $existing_by_id = $variation_id;
+        }
+
         $sku             = trim((string) ($payload['sku'] ?? ''));
         $existing_by_sku = 0;
         if ($sku !== '') {
@@ -53,6 +73,12 @@ class WSS_Variation_Upsert_Service
                 $existing = wc_get_product($existing_id);
                 if ($existing && (int) $existing->get_parent_id() === $parent_id) {
                     $existing_by_sku = (int) $existing_id;
+                    if ($existing_by_id > 0 && $existing_by_sku !== $existing_by_id) {
+                        return new WP_Error(
+                            'wss_variation',
+                            sprintf(__('SKU "%1$s" already belongs to variation #%2$d.', 'ffl-funnels-addons'), $sku, $existing_by_sku)
+                        );
+                    }
                 } else {
                     return new WP_Error(
                         'wss_variation',
@@ -67,7 +93,7 @@ class WSS_Variation_Upsert_Service
         }
 
         $attr_string          = trim((string) ($payload['attributes'] ?? ''));
-        if ($attr_string === '' && $sku === '') {
+        if ($attr_string === '' && $sku === '' && $existing_by_id === 0) {
             return new WP_Error(
                 'wss_variation',
                 __('A variation without a SKU must include its complete attribute set.', 'ffl-funnels-addons')
@@ -209,7 +235,18 @@ class WSS_Variation_Upsert_Service
             }
             }
 
-            $existing_target_id = $existing_by_sku > 0 ? $existing_by_sku : $existing_by_attributes;
+            if ($existing_by_id > 0 && $existing_by_attributes > 0 && $existing_by_attributes !== $existing_by_id) {
+                return new WP_Error(
+                    'wss_variation',
+                    sprintf(__('The supplied attributes identify variation #%1$d, not #%2$d.', 'ffl-funnels-addons'), $existing_by_attributes, $existing_by_id)
+                );
+            }
+
+            if ($existing_by_id > 0) {
+                $existing_target_id = $existing_by_id;
+            } else {
+                $existing_target_id = $existing_by_sku > 0 ? $existing_by_sku : $existing_by_attributes;
+            }
             if ($existing_target_id > 0) {
                 $existing = wc_get_product($existing_target_id);
                 if (!$existing || !$existing->is_type('variation')) {

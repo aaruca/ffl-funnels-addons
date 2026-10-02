@@ -27,7 +27,7 @@ class Loadout_Module extends FFLA_Module
 
     public function get_description(): string
     {
-        return __('Tiered product configurator with gamified savings, perks unlocks, and per-item cross-sells. Includes standalone Bricks element and product-level tabs.', 'ffl-funnels-addons');
+        return __('Tiered product configurator with gamified savings, perks unlocks, and per-item cross-sells. Includes Bricks elements, a [loadout] shortcode and a Loadout tab in the product editor.', 'ffl-funnels-addons');
     }
 
     public function get_icon_svg(): string
@@ -45,6 +45,7 @@ class Loadout_Module extends FFLA_Module
         require_once $path . 'includes/class-loadout-tier.php';
         require_once $path . 'includes/class-loadout-tier-item.php';
         require_once $path . 'includes/class-loadout-cross-sell.php';
+        require_once $path . 'includes/class-loadout-pricing.php';
         require_once $path . 'includes/class-loadout-cart.php';
         require_once $path . 'includes/class-loadout-shortcode.php';
 
@@ -73,8 +74,10 @@ class Loadout_Module extends FFLA_Module
             $product_admin->init();
         }
 
-        // Frontend.
+        // Frontend. The shared renderer is used by the shortcode as well as the
+        // Bricks elements, so it is always loaded.
         require_once $path . 'frontend/class-loadout-frontend.php';
+        require_once $path . 'frontend/class-loadout-element-helpers.php';
 
         $frontend = new Loadout_Frontend();
         $frontend->init();
@@ -87,7 +90,6 @@ class Loadout_Module extends FFLA_Module
 
         // Bricks Builder integration.
         if (defined('BRICKS_VERSION')) {
-            require_once $path . 'frontend/class-loadout-element-helpers.php';
             require_once $path . 'frontend/class-loadout-bricks-tags.php';
 
             Loadout_Bricks_Tags::init();

@@ -11,9 +11,11 @@
  * push as "already reconciled".
  *
  * CHECKOUT SAFETY: the reduce hook fires during checkout. This class never
- * throws — every entry point is wrapped in try/catch and the single batched
- * Sheets write is deferred to 'shutdown' so a slow API can't delay the
- * customer. Any failure is logged and left for the nightly sync to recover.
+ * throws — every entry point is wrapped in try/catch. The Google calls run at
+ * the very end of the request ('shutdown', late priority); on PHP-FPM and
+ * LiteSpeed the response is sent to the customer first, elsewhere the calls
+ * still run inside the same request. Any failure is logged and left for the
+ * nightly sync to recover.
  *
  * @package FFL_Funnels_Addons
  */
@@ -151,12 +153,11 @@ class WSS_Realtime_Push
             return;
         }
 
-        // Scope: the parent (or the product itself, for simple) must be enabled
-        // for sync. _wss_sync_enabled is kept in lock-step with the sheet tab
-        // groups by WSS_Sync_Groups, so it is the canonical scope signal.
-        $parent_id = (int) $product->get_parent_id();
-        $scope_id  = $parent_id > 0 ? $parent_id : $product_id;
-        if (get_post_meta($scope_id, '_wss_sync_enabled', true) !== '1') {
+        // Scope: the item must already have a row in a synced tab. The row map
+        // is rebuilt by every full sync from the tab groups (explicit products
+        // and category/tag rules alike), so it is the accurate signal; the
+        // _wss_sync_enabled flag is only refreshed when a group is saved.
+        if (!self::has_sheet_row($product_id)) {
             return;
         }
 
@@ -170,6 +171,22 @@ class WSS_Realtime_Push
     }
 
     /**
+     * Whether a variation/product has a known row in any synced tab.
+     */
+    private static function has_sheet_row(int $product_id): bool
+    {
+        static $map = null;
+        if ($map === null) {
+            $map = get_option('wss_row_map', []);
+            if (!is_array($map)) {
+                $map = [];
+            }
+        }
+
+        return isset($map[$product_id]) && is_array($map[$product_id]);
+    }
+
+    /**
      * Register the deferred flush exactly once per request.
      */
     private static function schedule_flush(): void
@@ -178,16 +195,35 @@ class WSS_Realtime_Push
             return;
         }
         self::$flush_registered = true;
-        add_action('shutdown', [__CLASS__, 'flush'], 20);
+        // Late priority: everything else (WooCommerce session save, output
+        // flushing) has run before the response is finished below.
+        add_action('shutdown', [__CLASS__, 'flush'], 1000);
+    }
+
+    /**
+     * Send the response to the browser before the Google calls, where the
+     * server supports it, so the customer never waits for the Sheets API.
+     */
+    private static function finish_response(): void
+    {
+        if (defined('WP_CLI') && WP_CLI) {
+            return;
+        }
+        if (function_exists('fastcgi_finish_request')) {
+            fastcgi_finish_request();
+        } elseif (function_exists('litespeed_finish_request')) {
+            litespeed_finish_request();
+        }
     }
 
     /**
      * Flush all collected changes to the Sheet in a single batched write.
      *
      * Runs on 'shutdown' so the customer-facing request isn't blocked by the
-     * Sheets API. Verifies each row's variation_id (column B) before writing
-     * because row numbers can drift; on any mismatch it skips that row and
-     * lets the nightly change-aware sync reconcile.
+     * Sheets API. Writes every tab that holds the item. Verifies each row's
+     * variation_id (column B) before writing because row numbers can drift; on
+     * any mismatch it skips that row and lets the nightly change-aware sync
+     * reconcile.
      */
     public static function flush(): void
     {
@@ -205,7 +241,7 @@ class WSS_Realtime_Push
             if (class_exists('WSS_Sync_Engine') && WSS_Sync_Engine::is_applying()) {
                 return;
             }
-            if (!class_exists('WSS_Auth') || !class_exists('WSS_Google_Sheets')) {
+            if (!class_exists('WSS_Auth') || !class_exists('WSS_Google_Sheets') || !class_exists('WSS_Sync_Engine')) {
                 return;
             }
 
@@ -221,26 +257,49 @@ class WSS_Realtime_Push
                 return;
             }
 
-            $provider = WSS_Auth::get_provider();
-            $sheets   = new WSS_Google_Sheets($provider);
+            // Only tabs that are still configured (a removed or renamed group
+            // may leave old locations behind until the next full sync).
+            $configured_tabs = [];
+            if (class_exists('WSS_Sync_Groups')) {
+                foreach (WSS_Sync_Groups::get_groups() as $group) {
+                    $tab = (string) ($group['tab_name'] ?? '');
+                    if ($tab !== '') {
+                        $configured_tabs[$tab] = true;
+                    }
+                }
+            }
 
-            $writes  = [];
-            $written = [];
-
+            $targets = [];
             foreach ($pending as $vid => $data) {
                 $vid   = (int) $vid;
                 $entry = $row_map[$vid] ?? null;
                 if (!is_array($entry)) {
                     continue; // not mapped — let nightly reconcile
                 }
-
-                $tab = (string) ($entry['tab'] ?? '');
-                $row = (int) ($entry['row'] ?? 0);
-                if ($tab === '' || $row < 2) {
-                    continue;
+                foreach (WSS_Sync_Engine::row_map_locations($entry) as $tab => $row) {
+                    $tab = (string) $tab;
+                    if ($configured_tabs !== [] && !isset($configured_tabs[$tab])) {
+                        continue;
+                    }
+                    $targets[] = ['vid' => $vid, 'tab' => $tab, 'row' => (int) $row, 'data' => $data];
                 }
+            }
 
-                $safe_tab = str_replace("'", "''", $tab);
+            if (empty($targets)) {
+                return;
+            }
+
+            self::finish_response();
+
+            $provider = WSS_Auth::get_provider();
+            $sheets   = new WSS_Google_Sheets($provider);
+
+            $writes  = [];
+            $written = [];
+
+            foreach ($targets as $target) {
+                $safe_tab = str_replace("'", "''", $target['tab']);
+                $row      = $target['row'];
 
                 // Verify the variation_id (column B) still sits at this row.
                 $bcell = $sheets->read_range($sheet_id, "'" . $safe_tab . "'!B" . $row);
@@ -248,16 +307,17 @@ class WSS_Realtime_Push
                     continue;
                 }
                 $bval = isset($bcell[0][0]) ? (int) $bcell[0][0] : 0;
-                if ($bval !== $vid) {
+                if ($bval !== $target['vid']) {
                     continue; // row drifted — skip, nightly reconciles
                 }
 
-                $qty_str = ($data['manage'] && $data['qty'] !== null) ? (string) $data['qty'] : '';
+                $data     = $target['data'];
+                $qty_str  = ($data['manage'] && $data['qty'] !== null) ? (string) $data['qty'] : '';
                 $writes[] = [
                     'range'  => "'" . $safe_tab . "'!H" . $row . ':I' . $row, // stock_qty, stock_status
                     'values' => [[$qty_str, (string) $data['status']]],
                 ];
-                $written[$vid] = $data;
+                $written[] = $target;
             }
 
             if (empty($writes)) {
@@ -272,12 +332,16 @@ class WSS_Realtime_Push
                 return;
             }
 
-            // Persist the agreed snapshots only after a successful write so both
-            // sides are recorded at the new quantity.
-            foreach ($written as $vid => $data) {
+            // Persist the agreed snapshots only after a successful write, and
+            // only for the tabs actually written.
+            foreach ($written as $target) {
+                $data = $target['data'];
                 if ($data['manage'] && $data['qty'] !== null) {
-                    update_post_meta((int) $vid, WSS_Sync_Engine::META_SNAP_WOO, (int) $data['qty']);
-                    update_post_meta((int) $vid, WSS_Sync_Engine::META_SNAP_SHEET, (int) $data['qty']);
+                    WSS_Sync_Engine::write_stock_snapshot(
+                        (int) $target['vid'],
+                        (int) $data['qty'],
+                        WSS_Sync_Engine::tab_snapshot_key($sheet_id, (string) $target['tab'])
+                    );
                 }
             }
         } catch (\Throwable $e) {

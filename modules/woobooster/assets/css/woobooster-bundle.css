@@ -219,3 +219,9 @@
     opacity: 0.7;
     pointer-events: none;
 }
+
+/* Quantity hint next to an item price ("each (×2)"). */
+.wb-bundle-item__qty {
+    opacity: 0.75;
+    font-size: 0.9em;
+}

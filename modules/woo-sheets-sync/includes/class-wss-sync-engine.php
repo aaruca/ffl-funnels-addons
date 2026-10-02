@@ -88,12 +88,135 @@ class WSS_Sync_Engine
     private const VALID_STOCK_STATUSES = ['instock', 'outofstock', 'onbackorder'];
 
     /**
-     * Per-variation snapshot meta: the stock qty that Woo and the Sheet last
-     * AGREED on at the end of a sync. Change detection compares the live value
-     * to these to decide which side actually moved since then.
+     * Legacy per-variation snapshot meta: the stock qty that Woo and the Sheet
+     * last AGREED on. Since snapshots are kept per tab (META_SNAPS_BY_TAB) these
+     * are no longer written; they are only read as the starting baseline for a
+     * tab that has no snapshot of its own yet (the first run after updating).
      */
     public const META_SNAP_WOO   = '_wss_snap_woo';
     public const META_SNAP_SHEET = '_wss_snap_sheet';
+
+    /**
+     * Per-tab snapshots: [ tab_key => ['woo' => int, 'sheet' => int] ].
+     *
+     * A product can have a row in several tabs. Each tab has to remember what
+     * it last agreed with WooCommerce, otherwise one tab's agreement makes a
+     * stale row in another tab look like a manual edit and an order is undone.
+     */
+    public const META_SNAPS_BY_TAB = '_wss_snaps';
+
+    /** @var array<int,true> Parent IDs of simple products created/linked from new rows. */
+    private $created_parent_ids = [];
+
+    /** @var array<int,true> Variation/product IDs whose row was written in Phase 2. */
+    private $phase_two_written_ids = [];
+
+    /**
+     * Stable key for a spreadsheet tab, used to store per-tab snapshots.
+     */
+    public static function tab_snapshot_key(string $sheet_id, string $tab_name): string
+    {
+        return substr(md5($sheet_id . '|' . $tab_name), 0, 16);
+    }
+
+    /**
+     * Last agreed stock for a variation in one tab.
+     *
+     * @return array{0:?int,1:?int} [woo, sheet]; nulls when nothing is known.
+     */
+    public static function read_stock_snapshot(int $variation_id, string $tab_key): array
+    {
+        $all = get_post_meta($variation_id, self::META_SNAPS_BY_TAB, true);
+        if (is_array($all) && isset($all[$tab_key]['woo'], $all[$tab_key]['sheet'])) {
+            return [(int) $all[$tab_key]['woo'], (int) $all[$tab_key]['sheet']];
+        }
+
+        // No snapshot for this tab yet: start from the legacy single snapshot.
+        $woo   = get_post_meta($variation_id, self::META_SNAP_WOO, true);
+        $sheet = get_post_meta($variation_id, self::META_SNAP_SHEET, true);
+
+        return [
+            ($woo !== '' && $woo !== false) ? (int) $woo : null,
+            ($sheet !== '' && $sheet !== false) ? (int) $sheet : null,
+        ];
+    }
+
+    /**
+     * Record that WooCommerce and one tab now agree on this quantity.
+     */
+    public static function write_stock_snapshot(int $variation_id, int $quantity, string $tab_key): void
+    {
+        if ($variation_id <= 0 || $tab_key === '') {
+            return;
+        }
+
+        $all = get_post_meta($variation_id, self::META_SNAPS_BY_TAB, true);
+        if (!is_array($all)) {
+            $all = [];
+        }
+        $all[$tab_key] = ['woo' => $quantity, 'sheet' => $quantity];
+        update_post_meta($variation_id, self::META_SNAPS_BY_TAB, $all);
+    }
+
+    /**
+     * Normalize a "manage stock" value from the sheet or an API payload.
+     *
+     * @param mixed $value TRUE/FALSE (any case), yes/no, 1/0 or a boolean.
+     * @return string 'TRUE', 'FALSE', or '' when the value says nothing.
+     */
+    public static function normalize_manage_stock($value): string
+    {
+        if (is_bool($value)) {
+            return $value ? 'TRUE' : 'FALSE';
+        }
+        if (is_int($value)) {
+            return $value === 1 ? 'TRUE' : ($value === 0 ? 'FALSE' : '');
+        }
+        $value = strtolower(trim((string) $value));
+        if (in_array($value, ['true', 'yes', '1'], true)) {
+            return 'TRUE';
+        }
+        if (in_array($value, ['false', 'no', '0'], true)) {
+            return 'FALSE';
+        }
+        return '';
+    }
+
+    /**
+     * Whether a SKU read from the sheet is the WooCommerce SKU with its
+     * leading zeros dropped by Google (e.g. "123" for "00123"). Such a cell is
+     * not an edit; the next write-back restores it as text.
+     */
+    private static function sku_lost_leading_zeros(string $sheet_sku, string $woo_sku): bool
+    {
+        if ($sheet_sku === '' || $woo_sku === '' || $sheet_sku === $woo_sku) {
+            return false;
+        }
+        if (!ctype_digit($sheet_sku) || !ctype_digit($woo_sku) || strpos($woo_sku, '0') !== 0) {
+            return false;
+        }
+
+        $trimmed = ltrim($woo_sku, '0');
+        return $sheet_sku === ($trimmed === '' ? '0' : $trimmed);
+    }
+
+    /**
+     * Row as it is sent to Google: text columns are marked as text so Google
+     * does not drop leading zeros or treat a value as a formula or number.
+     *
+     * @param array<int,string> $row 12-column row from build_row().
+     * @return array<int,string>
+     */
+    private static function row_for_sheet(array $row): array
+    {
+        foreach ([self::COL_PRODUCT_NAME, self::COL_ATTRIBUTES, self::COL_SKU] as $col) {
+            if (isset($row[$col])) {
+                $row[$col] = WSS_Google_Sheets::as_text((string) $row[$col]);
+            }
+        }
+
+        return $row;
+    }
 
     /**
      * True while the engine is writing Sheet→Woo (apply + save). The real-time
@@ -112,8 +235,8 @@ class WSS_Sync_Engine
     }
 
     /**
-     * @param array<string,mixed> $settings   wss_settings option.
-     * @param array<string,mixed> $context    Optional: tab_name, allowed_parent_product_ids, group_id, persist_last_sync.
+     * Batch write with extra retries for rate limits, Google server errors and
+     * network failures (on top of the HTTP client's own short retries).
      */
     private function batch_update_with_retry($sheet_id, array $updates)
     {
@@ -125,8 +248,7 @@ class WSS_Sync_Engine
             if (!is_wp_error($result)) {
                 return $result;
             }
-            $code = (string) $result->get_error_code();
-            if (!in_array($code, array('sheets_http_429', 'sheets_http_500', 'sheets_http_502', 'sheets_http_503', 'sheets_http_504'), true)) {
+            if (!WSS_Google_Sheets::is_retryable_error($result)) {
                 return $result;
             }
             $attempts++;
@@ -138,6 +260,10 @@ class WSS_Sync_Engine
         return $result;
     }
 
+    /**
+     * @param array<string,mixed> $settings   wss_settings option.
+     * @param array<string,mixed> $context    Optional: tab_name, allowed_parent_product_ids, group_id, persist_last_sync.
+     */
     public function __construct(WSS_Google_Sheets $sheets, WSS_Logger $logger, array $settings, array $context = [])
     {
         $this->sheets   = $sheets;
@@ -224,8 +350,11 @@ class WSS_Sync_Engine
      * Merge this tab's variation_id → row mapping into the persisted option
      * used by the real-time push (WSS_Realtime_Push).
      *
-     * Stored shape: [ (int)variation_id => ['tab' => string, 'row' => int] ]
-     * where row is the 1-based sheet row number.
+     * Stored shape: [ (int)variation_id => [
+     *     'tab' => string, 'row' => int,          // last tab synced (older readers)
+     *     'locations' => [ tab_name => row, ... ] // every tab holding the item
+     * ] ] where row is the 1-based sheet row number. Entries written by older
+     * versions hold only 'tab' and 'row' and are read as one location.
      *
      * @param array<int,int> $row_map variation_id → 0-based data index.
      */
@@ -236,9 +365,9 @@ class WSS_Sync_Engine
             $persisted = [];
         }
 
-        // Remove mappings that used to belong to this tab but are no longer
-        // present. This is especially important after repairing a stale Sheet
-        // variation ID: the real-time push must not keep targeting the old ID.
+        // Remove this tab's location from items that are no longer in it. This
+        // is especially important after repairing a stale Sheet variation ID:
+        // the real-time push must not keep targeting the old ID.
         $current_ids = [];
         foreach (array_keys($row_map) as $vid) {
             $vid = (int) $vid;
@@ -247,11 +376,19 @@ class WSS_Sync_Engine
             }
         }
         foreach ($persisted as $vid => $entry) {
-            $same_tab = is_array($entry)
-                && isset($entry['tab'])
-                && (string) $entry['tab'] === $this->tab_name;
-            if ($same_tab && !isset($current_ids[(int) $vid])) {
+            if (!is_array($entry)) {
                 unset($persisted[$vid]);
+                continue;
+            }
+            $locations = self::row_map_locations($entry);
+            if (isset($locations[$this->tab_name]) && !isset($current_ids[(int) $vid])) {
+                unset($locations[$this->tab_name]);
+                $rebuilt = self::row_map_entry($locations);
+                if ($rebuilt === null) {
+                    unset($persisted[$vid]);
+                } else {
+                    $persisted[$vid] = $rebuilt;
+                }
             }
         }
 
@@ -260,13 +397,73 @@ class WSS_Sync_Engine
             if ($vid <= 0) {
                 continue;
             }
-            $persisted[$vid] = [
-                'tab' => $this->tab_name,
-                'row' => (int) $index + 2, // +2: 0-based index + header row
-            ];
+            $locations = isset($persisted[$vid]) && is_array($persisted[$vid])
+                ? self::row_map_locations($persisted[$vid])
+                : [];
+            $locations[$this->tab_name] = (int) $index + 2; // +2: 0-based index + header row
+            $persisted[$vid] = self::row_map_entry($locations, $this->tab_name);
         }
 
         update_option('wss_row_map', $persisted, false);
+    }
+
+    /**
+     * Every tab => row location of a wss_row_map entry (old or new shape).
+     *
+     * @param array<string,mixed> $entry
+     * @return array<string,int>
+     */
+    public static function row_map_locations(array $entry): array
+    {
+        $out = [];
+        if (isset($entry['locations']) && is_array($entry['locations'])) {
+            foreach ($entry['locations'] as $tab => $row) {
+                $tab = (string) $tab;
+                $row = (int) $row;
+                if ($tab !== '' && $row >= 2) {
+                    $out[$tab] = $row;
+                }
+            }
+        }
+
+        $tab = (string) ($entry['tab'] ?? '');
+        $row = (int) ($entry['row'] ?? 0);
+        if ($tab !== '' && $row >= 2 && !isset($out[$tab])) {
+            $out[$tab] = $row;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Build a wss_row_map entry from its locations.
+     *
+     * @param array<string,int> $locations
+     * @return array<string,mixed>|null Null when no location is left.
+     */
+    private static function row_map_entry(array $locations, string $primary = ''): ?array
+    {
+        if ($locations === []) {
+            return null;
+        }
+        if ($primary === '' || !isset($locations[$primary])) {
+            $keys    = array_keys($locations);
+            $primary = (string) end($keys);
+        }
+
+        return [
+            'tab'       => $primary,
+            'row'       => (int) $locations[$primary],
+            'locations' => $locations,
+        ];
+    }
+
+    /**
+     * Snapshot key of the tab this engine is syncing.
+     */
+    private function snapshot_key(): string
+    {
+        return self::tab_snapshot_key((string) $this->sheet_id, (string) $this->tab_name);
     }
 
     /**
@@ -320,6 +517,8 @@ class WSS_Sync_Engine
         $this->phase_one_sheet_write_error = '';
         $this->phase_one_stock_snapshots   = [];
         $this->phase_two_stock_snapshots   = [];
+        $this->created_parent_ids          = [];
+        $this->phase_two_written_ids       = [];
 
         if (empty($this->sheet_id)) {
             return ['error' => __('No Google Sheet ID configured.', 'ffl-funnels-addons')];
@@ -355,6 +554,13 @@ class WSS_Sync_Engine
 
         // Phase 1: Sheet → Woo (sheet edits take priority).
         $stats_sheet = $this->sync_sheet_to_woo($sheet_data, $row_map);
+
+        // Simple products created (or linked by SKU) from this tab's new rows
+        // belong to this tab from now on. Without this they would be skipped
+        // from the next run, because only the tab group decides what syncs.
+        // Done even when the Google write failed: the products exist in Woo and
+        // the next run recovers their row through the unconfirmed-row markers.
+        $this->add_created_products_to_group();
 
         // Never run Woo→Sheet or persist speculative IDs when the Google batch
         // write failed. The next run can safely recover products created for a
@@ -392,6 +598,19 @@ class WSS_Sync_Engine
             'woo_to_sheet' => $stats_woo,
             'sheet_to_woo' => $stats_sheet,
         ];
+    }
+
+    /**
+     * Add the simple products created or linked from new rows to this run's
+     * tab group (explicit product list), unless a rule already includes them.
+     */
+    private function add_created_products_to_group(): void
+    {
+        if ($this->created_parent_ids === [] || $this->group_id === '' || !class_exists('WSS_Sync_Groups')) {
+            return;
+        }
+
+        WSS_Sync_Groups::add_products_to_group($this->group_id, array_keys($this->created_parent_ids));
     }
 
     /**
@@ -514,6 +733,11 @@ class WSS_Sync_Engine
                         $stats['created']++;
                     } else {
                         $stats['updated']++;
+                    }
+                    // A simple product (column A empty) now belongs to this tab.
+                    $created_parent = (int) ($result['product_id'] ?? 0);
+                    if ($product_id === 0 && $created_parent > 0) {
+                        $this->created_parent_ids[$created_parent] = true;
                     }
                     $sheet_qty_raw = trim((string) ($row[self::COL_STOCK_QTY] ?? ''));
                     if ($new_vid > 0 && $sheet_qty_raw !== '') {
@@ -726,6 +950,16 @@ class WSS_Sync_Engine
                 $stats['skipped']++;
             }
 
+            if (!empty($stock['status_ignored']) && !$stock['conflict']) {
+                $this->logger->log(
+                    'sheet_to_woo',
+                    $product_id,
+                    $variation_id,
+                    'skipped',
+                    'Stock status not applied: this item manages stock, so its status follows the quantity. Change stock_qty instead.'
+                );
+            }
+
             if ($stock['conflict']) {
                 $this->logger->log(
                     'sheet_to_woo',
@@ -807,24 +1041,34 @@ class WSS_Sync_Engine
 
     private function commit_phase_one_stock_snapshots(): void
     {
+        $key = $this->snapshot_key();
         foreach ($this->phase_one_stock_snapshots as $variation_id => $quantity) {
-            update_post_meta((int) $variation_id, self::META_SNAP_WOO, (int) $quantity);
-            update_post_meta((int) $variation_id, self::META_SNAP_SHEET, (int) $quantity);
+            self::write_stock_snapshot((int) $variation_id, (int) $quantity, $key);
         }
         $this->phase_one_stock_snapshots = [];
     }
 
-    /** @param int[] $confirmed_variation_ids */
-    private function commit_phase_two_stock_snapshots(array $confirmed_variation_ids): void
+    /**
+     * Record snapshots for rows Phase 2 wrote successfully.
+     *
+     * @param int[]          $confirmed_variation_ids Rows confirmed by Google.
+     * @param array<int,int> $written_quantities      variation_id => qty written (managed stock only).
+     */
+    private function commit_phase_two_stock_snapshots(array $confirmed_variation_ids, array $written_quantities = []): void
     {
+        $key = $this->snapshot_key();
         foreach (array_unique(array_map('intval', $confirmed_variation_ids)) as $variation_id) {
-            if (!isset($this->phase_two_stock_snapshots[$variation_id])) {
+            if (isset($written_quantities[$variation_id])) {
+                // A row Phase 2 rewrote or appended now shows WooCommerce's
+                // quantity, so this tab agrees with WooCommerce on it.
+                $quantity = (int) $written_quantities[$variation_id];
+            } elseif (isset($this->phase_two_stock_snapshots[$variation_id])) {
+                $quantity = (int) $this->phase_two_stock_snapshots[$variation_id];
+            } else {
                 continue;
             }
-            $quantity = (int) $this->phase_two_stock_snapshots[$variation_id];
-            update_post_meta($variation_id, self::META_SNAP_WOO, $quantity);
-            update_post_meta($variation_id, self::META_SNAP_SHEET, $quantity);
             unset($this->phase_two_stock_snapshots[$variation_id]);
+            self::write_stock_snapshot($variation_id, $quantity, $key);
         }
     }
 
@@ -1421,9 +1665,11 @@ class WSS_Sync_Engine
      */
     private function sheet_nonstock_fields_differ(array $row, $variation): bool
     {
-        // SKU. An empty Sheet cell remains "no change" for compatibility.
+        // SKU. An empty Sheet cell remains "no change" for compatibility, and a
+        // numeric SKU whose leading zeros Google dropped is not an edit.
         $sheet_sku = trim((string) ($row[self::COL_SKU] ?? ''));
-        if ($sheet_sku !== '' && $sheet_sku !== (string) $variation->get_sku()) {
+        $woo_sku   = (string) $variation->get_sku();
+        if ($sheet_sku !== '' && $sheet_sku !== $woo_sku && !self::sku_lost_leading_zeros($sheet_sku, $woo_sku)) {
             return true;
         }
 
@@ -1434,17 +1680,18 @@ class WSS_Sync_Engine
             return true;
         }
 
-        // Sale price.
+        // Sale price. An empty cell means "no change" (enter 0 to remove the
+        // sale price), so it is not a difference; the write-back refills it.
         $sheet_sale = trim($row[self::COL_SALE_PRICE] ?? '');
         $woo_sale   = $variation->get_sale_price() ?: '';
-        if ($this->normalize_price($sheet_sale) !== $this->normalize_price($woo_sale)) {
+        if ($sheet_sale !== '' && $this->normalize_sale_price($sheet_sale) !== $this->normalize_price($woo_sale)) {
             return true;
         }
 
         // Manage stock.
-        $sheet_manage = strtoupper(trim($row[self::COL_MANAGE_STOCK] ?? ''));
+        $sheet_manage = self::normalize_manage_stock($row[self::COL_MANAGE_STOCK] ?? '');
         $woo_manage   = $variation->get_manage_stock() ? 'TRUE' : 'FALSE';
-        if (($sheet_manage === 'TRUE' || $sheet_manage === 'FALSE') && $sheet_manage !== $woo_manage) {
+        if ($sheet_manage !== '' && $sheet_manage !== $woo_manage) {
             return true;
         }
 
@@ -1471,7 +1718,7 @@ class WSS_Sync_Engine
      */
     private function resolve_stock_direction(array $row, $variation): array
     {
-        $out = ['apply_stock' => false, 'final_qty' => null, 'conflict' => false, 'has_qty' => false];
+        $out = ['apply_stock' => false, 'final_qty' => null, 'conflict' => false, 'has_qty' => false, 'status_ignored' => false];
 
         $sheet_status   = strtolower(trim($row[self::COL_STOCK_STATUS] ?? ''));
         $status_valid   = $sheet_status !== '' && in_array($sheet_status, self::VALID_STOCK_STATUSES, true);
@@ -1491,16 +1738,24 @@ class WSS_Sync_Engine
         $sheet_qty_raw = trim((string) ($row[self::COL_STOCK_QTY] ?? ''));
         $sheet_qty     = ($sheet_qty_raw !== '') ? (int) $sheet_qty_raw : null;
 
-        $snap_woo_raw   = get_post_meta($vid, self::META_SNAP_WOO, true);
-        $snap_sheet_raw = get_post_meta($vid, self::META_SNAP_SHEET, true);
-        $snap_woo       = ($snap_woo_raw !== '') ? (int) $snap_woo_raw : null;
-        $snap_sheet     = ($snap_sheet_raw !== '') ? (int) $snap_sheet_raw : null;
+        // Snapshots are per tab, so a stale row in another tab can never look
+        // like a manual edit here.
+        [$snap_woo, $snap_sheet] = self::read_stock_snapshot($vid, $this->snapshot_key());
 
         $decision = self::decide_stock_direction($woo_qty, $sheet_qty, $snap_woo, $snap_sheet, $status_differs);
 
         $out['apply_stock'] = $decision['apply_stock'];
         $out['final_qty']   = $decision['final_qty'];
         $out['conflict']    = $decision['conflict'];
+
+        // For items that manage stock, WooCommerce derives the status from the
+        // quantity, so a status-only edit in the sheet cannot be applied.
+        // Only flag a real status-only edit: same quantity on both sides. A
+        // stale status next to a stale quantity is just an outdated row.
+        $out['status_ignored'] = $status_differs
+            && !$decision['apply_stock']
+            && $sheet_qty !== null
+            && $sheet_qty === $woo_qty;
 
         return $out;
     }
@@ -1614,6 +1869,8 @@ class WSS_Sync_Engine
         $batch_update_ids = [];
         $append_rows   = [];
         $append_ids    = [];
+        $written_qty   = []; // variation_id => qty written (managed stock only)
+        $batch_update_parents = []; // variation_id => parent product ID
         $now           = gmdate('c'); // ISO 8601
 
         foreach ($product_ids as $product_id) {
@@ -1629,6 +1886,9 @@ class WSS_Sync_Engine
             foreach ($variations as $variation) {
                 $vid = $variation->get_id();
                 $row = $this->build_row($product, $variation, $now);
+                if ($variation->get_manage_stock()) {
+                    $written_qty[(int) $vid] = (int) $variation->get_stock_quantity();
+                }
 
                 if (isset($row_map[$vid])) {
                     // Row exists — only update if data actually changed.
@@ -1642,14 +1902,13 @@ class WSS_Sync_Engine
                     $row_number = $row_map[$vid] + 2; // +2: 0-based index + header row
                     $batch_updates[] = [
                         'range'  => $this->a1_range(sprintf('A%d:L%d', $row_number, $row_number)),
-                        'values' => [$row],
+                        'values' => [self::row_for_sheet($row)],
                     ];
                     $batch_update_ids[] = (int) $vid;
-                    $stats['updated']++;
-                    $this->logger->log('woo_to_sheet', $product_id, $vid, 'success', 'Row updated.');
+                    $batch_update_parents[(int) $vid] = (int) $product_id;
                 } else {
                     // New row — append.
-                    $append_rows[] = $row;
+                    $append_rows[] = self::row_for_sheet($row);
                     $append_ids[]  = ['product_id' => (int) $product_id, 'variation_id' => (int) $vid];
                 }
             }
@@ -1661,7 +1920,12 @@ class WSS_Sync_Engine
                 $this->logger->log('woo_to_sheet', 0, 0, 'error', 'Batch update failed: ' . $result->get_error_message());
                 $stats['errors']++;
             } else {
-                $this->commit_phase_two_stock_snapshots($batch_update_ids);
+                foreach ($batch_update_ids as $updated_vid) {
+                    $stats['updated']++;
+                    $this->logger->log('woo_to_sheet', (int) ($batch_update_parents[$updated_vid] ?? $updated_vid), (int) $updated_vid, 'success', 'Row updated.');
+                }
+                $this->commit_phase_two_stock_snapshots($batch_update_ids, $written_qty);
+                $this->mark_last_synced($batch_update_ids, $now);
             }
         }
 
@@ -1678,14 +1942,21 @@ class WSS_Sync_Engine
                     $start_row = (int) $matches[1];
                 }
 
+                $appended_ids = [];
                 foreach ($append_ids as $offset => $entry) {
                     $vid = (int) $entry['variation_id'];
                     if ($start_row > 1 && $vid > 0) {
                         $row_map[$vid] = ($start_row - 2) + $offset;
                     }
+                    $appended_ids[] = $vid;
                     $stats['appended']++;
                     $this->logger->log('woo_to_sheet', (int) $entry['product_id'], $vid, 'success', 'Row appended.');
                 }
+
+                // The new rows show WooCommerce's stock, so this tab starts out
+                // agreeing with WooCommerce on them.
+                $this->commit_phase_two_stock_snapshots($appended_ids, $written_qty);
+                $this->mark_last_synced($appended_ids, $now);
 
                 if ($start_row <= 1) {
                     $this->logger->log('woo_to_sheet', 0, 0, 'error', 'Rows appended, but Google did not return their updated range; real-time row mapping will refresh on the next full sync.');
@@ -1712,6 +1983,15 @@ class WSS_Sync_Engine
             $woo_val   = trim($woo_row[$col] ?? '');
             $sheet_val = trim($sheet_row[$col] ?? '');
 
+            // SKUs are text: "00123" and "123" are different SKUs, and a cell
+            // whose leading zeros Google dropped must be rewritten.
+            if ($col === self::COL_SKU) {
+                if ($woo_val !== $sheet_val) {
+                    return true;
+                }
+                continue;
+            }
+
             // Normalize numeric comparisons to avoid "29.99" vs "29.990000" mismatches.
             if (is_numeric($woo_val) && is_numeric($sheet_val)) {
                 if ((float) $woo_val !== (float) $sheet_val) {
@@ -1723,6 +2003,20 @@ class WSS_Sync_Engine
         }
 
         return false;
+    }
+
+    /**
+     * Record when rows were written to the sheet (shown as "Last synced").
+     *
+     * @param int[] $ids Variation or simple product IDs.
+     */
+    private function mark_last_synced(array $ids, string $now): void
+    {
+        foreach (array_unique(array_map('intval', $ids)) as $id) {
+            if ($id > 0) {
+                update_post_meta($id, '_wss_last_synced', $now);
+            }
+        }
     }
 
     /**
@@ -1738,6 +2032,15 @@ class WSS_Sync_Engine
             return '';
         }
         return rtrim(rtrim(number_format((float) $price, 6, '.', ''), '0'), '.');
+    }
+
+    /**
+     * Sale price as it would end up in WooCommerce: "0" removes the sale.
+     */
+    private function normalize_sale_price(string $price): string
+    {
+        $normalized = $this->normalize_price($price);
+        return ($normalized === '0' || $normalized === '-0') ? '' : $normalized;
     }
 
     /**
@@ -1852,7 +2155,7 @@ class WSS_Sync_Engine
         // SKU. Validate ownership before calling WooCommerce CRUD so a relink
         // by attributes cannot silently discard a newly supplied SKU.
         $sku = trim((string) ($row[self::COL_SKU] ?? ''));
-        if ($sku !== '' && $sku !== (string) $variation->get_sku()) {
+        if ($sku !== '' && $sku !== (string) $variation->get_sku() && !self::sku_lost_leading_zeros($sku, (string) $variation->get_sku())) {
             $sku_owner_id = (int) wc_get_product_id_by_sku($sku);
             if ($sku_owner_id > 0 && $sku_owner_id !== (int) $variation->get_id()) {
                 return new WP_Error(
@@ -1894,8 +2197,8 @@ class WSS_Sync_Engine
         // Empty cell = don't touch sale price.
 
         // Manage stock.
-        $manage_stock = strtoupper(trim($row[self::COL_MANAGE_STOCK] ?? ''));
-        if ($manage_stock === 'TRUE' || $manage_stock === 'FALSE') {
+        $manage_stock = self::normalize_manage_stock($row[self::COL_MANAGE_STOCK] ?? '');
+        if ($manage_stock !== '') {
             $variation->set_manage_stock($manage_stock === 'TRUE');
         }
 

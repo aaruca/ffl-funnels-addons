@@ -27,7 +27,8 @@ class White_Label_Dashboard_Data
      */
     public static function get(string $from, string $to, bool $force = false): array
     {
-        $key = self::cache_key('v3|woo|' . $from . '|' . $to);
+        // v4: the window and daily buckets are in the site's time zone.
+        $key = self::cache_key('v4|woo|' . $from . '|' . $to);
 
         if (!$force) {
             $cached = get_transient($key);
@@ -82,22 +83,6 @@ class White_Label_Dashboard_Data
         return $data;
     }
 
-    /**
-     * Clear the finite set of dashboard transients used by this module.
-     */
-    public static function flush(): void
-    {
-        $to   = gmdate('Y-m-d');
-        $from = gmdate('Y-m-d', strtotime('-29 days'));
-        delete_transient(self::cache_key('v3|woo|' . $from . '|' . $to));
-
-        foreach (['google', 'snapfind'] as $source) {
-            foreach ([7, 30, 90] as $days) {
-                delete_transient(self::cache_key('v1|analytics|' . $source . '|' . $days));
-            }
-        }
-    }
-
     private static function cache_key(string $suffix): string
     {
         return self::CACHE_PREFIX . md5($suffix);
@@ -117,19 +102,28 @@ class White_Label_Dashboard_Data
         }
 
         try {
-            $from_ts = (int) strtotime($from . ' 00:00:00');
-            $to_ts   = (int) strtotime($to . ' 23:59:59');
+            // $from / $to are site-local dates; order days are bucketed in the
+            // site's time zone too (woo_period()), so the window, the daily
+            // series and the totals all describe the same calendar days.
+            $tz    = wp_timezone();
+            $start = new DateTimeImmutable($from . ' 00:00:00', $tz);
+            $end   = new DateTimeImmutable($to . ' 23:59:59', $tz);
+            if ($end < $start) {
+                return null;
+            }
 
-            $current = self::woo_period($from_ts, $to_ts);
+            $current = self::woo_period($start->getTimestamp(), $end->getTimestamp());
 
-            $days         = max(1, (int) round(($to_ts - $from_ts) / DAY_IN_SECONDS));
-            $prev_to_ts   = $from_ts - 1;
-            $prev_from_ts = $prev_to_ts - ($days * DAY_IN_SECONDS);
-            $previous     = self::woo_period($prev_from_ts, $prev_to_ts);
+            // Previous period: the same number of calendar days right before.
+            $days     = (int) $start->diff($end)->days + 1;
+            $previous = self::woo_period(
+                $start->modify('-' . $days . ' days')->getTimestamp(),
+                $start->getTimestamp() - 1
+            );
 
             $series = [];
-            for ($cursor = strtotime($from); $cursor <= strtotime($to); $cursor = strtotime('+1 day', $cursor)) {
-                $day      = gmdate('Y-m-d', $cursor);
+            for ($cursor = $start; $cursor <= $end; $cursor = $cursor->modify('+1 day')) {
+                $day      = $cursor->format('Y-m-d');
                 $series[] = ['date' => $day, 'value' => (float) round($current['daily'][$day] ?? 0, 2)];
             }
 
@@ -192,7 +186,7 @@ class White_Label_Dashboard_Data
 
                 $created = method_exists($order, 'get_date_created') ? $order->get_date_created() : null;
                 if ($created) {
-                    $day         = $created->date('Y-m-d');
+                    $day         = wp_date('Y-m-d', $created->getTimestamp()); // Site-local day.
                     $daily[$day] = ($daily[$day] ?? 0) + $total;
                 }
             }
@@ -244,12 +238,10 @@ class White_Label_Dashboard_Data
             $previous_ctr   = (float) ($previous['ctr'] ?? 0);
             $conversion     = (float) ($overview['cr'] ?? 0);
             $previous_conversion = (float) ($previous['cr'] ?? 0);
-            $penetration    = (float) ($overview['search_penetration'] ?? 0);
 
             $clicks          = (int) round($searches * $ctr / 100);
             $previous_clicks = (int) round($previous_searches * $previous_ctr / 100);
             $purchases       = (int) round($searches * $conversion / 100);
-            $traffic         = $penetration > 0 ? (int) round($searches * 100 / $penetration) : 0;
 
             $top_terms = [];
             foreach ((array) ($data['top_queries'] ?? []) as $raw_row) {
@@ -276,7 +268,6 @@ class White_Label_Dashboard_Data
                     self::metric(__('Search CTR', 'ffl-funnels-addons'), ['total' => $ctr, 'delta' => array_key_exists('ctr', $previous) ? $ctr - $previous_ctr : null], 'percent', __('Product clicks divided by searches.', 'ffl-funnels-addons')),
                     self::metric(__('Search conversion', 'ffl-funnels-addons'), ['total' => $conversion, 'delta' => array_key_exists('cr', $previous) ? $conversion - $previous_conversion : null], 'percent', __('Searches that resulted in a purchase.', 'ffl-funnels-addons')),
                 ],
-                'traffic'   => $traffic,
                 'funnel'    => [
                     ['label' => __('Searches', 'ffl-funnels-addons'), 'value' => $searches],
                     ['label' => __('Product clicks', 'ffl-funnels-addons'), 'value' => $clicks],

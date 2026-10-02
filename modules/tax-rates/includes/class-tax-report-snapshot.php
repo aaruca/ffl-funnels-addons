@@ -54,6 +54,17 @@ class Tax_Report_Snapshot
 
         self::$capturing[$order_id] = true;
         try {
+            // Keep the tax basis that applied when the order was first
+            // recorded, so a later change of the WooCommerce setting does not
+            // move historical orders to another state in reports.
+            if ((string) $order->get_meta(self::HASH_META, true) === ''
+                && (string) $order->get_meta(Tax_Report_Service::TAX_BASIS_META, true) === '') {
+                $order->update_meta_data(
+                    Tax_Report_Service::TAX_BASIS_META,
+                    Tax_Report_Service::order_tax_basis($order)
+                );
+            }
+
             $service = new Tax_Report_Service();
             $snapshot = $service->build_fiscal_snapshot($order);
             if (empty($snapshot)) {

@@ -381,7 +381,23 @@ class Tax_Report_Email
     public static function get_history(int $limit = 10): array
     {
         $history = get_option(self::HISTORY_OPTION, []);
-        return is_array($history) ? array_slice($history, 0, max(1, $limit)) : [];
+        return is_array($history)
+            ? array_map([__CLASS__, 'without_recipient_addresses'], array_slice($history, 0, max(1, $limit)))
+            : [];
+    }
+
+    /**
+     * Delivery history keeps how many recipients a run had, never the
+     * addresses themselves (older entries are converted when read/written).
+     */
+    private static function without_recipient_addresses($entry): array
+    {
+        $entry = is_array($entry) ? $entry : [];
+        if (array_key_exists('recipients', $entry)) {
+            $entry['recipients_count'] = is_array($entry['recipients']) ? count($entry['recipients']) : (int) $entry['recipients'];
+            unset($entry['recipients']);
+        }
+        return $entry;
     }
 
     private static function build_subject(array $report, string $mode): string
@@ -505,7 +521,8 @@ class Tax_Report_Email
         }
         $entry['created_at_utc'] = gmdate('c');
         array_unshift($history, $entry);
-        update_option(self::HISTORY_OPTION, array_slice($history, 0, 50), false);
+        $history = array_map([__CLASS__, 'without_recipient_addresses'], array_slice($history, 0, 50));
+        update_option(self::HISTORY_OPTION, $history, false);
     }
 
     private static function log_error(string $message, string $mode, int $attempt): void

@@ -1,3 +1,4 @@
+/* global loadoutAdmin */
 (function ($) {
     'use strict';
 
@@ -171,13 +172,30 @@
         });
     }
 
+    /**
+     * Next free row index for a repeater container. A counter instead of the
+     * row count, so removing a row and adding another never reuses an index
+     * (two rows with the same index would overwrite each other on save).
+     */
+    function nextIndex($container, rowSelector) {
+        var next = $container.data('nextIndex');
+        if (typeof next !== 'number') {
+            next = $container.find(rowSelector).length;
+        }
+        $container.data('nextIndex', next + 1);
+        return next;
+    }
+
     function initTierRepeater() {
         $('#add-tier').on('click', function () {
             var $container = $('#loadout-tiers');
-            var index = $container.find('.loadout-tier-row').length;
+            var index = nextIndex($container, '.loadout-tier-row');
             var template = $('#tmpl-loadout-tier').html();
             if (template) {
+                // Rewrite the "+ Add Item" button's data-tier-index too, or items
+                // added to this new tier would be posted under tier 0.
                 var html = template.replace(/data-index="0"/g, 'data-index="' + index + '"')
+                                   .replace(/data-tier-index="0"/g, 'data-tier-index="' + index + '"')
                                    .replace(/tiers\[0\]/g, 'tiers[' + index + ']');
                 $container.append(html);
             }
@@ -199,7 +217,7 @@
             var tierIndex = $btn.data('tier-index');
             var $row = $btn.closest('.loadout-tier-row');
             var $items = $row.find('.loadout-tier-items');
-            var itemIndex = $items.find('.loadout-item-row').length;
+            var itemIndex = nextIndex($items, '.loadout-item-row');
 
             var template = $('#tmpl-loadout-item').html();
             if (template) {
@@ -212,7 +230,7 @@
     function initCrossSellRepeater() {
         $('#add-cross-sell').on('click', function () {
             var $container = $('#loadout-cross-sells');
-            var index = $container.find('.loadout-cross-sell-row').length;
+            var index = nextIndex($container, '.loadout-cross-sell-row');
             var template = $('#tmpl-loadout-cross-sell').html();
             if (template) {
                 var html = template.replace(/cross_sells\[0\]/g, 'cross_sells[' + index + ']');
@@ -229,6 +247,8 @@
             $(this).closest('.loadout-cross-sell-row').remove();
         });
     }
+
+    window.loadoutNextIndex = nextIndex;
 
     function escapeHtml(str) {
         if (!str) return '';

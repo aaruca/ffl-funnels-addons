@@ -46,12 +46,16 @@ class FFL_Checkout_Module extends FFLA_Module
 
         // Mapbox token resolver (own token, else borrow from g-FFL Checkout).
         require_once $base . 'includes/class-ffl-checkout-mapbox.php';
+        FFL_Checkout_Mapbox::init();
 
         // Frontend asset loading (Mapbox autocomplete + vendor selector).
         require_once $base . 'includes/class-ffl-checkout-assets.php';
         FFL_Checkout_Assets::init();
 
-        // AJAX handlers (Mapbox token + vendor endpoints).
+        // Vendor API proxy (also holds the vendor selector on/off check).
+        require_once $base . 'includes/class-ffl-checkout-vendor-api.php';
+
+        // AJAX handler for vendor changes (only while the selector is on).
         require_once $base . 'includes/class-ffl-checkout-ajax.php';
         FFL_Checkout_Ajax::init();
 
@@ -67,9 +71,6 @@ class FFL_Checkout_Module extends FFLA_Module
                 );
             }
         }, 11);
-
-        // Vendor API proxy.
-        require_once $base . 'includes/class-ffl-checkout-vendor-api.php';
 
         // Vendor selector shortcode [ffl_vendor_selector].
         require_once $base . 'includes/class-ffl-checkout-vendor-shortcode.php';

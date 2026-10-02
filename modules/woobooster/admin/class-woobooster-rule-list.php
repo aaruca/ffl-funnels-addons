@@ -245,7 +245,11 @@ class WooBooster_Rule_List extends WP_List_Table
         $value = '';
         switch ($first->action_source) {
             case 'attribute':
-                // "Same Attribute" uses the product's own terms — no static value.
+                // "Same Attribute": action_value is the attribute taxonomy; the
+                // terms come from the viewed product.
+                if (!empty($first->action_value) && function_exists('wc_attribute_label')) {
+                    $value = wc_attribute_label($first->action_value);
+                }
                 break;
 
             case 'attribute_value':
@@ -316,24 +320,24 @@ class WooBooster_Rule_List extends WP_List_Table
             $status_html = '<span class="wb-status wb-status--inactive">' . esc_html__('Inactive', 'ffl-funnels-addons') . '</span>';
         }
 
-        // Add schedule info
-        $now = current_time('mysql');
+        // Schedule info. Dates are stored in GMT (the matcher compares them
+        // with GMT "now"), so compare in GMT and display in store time.
+        $now = current_time('mysql', true);
+        $date_fmt = get_option('date_format');
         $schedule = '';
         if (!empty($item->start_date) || !empty($item->end_date)) {
             $schedule .= '<div style="font-size: 11px; margin-top: 4px; color: var(--wb-color-neutral-text);">';
             if (!empty($item->start_date) && $now < $item->start_date) {
-                // Future
-                $schedule .= '🕒 ' . sprintf(esc_html__('Starts: %s', 'ffl-funnels-addons'), date_i18n(get_option('date_format'), strtotime($item->start_date)));
+                /* translators: %s: formatted start date */
+                $schedule .= sprintf(esc_html__('Starts: %s', 'ffl-funnels-addons'), esc_html(wp_date($date_fmt, strtotime($item->start_date . ' UTC'))));
             } elseif (!empty($item->end_date) && $now > $item->end_date) {
-                // Expired
-                $schedule .= '⚠️ ' . esc_html__('Expired', 'ffl-funnels-addons');
+                $schedule .= esc_html__('Expired', 'ffl-funnels-addons');
+            } elseif (!empty($item->end_date)) {
+                /* translators: %s: formatted end date */
+                $schedule .= sprintf(esc_html__('Ends: %s', 'ffl-funnels-addons'), esc_html(wp_date($date_fmt, strtotime($item->end_date . ' UTC'))));
             } else {
-                // Active timeframe
-                if (!empty($item->end_date)) {
-                    $schedule .= '⏳ ' . sprintf(esc_html__('Ends: %s', 'ffl-funnels-addons'), date_i18n(get_option('date_format'), strtotime($item->end_date)));
-                } else {
-                    $schedule .= '🕒 ' . sprintf(esc_html__('Started: %s', 'ffl-funnels-addons'), date_i18n(get_option('date_format'), strtotime($item->start_date)));
-                }
+                /* translators: %s: formatted start date */
+                $schedule .= sprintf(esc_html__('Started: %s', 'ffl-funnels-addons'), esc_html(wp_date($date_fmt, strtotime($item->start_date . ' UTC'))));
             }
             $schedule .= '</div>';
         }
@@ -400,6 +404,10 @@ class WooBooster_Rule_List extends WP_List_Table
      */
     private function process_bulk_action()
     {
+        if (!current_user_can('manage_woocommerce')) {
+            return;
+        }
+
         // Single delete.
         if ('delete' === $this->current_action()) {
             // phpcs:ignore WordPress.Security.NonceVerification.Recommended
@@ -428,11 +436,16 @@ class WooBooster_Rule_List extends WP_List_Table
         // Bulk actions.
         $action = $this->current_action();
         if (in_array($action, array('bulk_delete', 'bulk_activate', 'bulk_deactivate'), true)) {
-            if (!isset($_POST['_wpnonce']) || !wp_verify_nonce(sanitize_key($_POST['_wpnonce']), 'bulk-rules')) {
+            // The rules list shares a GET form with the search box, so the
+            // nonce and the selected IDs arrive in the query string. Reading
+            // only $_POST made every bulk action a silent no-op.
+            // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+            $nonce = isset($_REQUEST['_wpnonce']) ? sanitize_key(wp_unslash($_REQUEST['_wpnonce'])) : '';
+            if (!$nonce || !wp_verify_nonce($nonce, 'bulk-rules') || !current_user_can('manage_woocommerce')) {
                 return;
             }
 
-            $rule_ids = isset($_POST['rule_ids']) ? array_map('absint', $_POST['rule_ids']) : array();
+            $rule_ids = isset($_REQUEST['rule_ids']) ? array_filter(array_map('absint', (array) wp_unslash($_REQUEST['rule_ids']))) : array();
 
             foreach ($rule_ids as $rid) {
                 switch ($action) {

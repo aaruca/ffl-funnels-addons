@@ -2,8 +2,9 @@
 /**
  * FFL Checkout Assets — Frontend script/style loader.
  *
- * Enqueues Mapbox autocomplete JS and vendor selector JS/CSS
- * on the WooCommerce checkout page.
+ * Enqueues the Mapbox autocomplete script and the vendor selector script on
+ * the WooCommerce checkout page. The vendor table ships without its own CSS;
+ * it uses the theme's table styles and the ffl-vendor-selector__* classes.
  *
  * @package FFL_Funnels_Addons
  */
@@ -58,7 +59,7 @@ class FFL_Checkout_Assets
         }
 
         // ── Vendor Selector ─────────────────────────────────────────────
-        $vendor_enabled = ($settings['vendor_selector_enabled'] ?? '0') === '1';
+        $vendor_enabled = FFL_Checkout_Vendor_Api::selector_enabled();
 
         if ($vendor_enabled) {
             wp_enqueue_script(

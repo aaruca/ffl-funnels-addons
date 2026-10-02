@@ -734,15 +734,22 @@ class WooBooster_Bundle_Element extends \Bricks\Element
             return;
         }
 
-        // Shared price math so widget + cart show/charge the same numbers.
+        // Shared price math so widget + cart show/charge the same numbers,
+        // item quantities included.
+        $qty_map   = \WooBooster_Bundle::get_item_quantities($bundle->id);
         $price_map = \WooBooster_Bundle::calculate_item_prices(
             $bundle,
-            array_map(function ($p) { return $p->get_id(); }, $products)
+            array_map(function ($p) { return $p->get_id(); }, $products),
+            $qty_map
         );
+        $required  = array_flip(\WooBooster_Bundle::get_required_product_ids($bundle->id));
 
         $items = [];
         foreach ($products as $product) {
-            $items[] = $this->prepare_item_data($product, $bundle, $price_map);
+            $item             = $this->prepare_item_data($product, $bundle, $price_map);
+            $item['qty']      = isset($qty_map[$item['id']]) ? max(1, (int) $qty_map[$item['id']]) : 1;
+            $item['required'] = isset($required[$item['id']]);
+            $items[]          = $item;
         }
 
         $heading       = $s['wb_bundle_heading'] ?? __('Frequently Bought Together', 'ffl-funnels-addons');
@@ -779,16 +786,17 @@ class WooBooster_Bundle_Element extends \Bricks\Element
         echo '<div class="wb-bundle-items wb-bundle-items--' . esc_attr($layout) . '"' . $items_style . '>';
 
         foreach ($items as $idx => $item) {
-            echo '<div class="wb-bundle-item" data-product-id="' . esc_attr($item['id']) . '" data-price="' . esc_attr($item['discounted_price']) . '" data-original-price="' . esc_attr($item['original_price']) . '">';
+            echo '<div class="wb-bundle-item' . ($item['required'] ? ' wb-bundle-item--required' : '') . '" data-product-id="' . esc_attr($item['id']) . '" data-price="' . esc_attr($item['discounted_price']) . '" data-original-price="' . esc_attr($item['original_price']) . '" data-qty="' . esc_attr($item['qty']) . '">';
 
-            // Checkbox.
+            // Checkbox. Items not marked Optional are part of every purchase,
+            // so their box is ticked and locked (the server enforces it too).
             $checkbox_id = 'wb-bundle-cb-' . $bundle->id . '-' . $item['id'];
             echo '<label class="wb-bundle-item__checkbox" for="' . esc_attr($checkbox_id) . '">';
             echo '<input type="checkbox" id="' . esc_attr($checkbox_id) . '" name="wb_bundle_products[]" value="' . esc_attr($item['id']) . '" aria-label="' . esc_attr(sprintf(
                 /* translators: %s: product name */
-                __('Include %s in bundle', 'ffl-funnels-addons'),
+                $item['required'] ? __('%s is included in this bundle', 'ffl-funnels-addons') : __('Include %s in bundle', 'ffl-funnels-addons'),
                 $item['name']
-            )) . '" checked>';
+            )) . '" checked' . ($item['required'] ? ' disabled data-required="1"' : '') . '>';
             echo '</label>';
 
             // Image.
@@ -802,7 +810,11 @@ class WooBooster_Bundle_Element extends \Bricks\Element
             echo '<div class="wb-bundle-item__info">';
 
             if ($show_title) {
-                echo '<div class="wb-bundle-item__name">' . esc_html($item['name']) . '</div>';
+                $title = $item['qty'] > 1
+                    /* translators: 1: quantity, 2: product name */
+                    ? sprintf(__('%1$d × %2$s', 'ffl-funnels-addons'), $item['qty'], $item['name'])
+                    : $item['name'];
+                echo '<div class="wb-bundle-item__name">' . esc_html($title) . '</div>';
             }
 
             if ($show_price) {
@@ -814,6 +826,10 @@ class WooBooster_Bundle_Element extends \Bricks\Element
                     echo '<ins>' . wp_kses_post(wc_price($item['discounted_price'])) . '</ins>';
                 } else {
                     echo wp_kses_post(wc_price($item['original_price']));
+                }
+                if ($item['qty'] > 1) {
+                    /* translators: %d: quantity */
+                    echo ' <span class="wb-bundle-item__qty">' . esc_html(sprintf(__('each (×%d)', 'ffl-funnels-addons'), $item['qty'])) . '</span>';
                 }
                 echo '</div>';
             }
@@ -835,9 +851,13 @@ class WooBooster_Bundle_Element extends \Bricks\Element
 
         echo '</div>'; // end items
 
-        // Total section.
-        $total_original   = array_sum(array_column($items, 'original_price'));
-        $total_discounted = array_sum(array_column($items, 'discounted_price'));
+        // Total section: unit prices × quantities, exactly what the cart charges.
+        $total_original   = 0.0;
+        $total_discounted = 0.0;
+        foreach ($items as $item) {
+            $total_original   += $item['original_price'] * $item['qty'];
+            $total_discounted += $item['discounted_price'] * $item['qty'];
+        }
 
         if ($show_total) {
             echo '<div class="wb-bundle-total">';

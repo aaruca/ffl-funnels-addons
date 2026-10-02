@@ -44,7 +44,7 @@ class FFL_Dealer_Finder_Element extends \Bricks\Element
             'group'   => 'ffl_info',
             'tab'     => 'content',
             'type'    => 'info',
-            'content' => esc_html__('This element renders the g-FFL Checkout dealer finder widget. It requires the g-FFL Checkout plugin to be active and a valid API key configured. The widget will only display when the cart contains firearms or ammo-compliance items.', 'ffl-funnels-addons'),
+            'content' => esc_html__('This element renders the g-FFL Checkout dealer finder widget. It requires the g-FFL Checkout plugin to be active and a valid API key configured. The widget will only display when the cart contains firearms or ammo-compliance items. Use one per page: only the first copy is shown, and none when g-FFL Checkout shows its own widget on the page.', 'ffl-funnels-addons'),
         ];
     }
 

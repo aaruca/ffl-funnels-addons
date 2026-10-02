@@ -37,6 +37,10 @@ class WooBooster_Bundle_Cart
         // Price the synthetic line at the stored bundle total.
         add_action('woocommerce_before_calculate_totals', array(__CLASS__, 'set_bundle_price'), 20);
 
+        // Drop bundle lines whose bundle was switched off, deleted or whose
+        // schedule ended while they sat in the cart (or a saved session).
+        add_action('woocommerce_cart_loaded_from_session', array(__CLASS__, 'remove_unavailable_bundles'), 20);
+
         // Keep each bundle add as its own line so it never merges with a plain
         // purchase of the representative product (or another bundle).
         add_filter('woocommerce_add_cart_item_data', array(__CLASS__, 'preserve_bundle_meta'), 10, 2);
@@ -104,53 +108,59 @@ class WooBooster_Bundle_Cart
             wp_send_json_error(array('message' => __('Selected products do not belong to this bundle.', 'ffl-funnels-addons')));
         }
 
-        // Validate that required items are included (for fixed pricing, all items usually required).
-        $bundle_items = WooBooster_Bundle::get_items($bundle->id);
-        $required_ids = array_map(
-            fn($item) => absint($item->product_id),
-            array_filter($bundle_items, fn($item) => !empty($item->required))
-        );
+        // Manual items not marked Optional must be in every purchase. (This
+        // used to read a `required` property that does not exist, so nothing
+        // was enforced and any item could be dropped.) The viewed product is
+        // never part of its own bundle, so it is not required here.
+        $required_ids     = array_values(array_intersect(WooBooster_Bundle::get_required_product_ids($bundle->id), $resolved_items));
         $missing_required = array_diff($required_ids, $product_ids);
         if (!empty($missing_required)) {
             wp_send_json_error(array('message' => __('Bundle requires all items to be selected.', 'ffl-funnels-addons')));
         }
 
-        // Compute authoritative price snapshots server-side using the FULL bundle.
-        // For fixed pricing, this ensures the target price is distributed across the complete set.
-        $full_price_map = WooBooster_Bundle::calculate_item_prices($bundle, $resolved_items);
+        // Static item quantities (dynamic items default to qty 1).
+        $qty_map = WooBooster_Bundle::get_item_quantities($bundle_id);
+
+        // Compute authoritative price snapshots server-side using the FULL bundle
+        // and its quantities, so a fixed discount or price covers the whole set.
+        $full_price_map = WooBooster_Bundle::calculate_item_prices($bundle, $resolved_items, $qty_map);
 
         // Extract prices for only the selected items.
         $price_map = array_intersect_key($full_price_map, array_flip($product_ids));
-
-        // Static item quantities (dynamic items default to qty 1).
-        $qty_map      = array();
-        $static_items = WooBooster_Bundle::get_items($bundle_id);
-        foreach ($static_items as $static) {
-            $qty_map[absint($static->product_id)] = isset($static->quantity) ? max(1, (int) $static->quantity) : 1;
-        }
 
         $items  = array();
         $total  = 0.0;
         $errors = array();
 
+        $required_map = array_flip($required_ids);
+
         foreach ($product_ids as $pid) {
             $product = wc_get_product($pid);
             if (!$product || !$product->is_purchasable() || !$product->is_in_stock()) {
-                $errors[] = sprintf(
+                $message = sprintf(
                     /* translators: %d: product ID */
                     __('Product #%d is not available.', 'ffl-funnels-addons'),
                     $pid
                 );
+                // Without a required item the bundle (and its price) does not apply.
+                if (isset($required_map[$pid])) {
+                    wp_send_json_error(array('message' => $message));
+                }
+                $errors[] = $message;
                 continue;
             }
 
             list($add_id, $variation_id, $variation_attrs) = self::resolve_purchasable($product);
             if (!$add_id) {
-                $errors[] = sprintf(
+                $message = sprintf(
                     /* translators: %s: product name */
                     __('"%s" requires choosing a variation before it can be bundled.', 'ffl-funnels-addons'),
                     $product->get_name()
                 );
+                if (isset($required_map[$pid])) {
+                    wp_send_json_error(array('message' => $message));
+                }
+                $errors[] = $message;
                 continue;
             }
 
@@ -303,6 +313,57 @@ class WooBooster_Bundle_Cart
             }
 
             $cart_item['data']->set_price((float) $cart_item[self::META_BUNDLE_TOTAL]);
+        }
+    }
+
+    /**
+     * Remove bundle lines whose bundle is no longer on offer.
+     *
+     * Without this, a line whose bundle was switched off or whose schedule
+     * ended kept its "Includes" list and order meta but fell back to the
+     * representative product's own price — the shopper paid for one product
+     * and the order still listed the whole bundle.
+     *
+     * @param WC_Cart $cart The WooCommerce cart.
+     */
+    public static function remove_unavailable_bundles($cart)
+    {
+        if (!$cart || !is_object($cart) || !method_exists($cart, 'get_cart')) {
+            return;
+        }
+
+        $checked = array();
+        $removed = false;
+        foreach ($cart->get_cart() as $key => $cart_item) {
+            if (empty($cart_item[self::META_BUNDLE_ID]) || !isset($cart_item[self::META_BUNDLE_TOTAL])) {
+                continue;
+            }
+
+            $bundle_id = absint($cart_item[self::META_BUNDLE_ID]);
+            if (!array_key_exists($bundle_id, $checked)) {
+                $bundle = WooBooster_Bundle::get($bundle_id);
+                $checked[$bundle_id] = ($bundle && $bundle->status && self::bundle_schedule_is_active($bundle))
+                    ? (string) $bundle->name
+                    : false;
+            }
+            if (false !== $checked[$bundle_id]) {
+                continue;
+            }
+
+            $cart->remove_cart_item($key);
+            $removed = true;
+
+            if (function_exists('wc_add_notice') && (!is_admin() || wp_doing_ajax())) {
+                wc_add_notice(
+                    __('A bundle in your cart is no longer available and was removed.', 'ffl-funnels-addons'),
+                    'notice'
+                );
+            }
+        }
+
+        // Recalculate so the session (and its totals) drop the line now.
+        if ($removed) {
+            $cart->calculate_totals();
         }
     }
 

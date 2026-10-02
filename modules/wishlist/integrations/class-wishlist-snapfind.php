@@ -126,10 +126,17 @@ JS;
 (function(){
     var heartSvg = {$icon_js};
 
+    // initial_items is kept current by the wishlist script after every
+    // toggle, so hits re-rendered by SnapFind show the visitor's real state.
     function getWishlistIds() {
         return (window.AlgWishlistSettings && Array.isArray(AlgWishlistSettings.initial_items))
             ? AlgWishlistSettings.initial_items.map(String)
             : [];
+    }
+
+    function label(isActive) {
+        var i18n = (window.AlgWishlistSettings && AlgWishlistSettings.i18n) || {};
+        return isActive ? (i18n.text_remove || 'Remove from wishlist') : (i18n.text_add || 'Add to wishlist');
     }
 
     function injectButtons() {
@@ -148,7 +155,8 @@ JS;
             btn.type = 'button';
             btn.className = 'alg-add-to-wishlist snaf-wishlist-btn' + (isActive ? ' active' : '');
             btn.setAttribute('data-product-id', productId);
-            btn.setAttribute('aria-label', isActive ? 'Remove from Wishlist' : 'Add to Wishlist');
+            btn.setAttribute('aria-label', label(isActive));
+            btn.setAttribute('title', label(isActive));
             btn.innerHTML = heartSvg;
 
             if (isActive) {

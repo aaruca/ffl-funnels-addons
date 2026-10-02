@@ -16,14 +16,29 @@ class Tax_Report_Combiner
     /** @var string[] */
     private $sum_fields = [
         'orders',
+        'gross_sales',
         'taxable_sales',
         'taxable_shipping',
         'non_taxable_sales',
         'needs_review_sales',
+        'tax_collected',
+        'tax_refunded',
         'net_tax',
         'calculated_tax',
         'over_under',
     ];
+
+    /**
+     * How many consumed summaries carried each summed column. Columns no
+     * input carried are left out of the combined rows instead of reported
+     * as 0.
+     *
+     * @var array<string,int>
+     */
+    private $sum_field_presence = [];
+
+    /** @var int Number of summaries consumed by the current combine run. */
+    private $summaries_consumed = 0;
 
     /**
      * @param array<string,int|float> $limits Optional per-instance overrides.
@@ -72,6 +87,8 @@ class Tax_Report_Combiner
         $files = $this->normalize_uploads($uploads);
         $diagnostics = $this->new_diagnostics();
         $diagnostics['files_received'] = count($files);
+        $this->sum_field_presence = [];
+        $this->summaries_consumed = 0;
 
         $total_file_bytes = 0;
         foreach ($files as $file) {
@@ -152,6 +169,7 @@ class Tax_Report_Combiner
 
         unset($identity_index);
         $this->finalize_groups($groups);
+        $this->drop_absent_sum_fields($groups, $diagnostics);
         $diagnostics['rows_combined'] = count($groups);
         $diagnostics['unique_report_ids'] = count($seen_report_ids);
 
@@ -184,6 +202,13 @@ class Tax_Report_Combiner
      * precedence is jurisdiction_code, county, city, then jurisdiction_name;
      * state and currency narrow a match whenever those columns are available.
      *
+     * A template row without a combined row is a jurisdiction with no sales:
+     * its mapped total columns are written as 0 and it is listed under
+     * `no_activity`. A combined row that no template row takes (for the
+     * template's states) is listed under `unmatched` and blocks the file,
+     * because those sales would be missing from the filing. A combined row
+     * taken by two template rows would be counted twice and also blocks.
+     *
      * @param mixed                 $template A $_FILES entry or trusted path.
      * @param array<int,array>      $combined_rows
      * @param array<string,mixed>   $mapping
@@ -196,12 +221,14 @@ class Tax_Report_Combiner
         $this->limits = $limits;
         $require_uploaded = !isset($options['require_uploaded_file']) || (bool) $options['require_uploaded_file'];
         $diagnostics = [
-            'matched'   => 0,
-            'unmatched' => [],
-            'ambiguous' => [],
-            'warnings'  => [],
-            'errors'    => [],
-            'truncated' => false,
+            'matched'     => 0,
+            'unmatched'   => [],
+            'ambiguous'   => [],
+            'no_activity' => [],
+            'no_activity_count' => 0,
+            'warnings'    => [],
+            'errors'      => [],
+            'truncated'   => false,
         ];
 
         $files = $this->normalize_uploads(['template' => $template]);
@@ -240,6 +267,8 @@ class Tax_Report_Combiner
         $comparison_limit_exceeded = false;
         $template_rows = 0;
         $row_number = 1;
+        $taken = [];
+        $template_states = [];
         while (true) {
             $line_too_long = false;
             $line = $this->read_csv_line_limited($table['stream'], (int) $limits['max_row_bytes'], $line_too_long);
@@ -302,17 +331,34 @@ class Tax_Report_Combiner
                 ]);
                 break;
             }
+            if (isset($column_maps['keys']['state'])) {
+                $template_state = $this->normalize_key((string) ($template_row[$column_maps['keys']['state']] ?? ''));
+                if ($template_state !== '') {
+                    $template_states[$template_state] = true;
+                }
+            }
             if (count($matches) === 1) {
+                if (isset($taken[$matches[0]])) {
+                    $this->add_mapping_issue($diagnostics, 'errors', [
+                        'code'    => 'combined_row_matched_twice',
+                        'message' => 'Two template rows match the same report jurisdiction, so its totals would be counted twice.',
+                        'row'     => $row_number,
+                        'first_row' => $taken[$matches[0]],
+                    ]);
+                } else {
+                    $taken[$matches[0]] = $row_number;
+                }
                 $template_row = $this->apply_output_values($template_row, (array) $combined_rows[$matches[0]], $column_maps);
                 $diagnostics['matched']++;
             } elseif (empty($matches)) {
-                if (count($diagnostics['unmatched']) < $limits['max_diagnostics']) {
-                    $this->add_mapping_issue($diagnostics, 'unmatched', [
+                // No sales for this jurisdiction: report zero, not blank.
+                $template_row = $this->apply_zero_values($template_row, $column_maps);
+                $diagnostics['no_activity_count']++;
+                if (count($diagnostics['no_activity']) < $limits['max_diagnostics']) {
+                    $diagnostics['no_activity'][] = [
                         'row'         => $row_number,
                         'identifiers' => $this->template_identifiers($template_row, $column_maps['keys']),
-                    ]);
-                } else {
-                    $diagnostics['truncated'] = true;
+                    ];
                 }
             } else {
                 if (count($diagnostics['ambiguous']) < $limits['max_diagnostics']) {
@@ -332,6 +378,10 @@ class Tax_Report_Combiner
         }
         fclose($table['stream']);
         unset($index);
+
+        if ($template_rows > 0 && empty($diagnostics['errors']) && empty($diagnostics['truncated'])) {
+            $this->check_template_coverage($diagnostics, $combined_rows, $taken, $template_states, $column_maps, $limits);
+        }
 
         $generated_from_header_only = $template_rows === 0;
         if ($generated_from_header_only && empty($diagnostics['errors'])) {
@@ -907,10 +957,20 @@ class Tax_Report_Combiner
             return false;
         }
 
+        // An alias (for example tax_collected -> net_tax for third-party
+        // summaries) applies only when the file has no column of that name
+        // itself. FFLA's own summary carries both tax_collected and net_tax.
+        $raw_keys = [];
+        foreach ($header as $index => $heading) {
+            $raw_keys[] = $this->normalize_key($index === 0 ? $this->strip_bom((string) $heading) : (string) $heading);
+        }
         $columns = [];
         foreach ($header as $index => $heading) {
             $heading = $index === 0 ? $this->strip_bom((string) $heading) : (string) $heading;
             $canonical = $this->canonical_header($heading);
+            if ($canonical !== $raw_keys[$index] && in_array($canonical, $raw_keys, true)) {
+                $canonical = $raw_keys[$index];
+            }
             if ($canonical === '' || in_array($canonical, $columns, true)) {
                 fclose($stream);
                 $this->add_issue($diagnostics, 'errors', 'csv_header_invalid', 'The jurisdiction summary contains an empty or duplicate header.', $meta['source'], 1, ['header' => $heading]);
@@ -930,6 +990,13 @@ class Tax_Report_Combiner
             fclose($stream);
             $this->add_issue($diagnostics, 'errors', 'jurisdiction_key_missing', 'The jurisdiction summary needs a jurisdiction code, county, city, or jurisdiction name column.', $meta['source'], 1);
             return false;
+        }
+
+        $this->summaries_consumed++;
+        foreach ($this->sum_fields as $field) {
+            if (in_array($field, $columns, true)) {
+                $this->sum_field_presence[$field] = ($this->sum_field_presence[$field] ?? 0) + 1;
+            }
         }
 
         $row_number = 1;
@@ -1172,6 +1239,28 @@ class Tax_Report_Combiner
             }
             return 0;
         });
+    }
+
+    /**
+     * Remove summed columns that no input carried, and warn when a column
+     * is missing from some inputs (their rows count as 0 for it).
+     *
+     * @param array<int,array>    $groups
+     * @param array<string,mixed> $diagnostics
+     */
+    private function drop_absent_sum_fields(array &$groups, array &$diagnostics): void
+    {
+        foreach ($this->sum_fields as $field) {
+            $present = (int) ($this->sum_field_presence[$field] ?? 0);
+            if ($present === 0) {
+                foreach ($groups as &$group) {
+                    unset($group[$field]);
+                }
+                unset($group);
+            } elseif ($present < $this->summaries_consumed) {
+                $this->add_issue($diagnostics, 'warnings', 'column_missing_in_some_files', 'A totals column is missing from some uploaded summaries; their rows count as 0 for it.', '', 0, ['column' => $field]);
+            }
+        }
     }
 
     private function merge_filing_status(string $current, string $incoming): string
@@ -1817,6 +1906,83 @@ class Tax_Report_Combiner
             }
         }
         return $identifiers;
+    }
+
+    /**
+     * Every combined row of the template's states must land in the template.
+     *
+     * The template's states come from its state column when it has one,
+     * otherwise from the rows it matched. A template that matched nothing and
+     * has no state column cannot be checked and is rejected, since an all-zero
+     * filing is most often a key-mapping mistake.
+     *
+     * @param array<string,mixed> $diagnostics
+     * @param array<int,array>    $combined_rows
+     * @param array<int,int>      $taken          Combined row index => template row.
+     * @param array<string,bool>  $template_states
+     * @param array<string,array> $column_maps
+     * @param array<string,int|float> $limits
+     */
+    private function check_template_coverage(array &$diagnostics, array $combined_rows, array $taken, array $template_states, array $column_maps, array $limits): void
+    {
+        $states = $template_states;
+        if (empty($states)) {
+            foreach (array_keys($taken) as $row_index) {
+                $states[$this->combined_match_value((array) $combined_rows[$row_index], 'state')] = true;
+            }
+        }
+
+        if (empty($states)) {
+            if (!empty($combined_rows)) {
+                $this->add_mapping_issue($diagnostics, 'errors', [
+                    'code'    => 'no_template_matches',
+                    'message' => 'No template row matched a report jurisdiction. Check the key column mapping.',
+                ]);
+            }
+            return;
+        }
+
+        foreach ($combined_rows as $row_index => $row) {
+            if (isset($taken[$row_index])) {
+                continue;
+            }
+            $row = (array) $row;
+            if (!isset($states[$this->combined_match_value($row, 'state')])) {
+                continue;
+            }
+            if (count($diagnostics['unmatched']) >= $limits['max_diagnostics']) {
+                $diagnostics['truncated'] = true;
+                break;
+            }
+            $identifiers = [];
+            foreach (['state', 'currency', 'jurisdiction_code', 'jurisdiction_type', 'jurisdiction_name', 'county', 'city'] as $field) {
+                if (!empty($row[$field]) && is_scalar($row[$field])) {
+                    $identifiers[$field] = (string) $row[$field];
+                }
+            }
+            $this->add_mapping_issue($diagnostics, 'unmatched', [
+                'message'     => 'This report jurisdiction has no row in the template, so its sales would be missing from the filing.',
+                'identifiers' => $identifiers,
+                'net_tax'     => isset($row['net_tax']) ? (string) $row['net_tax'] : '',
+            ]);
+        }
+    }
+
+    /**
+     * Write 0 into the mapped total columns of a template row without sales.
+     *
+     * @param array<string,string> $template_row
+     * @param array<string,array>  $column_maps
+     * @return array<string,string>
+     */
+    private function apply_zero_values(array $template_row, array $column_maps): array
+    {
+        foreach ($column_maps['outputs'] as $field => $header) {
+            if (in_array($field, $this->sum_fields, true)) {
+                $template_row[$header] = '0';
+            }
+        }
+        return $template_row;
     }
 
     /**

@@ -117,13 +117,13 @@ class WooBooster_Bundle_Form
         echo '<label class="wb-field__label">' . esc_html__('Schedule', 'ffl-funnels-addons') . '</label>';
         echo '<div class="wb-field__control wb-schedule-row">';
         echo '<label class="wb-schedule-label">' . esc_html__('From', 'ffl-funnels-addons');
-        echo '<input type="datetime-local" name="bundle_start_date" value="' . esc_attr($start_date ? date('Y-m-d\TH:i', strtotime($start_date)) : '') . '" class="wb-input wb-input--sm wb-input--auto">';
+        echo '<input type="datetime-local" name="bundle_start_date" value="' . esc_attr($start_date ? get_date_from_gmt($start_date, 'Y-m-d\TH:i') : '') . '" class="wb-input wb-input--sm wb-input--auto">';
         echo '</label>';
         echo '<label class="wb-schedule-label">' . esc_html__('Until', 'ffl-funnels-addons');
-        echo '<input type="datetime-local" name="bundle_end_date" value="' . esc_attr($end_date ? date('Y-m-d\TH:i', strtotime($end_date)) : '') . '" class="wb-input wb-input--sm wb-input--auto">';
+        echo '<input type="datetime-local" name="bundle_end_date" value="' . esc_attr($end_date ? get_date_from_gmt($end_date, 'Y-m-d\TH:i') : '') . '" class="wb-input wb-input--sm wb-input--auto">';
         echo '</label>';
         echo '</div>';
-        echo '<p class="wb-field__desc">' . esc_html__('Optional. Leave empty to keep the bundle always active.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('Optional, in the store\'s time zone. Leave empty to keep the bundle always active.', 'ffl-funnels-addons') . '</p>';
         echo '</div>';
 
         echo '</div>'; // .wb-card__section
@@ -162,7 +162,7 @@ class WooBooster_Bundle_Form
         echo '<label class="wb-field__label">' . esc_html__('Discount Value', 'ffl-funnels-addons') . '</label>';
         echo '<div class="wb-field__control">';
         echo '<input type="number" name="bundle_discount_value" value="' . esc_attr($discount_value) . '" min="0" step="0.01" class="wb-input wb-input--sm">';
-        echo '<p class="wb-field__desc">' . esc_html__('Applied as a cart discount when the bundle is added.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('Percentage: taken off each item. Fixed Amount: taken off the whole bundle (every item at its quantity), split across the items by price. The bundle\'s cart line is priced at the discounted total.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
         echo '</div>'; // .wb-price-discount-fields
@@ -173,7 +173,7 @@ class WooBooster_Bundle_Form
         echo '<label class="wb-field__label">' . esc_html__('Bundle Price', 'ffl-funnels-addons') . '</label>';
         echo '<div class="wb-field__control">';
         echo '<input type="number" name="bundle_price" value="' . esc_attr($bundle_price) . '" min="0" step="0.01" class="wb-input wb-input--sm">';
-        echo '<p class="wb-field__desc">' . esc_html__('Total price for the whole bundle. Split across items pro-rata by their original price. A value at or above the items’ combined price applies no discount.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('Total price for the whole bundle, item quantities included. Split across items pro-rata by their original price. A value at or above the items’ combined price applies no discount.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
         echo '</div>'; // .wb-card__section
@@ -181,7 +181,7 @@ class WooBooster_Bundle_Form
         // ── Bundle Items (Static) ───────────────────────────────────────
         echo '<div class="wb-card__section" id="wb-bundle-items-section">';
         echo '<h3>' . esc_html__('Bundle Items (Manual)', 'ffl-funnels-addons') . '</h3>';
-        echo '<p class="wb-section-desc">' . esc_html__('Add specific products to this bundle. These are always included.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-section-desc">' . esc_html__('Add specific products to this bundle. They are always included unless marked Optional; shoppers can untick optional items and dynamic items.', 'ffl-funnels-addons') . '</p>';
 
         $items = $bundle_id ? WooBooster_Bundle::get_items($bundle_id) : array();
 
@@ -403,7 +403,7 @@ class WooBooster_Bundle_Form
             echo '<div class="wb-condition-product-chips wb-chips" style="' . esc_attr($chips_display) . '"></div>';
             echo '</div>';
 
-            echo '<span class="wb-condition-store-all-hint">' . esc_html__('Applies to every product. Use exclusions if this bundle should not appear everywhere.', 'ffl-funnels-addons') . '</span>';
+            echo '<span class="wb-condition-store-all-hint">' . esc_html__('Applies to every product. Add an AND condition (for example Category is not …) if this bundle should not appear everywhere.', 'ffl-funnels-addons') . '</span>';
 
             // Include children.
             echo '<label class="wb-checkbox wb-condition-children-label" style="display:none;">';
@@ -451,7 +451,10 @@ class WooBooster_Bundle_Form
             $a_label          = '';
             $selected_attr_tax = '';
 
-            if ($a_value) {
+            if ('attribute' === $a_source) {
+                // "Same Attribute": the value is the attribute taxonomy itself.
+                $selected_attr_tax = $a_value;
+            } elseif ($a_value) {
                 if ('attribute_value' === $a_source && false !== strpos($a_value, ':')) {
                     $parts             = explode(':', $a_value, 2);
                     $selected_attr_tax = $parts[0];
@@ -489,7 +492,7 @@ class WooBooster_Bundle_Form
 
             // Attribute Taxonomy Selector.
             $attr_taxonomies = wc_get_attribute_taxonomies();
-            $display_attr    = 'attribute_value' === $a_source ? '' : 'display:none;';
+            $display_attr    = in_array($a_source, array('attribute', 'attribute_value'), true) ? '' : 'display:none;';
             echo '<select class="wb-select wb-select--inline wb-action-attr-taxonomy" style="' . esc_attr($display_attr) . '">';
             echo '<option value="">' . esc_html__('Attribute…', 'ffl-funnels-addons') . '</option>';
             if ($attr_taxonomies) {

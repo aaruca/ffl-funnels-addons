@@ -185,16 +185,9 @@
 
 #loadout_product_data .loadout-item-grid {
     display: grid;
-    grid-template-columns: 1fr 70px 100px 90px 80px;
+    grid-template-columns: 1fr 70px 100px 80px;
     gap: 10px;
     align-items: end;
-}
-#loadout_product_data .loadout-field--required {
-    text-align: center;
-}
-#loadout_product_data .loadout-field--required input[type="checkbox"] {
-    width: auto;
-    margin-top: 4px;
 }
 
 #loadout_product_data .loadout-field {

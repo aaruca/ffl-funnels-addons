@@ -602,7 +602,7 @@ class WooBooster_Bundle
                         $bundle_id,
                         absint($group_id),
                         sanitize_key($condition['condition_attribute']),
-                        sanitize_key($condition['condition_operator'] ?? 'equals'),
+                        'not_equals' === ($condition['condition_operator'] ?? '') ? 'not_equals' : 'equals',
                         sanitize_text_field($condition['condition_value']),
                         absint($condition['include_children'] ?? 0)
                     );
@@ -745,20 +745,64 @@ class WooBooster_Bundle
     }
 
     /**
-     * Calculate per-item original and discounted prices for a bundle.
+     * Units of each static item, product_id => quantity (dynamic items are
+     * not listed and count as 1).
+     *
+     * @param int $bundle_id Bundle ID.
+     * @return array<int, int>
+     */
+    public static function get_item_quantities($bundle_id)
+    {
+        $quantities = array();
+        foreach ((array) self::get_items($bundle_id) as $item) {
+            $quantities[absint($item->product_id)] = isset($item->quantity) ? max(1, (int) $item->quantity) : 1;
+        }
+
+        return $quantities;
+    }
+
+    /**
+     * Static items that are not marked Optional. The shopper cannot untick
+     * them and the add-to-cart request is refused without them.
+     *
+     * @param int $bundle_id Bundle ID.
+     * @return int[]
+     */
+    public static function get_required_product_ids($bundle_id)
+    {
+        $ids = array();
+        foreach ((array) self::get_items($bundle_id) as $item) {
+            if (empty($item->is_optional)) {
+                $ids[] = absint($item->product_id);
+            }
+        }
+
+        return array_values(array_unique(array_filter($ids)));
+    }
+
+    /**
+     * Calculate per-item original and discounted unit prices for a bundle.
      *
      * Used by both the widget renderer and the AJAX add-to-cart so that
-     * the customer is charged exactly what they saw on the page.
+     * the customer is charged exactly what they saw on the page. A fixed
+     * discount or fixed bundle price covers the whole set, item quantities
+     * included, so 2 × A + B at "$10 off" saves $10 in total, not per unit.
      *
-     * @param object $bundle      Bundle row.
-     * @param array  $product_ids Product IDs to price.
-     * @return array Map of product_id => ['original' => float, 'discounted' => float].
+     * @param object     $bundle      Bundle row.
+     * @param array      $product_ids Product IDs to price.
+     * @param array|null $quantities  product_id => units; null reads the
+     *                                bundle's static item quantities.
+     * @return array Map of product_id => ['original' => float, 'discounted' => float] (per unit).
      */
-    public static function calculate_item_prices($bundle, array $product_ids)
+    public static function calculate_item_prices($bundle, array $product_ids, $quantities = null)
     {
         $product_ids = array_values(array_filter(array_map('absint', $product_ids)));
         if (empty($product_ids) || !$bundle) {
             return array();
+        }
+
+        if (!is_array($quantities)) {
+            $quantities = isset($bundle->id) ? self::get_item_quantities($bundle->id) : array();
         }
 
         $prices = array();
@@ -775,31 +819,43 @@ class WooBooster_Bundle
         // Fixed bundle price mode: distribute a single target total across items.
         $price_type = isset($bundle->bundle_price_type) ? $bundle->bundle_price_type : 'discount';
         if ('fixed' === $price_type && isset($bundle->bundle_price) && null !== $bundle->bundle_price) {
-            return self::apply_fixed_bundle_price($prices, (float) $bundle->bundle_price, $dec);
+            return self::apply_fixed_bundle_price($prices, (float) $bundle->bundle_price, $dec, $quantities);
         }
 
         return self::apply_discount_to_prices(
             $prices,
             $bundle->discount_type ?? 'none',
             (float) ($bundle->discount_value ?? 0),
-            $dec
+            $dec,
+            $quantities
         );
+    }
+
+    /**
+     * Units for one product from a quantity map (default 1).
+     *
+     * @param array $quantities product_id => units.
+     * @param int   $pid        Product ID.
+     */
+    private static function qty_of(array $quantities, $pid)
+    {
+        return isset($quantities[$pid]) ? max(1, (int) $quantities[$pid]) : 1;
     }
 
     /**
      * Pure helper: distribute a fixed bundle price across items pro-rata.
      *
-     * Each item's discounted per-unit price is its share of the target total,
-     * weighted by its original price. When the target exceeds the sum of
-     * originals (a markup), each item is capped at its original price so no
-     * item is ever priced above its standalone value.
+     * Each item's discounted unit price is its share of the target total,
+     * weighted by its original price × quantity. When the target is at or
+     * above the set's combined price, no item is discounted.
      *
-     * @param array<int, float> $prices       Map of product_id => original price.
+     * @param array<int, float> $prices       Map of product_id => original unit price.
      * @param float             $bundle_price Target total for the full set.
      * @param int               $dec          Rounding decimals.
+     * @param array<int, int>   $quantities   Map of product_id => units (default 1 each).
      * @return array Map of product_id => ['original' => float, 'discounted' => float].
      */
-    public static function apply_fixed_bundle_price(array $prices, $bundle_price, $dec = 2)
+    public static function apply_fixed_bundle_price(array $prices, $bundle_price, $dec = 2, array $quantities = array())
     {
         $bundle_price = max(0.0, (float) $bundle_price);
         $out          = array();
@@ -807,7 +863,7 @@ class WooBooster_Bundle
         foreach ($prices as $pid => $price) {
             $price     = (float) $price;
             $out[$pid] = array('original' => $price, 'discounted' => $price);
-            $sub      += $price;
+            $sub      += $price * self::qty_of($quantities, $pid);
         }
         if (empty($out) || $sub <= 0) {
             return $out;
@@ -830,13 +886,18 @@ class WooBooster_Bundle
     /**
      * Pure helper: apply a bundle-level discount to a price map.
      *
-     * @param array<int, float> $prices  Map of product_id => original price.
-     * @param string            $type    'none' | 'percentage' | 'fixed'.
-     * @param float             $value   Discount amount (% or currency units).
-     * @param int               $dec     Rounding decimals.
+     * 'percentage' takes the percentage off every unit. 'fixed' takes the
+     * amount off the whole set (unit price × quantity summed), split across
+     * the items in proportion to their price.
+     *
+     * @param array<int, float> $prices     Map of product_id => original unit price.
+     * @param string            $type       'none' | 'percentage' | 'fixed'.
+     * @param float             $value      Discount amount (% or currency units).
+     * @param int               $dec        Rounding decimals.
+     * @param array<int, int>   $quantities Map of product_id => units (default 1 each).
      * @return array Map of product_id => ['original' => float, 'discounted' => float].
      */
-    public static function apply_discount_to_prices(array $prices, $type, $value, $dec = 2)
+    public static function apply_discount_to_prices(array $prices, $type, $value, $dec = 2, array $quantities = array())
     {
         $value = (float) $value;
         $out   = array();
@@ -844,7 +905,7 @@ class WooBooster_Bundle
         foreach ($prices as $pid => $price) {
             $price       = (float) $price;
             $out[$pid]   = array('original' => $price, 'discounted' => $price);
-            $sub        += $price;
+            $sub        += $price * self::qty_of($quantities, $pid);
         }
         if (empty($out)) {
             return array();
@@ -859,6 +920,7 @@ class WooBooster_Bundle
         } elseif ('fixed' === $type && $value > 0 && $sub > 0) {
             $total_discount = min($value, $sub);
             foreach ($out as $pid => &$row) {
+                // Per-unit share: this unit's price as a fraction of the set.
                 $share              = ($row['original'] / $sub) * $total_discount;
                 $row['discounted']  = max(0.0, round($row['original'] - $share, $dec));
             }

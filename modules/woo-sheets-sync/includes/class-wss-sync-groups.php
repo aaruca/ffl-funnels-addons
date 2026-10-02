@@ -50,6 +50,127 @@ class WSS_Sync_Groups
     }
 
     /**
+     * Add parent products to one group's explicit product list.
+     *
+     * Products already in the group (listed, or matched by a category/tag
+     * rule) are left alone. Saves only when something changed.
+     *
+     * @param int[] $product_ids Parent (simple or variable) product IDs.
+     * @return bool True when the group was found.
+     */
+    public static function add_products_to_group(string $group_id, array $product_ids): bool
+    {
+        $groups = self::get_groups();
+        foreach ($groups as $i => $group) {
+            if ((string) ($group['id'] ?? '') !== $group_id) {
+                continue;
+            }
+
+            $resolved = self::resolve_parent_product_ids($group);
+            $changed  = false;
+            foreach ($product_ids as $pid) {
+                $pid = (int) $pid;
+                if ($pid > 0 && !in_array($pid, $resolved, true) && !in_array($pid, $groups[$i]['product_ids'], true)) {
+                    $groups[$i]['product_ids'][] = $pid;
+                    $changed = true;
+                }
+            }
+
+            if ($changed) {
+                self::save_groups($groups);
+            }
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Find a group by its tab name (exact match first, then case-insensitive).
+     *
+     * @return array<string,mixed>|null
+     */
+    public static function find_group_by_tab(string $tab_name): ?array
+    {
+        $tab_name = trim($tab_name);
+        if ($tab_name === '') {
+            return null;
+        }
+
+        $groups = self::get_groups();
+        foreach ($groups as $group) {
+            if ((string) ($group['tab_name'] ?? '') === $tab_name) {
+                return $group;
+            }
+        }
+        foreach ($groups as $group) {
+            if (strtolower((string) ($group['tab_name'] ?? '')) === strtolower($tab_name)) {
+                return $group;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Whether any group targets this tab name (case-insensitive, like the
+     * sync run's duplicate-tab check).
+     *
+     * @param array<int,array<string,mixed>> $groups
+     */
+    public static function tab_in_use(array $groups, string $tab_name): bool
+    {
+        $needle = strtolower(trim($tab_name));
+        foreach ($groups as $group) {
+            if (strtolower(trim((string) ($group['tab_name'] ?? ''))) === $needle) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Set which groups list a product explicitly (product edit screen).
+     *
+     * Category/tag rules are not changed. Saves only when something changed.
+     *
+     * @param string[] $checked_group_ids Groups that should list the product.
+     */
+    public static function set_product_groups(int $product_id, array $checked_group_ids): void
+    {
+        if ($product_id <= 0) {
+            return;
+        }
+
+        $checked = array_map('strval', $checked_group_ids);
+        $groups  = self::get_groups();
+        $changed = false;
+
+        foreach ($groups as $i => $group) {
+            $listed = in_array($product_id, $group['product_ids'], true);
+            $want   = in_array((string) ($group['id'] ?? ''), $checked, true);
+
+            if ($want && !$listed) {
+                $groups[$i]['product_ids'][] = $product_id;
+                $changed = true;
+            } elseif (!$want && $listed) {
+                $groups[$i]['product_ids'] = array_values(array_filter(
+                    $group['product_ids'],
+                    static function ($v) use ($product_id) {
+                        return (int) $v !== $product_id;
+                    }
+                ));
+                $changed = true;
+            }
+        }
+
+        if ($changed) {
+            self::save_groups($groups);
+        }
+    }
+
+    /**
      * One-time migration: empty sync_groups + existing sheet → one group from tab_name + _wss_sync_enabled products.
      */
     public static function ensure_migrated(): void

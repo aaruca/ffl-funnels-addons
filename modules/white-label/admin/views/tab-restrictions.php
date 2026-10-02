@@ -57,7 +57,7 @@ if (!defined('ABSPATH')) {
     <div class="wb-card__header"><h3><?php esc_html_e('Menu visibility', 'ffl-funnels-addons'); ?></h3></div>
     <div class="wb-card__body">
         <p class="wb-field__desc">
-            <?php esc_html_e('Check any item to hide it from clients. Hidden items are also blocked by direct URL. Items are grouped by top-level menu (usually one per plugin).', 'ffl-funnels-addons'); ?>
+            <?php esc_html_e('Check any item to hide it from clients. Hidden items are also blocked by direct URL, and hiding a content list (e.g. Pages, Products or Media) also blocks adding and editing those items. Items are grouped by top-level menu (usually one per plugin). The FFL Funnels menu and all of its pages are always hidden and blocked for clients.', 'ffl-funnels-addons'); ?>
         </p>
 
         <ul class="ffla-wl-menutree">

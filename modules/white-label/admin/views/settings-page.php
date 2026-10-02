@@ -14,6 +14,9 @@
  * @var string                $save_action
  * @var string                $nonce_action
  * @var string                $nonce_field
+ * @var bool                  $theme_active      Whether saved Styles already theme wp-admin.
+ * @var string                $theme_css_url     Theme stylesheet, loaded by the live preview when needed.
+ * @var string                $self_exempt_email Set when the last save/import added the current user to the exempt list.
  *
  * @package FFL_Funnels_Addons
  */
@@ -25,16 +28,26 @@ if (!defined('ABSPATH')) {
 if (!empty($was_saved)) {
     FFLA_Admin::render_notice('success', __('Settings saved.', 'ffl-funnels-addons'));
 }
+
+if (!empty($self_exempt_email)) {
+    FFLA_Admin::render_notice('info', sprintf(
+        /* translators: %s: the current user's email address. */
+        esc_html__('Your email address (%s) was added to the exempt staff list so you keep access to these settings.', 'ffl-funnels-addons'),
+        '<strong>' . esc_html($self_exempt_email) . '</strong>'
+    ));
+}
 ?>
 
 <div class="ffla-wl-header">
     <h2 class="ffla-wl-header__title"><?php esc_html_e('White Label', 'ffl-funnels-addons'); ?></h2>
     <p class="ffla-wl-header__desc">
-        <?php esc_html_e('Brand and lock down wp-admin per user — login/admin styling, per-role menus, admin-bar control, and access restrictions.', 'ffl-funnels-addons'); ?>
+        <?php esc_html_e('Brand and lock down wp-admin for client logins — light/dark admin colours, agency branding, client menu order, hidden and blocked admin screens and admin-bar items, and an optional client dashboard.', 'ffl-funnels-addons'); ?>
     </p>
 </div>
 
-<div class="ffla-wl" data-ffla-wl>
+<div class="ffla-wl" data-ffla-wl
+    data-ffla-wl-theme-active="<?php echo !empty($theme_active) ? '1' : '0'; ?>"
+    data-ffla-wl-theme-css="<?php echo esc_url($theme_css_url); ?>">
     <nav class="ffla-wl-tabs" role="tablist">
         <?php foreach ($tabs as $tab_slug => $tab_label) : ?>
             <button type="button"

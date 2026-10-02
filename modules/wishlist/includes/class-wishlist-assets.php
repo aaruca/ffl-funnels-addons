@@ -29,17 +29,24 @@ class Alg_Wishlist_Assets
         // Localize
         $items = Alg_Wishlist_Core::get_wishlist_items();
 
+        $shop_page_id = function_exists('wc_get_page_id') ? wc_get_page_id('shop') : 0;
+
         wp_localize_script('alg-wishlist-js', 'AlgWishlistSettings', array(
             'ajax_url' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('alg_wishlist_nonce'),
             'initial_items' => $items, // Pass PHP state to JS on load
+            // Hash of initial_items. If the visitor's state cookie differs, this
+            // page was built for someone else (page cache) and the script fixes it.
+            'state' => Alg_Wishlist_Core::state_hash($items),
+            'state_cookie' => Alg_Wishlist_Core::STATE_COOKIE,
+            'shop_url' => $shop_page_id > 0 ? get_permalink($shop_page_id) : home_url('/'),
             'i18n' => array(
                 'added' => __('Added to Wishlist', 'ffl-funnels-addons'),
                 'removed' => __('Removed from Wishlist', 'ffl-funnels-addons'),
                 'text_add' => __('Add to wishlist', 'ffl-funnels-addons'),
                 'text_remove' => __('Remove from wishlist', 'ffl-funnels-addons'),
-                'link_copied' => __('Link copied to clipboard!', 'ffl-funnels-addons'),
                 'empty_wishlist' => __('Your wishlist is currently empty.', 'ffl-funnels-addons'),
+                'return_to_shop' => __('Return to Shop', 'ffl-funnels-addons'),
             )
         ));
 
@@ -65,34 +72,6 @@ class Alg_Wishlist_Assets
             }
             .alg-wishlist-btn svg { stroke: var(--alg-wishlist-primary); }
             .alg-wishlist-btn.active svg { fill: var(--alg-wishlist-active); stroke: var(--alg-wishlist-active); }
-            {$custom}
-            
-            /* Toast Notification */
-            .alg-wishlist-toast {
-                position: fixed;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%) scale(0.9);
-                background: rgba(33, 33, 33, 0.95);
-                color: #fff;
-                padding: 20px 40px;
-                border-radius: 8px;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-                z-index: 99999;
-                opacity: 0;
-                visibility: hidden;
-                transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-                font-size: 16px;
-                font-weight: 500;
-                text-align: center;
-                backdrop-filter: blur(5px);
-                border: 1px solid rgba(255,255,255,0.1);
-            }
-            .alg-wishlist-toast.show {
-                opacity: 1;
-                visibility: visible;
-                transform: translate(-50%, -50%) scale(1);
-            }
 
             /* Wishlist Grid & Cards */
             .alg-wishlist-grid {
@@ -184,6 +163,8 @@ class Alg_Wishlist_Assets
                 color: #666;
             }
 
+            /* Custom CSS from the settings: last, so it overrides the rules above. */
+            {$custom}
         ";
 
         wp_add_inline_style('alg-wishlist-css', $custom_css);

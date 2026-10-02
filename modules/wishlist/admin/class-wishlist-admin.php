@@ -50,14 +50,15 @@ class Wishlist_Admin
             FFLA_Admin::render_notice('success', __('Settings saved.', 'ffl-funnels-addons'));
         }
 
+        // One form around every settings card.
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        echo '<input type="hidden" name="action" value="wishlist_save_settings">';
+        wp_nonce_field('wishlist_save_settings_nonce', '_wishlist_nonce');
+
         // ── Settings Card ───────────────────────────────────────────
         echo '<div class="wb-card">';
         echo '<div class="wb-card__header"><h3>' . esc_html__('Global Styles', 'ffl-funnels-addons') . '</h3></div>';
         echo '<div class="wb-card__body">';
-
-        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
-        echo '<input type="hidden" name="action" value="wishlist_save_settings">';
-        wp_nonce_field('wishlist_save_settings_nonce', '_wishlist_nonce');
 
         FFLA_Admin::render_color_field(
             __('Primary Color (Heart)', 'ffl-funnels-addons'),
@@ -122,10 +123,10 @@ class Wishlist_Admin
             __('Custom CSS', 'ffl-funnels-addons'),
             'alg_wishlist_custom_css',
             $options['alg_wishlist_custom_css'] ?? '',
-            __('Add your own CSS overrides here.', 'ffl-funnels-addons')
+            __('Add your own CSS overrides here. It is printed after the wishlist\'s own styles, so the same selectors win (the message box is #alg-wishlist-toast).', 'ffl-funnels-addons')
         );
 
-        echo '</div>'; // end body
+        echo '</div></div>'; // end card
 
         // ── SnapFind Integration Card ───────────────────────────────
         if (defined('SNAPFIND_DIR')) {
@@ -152,7 +153,7 @@ class Wishlist_Admin
             __('Delete wishlist data on uninstall', 'ffl-funnels-addons'),
             'delete_data_uninstall',
             isset($options['delete_data_uninstall']) ? $options['delete_data_uninstall'] : '0',
-            __('Off by default. When off, uninstalling the plugin keeps every customer wishlist so a reinstall restores them. Turn on only if you want the wishlist tables permanently dropped on uninstall.', 'ffl-funnels-addons')
+            __('Off by default. When off, uninstalling the plugin keeps every customer wishlist so a reinstall restores them. Turn on only if you want the wishlist tables and settings permanently deleted on uninstall (applies while the Wishlist module is switched on).', 'ffl-funnels-addons')
         );
 
         echo '</div></div>'; // end card
@@ -165,7 +166,6 @@ class Wishlist_Admin
         echo '</div>';
 
         echo '</form>';
-        echo '</div>'; // end card
 
         // ── Documentation Card ──────────────────────────────────────
         echo '<div class="wb-card">';
@@ -175,9 +175,10 @@ class Wishlist_Admin
         echo '<h4>' . esc_html__('Bricks Builder', 'ffl-funnels-addons') . '</h4>';
         echo '<p>' . esc_html__('Two Bricks elements are available when this module is active:', 'ffl-funnels-addons') . '</p>';
         echo '<ul class="wb-list">';
-        echo '<li><strong>Wishlist Button (Algenib)</strong> — ' . esc_html__('Drag into any Product Loop or Single Product template.', 'ffl-funnels-addons') . '</li>';
-        echo '<li><strong>Wishlist Counter (Algenib)</strong> — ' . esc_html__('Place in your Header to show the item count.', 'ffl-funnels-addons') . '</li>';
+        echo '<li><strong>' . esc_html__('Wishlist Button', 'ffl-funnels-addons') . '</strong> — ' . esc_html__('Drag into any Product Loop or Single Product template.', 'ffl-funnels-addons') . '</li>';
+        echo '<li><strong>' . esc_html__('Wishlist Counter', 'ffl-funnels-addons') . '</strong> — ' . esc_html__('Place in your Header to show the item count.', 'ffl-funnels-addons') . '</li>';
         echo '</ul>';
+        echo '<p>' . esc_html__('Both are in the FFL Funnels element category. For a custom wishlist page layout, set a query loop to the "Wishlist" query type.', 'ffl-funnels-addons') . '</p>';
 
         echo '<hr class="wb-hr">';
 
@@ -191,13 +192,18 @@ class Wishlist_Admin
 
         echo '<hr class="wb-hr">';
 
+        echo '<h4>' . esc_html__('Page caching', 'ffl-funnels-addons') . '</h4>';
+        echo '<p class="description">' . esc_html__('The Wishlist Page (and any page with [alg_wishlist_page]) asks page caches not to store it. On other cached pages the hearts and counter are corrected in the browser when the cached copy was built for a different visitor.', 'ffl-funnels-addons') . '</p>';
+
+        echo '<hr class="wb-hr">';
+
         echo '<h4>' . esc_html__('SnapFind (Typesense) integration', 'ffl-funnels-addons') . '</h4>';
         if (defined('SNAPFIND_DIR')) {
             echo '<p class="description">' . esc_html__('The SnapFind plugin is active. FFL Funnels will automatically add wishlist support on SnapFind product search: heart buttons on each result and ranking boost for products the visitor has saved in their wishlist. No custom template code is required.', 'ffl-funnels-addons') . '</p>';
             echo '<ul class="wb-list" style="margin-top:0.5em;">';
-            echo '<li><strong>' . esc_html__('Requirements (frontend):', 'ffl-funnels-addons') . '</strong> ' . esc_html__('Wishlist assets must load on the same page as the SnapFind search. They load automatically when the wishlist module is enabled. If a page only outputs SnapFind without a wishlist shortcode, ensure your theme or Bricks still loads the wishlist script (e.g. header counter or a hidden shortcode) so buttons and AJAX work.', 'ffl-funnels-addons') . '</li>';
+            echo '<li><strong>' . esc_html__('Requirements (frontend):', 'ffl-funnels-addons') . '</strong> ' . esc_html__('The wishlist script loads on every storefront page while this module is on, so the buttons appear wherever SnapFind shows results. They only disappear if a developer switched the wishlist assets off with the ffla_wishlist_enqueue_assets filter.', 'ffl-funnels-addons') . '</li>';
             echo '<li><strong>' . esc_html__('Ranking boost (opt-in):', 'ffl-funnels-addons') . '</strong> ' . esc_html__('Disabled by default. Enable “Boost wishlisted products in search” above to push products in the visitor’s default wishlist to the top of Typesense sort order. If the list is empty, no boost is applied.', 'ffl-funnels-addons') . '</li>';
-            echo '<li><strong>' . esc_html__('Optional field — wishlist_count (popularity):', 'ffl-funnels-addons') . '</strong> ' . esc_html__('This plugin can send a numeric wishlist_count to Typesense for each product (how many wishlists include that product). In SnapFind → Schema Builder, for “product”, add a new field: slug wishlist_count, type int32, index Yes, sort Yes, facet optional. Then run a full reindex in SnapFind so the field is populated. You can use this field in facets or as an extra sort option.', 'ffl-funnels-addons') . '</li>';
+            echo '<li><strong>' . esc_html__('Optional field — wishlist_count (popularity):', 'ffl-funnels-addons') . '</strong> ' . esc_html__('This plugin can send a numeric wishlist_count to Typesense for each product (how many wishlists include that product). In SnapFind → Schema Builder, for “product”, add a new field: slug wishlist_count, type int32, index Yes, sort Yes, facet optional. Then run a full reindex in SnapFind so the field is populated. You can use this field in facets or as an extra sort option. The value is counted when a product is indexed, so it only changes when that product is reindexed.', 'ffl-funnels-addons') . '</li>';
             echo '</ul>';
         } else {
             echo '<p class="description">' . esc_html__('To enable automatic wishlist buttons and search ranking on SnapFind / Typesense results, install and activate the SnapFind plugin. After activation, the integration loads automatically; no code is required on your search templates.', 'ffl-funnels-addons') . '</p>';
@@ -211,8 +217,9 @@ class Wishlist_Admin
      */
     public function handle_settings_save(): void
     {
-        if (!current_user_can('manage_options')) {
-            wp_die(__('Permission denied.', 'ffl-funnels-addons'));
+        // Same capability as the page itself (shop managers can open it).
+        if (!current_user_can('manage_woocommerce')) {
+            wp_die(esc_html__('Permission denied.', 'ffl-funnels-addons'));
         }
 
         check_admin_referer('wishlist_save_settings_nonce', '_wishlist_nonce');

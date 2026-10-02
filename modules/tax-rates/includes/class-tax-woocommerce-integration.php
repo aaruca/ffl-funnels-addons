@@ -19,6 +19,21 @@ class Tax_WooCommerce_Integration
     /** Synthetic WooCommerce rate ID used for the combined resolver rate. */
     private const RUNTIME_RATE_ID = 990000;
 
+    /** Session map of recent quotes keyed by destination (US|STATE|ZIP5). */
+    private const SESSION_QUOTES_KEY = 'ffla_tax_quotes_by_location';
+
+    /** How many destinations the session map keeps. */
+    private const SESSION_QUOTES_LIMIT = 10;
+
+    /**
+     * Cart/checkout resolutions of the current calculation, keyed by the
+     * quoted input. WooCommerce asks for rates once per line, shipping
+     * package and tax class; one quote per destination is enough.
+     *
+     * @var array<string,array<string,mixed>>
+     */
+    private static $session_memo = [];
+
     /**
      * Stored-order tax recalculations in progress, innermost last.
      *
@@ -46,7 +61,7 @@ class Tax_WooCommerce_Integration
 
         add_action('woocommerce_order_before_calculate_taxes', [__CLASS__, 'begin_order_tax_context'], 1, 2);
         add_action('woocommerce_order_after_calculate_totals', [__CLASS__, 'end_order_tax_context'], 0, 2);
-        add_filter('woocommerce_find_rates', [__CLASS__, 'filter_find_rates_for_order_context'], 20, 2);
+        add_filter('woocommerce_find_rates', [__CLASS__, 'filter_find_rates'], 20, 2);
         add_action('woocommerce_before_calculate_totals', [__CLASS__, 'reset_order_tax_contexts'], 0, 0);
         add_filter('woocommerce_matched_tax_rates', [__CLASS__, 'filter_matched_tax_rates'], 20, 6);
         add_filter('woocommerce_product_is_taxable', [__CLASS__, 'filter_product_is_taxable'], 20, 2);
@@ -156,7 +171,14 @@ class Tax_WooCommerce_Integration
     }
 
     /**
-     * Override WooCommerce matched rates for supported US destinations.
+     * Rates for a stored-order recalculation on WooCommerce's cache miss.
+     *
+     * Cart and checkout lookups are NOT changed here. WooCommerce caches what
+     * this filter returns per country/state/city/postcode/tax class — with a
+     * persistent object cache, across requests and customers. The cached value
+     * must therefore stay WooCommerce's own (customer-independent) rates; the
+     * resolver is applied afterwards in filter_find_rates(), which runs on
+     * every lookup, cache hit or not.
      *
      * @param  array  $matched_tax_rates Rates from WooCommerce core.
      * @param  string $country  Country code.
@@ -180,17 +202,90 @@ class Tax_WooCommerce_Integration
 
         // Stored-order recalculation (renewal, admin Recalculate, plan sizing):
         // resolve from the order itself, never from a session or current user.
+        // Cache entries written here are dropped when the order frame closes.
         $order_context = self::active_order_context($country, $state, $postcode, $city);
         if (null !== $order_context) {
             self::remember_rate_lookup($order_context, $country, $state, $postcode, $city, $tax_class);
             return self::order_context_rates($order_context, $matched_tax_rates, (string) $tax_class);
         }
 
-        $country = strtoupper((string) $country);
-        $state = strtoupper((string) $state);
-        $postcode = (string) $postcode;
-        $city = (string) $city;
-        $tax_class = (string) $tax_class;
+        return $matched_tax_rates;
+    }
+
+    /**
+     * Apply the resolver to every WC_Tax::find_rates() result.
+     *
+     * Runs after WooCommerce's rate cache, so per-customer decisions (street,
+     * exemptions, local pickup) are made for the current customer on every
+     * lookup and never reused for another customer at the same city/ZIP.
+     *
+     * @param mixed $matched_tax_rates Rates found (possibly from cache).
+     * @param mixed $args              find_rates() location arguments.
+     * @return mixed
+     */
+    public static function filter_find_rates($matched_tax_rates, $args)
+    {
+        if (!is_array($matched_tax_rates) || !is_array($args)) {
+            return $matched_tax_rates;
+        }
+
+        $index = self::active_order_context(
+            $args['country'] ?? '',
+            $args['state'] ?? '',
+            $args['postcode'] ?? '',
+            $args['city'] ?? ''
+        );
+        if (null !== $index) {
+            return self::order_context_rates($index, $matched_tax_rates, (string) ($args['tax_class'] ?? ''));
+        }
+
+        // Same postcode form WooCommerce matched its rates with.
+        $postcode = (string) ($args['postcode'] ?? '');
+        if (function_exists('wc_normalize_postcode') && function_exists('wc_clean')) {
+            $postcode = (string) wc_normalize_postcode(wc_clean($postcode));
+        }
+
+        return self::session_rates(
+            $matched_tax_rates,
+            (string) ($args['country'] ?? ''),
+            (string) ($args['state'] ?? ''),
+            $postcode,
+            (string) ($args['city'] ?? ''),
+            (string) ($args['tax_class'] ?? '')
+        );
+    }
+
+    /**
+     * Backwards-compatible name of filter_find_rates().
+     *
+     * @param mixed $matched_tax_rates
+     * @param mixed $args
+     * @return mixed
+     */
+    public static function filter_find_rates_for_order_context($matched_tax_rates, $args)
+    {
+        return self::filter_find_rates($matched_tax_rates, $args);
+    }
+
+    /**
+     * Cart and checkout rates for the current customer.
+     *
+     * @param array $matched_tax_rates WooCommerce's own rates for the lookup.
+     */
+    private static function session_rates(
+        array $matched_tax_rates,
+        string $country,
+        string $state,
+        string $postcode,
+        string $city,
+        string $tax_class
+    ): array {
+        // A rate set cached by an earlier version of this module may still
+        // hold the synthetic rate; it must never act as "WooCommerce's rates".
+        $native = self::without_runtime_rates($matched_tax_rates);
+
+        $country = strtoupper($country);
+        $state = strtoupper($state);
 
         // Local pickup is taxed at the store's own address, never the customer's.
         // WooCommerce core only forces the base address for pickup conditionally
@@ -219,82 +314,212 @@ class Tax_WooCommerce_Integration
             }
         }
 
-        if ($country !== 'US') {
-            return $matched_tax_rates;
+        if ($country !== 'US' || $state === '') {
+            return $native;
         }
 
-        if ($state === '') {
-            return $matched_tax_rates;
-        }
-
-        // This resolver models general goods rates; leave custom tax classes alone.
-        if ($tax_class !== '') {
-            return $matched_tax_rates;
-        }
-
-        // Customer/role tax gate: an explicit customer ID or exempt role
-        // returns an empty rate set. Wipe runtime tax meta so stale synthetic
-        // rates from an earlier request cannot leak through.
+        // Customer/role tax gate: an exempt customer pays no tax on the whole
+        // order, whatever the tax class. Wipe runtime tax meta so stale
+        // synthetic rates from an earlier request cannot leak through.
         if (class_exists('Tax_Role_Gate') && Tax_Role_Gate::is_active()
             && !Tax_Role_Gate::should_charge_for_current_customer()) {
             self::store_runtime_tax_meta([]);
             return [];
         }
 
+        // This resolver models general goods rates; leave custom tax classes alone.
+        if ($tax_class !== '') {
+            return $native;
+        }
+
         if (!Tax_Coverage::is_enabled_for_store($state)) {
             self::store_runtime_tax_meta([]);
-            return $matched_tax_rates;
+            return $native;
         }
 
         if (!Tax_Coverage::is_supported($state)) {
-            return $matched_tax_rates;
+            return $native;
         }
 
         $input = self::build_address_input($state, $postcode, $city, $pickup_street);
         if (empty($input['street']) && empty($input['zip'])) {
-            return $matched_tax_rates;
+            return $native;
         }
 
+        $memo_key = md5((string) wp_json_encode($input));
+        if (!isset(self::$session_memo[$memo_key])) {
+            self::$session_memo[$memo_key] = self::resolve_session_input($input);
+        }
+        $resolved = self::$session_memo[$memo_key];
+
+        if (is_array($resolved['quote'])) {
+            self::remember_session_quote($resolved['quote']);
+        }
+        self::store_runtime_tax_meta($resolved['runtime']);
+
+        return is_array($resolved['rates']) ? $resolved['rates'] : $native;
+    }
+
+    /**
+     * Quote one cart/checkout address.
+     *
+     * @return array{rates:array|null,runtime:array,quote:array|null} Rates
+     *         (null = keep WooCommerce's rates), runtime metadata, quote.
+     */
+    private static function resolve_session_input(array $input): array
+    {
         try {
             $quote = Tax_Quote_Engine::quote($input);
         } catch (\Throwable $e) {
             if (function_exists('ffla_tax_log')) {
                 ffla_tax_log('error', 'WooCommerce tax override failed', [
-                    'state'   => $state,
-                    'city'    => $city,
-                    'zip'     => $postcode,
+                    'state'   => $input['state'] ?? '',
+                    'city'    => $input['city'] ?? '',
+                    'zip'     => $input['zip'] ?? '',
                     'message' => $e->getMessage(),
                 ]);
             }
 
-            return $matched_tax_rates;
-        }
-
-        if (function_exists('WC') && WC()->session) {
-            WC()->session->set('ffla_last_tax_quote', $quote->to_array());
+            return ['rates' => null, 'runtime' => [], 'quote' => null];
         }
 
         if (!$quote->is_success()) {
-            self::store_runtime_tax_meta([]);
-            return $matched_tax_rates;
+            return ['rates' => null, 'runtime' => [], 'quote' => $quote->to_array()];
         }
 
-        return self::build_wc_rates_from_quote($quote, $tax_class);
+        [$rates, $runtime] = self::synthetic_rates_from_quote($quote);
+
+        return ['rates' => $rates, 'runtime' => $runtime, 'quote' => $quote->to_array()];
     }
 
     /**
-     * Store the last tax quote on the order for auditability.
+     * Keep the quote in the session: as the last quote, and by destination
+     * so the order can later pick the quote for its own address.
      */
-    public static function store_order_tax_quote($order, array $data): void
+    private static function remember_session_quote(array $quote): void
     {
         if (!function_exists('WC') || !WC()->session) {
             return;
         }
 
-        $quote = WC()->session->get('ffla_last_tax_quote');
+        WC()->session->set('ffla_last_tax_quote', $quote);
+
+        $signature = self::quote_signature($quote);
+        if ($signature === '') {
+            return;
+        }
+
+        $quotes = WC()->session->get(self::SESSION_QUOTES_KEY);
+        $quotes = is_array($quotes) ? $quotes : [];
+        unset($quotes[$signature]);
+        $quotes[$signature] = $quote;
+        if (count($quotes) > self::SESSION_QUOTES_LIMIT) {
+            $quotes = array_slice($quotes, -self::SESSION_QUOTES_LIMIT, null, true);
+        }
+        WC()->session->set(self::SESSION_QUOTES_KEY, $quotes);
+    }
+
+    /**
+     * Destination signature of a quote: US|STATE|ZIP5, or '' when unknown.
+     */
+    private static function quote_signature(array $quote): string
+    {
+        $state = strtoupper(trim((string) ($quote['state'] ?? '')));
+        $address = isset($quote['normalizedAddress']) && is_array($quote['normalizedAddress']) && !empty($quote['normalizedAddress']['zip'])
+            ? $quote['normalizedAddress']
+            : (isset($quote['inputAddress']) && is_array($quote['inputAddress']) ? $quote['inputAddress'] : []);
+        $zip = substr((string) preg_replace('/\D/', '', (string) ($address['zip'] ?? '')), 0, 5);
+
+        return ($state !== '' && strlen($zip) === 5) ? 'US|' . $state . '|' . $zip : '';
+    }
+
+    /**
+     * Destination signature of an order, or null when it cannot be checked.
+     */
+    private static function order_destination_signature($order): ?string
+    {
+        if (!is_object($order) || !method_exists($order, 'get_taxable_location')) {
+            return null;
+        }
+
+        // Multi-location pickup stores that keep WooCommerce's per-location
+        // address: the order only knows the store base, so it cannot be checked.
+        if (self::order_has_local_pickup($order) && !apply_filters('ffla_tax_local_pickup_use_store_base', true)) {
+            return null;
+        }
+
+        $location = self::order_has_local_pickup($order)
+            ? ['country' => self::store_base_address()['country'], 'state' => self::store_base_address()['state'], 'postcode' => self::store_base_address()['zip']]
+            : (array) $order->get_taxable_location();
+
+        if (strtoupper((string) ($location['country'] ?? '')) !== 'US') {
+            return '';
+        }
+
+        $state = strtoupper(trim((string) ($location['state'] ?? '')));
+        $zip = substr((string) preg_replace('/\D/', '', (string) ($location['postcode'] ?? '')), 0, 5);
+
+        return ($state !== '' && strlen($zip) === 5) ? 'US|' . $state . '|' . $zip : '';
+    }
+
+    /**
+     * Rates without the resolver's synthetic rate.
+     */
+    private static function without_runtime_rates(array $rates): array
+    {
+        unset($rates[self::RUNTIME_RATE_ID], $rates[(string) self::RUNTIME_RATE_ID]);
+        return $rates;
+    }
+
+    /**
+     * Store the checkout's tax quote on the order for auditability.
+     *
+     * Only a quote for the order's own destination is stored. A quote left
+     * in the session by an earlier address (or another lookup, such as the
+     * store's base rate) is never copied onto the order; a quote kept from
+     * an earlier attempt to place the same order is removed.
+     */
+    public static function store_order_tax_quote($order, array $data): void
+    {
+        if (!is_object($order) || !function_exists('WC') || !WC()->session) {
+            return;
+        }
+
+        $quote = self::session_quote_for_order($order);
         if (is_array($quote)) {
             self::write_order_tax_quote($order, $quote);
+            return;
         }
+
+        if (method_exists($order, 'delete_meta_data')) {
+            $order->delete_meta_data('_ffla_tax_quote');
+            $order->delete_meta_data('_ffla_tax_query_id');
+            $order->delete_meta_data('_ffla_tax_source');
+        }
+    }
+
+    /**
+     * The session quote that belongs to this order's destination.
+     */
+    private static function session_quote_for_order($order): ?array
+    {
+        $last = WC()->session->get('ffla_last_tax_quote');
+        $last = is_array($last) ? $last : null;
+
+        $signature = self::order_destination_signature($order);
+        if (null === $signature) {
+            return $last;
+        }
+        if ('' === $signature) {
+            return null;
+        }
+
+        $quotes = WC()->session->get(self::SESSION_QUOTES_KEY);
+        if (is_array($quotes) && isset($quotes[$signature]) && is_array($quotes[$signature])) {
+            return $quotes[$signature];
+        }
+
+        return ($last !== null && self::quote_signature($last) === $signature) ? $last : null;
     }
 
     /**
@@ -624,6 +849,11 @@ class Tax_WooCommerce_Integration
      * WC()->customer avoids that: WooCommerce syncs billing into the customer's
      * shipping fields whenever ship-to-different is off, so the shipping getter
      * already returns the billing street in the same-address case.
+     *
+     * A customer street is used only when that address has the looked-up ZIP.
+     * Lookups for the store base (tax based on "Shop base address", or the
+     * base rate WooCommerce uses for tax-inclusive prices) use the street from
+     * WooCommerce → Settings → General.
      */
     private static function build_address_input(string $state, string $postcode, string $city, ?string $forced_street = null): array
     {
@@ -643,29 +873,81 @@ class Tax_WooCommerce_Integration
             return $input;
         }
 
+        $based_on = get_option('woocommerce_tax_based_on', 'shipping');
+        if ('base' === $based_on) {
+            // Taxes follow the shop base address: quote the store's own street.
+            $input['street'] = self::store_street_for_lookup($state, $postcode);
+            return $input;
+        }
+
         if (!function_exists('WC') || !WC()->customer) {
+            $input['street'] = self::store_street_for_lookup($state, $postcode);
             return $input;
         }
 
         $customer = WC()->customer;
-        $based_on = get_option('woocommerce_tax_based_on', 'shipping');
+        $types = 'billing' === $based_on ? ['billing'] : ['shipping', 'billing'];
+        foreach ($types as $type) {
+            $street = (string) $customer->{'get_' . $type . '_address_1'}();
+            if ('' === $street) {
+                continue;
+            }
+            // Never pair a street with another address's ZIP (for example the
+            // store-base lookup WooCommerce makes for tax-inclusive prices).
+            if (self::customer_address_matches($customer, $type, $state, $postcode)) {
+                $input['street'] = $street;
+                return $input;
+            }
+            break;
+        }
 
-        if ('billing' === $based_on) {
-            $input['street'] = (string) $customer->get_billing_address_1();
-        } elseif ('base' === $based_on) {
-            // Store base address — there is no per-customer street. Leaving it
-            // empty lets the resolver fall back to ZIP-level matching; the caller
-            // only bails when street AND zip are both empty.
-            $input['street'] = '';
-        } else {
-            // 'shipping' (WooCommerce default).
-            $input['street'] = (string) $customer->get_shipping_address_1();
-            if ('' === $input['street']) {
-                $input['street'] = (string) $customer->get_billing_address_1();
+        $input['street'] = self::store_street_for_lookup($state, $postcode);
+
+        return $input;
+    }
+
+    /**
+     * Whether the customer's billing/shipping address is the one being looked up.
+     *
+     * Customers without postcode getters are trusted, as before.
+     */
+    private static function customer_address_matches($customer, string $type, string $state, string $postcode): bool
+    {
+        if (!method_exists($customer, 'get_' . $type . '_postcode')) {
+            return true;
+        }
+
+        $customer_zip = substr((string) preg_replace('/\D/', '', (string) $customer->{'get_' . $type . '_postcode'}()), 0, 5);
+        $lookup_zip = substr((string) preg_replace('/\D/', '', $postcode), 0, 5);
+        if ($customer_zip !== $lookup_zip) {
+            return false;
+        }
+
+        if (method_exists($customer, 'get_' . $type . '_state')) {
+            $customer_state = strtoupper(trim((string) $customer->{'get_' . $type . '_state'}()));
+            if ($customer_state !== '' && $customer_state !== strtoupper($state)) {
+                return false;
             }
         }
 
-        return $input;
+        return true;
+    }
+
+    /**
+     * The store's street when a lookup is for the store base location, else ''.
+     */
+    private static function store_street_for_lookup(string $state, string $postcode): string
+    {
+        $base = self::store_base_address();
+        $base_zip = substr((string) preg_replace('/\D/', '', $base['zip']), 0, 5);
+        $lookup_zip = substr((string) preg_replace('/\D/', '', $postcode), 0, 5);
+
+        if ('' === $base['street'] || '' === $base_zip || $base['country'] !== 'US'
+            || $base['state'] !== strtoupper($state) || $base_zip !== $lookup_zip) {
+            return '';
+        }
+
+        return $base['street'];
     }
 
     /**
@@ -724,23 +1006,6 @@ class Tax_WooCommerce_Integration
             'city'    => $countries ? (string) $countries->get_base_city() : '',
             'street'  => (string) get_option('woocommerce_store_address', ''),
         ];
-    }
-
-    /**
-     * Convert a tax quote result into a single combined WooCommerce rate.
-     *
-     * The resolver may return a multi-jurisdiction breakdown (state + county +
-     * city + special district). WooCommerce renders one tax line per matched
-     * rate, so we sum the breakdown into a single rate to show the customer one
-     * "Sales Tax" line at checkout. The full jurisdiction breakdown is still
-     * preserved on the order via store_order_tax_quote() for auditing.
-     */
-    private static function build_wc_rates_from_quote(Tax_Quote_Result $quote, string $tax_class): array
-    {
-        [$rates, $runtime_meta] = self::synthetic_rates_from_quote($quote);
-        self::store_runtime_tax_meta($runtime_meta);
-
-        return $rates;
     }
 
     /**
@@ -852,6 +1117,9 @@ class Tax_WooCommerce_Integration
             return;
         }
 
+        // A new calculation never reuses an earlier calculation's session quotes.
+        self::$session_memo = [];
+
         // A repeated calculation of the same order replaces its earlier frame.
         $index = self::find_order_context_index($order);
         if (null !== $index) {
@@ -872,6 +1140,7 @@ class Tax_WooCommerce_Integration
                 $location['city'] ?? ''
             ) : '',
             'resolved' => false,
+            'exempt'   => null,
             'rates'    => null,
             'runtime'  => [],
             'lookups'  => [],
@@ -923,40 +1192,12 @@ class Tax_WooCommerce_Integration
      */
     public static function reset_order_tax_contexts(): void
     {
+        // Each cart calculation quotes afresh (cache hits are cheap and unaudited).
+        self::$session_memo = [];
+
         if (!empty(self::$order_contexts)) {
             self::close_order_contexts_from(0);
         }
-    }
-
-    /**
-     * Apply the order context on every WC_Tax::find_rates() call.
-     *
-     * woocommerce_matched_tax_rates only runs on a find_rates() cache miss;
-     * the result is cached per country/state/city/postcode/class without the
-     * street or the order. An earlier lookup for the same location could
-     * otherwise hand the order WooCommerce's native rates.
-     *
-     * @param mixed $matched_tax_rates Rates found (possibly from cache).
-     * @param mixed $args              find_rates() location arguments.
-     * @return mixed
-     */
-    public static function filter_find_rates_for_order_context($matched_tax_rates, $args)
-    {
-        if (empty(self::$order_contexts) || !is_array($matched_tax_rates) || !is_array($args)) {
-            return $matched_tax_rates;
-        }
-
-        $index = self::active_order_context(
-            $args['country'] ?? '',
-            $args['state'] ?? '',
-            $args['postcode'] ?? '',
-            $args['city'] ?? ''
-        );
-        if (null === $index) {
-            return $matched_tax_rates;
-        }
-
-        return self::order_context_rates($index, $matched_tax_rates, (string) ($args['tax_class'] ?? ''));
     }
 
     /**
@@ -1163,8 +1404,13 @@ class Tax_WooCommerce_Integration
      */
     private static function order_context_rates(int $index, array $matched_tax_rates, string $tax_class): array
     {
+        // An exempt customer pays no tax on the whole order, whatever the class.
+        if (self::order_context_exempt($index)) {
+            return [];
+        }
+
         if ($tax_class !== '') {
-            return $matched_tax_rates;
+            return self::without_runtime_rates($matched_tax_rates);
         }
 
         if (!self::$order_contexts[$index]['resolved']) {
@@ -1176,7 +1422,39 @@ class Tax_WooCommerce_Integration
 
         $rates = self::$order_contexts[$index]['rates'];
 
-        return is_array($rates) ? $rates : $matched_tax_rates;
+        return is_array($rates) ? $rates : self::without_runtime_rates($matched_tax_rates);
+    }
+
+    /**
+     * Customer/role gate decision for an order frame, made once per frame.
+     *
+     * Only US destinations are gated, exactly like checkout. The decision is
+     * recorded on the order as exemption evidence.
+     */
+    private static function order_context_exempt(int $index): bool
+    {
+        if (null === self::$order_contexts[$index]['exempt']) {
+            $frame = self::$order_contexts[$index];
+            $exempt = false;
+            if (class_exists('Tax_Role_Gate') && Tax_Role_Gate::is_active()) {
+                // Same destination as order_context_address(), without the street.
+                $address = $frame['location'];
+                if (self::order_has_local_pickup($frame['order'])
+                    && apply_filters('ffla_tax_local_pickup_use_store_base', true)) {
+                    $base = self::store_base_address();
+                    if ('' !== $base['state'] && '' !== $base['country']) {
+                        $address = $base;
+                    }
+                }
+                if (($address['country'] ?? '') === 'US' && ($address['state'] ?? '') !== '') {
+                    $exempt = !Tax_Role_Gate::should_charge_for_order($frame['order']);
+                    self::record_order_full_exemption($frame['order'], $exempt);
+                }
+            }
+            self::$order_contexts[$index]['exempt'] = $exempt;
+        }
+
+        return (bool) self::$order_contexts[$index]['exempt'];
     }
 
     /**
@@ -1194,13 +1472,7 @@ class Tax_WooCommerce_Integration
             return [null, []];
         }
 
-        if (class_exists('Tax_Role_Gate') && Tax_Role_Gate::is_active()) {
-            $charge = Tax_Role_Gate::should_charge_for_order($order);
-            self::record_order_full_exemption($order, !$charge);
-            if (!$charge) {
-                return [[], []];
-            }
-        }
+        // The customer/role gate already ran in order_context_exempt().
 
         if (!Tax_Coverage::is_enabled_for_store($address['state'])
             || !Tax_Coverage::is_supported($address['state'])) {
@@ -1278,8 +1550,8 @@ class Tax_WooCommerce_Integration
     {
         $based_on = get_option('woocommerce_tax_based_on', 'shipping');
         if ('base' === $based_on) {
-            // Same as checkout: no per-customer street for store-base taxes.
-            return '';
+            // Same as checkout: taxes follow the store's own address.
+            return self::store_street_for_lookup((string) $location['state'], (string) $location['postcode']);
         }
 
         $zip = substr(preg_replace('/\D/', '', (string) $location['postcode']), 0, 5);

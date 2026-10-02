@@ -2,8 +2,10 @@
 /**
  * WSS Crypto — AES-256-CBC helpers for at-rest secret storage.
  *
- * Uses a key derived from WordPress AUTH_KEY. The derivation matches the one
- * in WSS_Google_OAuth so credentials remain cross-compatible between the two.
+ * Uses a key derived from WordPress AUTH_KEY (the same derivation as
+ * WSS_Google_OAuth). Values written here carry a "WSS1:" prefix; the OAuth
+ * class stores its tokens without that prefix, so the two formats are not
+ * interchangeable.
  *
  * @package FFL_Funnels_Addons
  */

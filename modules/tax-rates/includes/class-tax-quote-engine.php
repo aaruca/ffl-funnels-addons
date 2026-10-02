@@ -410,7 +410,7 @@ class Tax_Quote_Engine
      * The cache is keyed to the *payload shape*, not the release. Bump
      * CACHE_SCHEMA_VERSION by hand whenever the persisted quote structure changes;
      * that is precisely what the constant exists for. Data changes still flush via
-     * Tax_Resolver_DB::clear_state_cache() during a dataset sync, and the TTL
+     * Tax_Resolver_DB::clear_state_sheet_cache() when a sync imports changed data, and the TTL
      * bounds staleness regardless.
      */
     private static function get_cache_schema_version(): string

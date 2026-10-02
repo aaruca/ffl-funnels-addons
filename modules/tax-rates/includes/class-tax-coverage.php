@@ -103,6 +103,30 @@ class Tax_Coverage
             'sheet_source_states' => 0,
         ];
 
+        // Freshness of each state's active sheet dataset (the Sheet source and
+        // the USGeocoder fallback both read it).
+        $datasets = [];
+        if (class_exists('Tax_Dataset_Pipeline')) {
+            foreach (Tax_Dataset_Pipeline::get_active_versions() as $version) {
+                $code = strtoupper((string) ($version['state_code'] ?? ''));
+                if ($code === '' || isset($datasets[$code])) {
+                    continue;
+                }
+                $loaded = strtotime((string) ($version['loaded_at'] ?? ''));
+                $policy = (int) ($version['freshness_policy'] ?? 0);
+                $policy = $policy > 0 ? $policy : 90;
+                $age_days = $loaded ? round((time() - $loaded) / DAY_IN_SECONDS, 1) : null;
+                $datasets[$code] = [
+                    'versionLabel'  => (string) ($version['version_label'] ?? ''),
+                    'effectiveDate' => (string) ($version['effective_date'] ?? ''),
+                    'loadedAt'      => (string) ($version['loaded_at'] ?? ''),
+                    'ageDays'       => $age_days,
+                    'freshnessDays' => $policy,
+                    'isFresh'       => $age_days !== null && $age_days <= $policy,
+                ];
+            }
+        }
+
         foreach ($matrix as $row) {
             $strategy = self::build_source_strategy($row['state_code'], $row);
 
@@ -115,6 +139,7 @@ class Tax_Coverage
                 'notes'           => $row['notes'],
                 'enabledForStore' => self::is_enabled_for_store($row['state_code']),
                 'sourceStrategy'  => $strategy,
+                'dataset'         => $datasets[$row['state_code']] ?? null,
             ];
         }
 
@@ -156,7 +181,11 @@ class Tax_Coverage
     }
 
     /**
-     * Check if a state is supported (any supported level).
+     * Check if the resolver can quote a state.
+     *
+     * A state whose imported data is all zero (NO_SALES_TAX) is a known
+     * zero-rate state: it is quoted (and returns no tax) instead of being
+     * handed back to WooCommerce's own tax table.
      *
      * @param  string $state_code
      * @return bool
@@ -172,6 +201,7 @@ class Tax_Coverage
             self::SUPPORTED_ADDRESS_RATE,
             self::SUPPORTED_WITH_REMOTE,
             self::SUPPORTED_CONTEXT_REQUIRED,
+            self::NO_SALES_TAX,
         ], true);
     }
 
@@ -244,8 +274,10 @@ class Tax_Coverage
      *
      * Replaces the per-request loop that used to live in `Tax_Rates_Module::boot()`.
      * Runs on plugin activation, on DB install, and whenever the settings option
-     * changes (hooked via `update_option_ffla_tax_resolver_settings`). Only writes
-     * rows whose resolver/status actually changed so we avoid useless UPDATEs.
+     * changes (hooked via `update_option_ffla_tax_resolver_settings`), and from
+     * the daily maintenance cron so a row can never stay on the wrong source.
+     * Only writes rows whose resolver/status actually changed so we avoid
+     * useless UPDATEs.
      *
      * Routing rules:
      *   - Empty `usgeocoder_auth_key`  -> every state falls back to the Sheet ZIP
@@ -271,62 +303,105 @@ class Tax_Coverage
 
         $settings = is_array($settings) ? $settings : (array) get_option(self::SETTINGS_KEY, []);
 
-        $api_key          = trim((string) ($settings['usgeocoder_auth_key'] ?? ''));
-        $restrict         = !empty($settings['restrict_states']) && (string) $settings['restrict_states'] === '1';
-        $enabled_raw      = is_array($settings['enabled_states'] ?? null) ? $settings['enabled_states'] : [];
-        $enabled_set      = [];
-        foreach ($enabled_raw as $state_code) {
-            $state_code = strtoupper(sanitize_text_field((string) $state_code));
-            if (in_array($state_code, self::ALL_STATES, true)) {
-                $enabled_set[$state_code] = true;
-            }
-        }
-
         $summary = ['updated' => 0, 'api_states' => 0, 'sheet_states' => 0];
 
         foreach (self::ALL_STATES as $state_code) {
-            $use_api = $api_key !== '' && (!$restrict || isset($enabled_set[$state_code]));
-
-            if ($use_api) {
-                $status   = self::SUPPORTED_WITH_REMOTE;
-                $resolver = self::SOURCE_STRATEGY_USGEOCODER;
-                $note     = 'USGeocoder live API is active for this state.';
+            if (self::desired_route($state_code, $settings) === self::SOURCE_STRATEGY_USGEOCODER) {
                 $summary['api_states']++;
             } else {
-                $has_dataset = class_exists('Tax_Dataset_Pipeline')
-                    && Tax_Dataset_Pipeline::has_active_sheet_dataset($state_code);
-
-                if ($has_dataset) {
-                    $status = Tax_Dataset_Pipeline::get_active_sheet_coverage_status($state_code);
-                    $note   = $status === self::NO_SALES_TAX
-                        ? 'A zero-tax Google Sheet dataset is active for this state.'
-                        : 'Google Sheet ZIP dataset is active for this state.';
-                } else {
-                    $status = self::SUPPORTED_CONTEXT_REQUIRED;
-                    $note   = 'Run sheet sync to build the local ZIP dataset for this state.';
-                }
-
-                $resolver = self::SOURCE_STRATEGY_SHEET;
                 $summary['sheet_states']++;
             }
 
-            $existing = self::get_state($state_code);
-            if (
-                $existing
-                && (string) $existing['coverage_status'] === (string) $status
-                && (string) $existing['resolver_name']   === (string) $resolver
-                && (string) ($existing['notes'] ?? '')   === (string) $note
-            ) {
-                continue;
+            if (self::reconcile_state($state_code, $settings)) {
+                $summary['updated']++;
             }
-
-            self::update_state($state_code, $status, $resolver, $note);
-            $summary['updated']++;
         }
 
         delete_transient($lock_key);
 
         return $summary;
+    }
+
+    /**
+     * The source family a state should route to under the given settings.
+     *
+     * A USGeocoder key routes every state (or only the checked states when
+     * "Limit resolver to selected states" is on) to the live API; everything
+     * else uses the Sheet ZIP dataset. Pure: no database access.
+     *
+     * @param array|null $settings Settings payload; defaults to the stored option.
+     */
+    public static function desired_route(string $state_code, ?array $settings = null): string
+    {
+        $settings = is_array($settings) ? $settings : (array) get_option(self::SETTINGS_KEY, []);
+        $state_code = strtoupper($state_code);
+
+        $api_key = trim((string) ($settings['usgeocoder_auth_key'] ?? ''));
+        if ($api_key === '') {
+            return self::SOURCE_STRATEGY_SHEET;
+        }
+
+        $restrict = !empty($settings['restrict_states']) && (string) $settings['restrict_states'] === '1';
+        if (!$restrict) {
+            return self::SOURCE_STRATEGY_USGEOCODER;
+        }
+
+        foreach ((is_array($settings['enabled_states'] ?? null) ? $settings['enabled_states'] : []) as $enabled) {
+            if (strtoupper(trim((string) $enabled)) === $state_code) {
+                return self::SOURCE_STRATEGY_USGEOCODER;
+            }
+        }
+
+        return self::SOURCE_STRATEGY_SHEET;
+    }
+
+    /**
+     * Write one state's coverage row from the settings and its local dataset.
+     *
+     * Used by the full reconcile and by the sheet sync, so importing sheet
+     * data never takes a USGeocoder state off the live API.
+     *
+     * @param array|null $settings Settings payload; defaults to the stored option.
+     * @return bool Whether the row changed.
+     */
+    public static function reconcile_state(string $state_code, ?array $settings = null): bool
+    {
+        $state_code = strtoupper($state_code);
+
+        if (self::desired_route($state_code, $settings) === self::SOURCE_STRATEGY_USGEOCODER) {
+            $status   = self::SUPPORTED_WITH_REMOTE;
+            $resolver = self::SOURCE_STRATEGY_USGEOCODER;
+            $note     = 'USGeocoder live API is active for this state.';
+        } else {
+            $has_dataset = class_exists('Tax_Dataset_Pipeline')
+                && Tax_Dataset_Pipeline::has_active_sheet_dataset($state_code);
+
+            if ($has_dataset) {
+                $status = Tax_Dataset_Pipeline::get_active_sheet_coverage_status($state_code);
+                $note   = $status === self::NO_SALES_TAX
+                    ? 'A zero-tax Google Sheet dataset is active for this state.'
+                    : 'Google Sheet ZIP dataset is active for this state.';
+            } else {
+                $status = self::SUPPORTED_CONTEXT_REQUIRED;
+                $note   = 'Run sheet sync to build the local ZIP dataset for this state.';
+            }
+
+            $resolver = self::SOURCE_STRATEGY_SHEET;
+        }
+
+        // Same route and status: keep the row, including the more detailed
+        // note a sheet sync wrote.
+        $existing = self::get_state($state_code);
+        if (
+            $existing
+            && (string) $existing['coverage_status'] === (string) $status
+            && (string) $existing['resolver_name']   === (string) $resolver
+        ) {
+            return false;
+        }
+
+        self::update_state($state_code, $status, $resolver, $note);
+        return true;
     }
 
     /**

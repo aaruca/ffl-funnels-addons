@@ -12,8 +12,8 @@ if (!defined('ABSPATH')) {
  * Available tags:
  *   {ffla_product_has_loadout} — Returns "1" when the current product (in the
  *       template/page render context) resolves to a Loadout config that would
- *       actually render content (linked global Loadout or per-product custom
- *       tiers, with the loadout tab enabled). Returns empty string otherwise.
+ *       actually render tiers (an active linked global Loadout with at least
+ *       one tier, or per-product tiers). Returns an empty string otherwise.
  *
  * Usage in Bricks element Conditions tab:
  *   - Source: Dynamic data
@@ -54,13 +54,26 @@ class Loadout_Bricks_Tags
      * Render the tag value when Bricks resolves a single tag (Conditions,
      * attribute values, etc.).
      *
-     * @param string  $tag     Tag name without braces, e.g. "ffla_product_has_loadout".
+     * After Bricks' own providers (priority 10) the tag can arrive with or
+     * without braces, and with modifiers ("{tag:modifier}"), so both forms
+     * are accepted.
+     *
+     * @param mixed   $tag     Tag, e.g. "ffla_product_has_loadout" or "{ffla_product_has_loadout}".
      * @param WP_Post $post    Current post object Bricks is rendering against.
      * @param string  $context "text" or "link".
      */
     public static function render_tag($tag, $post = null, $context = 'text')
     {
-        if ($tag !== self::TAG_HAS_LOADOUT) {
+        if (!is_string($tag)) {
+            return $tag;
+        }
+        $name = trim($tag);
+        if (strlen($name) > 1 && $name[0] === '{' && substr($name, -1) === '}') {
+            $name = substr($name, 1, -1);
+        }
+        $name = explode(':', $name, 2)[0];
+
+        if ($name !== self::TAG_HAS_LOADOUT) {
             return $tag;
         }
         return self::has_loadout($post) ? '1' : '';
@@ -73,7 +86,7 @@ class Loadout_Bricks_Tags
     public static function render_content($content, $post = null, $context = 'text')
     {
         $needle = '{' . self::TAG_HAS_LOADOUT . '}';
-        if (false === strpos((string) $content, $needle)) {
+        if (!is_string($content) || false === strpos($content, $needle)) {
             return $content;
         }
         $value = self::has_loadout($post) ? '1' : '';
@@ -82,7 +95,7 @@ class Loadout_Bricks_Tags
 
     /**
      * Resolve whether the post in render context has a Loadout that would
-     * actually display content. Mirrors the resolver used by the Loadout
+     * actually display tiers. Mirrors the resolver used by the Loadout
      * elements so the condition value matches what gets rendered.
      */
     private static function has_loadout($post = null): bool
@@ -95,9 +108,9 @@ class Loadout_Bricks_Tags
             $product_id = (int) $post;
         } else {
             // Fall back to the current global post when Bricks doesn't pass one.
-            global $post;
-            if ($post instanceof WP_Post) {
-                $product_id = (int) $post->ID;
+            $global_post = get_post();
+            if ($global_post instanceof WP_Post) {
+                $product_id = (int) $global_post->ID;
             }
         }
 
@@ -113,11 +126,15 @@ class Loadout_Bricks_Tags
         $type   = isset($config['type']) ? $config['type'] : 'disabled';
 
         if ($type === 'global' && !empty($config['loadout'])) {
-            return true;
+            return !empty($config['tiers']);
         }
 
         if ($type === 'custom' && !empty($config['tiers'])) {
-            return true;
+            foreach ((array) $config['tiers'] as $tier) {
+                if (is_array($tier) && (string) ($tier['name'] ?? '') !== '') {
+                    return true;
+                }
+            }
         }
 
         return false;

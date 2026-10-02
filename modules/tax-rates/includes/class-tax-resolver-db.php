@@ -278,191 +278,29 @@ class Tax_Resolver_DB
     }
 
     /**
-     * Upsert a manual override row for a state/city or state floor.
-     */
-    public static function save_manual_override(
-        string $state_code,
-        string $scope,
-        string $city_key,
-        string $city_label,
-        float $manual_rate,
-        bool $lock_on_resync,
-        string $reason,
-        int $updated_by = 0
-    ): int {
-        global $wpdb;
-
-        $table = self::table('manual_overrides');
-        $state_code = strtoupper($state_code);
-        $scope = $scope === 'state' ? 'state' : 'city';
-        $city_key = $scope === 'state' ? '' : $city_key;
-        $city_label = $scope === 'state' ? '' : $city_label;
-
-        $existing_id = (int) $wpdb->get_var($wpdb->prepare(
-            "SELECT id
-             FROM {$table}
-             WHERE state_code = %s
-               AND override_scope = %s
-               AND city_key = %s
-             LIMIT 1",
-            $state_code,
-            $scope,
-            $city_key
-        ));
-
-        $payload = [
-            'state_code'     => $state_code,
-            'override_scope' => $scope,
-            'city_key'       => $city_key,
-            'city_label'     => $city_label !== '' ? $city_label : null,
-            'manual_rate'    => $manual_rate,
-            'lock_on_resync' => $lock_on_resync ? 1 : 0,
-            'reason'         => $reason !== '' ? $reason : null,
-            'updated_by'     => $updated_by > 0 ? $updated_by : null,
-            'updated_at'     => current_time('mysql'),
-        ];
-
-        if ($existing_id > 0) {
-            $wpdb->update(
-                $table,
-                $payload,
-                ['id' => $existing_id],
-                ['%s', '%s', '%s', '%s', '%f', '%d', '%s', '%d', '%s'],
-                ['%d']
-            );
-
-            return $existing_id;
-        }
-
-        $wpdb->insert(
-            $table,
-            $payload,
-            ['%s', '%s', '%s', '%s', '%f', '%d', '%s', '%d', '%s']
-        );
-
-        return (int) $wpdb->insert_id;
-    }
-
-    /**
-     * Delete one manual override by id.
-     */
-    public static function delete_manual_override(int $override_id): bool
-    {
-        global $wpdb;
-
-        $table = self::table('manual_overrides');
-
-        return (bool) $wpdb->delete($table, ['id' => $override_id], ['%d']);
-    }
-
-    /**
-     * Fetch one manual override by state/scope/city key.
+     * Clear a state's cached quotes that depend on its sheet dataset.
      *
-     * @return array<string,mixed>|null
+     * Called when new sheet data is imported for the state. Successful live
+     * USGeocoder quotes do not use the sheet and stay cached, so a sheet
+     * update never forces a billed re-lookup of addresses the API answered.
+     * Sheet results, sheet fallbacks and unsuccessful answers are cleared.
+     *
+     * @return int Number of rows removed.
      */
-    public static function get_manual_override(string $state_code, string $scope, string $city_key = ''): ?array
+    public static function clear_state_sheet_cache(string $state_code): int
     {
         global $wpdb;
 
-        $table = self::table('manual_overrides');
-        $scope = $scope === 'state' ? 'state' : 'city';
-        $city_key = $scope === 'state' ? '' : $city_key;
-
-        $row = $wpdb->get_row($wpdb->prepare(
-            "SELECT *
-             FROM {$table}
-             WHERE state_code = %s
-               AND override_scope = %s
-               AND city_key = %s
-             LIMIT 1",
+        $table = self::table('address_cache');
+        // Only successful live answers carry this top-level resolution mode;
+        // a sheet fallback lists the failed API attempt in its trace instead.
+        $deleted = $wpdb->query($wpdb->prepare(
+            "DELETE FROM {$table} WHERE state_code = %s AND quote_json NOT LIKE %s",
             strtoupper($state_code),
-            $scope,
-            $city_key
-        ), ARRAY_A);
-
-        return $row ?: null;
-    }
-
-    /**
-     * Fetch one manual override by id.
-     *
-     * @return array<string,mixed>|null
-     */
-    public static function get_manual_override_by_id(int $override_id): ?array
-    {
-        global $wpdb;
-
-        $table = self::table('manual_overrides');
-        $row = $wpdb->get_row($wpdb->prepare(
-            "SELECT *
-             FROM {$table}
-             WHERE id = %d
-             LIMIT 1",
-            $override_id
-        ), ARRAY_A);
-
-        return $row ?: null;
-    }
-
-    /**
-     * List manual overrides for admin.
-     *
-     * @return array<int,array<string,mixed>>
-     */
-    public static function list_manual_overrides(?string $state_code = null): array
-    {
-        global $wpdb;
-
-        $table = self::table('manual_overrides');
-
-        if ($state_code !== null && $state_code !== '') {
-            return $wpdb->get_results($wpdb->prepare(
-                "SELECT *
-                 FROM {$table}
-                 WHERE state_code = %s
-                 ORDER BY state_code ASC, override_scope ASC, city_label ASC, updated_at DESC",
-                strtoupper($state_code)
-            ), ARRAY_A) ?: [];
-        }
-
-        return $wpdb->get_results(
-            "SELECT *
-             FROM {$table}
-             ORDER BY state_code ASC, override_scope ASC, city_label ASC, updated_at DESC",
-            ARRAY_A
-        ) ?: [];
-    }
-
-    /**
-     * Delete overrides for a state that are not locked against resync.
-     *
-     * @return int Number of deleted rows.
-     */
-    public static function clear_resyncable_overrides(string $state_code): int
-    {
-        global $wpdb;
-
-        $table = self::table('manual_overrides');
-        $wpdb->query($wpdb->prepare(
-            "DELETE FROM {$table}
-             WHERE state_code = %s
-               AND lock_on_resync = 0",
-            strtoupper($state_code)
+            '%' . $wpdb->esc_like('"resolutionMode":"usgeocoder_live_api"') . '%'
         ));
 
-        return (int) $wpdb->rows_affected;
-    }
-
-    /**
-     * Count manual overrides for health/admin summaries.
-     */
-    public static function count_manual_overrides(): int
-    {
-        global $wpdb;
-
-        $table = self::table('manual_overrides');
-
-        return (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}");
+        return max(0, (int) $deleted);
     }
 
     /**

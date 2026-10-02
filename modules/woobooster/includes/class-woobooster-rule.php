@@ -444,7 +444,9 @@ class WooBooster_Rule
                             'rule_id' => $rule_id,
                             'group_id' => absint($group_id),
                             'condition_attribute' => sanitize_key($condition['condition_attribute']),
-                            'condition_operator' => sanitize_key($condition['condition_operator'] ?? 'equals'),
+                            // Only "is" and "is not" exist; anything else (e.g. a
+                            // legacy "contains", which matched like "is") is saved as is.
+                            'condition_operator' => 'not_equals' === ($condition['condition_operator'] ?? '') ? 'not_equals' : 'equals',
                             'condition_value' => sanitize_text_field($condition['condition_value']),
                             'include_children' => absint($condition['include_children'] ?? 0),
                             'min_quantity' => max(1, absint($condition['min_quantity'] ?? 1)),
@@ -718,7 +720,8 @@ class WooBooster_Rule
         }
 
         if (isset($data['condition_operator'])) {
-            $allowed_ops = array('equals', 'not_equals', 'contains');
+            // "contains" was never applied (it matched like "equals").
+            $allowed_ops = array('equals', 'not_equals');
             $sanitized['condition_operator'] = in_array($data['condition_operator'], $allowed_ops, true)
                 ? $data['condition_operator']
                 : 'equals';

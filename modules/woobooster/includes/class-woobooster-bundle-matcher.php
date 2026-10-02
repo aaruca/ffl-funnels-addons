@@ -92,8 +92,12 @@ class WooBooster_Bundle_Matcher
             return null;
         }
 
+        // Items from a visitor-specific source (Recently Viewed) must not be
+        // shared through the cache: with a persistent object cache, one
+        // shopper's history used to show up in everyone's bundle.
+        $cacheable = !self::bundle_uses_visitor_data($bundle_id);
         $cache_key = 'woobooster_bundle_v' . (int) get_option(WooBooster_Matcher::CACHE_VERSION, 0) . '_' . $bundle_id . '_' . $product_id;
-        $cached    = wp_cache_get($cache_key, WooBooster_Matcher::CACHE_GROUP);
+        $cached    = $cacheable ? wp_cache_get($cache_key, WooBooster_Matcher::CACHE_GROUP) : false;
         if (false !== $cached) {
             return $cached;
         }
@@ -115,9 +119,29 @@ class WooBooster_Bundle_Matcher
         $terms = $product_id ? $this->get_product_terms($product_id) : array();
         $bundle->resolved_items = $this->resolve_bundle_items($bundle, $product_id, $terms);
 
-        wp_cache_set($cache_key, $bundle, WooBooster_Matcher::CACHE_GROUP, HOUR_IN_SECONDS);
+        if ($cacheable) {
+            wp_cache_set($cache_key, $bundle, WooBooster_Matcher::CACHE_GROUP, HOUR_IN_SECONDS);
+        }
 
         return $bundle;
+    }
+
+    /**
+     * Whether any of a bundle's dynamic sources depends on the visitor.
+     *
+     * @param int $bundle_id Bundle ID.
+     */
+    public static function bundle_uses_visitor_data($bundle_id)
+    {
+        foreach ((array) WooBooster_Bundle::get_actions($bundle_id) as $actions) {
+            foreach ((array) $actions as $action) {
+                if (isset($action->action_source) && 'recently_viewed' === $action->action_source) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -226,12 +250,16 @@ class WooBooster_Bundle_Matcher
         $condition_keys = array_map('sanitize_text_field', $condition_keys);
         $placeholders   = implode(', ', array_fill(0, count($condition_keys), '%s'));
 
+        // GROUP BY instead of DISTINCT + ORDER BY a column outside the select
+        // list (rejected by some MySQL modes); the ID breaks priority ties so
+        // the result is deterministic.
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
         $candidate_ids = $wpdb->get_col(
             $wpdb->prepare(
-                "SELECT DISTINCT bundle_id FROM {$index_table}
+                "SELECT bundle_id FROM {$index_table}
                 WHERE condition_key IN ({$placeholders})
-                ORDER BY priority ASC",
+                GROUP BY bundle_id
+                ORDER BY MIN(priority) ASC, bundle_id ASC",
                 ...$condition_keys
             )
         );
@@ -246,7 +274,7 @@ class WooBooster_Bundle_Matcher
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
         $rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT * FROM {$bundles_table} WHERE id IN ({$id_placeholders}) AND status = 1 ORDER BY priority ASC",
+                "SELECT * FROM {$bundles_table} WHERE id IN ({$id_placeholders}) AND status = 1 ORDER BY priority ASC, id ASC",
                 ...$candidate_ids
             )
         );

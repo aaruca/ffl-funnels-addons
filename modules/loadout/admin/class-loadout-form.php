@@ -60,18 +60,26 @@ class Loadout_Form
 
     private static function save_tiers(int $loadout_id): void
     {
-        global $wpdb;
-
         $tiers_raw = isset($_POST['tiers']) ? (array) $_POST['tiers'] : [];
         $existing_tiers = Loadout_Tier::get_by_loadout($loadout_id);
         $existing_ids = array_map(fn($t) => $t->get_id(), $existing_tiers);
+        $existing_slugs = [];
+        foreach ($existing_tiers as $existing_tier) {
+            $existing_slugs[$existing_tier->get_id()] = (string) $existing_tier->get_slug();
+        }
         $kept_ids = [];
+        $used_slugs = [];
 
         foreach ($tiers_raw as $index => $tier_data) {
             $tier_id = isset($tier_data['id']) ? absint($tier_data['id']) : 0;
+            if ($tier_id && !in_array($tier_id, $existing_ids, true)) {
+                $tier_id = 0; // Not a tier of this loadout: create a new one.
+            }
 
-            $perks_input = isset($tier_data['perks']) ? sanitize_text_field(wp_unslash($tier_data['perks'])) : '';
-            $perks = array_filter(array_map('trim', explode("\n", $perks_input)));
+            // One perk per line. sanitize_textarea_field keeps the line breaks
+            // (sanitize_text_field would join every perk into one).
+            $perks_input = isset($tier_data['perks']) ? sanitize_textarea_field(wp_unslash($tier_data['perks'])) : '';
+            $perks = array_values(array_filter(array_map('trim', preg_split('/\R/', $perks_input))));
 
             $data = [
                 'name'                => isset($tier_data['name']) ? sanitize_text_field(wp_unslash($tier_data['name'])) : '',
@@ -90,10 +98,25 @@ class Loadout_Form
                 continue;
             }
 
-            if ($tier_id && in_array($tier_id, $existing_ids, true)) {
+            // Slugs match tabs to panels: keep a tier's slug across renames
+            // (stored cart lines and links use it) and keep them unique within
+            // the loadout so two tiers never open each other's panel.
+            $base_slug = ($tier_id && !empty($existing_slugs[$tier_id]))
+                ? $existing_slugs[$tier_id]
+                : (sanitize_title($data['name']) ?: 'tier');
+            $slug = $base_slug;
+            $suffix = 2;
+            while (isset($used_slugs[$slug])) {
+                $slug = $base_slug . '-' . $suffix++;
+            }
+            $used_slugs[$slug] = true;
+            $data['slug'] = $slug;
+
+            if ($tier_id) {
                 $tier = Loadout_Tier::get($tier_id);
                 if ($tier) {
                     $tier->set_name($data['name']);
+                    $tier->set_slug($data['slug']);
                     $tier->set_sort_order($data['sort_order']);
                     $tier->set_accessory_discount($data['accessory_discount']);
                     $tier->set_set_discount_pct($data['set_discount_pct']);
@@ -260,14 +283,15 @@ class Loadout_Form
             <details class="loadout-help-box" open>
                 <summary><strong><?php esc_html_e('How Loadouts work', 'ffl-funnels-addons'); ?></strong></summary>
                 <div class="loadout-help-content">
-                    <p><?php esc_html_e('A Loadout is a tier-based product configurator. The customer picks one tier (e.g. Essential, Performance, Elite), sees a curated list of products, and can add them individually or all at once to their cart.', 'ffl-funnels-addons'); ?></p>
+                    <p><?php esc_html_e('A Loadout is a tier-based product configurator. The customer picks one tier (e.g. Essential, Performance, Elite), sees a curated list of products, and adds them one at a time or the whole tier at once with the Add cart button.', 'ffl-funnels-addons'); ?></p>
                     <ul>
                         <li><strong><?php esc_html_e('Tiers', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('Each tier is a separate package level with its own recommended products and discount rules.', 'ffl-funnels-addons'); ?></li>
-                        <li><strong><?php esc_html_e('Accessory Discount %', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('Discount applied to every item the customer adds individually from this tier (via the standalone widget).', 'ffl-funnels-addons'); ?></li>
-                        <li><strong><?php esc_html_e('Set Discount %', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('Extra discount on top, applied only when the customer adds the entire tier at once (via a product page tab).', 'ffl-funnels-addons'); ?></li>
-                        <li><strong><?php esc_html_e('Perk Threshold + Perks + Bonus', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('Gamification — when the cart hits the threshold number of items from this tier, the perks list shows as unlocked and the bonus product is auto-added free. Remove items below threshold and the bonus is auto-removed.', 'ffl-funnels-addons'); ?></li>
-                        <li><strong><?php esc_html_e('Anchor Product', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('The hero product (e.g. the rifle) shown prominently at the top of the widget. Customers add it manually like any other item.', 'ffl-funnels-addons'); ?></li>
-                        <li><strong><?php esc_html_e('Cross-Sells', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('Category tiles shown below the tier panel (e.g. "Tactical Optics") that link out to related collections.', 'ffl-funnels-addons'); ?></li>
+                        <li><strong><?php esc_html_e('Accessory Discount %', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('Added to each item\'s own Discount %, whether the item is added on its own or with the whole tier.', 'ffl-funnels-addons'); ?></li>
+                        <li><strong><?php esc_html_e('Set Discount %', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('Extra discount on top for the tier\'s items when the customer adds the whole tier at once with Add cart. Only given when every item of the tier is available.', 'ffl-funnels-addons'); ?></li>
+                        <li><strong><?php esc_html_e('Perk Threshold + Perks + Bonus', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('When the cart holds the threshold number of items from this tier, the bonus product is added free (one unit) and the progress bar shows "Perks unlocked!". Drop below it and the bonus is removed. Perks are display text only.', 'ffl-funnels-addons'); ?></li>
+                        <li><strong><?php esc_html_e('Anchor Product', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('The hero product (e.g. the rifle) shown next to the tiers with its own Add hero button. Add cart puts it in the cart as the main item. On a product page that uses this Loadout, the product being viewed is the main item instead.', 'ffl-funnels-addons'); ?></li>
+                        <li><strong><?php esc_html_e('Cross-Sells', 'ffl-funnels-addons'); ?>:</strong> <?php esc_html_e('Tiles shown below the tier panel (e.g. "Tactical Optics") that link to a category, a URL or another Loadout.', 'ffl-funnels-addons'); ?></li>
+                        <li><?php esc_html_e('Discounts are taken off the regular price; a deeper sale price is kept.', 'ffl-funnels-addons'); ?></li>
                     </ul>
                     <p><em><?php esc_html_e('Set everything to 0 / leave fields blank if you don\'t want that feature — only filled-in fields take effect.', 'ffl-funnels-addons'); ?></em></p>
                 </div>
@@ -284,7 +308,7 @@ class Loadout_Form
                         <th><label for="loadout-name"><?php esc_html_e('Name', 'ffl-funnels-addons'); ?></label></th>
                         <td>
                             <input type="text" id="loadout-name" name="name" value="<?php echo esc_attr($name); ?>" class="regular-text" required>
-                            <p class="description"><?php esc_html_e('Internal label only — never shown to customers. Use a recognizable name like "AR-15 Build" or "Daniel Defense V7 Kit".', 'ffl-funnels-addons'); ?></p>
+                            <p class="description"><?php esc_html_e('Use a recognizable name like "AR-15 Build" or "Daniel Defense V7 Kit". Customers see it as the widget title when Headline is empty, and next to loadout items in the cart.', 'ffl-funnels-addons'); ?></p>
                         </td>
                     </tr>
                     <tr>
@@ -294,7 +318,7 @@ class Loadout_Form
                                 <option value="1" <?php selected($status, 1); ?>><?php esc_html_e('Active', 'ffl-funnels-addons'); ?></option>
                                 <option value="0" <?php selected($status, 0); ?>><?php esc_html_e('Inactive', 'ffl-funnels-addons'); ?></option>
                             </select>
-                            <p class="description"><?php esc_html_e('Inactive loadouts are hidden from the Bricks element selector and any product-page link.', 'ffl-funnels-addons'); ?></p>
+                            <p class="description"><?php esc_html_e('Inactive loadouts are not shown anywhere: not in Bricks elements (even where they were picked), not on linked product pages and not in the [loadout] shortcode. Their items can no longer be added to the cart.', 'ffl-funnels-addons'); ?></p>
                         </td>
                     </tr>
                     <tr>
@@ -345,7 +369,7 @@ class Loadout_Form
                                 <?php endif; ?>
                             </div>
                             <div class="loadout-search-results"></div>
-                            <p class="description"><?php esc_html_e('The hero product (e.g. the rifle) shown prominently at the top of the widget. Customers add it manually like any tier item.', 'ffl-funnels-addons'); ?></p>
+                            <p class="description"><?php esc_html_e('The hero product (e.g. the rifle) shown next to the tiers with an Add hero button. Add cart (whole tier) puts it in the cart as the main item. On a product page that uses this Loadout, the product being viewed is the main item instead.', 'ffl-funnels-addons'); ?></p>
                         </td>
                     </tr>
                 </table>
@@ -360,7 +384,7 @@ class Loadout_Form
                 <p><button type="button" class="button" id="add-tier"><?php esc_html_e('+ Add Tier', 'ffl-funnels-addons'); ?></button></p>
 
                 <h2 class="title"><?php esc_html_e('Cross-Sells', 'ffl-funnels-addons'); ?></h2>
-                <p class="description"><?php esc_html_e('Category tiles shown at the bottom of the widget (e.g., "Tactical Optics", "Slings & Grips").', 'ffl-funnels-addons'); ?></p>
+                <p class="description"><?php esc_html_e('Tiles shown at the bottom of the full Loadout widget and the [loadout] shortcode (e.g., "Tactical Optics", "Slings & Grips"). Link each one to a product category (slug or ID), a full URL, or another Loadout (slug or ID; the tile opens that Loadout\'s hero product).', 'ffl-funnels-addons'); ?></p>
                 <div id="loadout-cross-sells" class="loadout-repeater">
                     <?php foreach ($cross_sells as $cs_index => $cs): ?>
                         <?php self::render_cross_sell_row($cs_index, $cs); ?>
@@ -439,28 +463,28 @@ class Loadout_Form
                     <th><?php esc_html_e('Accessory Discount %', 'ffl-funnels-addons'); ?></th>
                     <td>
                         <input type="number" name="tiers[<?php echo esc_attr($index); ?>][accessory_discount]" value="<?php echo esc_attr($accessory_discount); ?>" min="0" max="100" step="0.01" class="small-text">
-                        <p class="description"><?php esc_html_e('Discount applied to each item the customer adds individually from this tier (via the standalone widget). Stacks on top of any per-item discount below. Use 0 for no tier-wide discount.', 'ffl-funnels-addons'); ?></p>
+                        <p class="description"><?php esc_html_e('Discount on every item of this tier, added to the item\'s own Discount % below. Applies when the item is added on its own and inside an Add cart (whole tier) line. Use 0 for no tier-wide discount.', 'ffl-funnels-addons'); ?></p>
                     </td>
                 </tr>
                 <tr>
                     <th><?php esc_html_e('Set Discount %', 'ffl-funnels-addons'); ?></th>
                     <td>
                         <input type="number" name="tiers[<?php echo esc_attr($index); ?>][set_discount_pct]" value="<?php echo esc_attr($set_discount); ?>" min="0" max="100" step="0.01" class="small-text">
-                        <p class="description"><?php esc_html_e('Bonus discount applied only when the customer adds the entire tier together (via a product page Loadout tab). Reverts automatically if any item is removed.', 'ffl-funnels-addons'); ?></p>
+                        <p class="description"><?php esc_html_e('Extra discount on the tier\'s items when the customer adds the whole tier at once with Add cart (one cart line). Not given to items added one at a time, and only when every item of the tier is available.', 'ffl-funnels-addons'); ?></p>
                     </td>
                 </tr>
                 <tr>
                     <th><?php esc_html_e('Perk Threshold', 'ffl-funnels-addons'); ?></th>
                     <td>
                         <input type="number" name="tiers[<?php echo esc_attr($index); ?>][threshold_items]" value="<?php echo esc_attr($threshold); ?>" min="0" class="small-text">
-                        <p class="description"><?php esc_html_e('Minimum number of items from this tier the customer must add before the perks list shows as "unlocked" and the bonus product (below) auto-adds free. Set to 0 to disable the gamification — perks/bonus then always apply.', 'ffl-funnels-addons'); ?></p>
+                        <p class="description"><?php esc_html_e('Number of items from this tier the cart must hold before the bonus product (below) is added free and the progress bar shows "Perks unlocked!". Items inside an Add cart line count too. 0 = no bonus.', 'ffl-funnels-addons'); ?></p>
                     </td>
                 </tr>
                 <tr>
                     <th><?php esc_html_e('Perks', 'ffl-funnels-addons'); ?></th>
                     <td>
                         <textarea name="tiers[<?php echo esc_attr($index); ?>][perks]" rows="4" class="large-text" placeholder="<?php esc_attr_e('One perk per line, e.g.:&#10;10% OFF accessories&#10;Priority Order Processing&#10;Free Upgraded Shipping', 'ffl-funnels-addons'); ?>"><?php echo esc_textarea($perks); ?></textarea>
-                        <p class="description"><?php esc_html_e('Cosmetic benefits displayed when the threshold is met. One per line. These are display-only — they don\'t change cart pricing on their own.', 'ffl-funnels-addons'); ?></p>
+                        <p class="description"><?php esc_html_e('Benefits listed in the tier panel. One per line. Display only — they don\'t change prices.', 'ffl-funnels-addons'); ?></p>
                     </td>
                 </tr>
                 <tr>
@@ -475,14 +499,14 @@ class Loadout_Form
                             <?php endif; ?>
                         </div>
                         <div class="loadout-search-results"></div>
-                        <p class="description"><?php esc_html_e('Free gift auto-added to the cart at $0 when the Perk Threshold is hit. Auto-removed if items drop below threshold. Leave empty if you don\'t want a free gift.', 'ffl-funnels-addons'); ?></p>
+                        <p class="description"><?php esc_html_e('Free gift (one unit at $0) added to the cart when the Perk Threshold is reached, and removed if the cart drops below it. Needs a Perk Threshold above 0. Leave empty if you don\'t want a free gift.', 'ffl-funnels-addons'); ?></p>
                     </td>
                 </tr>
                 <tr>
                     <th><?php esc_html_e('Bonus Label', 'ffl-funnels-addons'); ?></th>
                     <td>
                         <input type="text" name="tiers[<?php echo esc_attr($index); ?>][bonus_label]" value="<?php echo esc_attr($bonus_label); ?>" class="regular-text" placeholder="<?php esc_attr_e('FREE Kinetic Armory', 'ffl-funnels-addons'); ?>">
-                        <p class="description"><?php esc_html_e('Custom display text for the bonus item (defaults to the product\'s own name if empty).', 'ffl-funnels-addons'); ?></p>
+                        <p class="description"><?php esc_html_e('Heading of the bonus block in the tier panel. Defaults to "FREE Bonus Item" when empty.', 'ffl-funnels-addons'); ?></p>
                     </td>
                 </tr>
                 <tr>
@@ -546,10 +570,8 @@ class Loadout_Form
                 <label><?php esc_html_e('Discount %:', 'ffl-funnels-addons'); ?>
                     <input type="number" name="tiers[<?php echo esc_attr($tier_index); ?>][items][<?php echo esc_attr($item_index); ?>][discount_pct]" value="<?php echo esc_attr($discount_pct); ?>" min="0" max="100" step="0.01" class="small-text">
                 </label>
-                <label>
-                    <input type="checkbox" name="tiers[<?php echo esc_attr($tier_index); ?>][items][<?php echo esc_attr($item_index); ?>][is_required]" value="1" <?php checked($is_required, 1); ?>>
-                    <?php esc_html_e('Pre-checked', 'ffl-funnels-addons'); ?>
-                </label>
+                <?php // "Pre-checked" is not used by the storefront; the stored value is kept as-is. ?>
+                <input type="hidden" name="tiers[<?php echo esc_attr($tier_index); ?>][items][<?php echo esc_attr($item_index); ?>][is_required]" value="<?php echo esc_attr((int) $is_required); ?>">
                 <button type="button" class="button-link loadout-item-remove" style="color:#c00;"><?php esc_html_e('Remove', 'ffl-funnels-addons'); ?></button>
             </div>
         </div>
@@ -587,7 +609,7 @@ class Loadout_Form
                     <option value="url" <?php selected($link_type, 'url'); ?>><?php esc_html_e('URL', 'ffl-funnels-addons'); ?></option>
                     <option value="loadout" <?php selected($link_type, 'loadout'); ?>><?php esc_html_e('Loadout', 'ffl-funnels-addons'); ?></option>
                 </select>
-                <input type="text" name="cross_sells[<?php echo esc_attr($index); ?>][link_value]" value="<?php echo esc_attr($link_value); ?>" placeholder="<?php esc_attr_e('Slug, URL, or ID', 'ffl-funnels-addons'); ?>" class="regular-text">
+                <input type="text" name="cross_sells[<?php echo esc_attr($index); ?>][link_value]" value="<?php echo esc_attr($link_value); ?>" placeholder="<?php esc_attr_e('Slug or ID, or a full URL', 'ffl-funnels-addons'); ?>" class="regular-text">
                 <button type="button" class="button-link loadout-cs-remove" style="color:#c00;"><?php esc_html_e('Remove', 'ffl-funnels-addons'); ?></button>
             </div>
         </div>

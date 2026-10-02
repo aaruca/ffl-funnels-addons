@@ -21,6 +21,32 @@
     return fallback;
   }
 
+  /**
+   * <option> list of WooCommerce attribute taxonomies for JS-built rows.
+   * Uses the list localized from PHP, so it works even when the page has
+   * no server-rendered row to copy from (e.g. a new bundle).
+   *
+   * @param {boolean} withPlaceholder Prepend an empty "Attribute…" option.
+   * @returns {string}
+   */
+  function attrTaxonomyOptions(withPlaceholder) {
+    var html = withPlaceholder ? '<option value="">Attribute\u2026</option>' : '';
+    var map = (cfg && cfg.attributeTaxonomies) || null;
+    if (map && typeof map === 'object') {
+      Object.keys(map).forEach(function (tax) {
+        html += '<option value="' + escapeHtml(tax) + '">' + escapeHtml(map[tax]) + '</option>';
+      });
+      return html;
+    }
+    var existing = document.querySelector('.wb-action-attr-taxonomy, .wb-condition-attr-taxonomy');
+    if (existing) {
+      Array.prototype.slice.call(existing.options).forEach(function (opt) {
+        if (opt.value) html += '<option value="' + escapeHtml(opt.value) + '">' + escapeHtml(opt.textContent) + '</option>';
+      });
+    }
+    return html;
+  }
+
   /* ── Rule Toggle (inline) ─────────────────────────────────────────── */
 
   function initRuleToggles() {
@@ -94,13 +120,20 @@
       html += '<div class="wb-test-section"><h4>Product</h4>';
       html += '<p><strong>#' + d.product_id + '</strong> — ' + esc(d.product_name) + '</p></div>';
 
-      // Matched rule.
+      // Matched rule: its condition groups and what each action returned.
       html += '<div class="wb-test-section"><h4>Matched Rule</h4>';
       if (d.matched_rule) {
         var r = d.matched_rule;
-        html += '<p><strong>' + esc(r.name) + '</strong> (priority ' + r.priority + ')</p>';
-        html += '<p>Condition: <code>' + esc(r.condition_attribute) + ' ' + esc(r.condition_operator) + ' ' + esc(r.condition_value) + '</code></p>';
-        html += '<p>Action: ' + esc(r.action_source) + ' → <code>' + esc(r.action_value || '—') + '</code> (order: ' + esc(r.action_orderby) + ', limit: ' + r.action_limit + ')</p>';
+        html += '<p><strong>' + esc(r.name) + '</strong> (#' + esc(String(r.id)) + ', priority ' + esc(String(r.priority)) + ')</p>';
+        (r.conditions || []).forEach(function (c, i) {
+          html += '<p>' + (i ? 'OR ' : '') + 'Condition: <code>' + esc(c) + '</code></p>';
+        });
+        (d.actions || []).forEach(function (a) {
+          var count = (a.results || []).length;
+          html += '<p>Action (group ' + esc(String(a.group || 1)) + '): ' + esc(a.source) +
+            (a.value ? ' → <code>' + esc(a.value) + '</code>' : '') +
+            ' (order: ' + esc(a.orderby || 'rand') + ', limit: ' + esc(String(a.limit)) + ') — ' + count + ' found</p>';
+        });
       } else {
         html += '<p class="wb-text--muted">No rule matched.</p>';
       }
@@ -132,7 +165,8 @@
     }
 
     function esc(s) {
-      if (!s) return '';
+      if (s === null || s === undefined || s === '') return '';
+      s = String(s);
       var d = document.createElement('div');
       d.textContent = s;
       return d.innerHTML;
@@ -264,14 +298,7 @@
       row.dataset.index = aIdx;
       var prefix = 'action_groups[' + gIdx + '][actions][' + aIdx + ']';
 
-      // Build attribute taxonomy options from existing select.
-      var existingAttrSelect = document.querySelector('.wb-action-attr-taxonomy');
-      var attrOptions = '<option value="">Attribute\u2026</option>';
-      if (existingAttrSelect) {
-        Array.prototype.slice.call(existingAttrSelect.options).forEach(function (opt) {
-          if (opt.value) attrOptions += '<option value="' + opt.value + '">' + opt.textContent + '</option>';
-        });
-      }
+      var attrOptions = attrTaxonomyOptions(true);
 
       row.innerHTML =
         // Source Type
@@ -288,7 +315,7 @@
         '<option value="apply_coupon">Apply Coupon</option>' +
         '</select>' +
 
-        // Attribute Taxonomy (for attribute_value source)
+        // Attribute Taxonomy (for attribute_value and Same Attribute sources)
         '<select class="wb-select wb-select--inline wb-action-attr-taxonomy" style="display:none;">' + attrOptions + '</select>' +
 
         // Value Autocomplete
@@ -455,7 +482,7 @@
           childLabel.style.display = source.value === 'category' ? '' : 'none';
         }
         if (attrTaxSelect) {
-          attrTaxSelect.style.display = source.value === 'attribute_value' ? '' : 'none';
+          attrTaxSelect.style.display = (source.value === 'attribute_value' || source.value === 'attribute') ? '' : 'none';
         }
         if (orderbySelect) {
           orderbySelect.style.display = source.value === 'apply_coupon' ? 'none' : '';
@@ -564,17 +591,30 @@
         }
       });
 
-      // When attribute taxonomy changes, reset value and search.
+      // When attribute taxonomy changes, reset value and search. For "Same
+      // Attribute" the stored value is the taxonomy itself.
       if (attrTaxSelect) {
         attrTaxSelect.addEventListener('change', function () {
           display.value = '';
-          hidden.value = '';
           dropdown.innerHTML = '';
+          hidden.value = sourceSelect.value === 'attribute' ? attrTaxSelect.value : '';
+          savedActionVal = hidden.value;
+          savedActionLabel = '';
           if (sourceSelect.value === 'attribute_value' && attrTaxSelect.value) {
             searchTerms('');
           }
         });
       }
+
+      // A value picked for one source (a category slug, say) means nothing for
+      // another, so switching the source starts from an empty value.
+      sourceSelect.addEventListener('change', function () {
+        display.value = '';
+        dropdown.innerHTML = '';
+        hidden.value = (sourceSelect.value === 'attribute' && attrTaxSelect) ? attrTaxSelect.value : '';
+        savedActionVal = hidden.value;
+        savedActionLabel = '';
+      });
     }
 
     /* ── Product Search (for specific_products action) ──────────────── */
@@ -1060,14 +1100,7 @@
       row.className = 'wb-condition-row wb-condition-row--entire-store';
       row.dataset.condition = cIdx;
 
-      // Build attribute taxonomy options from existing select.
-      var existingAttrTax = container.querySelector('.wb-condition-attr-taxonomy');
-      var attrTaxOptions = '<option value="">Attribute\u2026</option>';
-      if (existingAttrTax) {
-        Array.prototype.slice.call(existingAttrTax.options).forEach(function (opt) {
-          if (opt.value) attrTaxOptions += '<option value="' + opt.value + '">' + opt.textContent + '</option>';
-        });
-      }
+      var attrTaxOptions = attrTaxonomyOptions(true);
 
       row.innerHTML =
         // Condition Type (default: entire store)
@@ -1542,7 +1575,7 @@
 
     form.addEventListener('submit', function (e) {
       var errors = [];
-      var noValueSources = ['attribute', 'copurchase', 'trending', 'recently_viewed', 'similar', 'specific_products', 'apply_coupon'];
+      var noValueSources = ['copurchase', 'trending', 'recently_viewed', 'similar', 'specific_products', 'apply_coupon'];
 
       // Validate conditions have values.
       form.querySelectorAll('.wb-condition-row').forEach(function (row) {
@@ -1562,7 +1595,9 @@
         if (noValueSources.indexOf(src) === -1) {
           var hidden = row.querySelector('.wb-action-value-hidden');
           if (hidden && !hidden.value) {
-            errors.push('An action (' + src + ') is missing a value.');
+            errors.push(src === 'attribute'
+              ? 'A "Same Attribute" action has no attribute selected.'
+              : 'An action (' + src + ') is missing a value.');
           }
         }
 
@@ -1859,20 +1894,16 @@
       var condIdx = group.querySelectorAll('.wb-condition-row').length;
       var prefix = 'bundle_conditions[' + groupIdx + '][' + condIdx + ']';
 
-      var attrTaxOptions = '';
-      var attrSelect = document.querySelector('.wb-condition-attr-taxonomy');
-      if (attrSelect) {
-        attrTaxOptions = attrSelect.innerHTML;
-      }
+      var attrTaxOptions = attrTaxonomyOptions(true);
 
       var row = document.createElement('div');
       row.className = 'wb-condition-row wb-condition-row--entire-store';
       row.setAttribute('data-condition', condIdx);
 
-      var roleOptions = (window.wooboosterAdminConfig && window.wooboosterAdminConfig.userRoles) || {};
-      var roleOptionsHtml = '<option value="guest">Guest (logged out)</option>';
+      var roleOptions = (cfg && cfg.userRoles) || {};
+      var roleOptionsHtml = '<option value="guest">' + escapeHtml(t('guestRole', 'Guest (logged out)')) + '</option>';
       Object.keys(roleOptions).forEach(function (slug) {
-        roleOptionsHtml += '<option value="' + slug + '">' + roleOptions[slug] + '</option>';
+        roleOptionsHtml += '<option value="' + escapeHtml(slug) + '">' + escapeHtml(roleOptions[slug]) + '</option>';
       });
 
       row.innerHTML =
@@ -1901,7 +1932,7 @@
           '<div class="wb-autocomplete__dropdown"></div>' +
           '<div class="wb-condition-product-chips wb-chips" style="display:none;"></div>' +
         '</div>' +
-        '<span class="wb-condition-store-all-hint">Applies to every product. Use exclusions if this bundle should not appear everywhere.</span>' +
+        '<span class="wb-condition-store-all-hint">Applies to every product. Add an AND condition (for example Category is not \u2026) if this bundle should not appear everywhere.</span>' +
         '<label class="wb-checkbox wb-condition-children-label" style="display:none;">' +
           '<input type="checkbox" name="' + prefix + '[include_children]" value="1"> + Children' +
         '</label>' +
@@ -2175,9 +2206,7 @@
       var actionIdx = group.querySelectorAll('.wb-action-row').length;
       var prefix = 'bundle_action_groups[' + groupIdx + '][actions][' + actionIdx + ']';
 
-      var attrTaxOptions = '';
-      var existing = document.querySelector('.wb-action-attr-taxonomy');
-      if (existing) attrTaxOptions = existing.innerHTML;
+      var attrTaxOptions = attrTaxonomyOptions(true);
 
       if (actionIdx > 0) {
         var andDivider = document.createElement('div');
@@ -2295,7 +2324,7 @@
     function update() {
       var val = sourceSelect.value;
       var needsValue = ['category', 'tag', 'attribute_value'].indexOf(val) >= 0;
-      var needsAttr = val === 'attribute_value';
+      var needsAttr = val === 'attribute_value' || val === 'attribute';
       var needsChildren = val === 'category';
       var isSpecific = val === 'specific_products';
 
@@ -2380,6 +2409,30 @@
         dropdown.style.display = 'none';
       }
     });
+
+    // "Same Attribute" stores the attribute taxonomy itself; any source change
+    // starts from an empty value so a stale slug is never saved.
+    function syncSameAttribute() {
+      if (sourceSelect && sourceSelect.value === 'attribute') {
+        hiddenInput.value = attrTaxSelect ? attrTaxSelect.value : '';
+      }
+    }
+    if (sourceSelect) {
+      sourceSelect.addEventListener('change', function () {
+        displayInput.value = '';
+        hiddenInput.value = '';
+        dropdown.innerHTML = '';
+        syncSameAttribute();
+      });
+    }
+    if (attrTaxSelect) {
+      attrTaxSelect.addEventListener('change', function () {
+        displayInput.value = '';
+        hiddenInput.value = '';
+        dropdown.innerHTML = '';
+        syncSameAttribute();
+      });
+    }
   }
 
   /* ── Product Search for Chips (shared for conditions & actions) ───── */

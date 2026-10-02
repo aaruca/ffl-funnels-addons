@@ -21,6 +21,17 @@ class WooBooster_Coupon
     const SESSION_KEY = 'woobooster_auto_coupons';
 
     /**
+     * Coupons being auto-applied in this request, code (lowercase) => message.
+     *
+     * WC_Cart::apply_coupon() fires `woocommerce_applied_coupon` before
+     * maybe_apply_coupons() has saved the coupon to the session, so the
+     * notice handler reads this list instead.
+     *
+     * @var array<string, string>
+     */
+    private $applying = array();
+
+    /**
      * Register WooCommerce hooks.
      */
     public function init()
@@ -86,8 +97,15 @@ class WooBooster_Coupon
             }
 
             if (!$cart->has_discount($code)) {
-                $cart->apply_coupon($code);
-                $auto_coupons[$coupon_id] = array('code' => $code, 'message' => $message);
+                $this->applying[strtolower($code)] = (string) $message;
+                $applied = $cart->apply_coupon($code);
+                unset($this->applying[strtolower($code)]);
+
+                // Only track coupons WooCommerce actually accepted, so a
+                // refused one is not "removed" later as if we had added it.
+                if ($applied) {
+                    $auto_coupons[$coupon_id] = array('code' => $code, 'message' => $message);
+                }
             }
         }
 
@@ -290,7 +308,7 @@ class WooBooster_Coupon
                 }
                 $ex_cat_ids = array();
                 if (!empty($cond->exclude_categories)) {
-                    $slugs = array_filter(explode(',', $cond->exclude_categories));
+                    $slugs = array_filter(array_map('trim', explode(',', $cond->exclude_categories)));
                     foreach ($slugs as $slug) {
                         $term = get_term_by('slug', $slug, 'product_cat');
                         if ($term && !is_wp_error($term)) {
@@ -308,7 +326,7 @@ class WooBooster_Coupon
 
                 foreach ($cart_items as $item) {
                     // Check exclusions — skip excluded items.
-                    if (in_array($item['product_id'], $ex_product_ids, true)) {
+                    if (in_array((int) $item['product_id'], $ex_product_ids, true)) {
                         continue;
                     }
                     if (!empty($ex_cat_ids) && array_intersect($item['cat_ids'], $ex_cat_ids)) {
@@ -324,7 +342,10 @@ class WooBooster_Coupon
                     // Check if this item matches the condition.
                     $item_matches = false;
 
-                    if ('specific_product' === $attr) {
+                    if ('__store_all' === sanitize_key($attr)) {
+                        // "Entire store": every (non-excluded) cart item counts.
+                        $item_matches = true;
+                    } elseif ('specific_product' === $attr) {
                         $product_ids = array_filter(array_map('absint', explode(',', $value)));
                         foreach ($product_ids as $pid) {
                             if (in_array('specific_product:' . $pid, $item['keys'], true)) {
@@ -429,6 +450,14 @@ class WooBooster_Coupon
         $auto_coupons = $session->get(self::SESSION_KEY, array());
         $is_auto = false;
         $custom_message = '';
+
+        // Being applied right now by maybe_apply_coupons()?
+        $code_key = strtolower((string) $coupon_code);
+        if (array_key_exists($code_key, $this->applying)) {
+            $is_auto = true;
+            $custom_message = $this->applying[$code_key];
+            $auto_coupons = array();
+        }
 
         // Check if this coupon was auto-applied by WooBooster.
         foreach ($auto_coupons as $id => $data) {

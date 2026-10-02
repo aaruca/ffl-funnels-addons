@@ -63,8 +63,56 @@
     // inheriting Primary). A half-typed value is skipped until it is valid.
     // Chrome (sidebar, top bar, submenu, buttons, borders) previews here;
     // dashboard-only colours preview on the dashboard page.
+    //
+    // The theme stylesheet that maps the variables onto wp-admin only loads once
+    // Styles are saved. On a site that is not themed yet, the preview stays
+    // empty (Save would keep the stock look) until a first colour or radius is
+    // entered, then loads that stylesheet itself so the edits become visible.
     var previewEl = null;
+    var themeActive = root.getAttribute('data-ffla-wl-theme-active') === '1';
+    var themeCssUrl = root.getAttribute('data-ffla-wl-theme-css') || '';
+    var radiusInput = root.querySelector('input[name="ffla_wl[styles][dashRadius]"]');
+    var THEME_LINK_ID = 'ffla-wl-theme-css'; // WordPress's id for the enqueued 'ffla-wl-theme' handle.
+
+    function hasStyleValue() {
+        if (radiusInput && radiusInput.value.trim() !== '') {
+            return true;
+        }
+        return Array.prototype.some.call(root.querySelectorAll('[data-ffla-wl-color-text]'), function (input) {
+            return HEX.test(input.value.trim());
+        });
+    }
+
+    function setPreviewStylesheet(enabled) {
+        var link = document.getElementById(THEME_LINK_ID);
+        if (!link && enabled && themeCssUrl) {
+            link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.id = THEME_LINK_ID;
+            link.href = themeCssUrl;
+            link.setAttribute('data-ffla-wl-preview', '');
+            document.head.appendChild(link);
+        }
+        // Only toggle a stylesheet the preview added itself.
+        if (link && link.hasAttribute('data-ffla-wl-preview')) {
+            link.disabled = !enabled;
+        }
+    }
+
     function renderPreview() {
+        if (!previewEl) {
+            previewEl = document.createElement('style');
+            previewEl.id = 'ffla-wl-live-preview';
+            document.head.appendChild(previewEl);
+        }
+
+        if (!themeActive && !hasStyleValue()) {
+            previewEl.textContent = '';
+            setPreviewStylesheet(false);
+            return;
+        }
+        setPreviewStylesheet(true);
+
         var modes = { light: {}, dark: {} };
         root.querySelectorAll('[data-ffla-wl-color-text]').forEach(function (input) {
             var m = input.name.match(NAME_RE);
@@ -97,12 +145,11 @@
             css += 'body.wp-admin.wp-core-ui{--ffla-wl-contentBg:' + modes.light.dashBg + ';}';
         }
 
-        if (!previewEl) {
-            previewEl = document.createElement('style');
-            previewEl.id = 'ffla-wl-live-preview';
-            document.head.appendChild(previewEl);
-        }
         previewEl.textContent = css;
+    }
+
+    if (radiusInput) {
+        radiusInput.addEventListener('input', renderPreview);
     }
 
     root.querySelectorAll('[data-ffla-wl-color]').forEach(function (field) {

@@ -24,9 +24,6 @@ class WSS_Admin
         add_action('wp_ajax_wss_clear_log', [$this, 'ajax_clear_log']);
         add_action('wp_ajax_wss_disconnect', [$this, 'ajax_disconnect']);
         add_action('wp_ajax_wss_search_products', [$this, 'ajax_search_products']);
-        add_action('wp_ajax_wss_resolve_product_names', [$this, 'ajax_resolve_product_names']);
-        add_action('wp_ajax_wss_save_sync_products', [$this, 'ajax_save_sync_products']);
-        add_action('wp_ajax_wss_link_by_taxonomy', [$this, 'ajax_link_by_taxonomy']);
         add_action('wp_ajax_wss_sync_groups', [$this, 'ajax_sync_groups']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_wss_dashboard'], 100);
     }
@@ -66,7 +63,11 @@ class WSS_Admin
                 'testingEndpoint'         => __('Testing endpoint…', 'ffl-funnels-addons'),
                 'requestFailed'           => __('Request failed.', 'ffl-funnels-addons'),
                 'apiNetworkError'         => __('Network error while testing API.', 'ffl-funnels-addons'),
-                'confirmRemoveGroup'      => __('Remove this sheet tab group? Products may remain in other tabs.', 'ffl-funnels-addons'),
+                'confirmRemoveGroup'      => __('Remove this sheet tab group? Its products stop syncing to this tab unless another group includes them.', 'ffl-funnels-addons'),
+                /* translators: %s: tab name. */
+                'confirmDeleteTab'        => __('Also delete the tab "%s" from the Google Sheet? Click Cancel to keep the tab and its rows.', 'ffl-funnels-addons'),
+                'created'                 => __('created', 'ffl-funnels-addons'),
+                'skipped'                 => __('skipped', 'ffl-funnels-addons'),
                 'confirmLinkAll'          => __('Link every published product to this tab only? (Other rules on this tab will be cleared.)', 'ffl-funnels-addons'),
                 'confirmUnlinkAll'        => __('Clear all rules for this tab (products, categories, tags)?', 'ffl-funnels-addons'),
                 /* translators: %1$s: taxonomy, %2$d: term_id, %3$s: slug */
@@ -100,6 +101,23 @@ class WSS_Admin
         $sa_error_msg = isset($_GET['wss_sa_error']) ? sanitize_text_field(wp_unslash($_GET['wss_sa_error'])) : '';
         if ($sa_error_msg !== '') {
             FFLA_Admin::render_notice('danger', $sa_error_msg);
+        }
+
+        // Result of the "Connect with Google" round trip.
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $oauth_result = isset($_GET['wss_oauth_result']) ? sanitize_key(wp_unslash($_GET['wss_oauth_result'])) : '';
+        if ($oauth_result === 'success') {
+            FFLA_Admin::render_notice('success', __('Connected to Google.', 'ffl-funnels-addons'));
+        } elseif ($oauth_result === 'error') {
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+            $oauth_error = isset($_GET['wss_oauth_error']) ? sanitize_text_field(wp_unslash($_GET['wss_oauth_error'])) : '';
+            FFLA_Admin::render_notice(
+                'danger',
+                $oauth_error !== ''
+                    /* translators: %s: error message. */
+                    ? sprintf(__('Could not connect to Google: %s', 'ffl-funnels-addons'), $oauth_error)
+                    : __('Could not connect to Google. Please try again.', 'ffl-funnels-addons')
+            );
         }
         ?>
 
@@ -291,7 +309,7 @@ class WSS_Admin
                                 <input type="checkbox" id="wss_realtime_push" name="wss_realtime_push" value="1" <?php checked($realtime_push); ?>>
                                 <?php esc_html_e('Immediately push stock changes from orders, refunds, and cancellations to the Sheet (recommended).', 'ffl-funnels-addons'); ?>
                             </label>
-                            <p class="wb-field__desc"><?php esc_html_e('Keeps the Sheet in step with sales as they happen instead of waiting for the nightly sync. Manual Sheet edits still win at the next sync.', 'ffl-funnels-addons'); ?></p>
+                            <p class="wb-field__desc"><?php esc_html_e('Keeps the Sheet in step with sales as they happen instead of waiting for the nightly sync. Stock you change in the Sheet is still applied at the next sync, unless WooCommerce stock also changed since the last sync; then WooCommerce wins.', 'ffl-funnels-addons'); ?></p>
                         </div>
                     </div>
 
@@ -608,8 +626,10 @@ class WSS_Admin
                                 <?php
                                 $s = $last_sync['sheet_to_woo'];
                                 printf(
-                                    esc_html__('%1$d updated, %2$d skipped, %3$d errors', 'ffl-funnels-addons'),
+                                    /* translators: 1: updated, 2: created, 3: skipped, 4: errors. */
+                                    esc_html__('%1$d updated, %2$d created, %3$d skipped, %4$d errors', 'ffl-funnels-addons'),
                                     (int) ($s['updated'] ?? 0),
+                                    (int) ($s['created'] ?? 0),
                                     (int) ($s['skipped'] ?? 0),
                                     (int) ($s['errors'] ?? 0)
                                 );
@@ -625,15 +645,31 @@ class WSS_Admin
                                             <strong><?php echo esc_html((string) ($gr['tab_name'] ?? '')); ?></strong>
                                             <?php if (!empty($gr['error'])): ?>
                                                 — <span class="wss-status--error"><?php echo esc_html((string) $gr['error']); ?></span>
+                                            <?php elseif (!empty($gr['skipped'])): ?>
+                                                — <?php echo esc_html((string) ($gr['reason'] ?? __('Skipped.', 'ffl-funnels-addons'))); ?>
                                             <?php else: ?>
                                                 <?php
                                                 $w = $gr['woo_to_sheet'] ?? [];
                                                 $s = $gr['sheet_to_woo'] ?? [];
                                                 ?>
-                                                — <?php esc_html_e('Woo→Sheet', 'ffl-funnels-addons'); ?>:
-                                                <?php echo (int) ($w['updated'] ?? 0); ?>/<?php echo (int) ($w['appended'] ?? 0); ?>/<?php echo (int) ($w['skipped'] ?? 0); ?>
-                                                · <?php esc_html_e('Sheet→Woo', 'ffl-funnels-addons'); ?>:
-                                                <?php echo (int) ($s['updated'] ?? 0); ?>/<?php echo (int) ($s['skipped'] ?? 0); ?>
+                                                — <?php
+                                                printf(
+                                                    /* translators: 1: updated, 2: appended, 3: skipped. */
+                                                    esc_html__('Woo→Sheet: %1$d updated, %2$d appended, %3$d skipped', 'ffl-funnels-addons'),
+                                                    (int) ($w['updated'] ?? 0),
+                                                    (int) ($w['appended'] ?? 0),
+                                                    (int) ($w['skipped'] ?? 0)
+                                                );
+                                                ?>
+                                                · <?php
+                                                printf(
+                                                    /* translators: 1: updated, 2: created, 3: skipped. */
+                                                    esc_html__('Sheet→Woo: %1$d updated, %2$d created, %3$d skipped', 'ffl-funnels-addons'),
+                                                    (int) ($s['updated'] ?? 0),
+                                                    (int) ($s['created'] ?? 0),
+                                                    (int) ($s['skipped'] ?? 0)
+                                                );
+                                                ?>
                                             <?php endif; ?>
                                         </li>
                                     <?php endforeach; ?>
@@ -796,52 +832,6 @@ class WSS_Admin
         </div>
 
         <?php
-    }
-
-    /**
-     * Render the synced products table.
-     */
-    private function render_synced_products_table(): void
-    {
-        $product_ids = get_posts([
-            'post_type'      => 'product',
-            'post_status'    => 'publish',
-            'meta_key'       => '_wss_sync_enabled',
-            'meta_value'     => '1',
-            'fields'         => 'ids',
-            'posts_per_page' => -1,
-        ]);
-
-        if (empty($product_ids)) {
-            echo '<p>' . esc_html__('No products are marked for sync. Enable sync from the product edit screen.', 'ffl-funnels-addons') . '</p>';
-            return;
-        }
-
-        echo '<table class="wb-table">';
-        echo '<thead><tr>';
-        echo '<th>' . esc_html__('Product', 'ffl-funnels-addons') . '</th>';
-        echo '<th>' . esc_html__('Variations', 'ffl-funnels-addons') . '</th>';
-        echo '<th>' . esc_html__('Last Synced', 'ffl-funnels-addons') . '</th>';
-        echo '</tr></thead>';
-        echo '<tbody>';
-
-        foreach ($product_ids as $pid) {
-            $product = wc_get_product($pid);
-            if (!$product) {
-                continue;
-            }
-
-            $variation_count = $product->is_type('variable') ? count($product->get_children()) : 1;
-            $last_synced     = get_post_meta($pid, '_wss_last_synced', true);
-
-            echo '<tr>';
-            echo '<td>' . esc_html($product->get_name()) . '</td>';
-            echo '<td>' . esc_html($variation_count) . '</td>';
-            echo '<td>' . ($last_synced ? esc_html(wp_date('Y-m-d H:i', strtotime($last_synced))) : '&mdash;') . '</td>';
-            echo '</tr>';
-        }
-
-        echo '</tbody></table>';
     }
 
     /**
@@ -1035,27 +1025,41 @@ class WSS_Admin
 
             WSS_Sync_Groups::save_groups($groups);
 
-            $delete_warning = '';
-            $settings       = get_option('wss_settings', []);
-            if (
-                $removed_tab !== ''
-                && !empty($settings['sheet_id'])
-                && class_exists('WSS_Auth')
-                && class_exists('WSS_Google_Sheets')
-            ) {
-                $provider = WSS_Auth::get_provider();
-                if ($provider->is_connected()) {
-                    $sheets = new WSS_Google_Sheets($provider);
-                    $deleted = $sheets->delete_tab_if_exists((string) $settings['sheet_id'], $removed_tab);
-                    if (is_wp_error($deleted)) {
-                        $delete_warning = $deleted->get_error_message();
+            // The Google tab is kept unless the admin explicitly asked to
+            // delete it, and never deleted while another group still uses it.
+            $delete_tab = !empty($_POST['delete_tab']);
+            $notice     = '';
+            $settings   = get_option('wss_settings', []);
+            if ($removed_tab !== '' && $delete_tab) {
+                if (WSS_Sync_Groups::tab_in_use($groups, $removed_tab)) {
+                    $notice = sprintf(
+                        /* translators: %s: tab name. */
+                        __('The tab "%s" was kept in the Google Sheet because another group still uses it.', 'ffl-funnels-addons'),
+                        $removed_tab
+                    );
+                } elseif (empty($settings['sheet_id']) || !class_exists('WSS_Auth') || !class_exists('WSS_Google_Sheets')) {
+                    $notice = __('The group was removed, but no Google Sheet is configured, so no tab was deleted.', 'ffl-funnels-addons');
+                } else {
+                    $provider = WSS_Auth::get_provider();
+                    if (!$provider->is_connected()) {
+                        $notice = __('The group was removed, but the site is not connected to Google, so the tab was not deleted.', 'ffl-funnels-addons');
+                    } else {
+                        $sheets  = new WSS_Google_Sheets($provider);
+                        $deleted = $sheets->delete_tab_if_exists((string) $settings['sheet_id'], $removed_tab);
+                        if (is_wp_error($deleted)) {
+                            $notice = sprintf(
+                                /* translators: %s: error message. */
+                                __('The group was removed, but the tab could not be deleted: %s', 'ffl-funnels-addons'),
+                                $deleted->get_error_message()
+                            );
+                        }
                     }
                 }
             }
 
             wp_send_json_success([
                 'groups'  => WSS_Sync_Groups::get_groups(),
-                'warning' => $delete_warning,
+                'warning' => $notice,
             ]);
         }
 
@@ -1270,125 +1274,6 @@ class WSS_Admin
         wp_send_json_success(['products' => $results]);
     }
 
-    /**
-     * AJAX: Resolve product names from IDs (for loading existing chips).
-     */
-    public function ajax_resolve_product_names(): void
-    {
-        check_ajax_referer('ffla_admin_nonce', 'nonce');
-
-        if (!current_user_can('manage_woocommerce')) {
-            wp_send_json_error(['message' => __('Permission denied.', 'ffl-funnels-addons')]);
-        }
-
-        $ids_raw = isset($_POST['ids']) ? sanitize_text_field(wp_unslash($_POST['ids'])) : '';
-        $ids     = array_filter(array_map('absint', explode(',', $ids_raw)));
-
-        $names = [];
-        foreach ($ids as $id) {
-            $product = wc_get_product($id);
-            $names[$id] = $product ? $product->get_name() : '#' . $id;
-        }
-
-        wp_send_json_success(['names' => $names]);
-    }
-
-    /**
-     * AJAX: Save synced product IDs (add/remove individual products).
-     */
-    public function ajax_save_sync_products(): void
-    {
-        check_ajax_referer('ffla_admin_nonce', 'nonce');
-
-        if (!current_user_can('manage_woocommerce')) {
-            wp_send_json_error(['message' => __('Permission denied.', 'ffl-funnels-addons')]);
-        }
-
-        $action_type = sanitize_key($_POST['sync_action'] ?? '');
-        $product_id  = absint($_POST['product_id'] ?? 0);
-
-        if ($action_type === 'add' && $product_id) {
-            update_post_meta($product_id, '_wss_sync_enabled', '1');
-            wp_send_json_success(['message' => __('Product linked.', 'ffl-funnels-addons')]);
-        } elseif ($action_type === 'remove' && $product_id) {
-            delete_post_meta($product_id, '_wss_sync_enabled');
-            wp_send_json_success(['message' => __('Product unlinked.', 'ffl-funnels-addons')]);
-        } elseif ($action_type === 'link_all') {
-            $all = get_posts(['post_type' => 'product', 'post_status' => 'publish', 'posts_per_page' => -1, 'fields' => 'ids']);
-            foreach ($all as $pid) {
-                update_post_meta($pid, '_wss_sync_enabled', '1');
-            }
-            wp_send_json_success(['message' => sprintf(__('%d products linked.', 'ffl-funnels-addons'), count($all)), 'count' => count($all)]);
-        } elseif ($action_type === 'unlink_all') {
-            $all = get_posts(['post_type' => 'product', 'post_status' => 'publish', 'posts_per_page' => -1, 'fields' => 'ids']);
-            foreach ($all as $pid) {
-                delete_post_meta($pid, '_wss_sync_enabled');
-            }
-            wp_send_json_success(['message' => __('All products unlinked.', 'ffl-funnels-addons'), 'count' => 0]);
-        } else {
-            wp_send_json_error(['message' => __('Invalid action.', 'ffl-funnels-addons')]);
-        }
-    }
-
-    /**
-     * AJAX: Link products by taxonomy (category or tag).
-     */
-    public function ajax_link_by_taxonomy(): void
-    {
-        check_ajax_referer('ffla_admin_nonce', 'nonce');
-
-        if (!current_user_can('manage_woocommerce')) {
-            wp_send_json_error(['message' => __('Permission denied.', 'ffl-funnels-addons')]);
-        }
-
-        $taxonomy = sanitize_key($_POST['taxonomy'] ?? '');
-        $term_id  = absint($_POST['term_id'] ?? 0);
-
-        if (!in_array($taxonomy, ['product_cat', 'product_tag'], true) || !$term_id) {
-            wp_send_json_error(['message' => __('Invalid taxonomy or term.', 'ffl-funnels-addons')]);
-        }
-
-        $product_ids = get_posts([
-            'post_type'      => 'product',
-            'post_status'    => 'publish',
-            'posts_per_page' => -1,
-            'fields'         => 'ids',
-            'tax_query'      => [[ // phpcs:ignore WordPress.DB.SlowDBQuery
-                'taxonomy' => $taxonomy,
-                'field'    => 'term_id',
-                'terms'    => $term_id,
-            ]],
-        ]);
-
-        foreach ($product_ids as $pid) {
-            update_post_meta($pid, '_wss_sync_enabled', '1');
-        }
-
-        // Return updated list of all synced IDs.
-        $all_synced = get_posts([
-            'post_type'      => 'product',
-            'post_status'    => 'publish',
-            'meta_key'       => '_wss_sync_enabled',
-            'meta_value'     => '1',
-            'fields'         => 'ids',
-            'posts_per_page' => -1,
-        ]);
-
-        // Resolve names for new IDs.
-        $names = [];
-        foreach ($product_ids as $pid) {
-            $product = wc_get_product($pid);
-            $names[$pid] = $product ? $product->get_name() : '#' . $pid;
-        }
-
-        wp_send_json_success([
-            'message'    => sprintf(__('%d products linked.', 'ffl-funnels-addons'), count($product_ids)),
-            'linked_ids' => array_map('strval', $product_ids),
-            'names'      => $names,
-            'total'      => count($all_synced),
-        ]);
-    }
-
     // ──────────────────────────────────────────────────
     // Documentation Page
     // ──────────────────────────────────────────────────
@@ -1492,9 +1377,9 @@ class WSS_Admin
                         array('strong' => array())
                     ); ?></li>
                     <li><?php echo wp_kses(
-                        /* translators: 1: Sheet Tab Name field label, 2: "first" emphasized */
-                        sprintf(__('Optional: the %1$s field updates the %2$s tab group; you can rename tabs and add more groups only on the Dashboard.', 'ffl-funnels-addons'), '<strong>' . esc_html__('Sheet Tab Name', 'ffl-funnels-addons') . '</strong>', '<em>' . esc_html__('first', 'ffl-funnels-addons') . '</em>'),
-                        array('strong' => array(), 'em' => array())
+                        /* translators: 1: Automatic Sync Time label, 2: Real-time stock push label */
+                        sprintf(__('Choose the %1$s and keep %2$s on. Tab names are set on the Dashboard, not here.', 'ffl-funnels-addons'), '<strong>' . esc_html__('Automatic Sync Time', 'ffl-funnels-addons') . '</strong>', '<strong>' . esc_html__('Real-time stock push', 'ffl-funnels-addons') . '</strong>'),
+                        array('strong' => array())
                     ); ?></li>
                     <li><?php echo wp_kses(
                         /* translators: %s: Save Settings label */
@@ -1512,7 +1397,7 @@ class WSS_Admin
                     ); ?></li>
                     <li><?php echo wp_kses(
                         /* translators: 1: Sheet tab group label, 2: Tab name label, 3: forbidden characters sample */
-                        sprintf(__('Each %1$s has a %2$s that must match a tab at the bottom of your Google Sheet (case-sensitive, no characters %3$s).', 'ffl-funnels-addons'), '<strong>' . esc_html__('Sheet tab group', 'ffl-funnels-addons') . '</strong>', '<strong>' . esc_html__('Tab name', 'ffl-funnels-addons') . '</strong>', '<code>[ ] * / \\ ? :</code>'),
+                        sprintf(__('Each %1$s has a %2$s: the tab at the bottom of your Google Sheet it syncs with (exact name, case-sensitive; the characters %3$s are removed). If the sheet has no tab with that name, the first sync creates it.', 'ffl-funnels-addons'), '<strong>' . esc_html__('Sheet tab group', 'ffl-funnels-addons') . '</strong>', '<strong>' . esc_html__('Tab name', 'ffl-funnels-addons') . '</strong>', '<code>[ ] * / \\ ? :</code>'),
                         array('strong' => array(), 'code' => array())
                     ); ?></li>
                     <li><?php echo wp_kses(
@@ -1522,7 +1407,7 @@ class WSS_Admin
                     ); ?></li>
                     <li><?php echo wp_kses(
                         /* translators: 1: Link all label, 2: Add by category/tag label, 3: Clear tab rules label */
-                        sprintf(__('Within a group, add products via %1$s, %2$s, or product search. %3$s removes every rule for that tab only.', 'ffl-funnels-addons'), '<strong>' . esc_html__('Link all', 'ffl-funnels-addons') . '</strong>', '<strong>' . esc_html__('Add by category/tag', 'ffl-funnels-addons') . '</strong>', '<strong>' . esc_html__('Clear tab rules', 'ffl-funnels-addons') . '</strong>'),
+                        sprintf(__('Within a group, add products via %1$s, %2$s, or product search. %3$s removes every rule for that tab only. Removing a group keeps its tab in the Google Sheet unless you confirm deleting it, and a tab another group still uses is never deleted.', 'ffl-funnels-addons'), '<strong>' . esc_html__('Link all', 'ffl-funnels-addons') . '</strong>', '<strong>' . esc_html__('Add by category/tag', 'ffl-funnels-addons') . '</strong>', '<strong>' . esc_html__('Clear tab rules', 'ffl-funnels-addons') . '</strong>'),
                         array('strong' => array())
                     ); ?></li>
                 </ol>
@@ -1564,7 +1449,7 @@ class WSS_Admin
                         <tr><td>A</td><td><code>product_id</code></td><td><?php esc_html_e('WooCommerce parent product ID', 'ffl-funnels-addons'); ?></td><td><?php esc_html_e('Only for new products', 'ffl-funnels-addons'); ?></td></tr>
                         <tr><td>B</td><td><code>variation_id</code></td><td><?php esc_html_e('Variation ID (same as product_id for simple products)', 'ffl-funnels-addons'); ?></td><td><?php esc_html_e('Only for new products', 'ffl-funnels-addons'); ?></td></tr>
                         <tr><td>C</td><td><code>product_name</code></td><td><?php esc_html_e('Product name', 'ffl-funnels-addons'); ?></td><td><?php esc_html_e('Required for new products', 'ffl-funnels-addons'); ?></td></tr>
-                        <tr><td>D</td><td><code>attributes</code></td><td><?php esc_html_e('Variation attributes (e.g. "Color: Red | Size: L")', 'ffl-funnels-addons'); ?></td><td><?php esc_html_e('Only for new variations', 'ffl-funnels-addons'); ?></td></tr>
+                        <tr><td>D</td><td><code>attributes</code></td><td><?php esc_html_e('Variation attributes (e.g. "Color: Red | Size: L")', 'ffl-funnels-addons'); ?></td><td><?php esc_html_e('For new variations; on an existing row it is applied only together with a change in E–J', 'ffl-funnels-addons'); ?></td></tr>
                         <tr><td>E</td><td><code>sku</code></td><td><?php esc_html_e('Product SKU', 'ffl-funnels-addons'); ?></td><td><?php esc_html_e('Yes', 'ffl-funnels-addons'); ?></td></tr>
                         <tr><td>F</td><td><code>regular_price</code></td><td><?php esc_html_e('Regular price', 'ffl-funnels-addons'); ?></td><td><?php esc_html_e('Yes', 'ffl-funnels-addons'); ?></td></tr>
                         <tr><td>G</td><td><code>sale_price</code></td><td><?php echo wp_kses(
@@ -1599,7 +1484,7 @@ class WSS_Admin
                 <p><?php esc_html_e('To update existing products from the spreadsheet:', 'ffl-funnels-addons'); ?></p>
                 <ol>
                     <li><?php esc_html_e('Find the row of the product/variation you want to edit.', 'ffl-funnels-addons'); ?></li>
-                    <li><?php esc_html_e('Change the value in any editable column (F–J).', 'ffl-funnels-addons'); ?></li>
+                    <li><?php esc_html_e('Change the value in any editable column (E–J).', 'ffl-funnels-addons'); ?></li>
                     <li><?php echo wp_kses(
                         /* translators: %s: Sync Now button label */
                         sprintf(__('Run %s (or wait for the automatic daily sync).', 'ffl-funnels-addons'), '<strong>' . esc_html__('Sync Now', 'ffl-funnels-addons') . '</strong>'),
@@ -1608,7 +1493,7 @@ class WSS_Admin
                 </ol>
                 <p><?php echo wp_kses(
                     /* translators: %s: "spreadsheet values win" emphasized */
-                    sprintf(__('The plugin compares your spreadsheet values against WooCommerce. If they differ, the %s and WooCommerce is updated.', 'ffl-funnels-addons'), '<strong>' . esc_html__('spreadsheet values win', 'ffl-funnels-addons') . '</strong>'),
+                    sprintf(__('The plugin compares your spreadsheet values against WooCommerce. For SKU, prices and manage stock, the %s and WooCommerce is updated. For stock quantity, a sheet edit is applied unless WooCommerce stock also changed since the last sync (for example an order); then WooCommerce wins and the sheet is corrected. For items that manage stock, the status follows the quantity, so change stock_qty rather than stock_status.', 'ffl-funnels-addons'), '<strong>' . esc_html__('spreadsheet values win', 'ffl-funnels-addons') . '</strong>'),
                     array('strong' => array())
                 ); ?></p>
 
@@ -1672,7 +1557,7 @@ class WSS_Admin
                 <div class="wss-note">
                     <?php echo wp_kses(
                         /* translators: 1: "Duplicate SKU protection:" strong label, 2: "not" emphasized */
-                        sprintf(__('%1$s If a product with the same SKU already exists in WooCommerce, a new product will %2$s be created. Instead, the existing product\'s IDs will be written back to the sheet and it will be linked for syncing.', 'ffl-funnels-addons'), '<strong>' . esc_html__('Duplicate SKU protection:', 'ffl-funnels-addons') . '</strong>', '<em>' . esc_html__('not', 'ffl-funnels-addons') . '</em>'),
+                        sprintf(__('%1$s If a product with the same SKU already exists in WooCommerce, a new product will %2$s be created. Instead, the existing product is updated with the row\'s name, prices and stock, its IDs are written back to the sheet, and it is linked for syncing. A simple product created or linked from a row is added to that tab\'s group.', 'ffl-funnels-addons'), '<strong>' . esc_html__('Duplicate SKU protection:', 'ffl-funnels-addons') . '</strong>', '<em>' . esc_html__('not', 'ffl-funnels-addons') . '</em>'),
                         array('strong' => array(), 'em' => array())
                     ); ?>
                 </div>
@@ -1700,7 +1585,7 @@ class WSS_Admin
                 </ol>
                 <p><?php echo wp_kses(
                     /* translators: %s: "sheet edits take priority" emphasized */
-                    sprintf(__('This means %s. If you change a price in both the sheet and WooCommerce between syncs, the sheet value wins.', 'ffl-funnels-addons'), '<strong>' . esc_html__('sheet edits take priority', 'ffl-funnels-addons') . '</strong>'),
+                    sprintf(__('This means %s for SKU, prices and manage stock: if you change a price in both the sheet and WooCommerce between syncs, the sheet value wins. Stock is different: when both sides changed, WooCommerce wins, so an order is never undone by an older number in the sheet.', 'ffl-funnels-addons'), '<strong>' . esc_html__('sheet edits take priority', 'ffl-funnels-addons') . '</strong>'),
                     array('strong' => array())
                 ); ?></p>
 
@@ -1717,7 +1602,7 @@ class WSS_Admin
                 ); ?></p>
                 <p><?php echo wp_kses(
                     /* translators: 1: direction label, 2: variation_id code, 3: "last tab wins" emphasized */
-                    sprintf(__('%1$s If the same %2$s appears in more than one tab with different values, %3$s when writing back to WooCommerce. Keep conflicting edits in one tab, or reorder groups so the authoritative tab is last.', 'ffl-funnels-addons'), '<strong>' . esc_html__('Sheet → WooCommerce:', 'ffl-funnels-addons') . '</strong>', '<code>variation_id</code>', '<strong>' . esc_html__('the last tab in the list wins', 'ffl-funnels-addons') . '</strong>'),
+                    sprintf(__('%1$s If the same %2$s appears in more than one tab with different prices or SKU, %3$s when writing back to WooCommerce. Keep conflicting edits in one tab, or reorder groups so the authoritative tab is last. Stock is tracked per tab, so a tab that missed an order is corrected instead of undoing it.', 'ffl-funnels-addons'), '<strong>' . esc_html__('Sheet → WooCommerce:', 'ffl-funnels-addons') . '</strong>', '<code>variation_id</code>', '<strong>' . esc_html__('the last tab in the list wins', 'ffl-funnels-addons') . '</strong>'),
                     array('strong' => array(), 'code' => array())
                 ); ?></p>
 
@@ -1748,7 +1633,7 @@ class WSS_Admin
                             <td><?php esc_html_e('"Unable to parse range" error', 'ffl-funnels-addons'); ?></td>
                             <td><?php echo wp_kses(
                                 /* translators: 1: "Sheet tab groups" strong label, 2: forbidden characters sample in <code> */
-                                sprintf(__('A tab name in %1$s (Dashboard) does not match the tab at the bottom of your Google Sheet. Check spelling, spaces, and invalid characters (%2$s are stripped when saving).', 'ffl-funnels-addons'), '<strong>' . esc_html__('Sheet tab groups', 'ffl-funnels-addons') . '</strong>', '<code>[ ] * / \\ ? :</code>'),
+                                sprintf(__('Check the tab name in %1$s (Dashboard). A missing tab is created by the sync, so the name itself is the likely problem: check spelling and spaces (%2$s are removed when saving).', 'ffl-funnels-addons'), '<strong>' . esc_html__('Sheet tab groups', 'ffl-funnels-addons') . '</strong>', '<code>[ ] * / \\ ? :</code>'),
                                 array('strong' => array(), 'code' => array())
                             ); ?></td>
                         </tr>
@@ -1774,7 +1659,7 @@ class WSS_Admin
                         </tr>
                         <tr>
                             <td><?php esc_html_e('Sheet edits not applying to WooCommerce', 'ffl-funnels-addons'); ?></td>
-                            <td><?php esc_html_e('Only editable columns (E–J) are synced. Make sure the value is actually different from WooCommerce. Empty cells are ignored (treated as "no change").', 'ffl-funnels-addons'); ?></td>
+                            <td><?php esc_html_e('Only editable columns (E–J) are compared with WooCommerce. Make sure the value is actually different from WooCommerce. Empty cells are ignored (treated as "no change"). Stock: if WooCommerce stock also changed since the last sync, WooCommerce wins; for items that manage stock, change stock_qty, not stock_status. The Sync Log says why a row was skipped.', 'ffl-funnels-addons'); ?></td>
                         </tr>
                         <tr>
                             <td><?php esc_html_e('New product row not creating a product', 'ffl-funnels-addons'); ?></td>

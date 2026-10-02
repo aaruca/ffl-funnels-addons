@@ -39,7 +39,6 @@ class WooBooster_Rule_Form
         $action_value = $rule ? $rule->action_value : '';
         $action_orderby = $rule ? $rule->action_orderby : 'rand';
         $action_limit = $rule ? $rule->action_limit : 4;
-        $exclude_outofstock = $rule ? $rule->exclude_outofstock : 1;
 
         $taxonomies = WooBooster_Rule::get_product_taxonomies();
 
@@ -123,13 +122,14 @@ class WooBooster_Rule_Form
         echo '<label class="wb-field__label">' . esc_html__('Schedule', 'ffl-funnels-addons') . '</label>';
         echo '<div class="wb-field__control wb-schedule-row">';
         echo '<label class="wb-schedule-label">' . esc_html__('From', 'ffl-funnels-addons');
-        echo '<input type="datetime-local" name="rule_start_date" value="' . esc_attr($start_date ? date('Y-m-d\TH:i', strtotime($start_date)) : '') . '" class="wb-input wb-input--sm wb-input--auto">';
+        // Stored in GMT; shown and entered in the store's time zone.
+        echo '<input type="datetime-local" name="rule_start_date" value="' . esc_attr($start_date ? get_date_from_gmt($start_date, 'Y-m-d\TH:i') : '') . '" class="wb-input wb-input--sm wb-input--auto">';
         echo '</label>';
         echo '<label class="wb-schedule-label">' . esc_html__('Until', 'ffl-funnels-addons');
-        echo '<input type="datetime-local" name="rule_end_date" value="' . esc_attr($end_date ? date('Y-m-d\TH:i', strtotime($end_date)) : '') . '" class="wb-input wb-input--sm wb-input--auto">';
+        echo '<input type="datetime-local" name="rule_end_date" value="' . esc_attr($end_date ? get_date_from_gmt($end_date, 'Y-m-d\TH:i') : '') . '" class="wb-input wb-input--sm wb-input--auto">';
         echo '</label>';
         echo '</div>';
-        echo '<p class="wb-field__desc">' . esc_html__('Optional. Leave empty to keep the rule always active (when enabled).', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('Optional, in the store\'s time zone. Leave empty to keep the rule always active (when enabled).', 'ffl-funnels-addons') . '</p>';
         echo '</div>';
 
         echo '</div>'; // .wb-card__section
@@ -385,7 +385,10 @@ class WooBooster_Rule_Form
                 $selected_attr_tax = '';
                 $attr_term_slug = '';
 
-                if ($a_value) {
+                if ('attribute' === $a_source) {
+                    // "Same Attribute": the value is the attribute taxonomy itself.
+                    $selected_attr_tax = $a_value;
+                } elseif ($a_value) {
                     if ('attribute_value' === $a_source && false !== strpos($a_value, ':')) {
                         $parts = explode(':', $a_value, 2);
                         $selected_attr_tax = $parts[0];
@@ -427,9 +430,9 @@ class WooBooster_Rule_Form
                 echo '<option value="apply_coupon"' . selected($a_source, 'apply_coupon', false) . '>' . esc_html__('Apply Coupon', 'ffl-funnels-addons') . '</option>';
                 echo '</select>';
 
-                // Attribute Taxonomy Selector (for attribute_value source).
+                // Attribute Taxonomy Selector (attribute_value and Same Attribute sources).
                 $attr_taxonomies = wc_get_attribute_taxonomies();
-                $display_attr = 'attribute_value' === $a_source ? '' : 'display:none;';
+                $display_attr = in_array($a_source, array('attribute', 'attribute_value'), true) ? '' : 'display:none;';
                 echo '<select class="wb-select wb-select--inline wb-action-attr-taxonomy" style="' . esc_attr($display_attr) . '">';
                 echo '<option value="">' . esc_html__('Attribute…', 'ffl-funnels-addons') . '</option>';
                 if ($attr_taxonomies) {
@@ -583,16 +586,10 @@ class WooBooster_Rule_Form
         echo '+ ' . esc_html__('OR Group', 'ffl-funnels-addons');
         echo '</button>';
 
-        // Global Exclude (applies to all).
-        echo '<div class="wb-field wb-global-setting">';
-        echo '<label class="wb-field__label">' . esc_html__('Exclude Out of Stock', 'ffl-funnels-addons') . '</label>';
-        echo '<div class="wb-field__control">';
-        echo '<label class="wb-toggle">';
-        echo '<input type="checkbox" name="exclude_outofstock" value="1"' . checked($exclude_outofstock, 1, false) . '>';
-        echo '<span class="wb-toggle__slider"></span>';
-        echo '</label>';
-        echo '<p class="wb-field__desc">' . esc_html__('Override global setting for this rule.', 'ffl-funnels-addons') . '</p>';
-        echo '</div></div>';
+        // Out-of-stock products follow the global WB Settings toggle (or the
+        // Bricks loop's own checkbox). The old per-rule toggle was never
+        // applied, so it is no longer shown; saved values are left alone.
+        echo '<p class="wb-field__desc wb-global-setting">' . esc_html__('Out-of-stock products follow the "Exclude Out of Stock" setting in WB Settings (Bricks loops have their own checkbox).', 'ffl-funnels-addons') . '</p>';
 
         echo '</div>'; // .wb-card__section
 
@@ -679,7 +676,6 @@ class WooBooster_Rule_Form
             'action_orderby' => $first_action['action_orderby'],
             'action_limit' => $first_action['action_limit'],
 
-            'exclude_outofstock' => isset($_POST['exclude_outofstock']) ? 1 : 0,
             'action_logic' => isset($_POST['action_logic']) && 'and' === $_POST['action_logic'] ? 'and' : 'or',
         );
 
@@ -692,12 +688,13 @@ class WooBooster_Rule_Form
         $data['condition_value'] = isset($first_cond['value']) ? sanitize_text_field(wp_unslash($first_cond['value'])) : '';
         $data['include_children'] = isset($first_cond['include_children']) ? 1 : 0;
 
-        // Scheduling dates.
+        // Scheduling dates: entered in store time, stored in GMT (the matcher
+        // compares them with GMT "now"), the same as bundle schedules.
         $data['start_date'] = !empty($_POST['rule_start_date'])
-            ? date('Y-m-d H:i:s', strtotime(sanitize_text_field(wp_unslash($_POST['rule_start_date']))))
+            ? get_gmt_from_date(sanitize_text_field(wp_unslash($_POST['rule_start_date'])))
             : null;
         $data['end_date'] = !empty($_POST['rule_end_date'])
-            ? date('Y-m-d H:i:s', strtotime(sanitize_text_field(wp_unslash($_POST['rule_end_date']))))
+            ? get_gmt_from_date(sanitize_text_field(wp_unslash($_POST['rule_end_date'])))
             : null;
 
         if ($rule_id) {

@@ -18,6 +18,9 @@ class Tax_Report_Service
 {
     const SCHEMA_VERSION = '2.8.0';
     const HISTORY_OPTION = 'ffla_tax_report_runs';
+
+    /** "Calculate tax based on" value recorded with an order's first snapshot. */
+    const TAX_BASIS_META = '_ffla_tax_based_on';
     /** Synthetic WooCommerce rate ID written by the resolver's combined rate. */
     const RESOLVER_RATE_ID = 990000;
 
@@ -600,6 +603,7 @@ class Tax_Report_Service
             'stats'            => (array) ($manifest['stats'] ?? []),
             'currencies'       => (array) ($manifest['currencies'] ?? []),
             'files'            => (array) ($manifest['files'] ?? []),
+            'file_checksums_sha256' => (array) ($manifest['file_checksums_sha256'] ?? []),
         ]);
 
         update_option(self::HISTORY_OPTION, array_slice($history, 0, 50), false);
@@ -830,7 +834,7 @@ class Tax_Report_Service
             $total = $this->minor($item->get_total());
             $tax = $this->minor($item->get_total_tax());
             $cogs = '';
-            if (method_exists($item, 'get_cogs_value')) {
+            if (self::cogs_enabled() && method_exists($item, 'get_cogs_value')) {
                 $value = $item->get_cogs_value();
                 if ($value !== null && $value !== '') {
                     $cogs = $this->decimal($this->minor($value));
@@ -1364,9 +1368,41 @@ class Tax_Report_Service
         return $result;
     }
 
+    /**
+     * Whether WooCommerce's Cost of Goods Sold feature is on. While it is off,
+     * WooCommerce returns a dummy 0 (and logs a notice) for every line, which
+     * must not be reported as a real cost.
+     */
+    private static function cogs_enabled(): bool
+    {
+        static $enabled = null;
+        if ($enabled === null) {
+            $class = '\\Automattic\\WooCommerce\\Utilities\\FeaturesUtil';
+            $enabled = class_exists($class) && (bool) $class::feature_is_enabled('cost_of_goods_sold');
+        }
+        return $enabled;
+    }
+
+    /**
+     * The "Calculate tax based on" setting that applied to an order: the
+     * value recorded with its first fiscal snapshot, else the current one.
+     */
+    public static function order_tax_basis($order): string
+    {
+        $recorded = is_object($order) && method_exists($order, 'get_meta')
+            ? (string) $order->get_meta(self::TAX_BASIS_META, true)
+            : '';
+        if (in_array($recorded, ['shipping', 'billing', 'base'], true)) {
+            return $recorded;
+        }
+
+        $current = function_exists('get_option') ? (string) get_option('woocommerce_tax_based_on', 'shipping') : 'shipping';
+        return in_array($current, ['shipping', 'billing', 'base'], true) ? $current : 'shipping';
+    }
+
     private function get_tax_location($order, array $quote): array
     {
-        $based_on = get_option('woocommerce_tax_based_on', 'shipping');
+        $based_on = self::order_tax_basis($order);
         $source = $based_on;
         $country = '';
         $state = '';
@@ -2865,7 +2901,7 @@ class Tax_Report_Service
             'Ordinary sales use order-created date. Split Payment receipts use payment date; sale and unit counts use the original captured deposit date. Refunds use refund-created date, including prior-period sales.',
             'It does not include sales from external marketplaces, POS systems, or other websites unless those transactions were imported as WooCommerce orders.',
             'Tax registrations, filing frequencies, exemption certificates, and marketplace-facilitator evidence are not reliably available from standard WooCommerce order data.',
-            'Jurisdiction totals use the combined stored FFLA rate and its destination components when available; WooCommerce-only tax lines are marked Needs review.',
+            'Jurisdiction totals use the combined stored FFLA rate and its destination components when available. WooCommerce-only tax lines are grouped by their tax-rate labels and marked Needs review when a rate cannot be tied to the order lines it taxed, a label names a combined total rate, a Georgia location cannot be mapped to a filing code, or the Split Payment sale needs review.',
             'Fee items that represent shipping are reported as shipping and taxable shipping: the FPPC "Final shipping" fee, and the FPPC initial layaway fee when the plan on that order includes shipping in the fee (extend with the ffla_tax_report_shipping_fee_meta_keys filter). Their order-line rows keep item_type "fee" with reporting_category "shipping".',
             'Rows marked Needs review require jurisdiction mapping or taxability review before filing.',
         ];
