@@ -42,6 +42,26 @@ class FFLA_Coupon_Admin
             wp_enqueue_style('woocommerce_admin_styles');
         }
         wp_enqueue_script('ffla-coupons-admin', $url . 'coupons-admin.js', $deps, (string) @filemtime($dir . 'coupons-admin.js'), true); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+        if ('shop_coupon' === $id) {
+            wp_localize_script('ffla-coupons-admin', 'fflaCpnRules', [
+                'appliesTo'  => __('Applies to', 'ffl-funnels-addons'),
+                'every'      => __('Every product', 'ffl-funnels-addons'),
+                'products'   => __('products', 'ffl-funnels-addons'),
+                'in'         => __('in', 'ffl-funnels-addons'),
+                'tagged'     => __('tagged', 'ffl-funnels-addons'),
+                'and'        => __('and', 'ffl-funnels-addons'),
+                'or'         => __('or', 'ffl-funnels-addons'),
+                'never'      => __('Never', 'ffl-funnels-addons'),
+                'more'       => /* translators: %d: number of hidden items */ __('+%d more', 'ffl-funnels-addons'),
+                'joinAnd'    => __('Both must match: the category rule and the tag rule.', 'ffl-funnels-addons'),
+                'joinOr'     => __('Either one is enough: the category rule or the tag rule.', 'ffl-funnels-addons'),
+                'joinIdle'   => __('Used when both categories and tags are set.', 'ffl-funnels-addons'),
+                'wcOnly'     => __('Also required (Usage restriction tab)', 'ffl-funnels-addons'),
+                'wcNever'    => __('Also never (Usage restriction tab)', 'ffl-funnels-addons'),
+                'saleItems'  => __('items on sale', 'ffl-funnels-addons'),
+                'guard'      => __('Firearms and protected items are left out (see Guardrails above).', 'ffl-funnels-addons'),
+            ]);
+        }
     }
 
     /* ── Notices ───────────────────────────────────────────────────────── */
@@ -140,9 +160,9 @@ class FFLA_Coupon_Admin
         return $tabs;
     }
 
-    private static function select(string $key, array $options, $selected, bool $multiple = false, string $class = 'wc-enhanced-select'): string
+    private static function select(string $key, array $options, $selected, bool $multiple = false, string $class = 'wc-enhanced-select', string $placeholder = ''): string
     {
-        $html = '<select id="ffla_' . esc_attr($key) . '" name="ffla[' . esc_attr($key) . ']' . ($multiple ? '[]' : '') . '"' . ($multiple ? ' multiple' : '') . ' class="' . esc_attr($class) . '" style="width:50%">';
+        $html = '<select id="ffla_' . esc_attr($key) . '" name="ffla[' . esc_attr($key) . ']' . ($multiple ? '[]' : '') . '"' . ($multiple ? ' multiple' : '') . ' class="' . esc_attr($class) . '" style="width:50%"' . ('' !== $placeholder ? ' data-placeholder="' . esc_attr($placeholder) . '"' : '') . '>';
         foreach ($options as $value => $label) {
             $on = $multiple ? in_array((string) $value, array_map('strval', (array) $selected), true) : (string) $value === (string) $selected;
             $html .= '<option value="' . esc_attr((string) $value) . '"' . selected($on, true, false) . '>' . esc_html($label) . '</option>';
@@ -163,9 +183,9 @@ class FFLA_Coupon_Admin
     }
 
     /** Product tags, searched as you type (stores can have thousands). */
-    private static function tag_select(string $key, array $ids): string
+    private static function tag_select(string $key, array $ids, string $placeholder = ''): string
     {
-        $html = '<select id="ffla_' . esc_attr($key) . '" name="ffla[' . esc_attr($key) . '][]" multiple class="wc-taxonomy-term-search" style="width:50%" data-taxonomy="product_tag" data-return_id="1" data-minimum_input_length="1" data-limit="50" data-placeholder="' . esc_attr__('Search for a tag…', 'ffl-funnels-addons') . '">';
+        $html = '<select id="ffla_' . esc_attr($key) . '" name="ffla[' . esc_attr($key) . '][]" multiple class="wc-taxonomy-term-search" style="width:50%" data-taxonomy="product_tag" data-return_id="1" data-minimum_input_length="1" data-limit="50" data-placeholder="' . esc_attr('' !== $placeholder ? $placeholder : __('Search for a tag…', 'ffl-funnels-addons')) . '">';
         foreach ($ids as $id) {
             $term = get_term((int) $id, 'product_tag');
             if ($term && !is_wp_error($term)) {
@@ -173,6 +193,83 @@ class FFLA_Coupon_Admin
             }
         }
         return $html . '</select>';
+    }
+
+    /**
+     * Product categories as "Parent › Child", sorted by that path, so
+     * same-named subcategories (Used under Rifles and under Pistols) differ.
+     *
+     * @return array<int,string>
+     */
+    private static function category_options(): array
+    {
+        $terms = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false, 'number' => 2000]);
+        if (is_wp_error($terms) || !$terms) {
+            return [];
+        }
+        $by_id = [];
+        foreach ($terms as $term) {
+            $by_id[(int) $term->term_id] = $term;
+        }
+        $paths = [];
+        foreach ($by_id as $id => $term) {
+            $names = [$term->name];
+            $parent = (int) $term->parent;
+            for ($depth = 0; $parent && isset($by_id[$parent]) && $depth < 10; $depth++) {
+                array_unshift($names, $by_id[$parent]->name);
+                $parent = (int) $by_id[$parent]->parent;
+            }
+            $paths[$id] = implode(' › ', $names);
+        }
+        natcasesort($paths);
+        return $paths;
+    }
+
+    /** Buttons that act as one radio group, e.g. [Any] [All]. */
+    private static function segmented(string $key, array $options, string $value, string $label): string
+    {
+        $html = '<span class="ffla-seg" role="radiogroup" aria-label="' . esc_attr($label) . '">';
+        foreach ($options as $option => $text) {
+            $html .= '<label class="ffla-seg__opt"><input type="radio" name="ffla[' . esc_attr($key) . ']" value="' . esc_attr((string) $option) . '"' . checked($value, (string) $option, false) . '><span>' . esc_html($text) . '</span></label>';
+        }
+        return $html . '</span>';
+    }
+
+    /**
+     * "Which products": (categories any/all) AND/OR (tags any/all), then
+     * "Never for", with a live summary of the rule (coupons-admin.js).
+     */
+    private static function product_rules(array $o, array $cats): void
+    {
+        $match = ['any' => __('Any', 'ffl-funnels-addons'), 'all' => __('All', 'ffl-funnels-addons')];
+        $s = FFLA_Coupon_Settings::get();
+        $protect = !empty($s['protect_firearms']) || !empty($s['protected_terms']);
+
+        echo '<div class="options_group ffla-rules" data-ffla-rules data-protect="' . ($protect ? '1' : '0') . '">';
+        echo '<h4>' . esc_html__('Which products', 'ffl-funnels-addons') . '</h4>';
+        echo '<p class="ffla-rules__lead">' . esc_html__('Leave it all empty to use the coupon on any product. WooCommerce’s Usage restriction tab still applies too.', 'ffl-funnels-addons') . '</p>';
+
+        echo '<div class="ffla-rule" data-ffla-side="cats"><div class="ffla-rule__head"><label class="ffla-rule__title" for="ffla_cats">' . esc_html__('Categories', 'ffl-funnels-addons') . '</label>'
+            . '<span class="ffla-rule__match">' . esc_html__('Match', 'ffl-funnels-addons') . ' ' . self::segmented('cats_match', $match, $o['cats_match'], __('Category match', 'ffl-funnels-addons')) . '</span></div>' // phpcs:ignore WordPress.Security.EscapeOutput
+            . self::select('cats', $cats, $o['cats'], true, 'wc-enhanced-select', __('Any category', 'ffl-funnels-addons')) // phpcs:ignore WordPress.Security.EscapeOutput
+            . '<p class="ffla-rule__hint">' . esc_html__('Any = in at least one of them (Rifles or Shotguns). All = in every one (Rifles and Used Guns = used rifles only). Subcategories count.', 'ffl-funnels-addons') . '</p></div>';
+
+        echo '<div class="ffla-join" data-ffla-join>' . self::segmented('join', ['and' => __('AND', 'ffl-funnels-addons'), 'or' => __('OR', 'ffl-funnels-addons')], $o['join'], __('Combine categories and tags', 'ffl-funnels-addons')) // phpcs:ignore WordPress.Security.EscapeOutput
+            . '<span class="ffla-join__hint" data-ffla-join-hint></span></div>';
+
+        echo '<div class="ffla-rule" data-ffla-side="tags"><div class="ffla-rule__head"><label class="ffla-rule__title" for="ffla_tags">' . esc_html__('Tags', 'ffl-funnels-addons') . '</label>'
+            . '<span class="ffla-rule__match">' . esc_html__('Match', 'ffl-funnels-addons') . ' ' . self::segmented('tags_match', $match, $o['tags_match'], __('Tag match', 'ffl-funnels-addons')) . '</span></div>' // phpcs:ignore WordPress.Security.EscapeOutput
+            . self::tag_select('tags', $o['tags'], __('Any tag', 'ffl-funnels-addons')) // phpcs:ignore WordPress.Security.EscapeOutput
+            . '<p class="ffla-rule__hint">' . esc_html__('Any = has at least one of these tags. All = has every one.', 'ffl-funnels-addons') . '</p></div>';
+
+        echo '<div class="ffla-rule ffla-rule--never"><div class="ffla-rule__head"><span class="ffla-rule__title">' . esc_html__('Never for', 'ffl-funnels-addons') . '</span>'
+            . '<span class="ffla-rule__badge">' . esc_html__('Always wins', 'ffl-funnels-addons') . '</span></div>'
+            . '<div class="ffla-rule__pair"><div><label for="ffla_exclude_cats">' . esc_html__('In any of these categories', 'ffl-funnels-addons') . '</label>' . self::select('exclude_cats', $cats, $o['exclude_cats'], true, 'wc-enhanced-select', __('No categories', 'ffl-funnels-addons')) . '</div>' // phpcs:ignore WordPress.Security.EscapeOutput
+            . '<div><label for="ffla_exclude_tags">' . esc_html__('With any of these tags', 'ffl-funnels-addons') . '</label>' . self::tag_select('exclude_tags', $o['exclude_tags'], __('No tags', 'ffl-funnels-addons')) . '</div></div>' // phpcs:ignore WordPress.Security.EscapeOutput
+            . '<p class="ffla-rule__hint">' . esc_html__('E.g. NFA or Consignment. A product here is left out even when it matches the rules above.', 'ffl-funnels-addons') . '</p></div>';
+
+        echo '<div class="ffla-sum" data-ffla-summary aria-live="polite"></div>';
+        echo '</div>';
     }
 
     private static function row(string $label, string $control, string $help = '', string $class = ''): void
@@ -185,8 +282,7 @@ class FFLA_Coupon_Admin
     {
         $coupon = $coupon instanceof WC_Coupon ? $coupon : new WC_Coupon((int) $coupon_id);
         $o = FFLA_Coupon_Settings::coupon($coupon);
-        $cats = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false, 'number' => 1000, 'orderby' => 'name']);
-        $cats = is_wp_error($cats) ? [] : wp_list_pluck($cats, 'name', 'term_id');
+        $cats = self::category_options();
         $roles = array_merge(['guest' => __('Guests (not signed in)', 'ffl-funnels-addons')], wp_roles()->get_names());
         $gateways = [];
         foreach (WC()->payment_gateways() ? WC()->payment_gateways()->payment_gateways() : [] as $gid => $gateway) {
@@ -204,12 +300,7 @@ class FFLA_Coupon_Admin
         self::row(__('Maximum discount', 'ffl-funnels-addons'), $num('max_discount', $o['max_discount'] ?: '', '0.01'), __('Caps the total this coupon takes off, e.g. 20% off up to $100. Empty = no cap.', 'ffl-funnels-addons'));
         echo '</div>';
 
-        echo '<div class="options_group"><h4>' . esc_html__('Which products', 'ffl-funnels-addons') . '</h4>';
-        self::row(__('In all of these categories', 'ffl-funnels-addons'), self::select('all_cats', $cats, $o['all_cats'], true), __('The product must be in every one of these categories, e.g. Rifles and Used Guns for used rifles only. Subcategories count. Usage restriction → Product categories still works and matches any of its categories.', 'ffl-funnels-addons'));
-        self::row(__('With tags', 'ffl-funnels-addons'), self::tag_select('tags', $o['tags']));
-        self::row(__('Tag match', 'ffl-funnels-addons'), self::select('tags_match', ['any' => __('Any of these tags', 'ffl-funnels-addons'), 'all' => __('All of these tags', 'ffl-funnels-addons')], $o['tags_match'], false, ''), __('Empty tags = any product.', 'ffl-funnels-addons'));
-        self::row(__('Without tags', 'ffl-funnels-addons'), self::tag_select('exclude_tags', $o['exclude_tags']), __('Products with any of these tags are left out, e.g. "no-discount" or "consignment".', 'ffl-funnels-addons'));
-        echo '</div>';
+        self::product_rules($o, $cats);
 
         echo '<div class="options_group"><h4>' . esc_html__('When it works', 'ffl-funnels-addons') . '</h4>';
         self::row(__('Starts on', 'ffl-funnels-addons'), '<input type="date" class="short" name="ffla[starts]" value="' . esc_attr($o['starts']) . '">', __('Not usable before this date (store time). Set the end in General → Coupon expiry date.', 'ffl-funnels-addons'));

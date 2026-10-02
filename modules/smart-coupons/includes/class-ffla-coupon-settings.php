@@ -73,9 +73,14 @@ class FFLA_Coupon_Settings
     {
         return [
             'allow_protected' => false,
-            'all_cats'        => [],      // Product must be in every one of these categories (subcategories count).
-            'tags'            => [],      // Product tags, matched by tags_match.
+            // Which products: categories and tags, each matched "any" (OR) or "all"
+            // (AND), joined by `join` when both are set. Exclusions always win.
+            'cats'            => [],      // Product categories (subcategories count).
+            'cats_match'      => 'any',   // any, all
+            'join'            => 'and',   // and, or — between categories and tags.
+            'tags'            => [],      // Product tags.
             'tags_match'      => 'any',   // any, all
+            'exclude_cats'    => [],      // Products in any of these categories are left out.
             'exclude_tags'    => [],      // Products with any of these tags are left out.
             'starts'          => '',      // Y-m-d, store time.
             'first_order'     => false,
@@ -108,7 +113,21 @@ class FFLA_Coupon_Settings
     {
         $coupon = $coupon instanceof WC_Coupon ? $coupon : new WC_Coupon((int) $coupon);
         $saved = $coupon->get_meta(self::META, true);
-        return array_merge(self::coupon_defaults(), is_array($saved) ? $saved : []);
+        return self::upgrade(array_merge(self::coupon_defaults(), is_array($saved) ? $saved : []));
+    }
+
+    /**
+     * Options saved before 1.55.2 had only "In all of these categories"
+     * (`all_cats`): read them as categories matched with "All".
+     */
+    private static function upgrade(array $o): array
+    {
+        if (!empty($o['all_cats']) && empty($o['cats'])) {
+            $o['cats'] = array_values(array_filter(array_map('absint', (array) $o['all_cats'])));
+            $o['cats_match'] = 'all';
+        }
+        unset($o['all_cats']);
+        return $o;
     }
 
     public static function sanitize_coupon(array $in): array
@@ -125,12 +144,16 @@ class FFLA_Coupon_Settings
             return strtoupper(preg_replace('/[^A-Za-z]/', '', (string) $s));
         }, is_array($in['states'] ?? '') ? $in['states'] : preg_split('/[\s,]+/', (string) ($in['states'] ?? '')))));
         $starts = (string) ($in['starts'] ?? '');
+        $in = self::upgrade($in);
 
         return [
             'allow_protected' => !empty($in['allow_protected']),
-            'all_cats'        => $ids($in['all_cats'] ?? []),
+            'cats'            => $ids($in['cats'] ?? []),
+            'cats_match'      => 'all' === ($in['cats_match'] ?? '') ? 'all' : 'any',
+            'join'            => 'or' === ($in['join'] ?? '') ? 'or' : 'and',
             'tags'            => $ids($in['tags'] ?? []),
             'tags_match'      => 'all' === ($in['tags_match'] ?? '') ? 'all' : 'any',
+            'exclude_cats'    => $ids($in['exclude_cats'] ?? []),
             'exclude_tags'    => $ids($in['exclude_tags'] ?? []),
             'starts'          => preg_match('/^\d{4}-\d{2}-\d{2}$/', $starts) ? $starts : '',
             'first_order'     => !empty($in['first_order']),
@@ -225,15 +248,17 @@ class FFLA_Coupon_Settings
         return (bool) array_intersect(self::product_terms($product)['product_cat'], array_map('intval', $cat_ids));
     }
 
-    /** Whether the coupon limits products by "all categories" or tags. */
+    /** Whether the coupon limits products by category or tag. */
     public static function has_product_filters(array $o): bool
     {
-        return (bool) ($o['all_cats'] || $o['tags'] || $o['exclude_tags']);
+        return (bool) (($o['cats'] ?? []) || ($o['tags'] ?? []) || ($o['exclude_cats'] ?? []) || ($o['exclude_tags'] ?? []));
     }
 
     /**
-     * The coupon's "all of these categories" and tag filters. These narrow
-     * WooCommerce's own restrictions (its Product categories match any).
+     * The coupon's "Which products" rule:
+     *   (categories: any / all)  AND / OR  (tags: any / all), then exclusions.
+     * Categories include subcategories. A side left empty is not part of the
+     * rule. These narrow WooCommerce's own Usage restriction, which still applies.
      */
     public static function product_matches(array $o, $product): bool
     {
@@ -241,24 +266,34 @@ class FFLA_Coupon_Settings
             return false;
         }
         $terms = self::product_terms($product);
-        $need = array_map('intval', (array) $o['all_cats']);
-        if ($need && array_diff($need, $terms['product_cat'])) {
-            return false;
-        }
-        $tags = array_values(array_unique(array_map('intval', (array) $o['tags'])));
-        if ($tags) {
-            $hit = array_intersect($tags, $terms['product_tag']);
-            if ('all' === $o['tags_match'] ? count($hit) < count($tags) : !$hit) {
-                return false;
+        $test = static function (array $want, array $has, string $match): ?bool {
+            $want = array_values(array_unique(array_map('intval', $want)));
+            if (!$want) {
+                return null; // Not part of the rule.
             }
+            $hit = count(array_intersect($want, $has));
+            return 'all' === $match ? $hit === count($want) : $hit > 0;
+        };
+        $by_cat = $test((array) ($o['cats'] ?? []), $terms['product_cat'], (string) ($o['cats_match'] ?? 'any'));
+        $by_tag = $test((array) ($o['tags'] ?? []), $terms['product_tag'], (string) ($o['tags_match'] ?? 'any'));
+        if (null !== $by_cat && null !== $by_tag) {
+            $ok = 'or' === ($o['join'] ?? 'and') ? ($by_cat || $by_tag) : ($by_cat && $by_tag);
+        } else {
+            $ok = $by_cat ?? $by_tag ?? true;
         }
-        if ($o['exclude_tags'] && array_intersect(array_map('intval', (array) $o['exclude_tags']), $terms['product_tag'])) {
+        if (!$ok) {
             return false;
         }
-        return true;
+        if (array_intersect(array_map('intval', (array) ($o['exclude_cats'] ?? [])), $terms['product_cat'])) {
+            return false;
+        }
+        return !array_intersect(array_map('intval', (array) ($o['exclude_tags'] ?? [])), $terms['product_tag']);
     }
 
-    /** "This coupon is only for products in Rifles and Used Guns, tagged Sale." */
+    /**
+     * Shown to customers when nothing in the cart fits, e.g.
+     * "This coupon is only for products in Rifles or Shotguns and tagged Sale."
+     */
     public static function product_filter_message(array $o): string
     {
         $names = static function (array $ids, string $taxonomy): array {
@@ -267,35 +302,61 @@ class FFLA_Coupon_Settings
                 return $term && !is_wp_error($term) ? $term->name : '';
             }, $ids)));
         };
-        $and = static function (array $list): string {
-            /* translators: list separator between the last two items, e.g. "Rifles and Used Guns" */
-            return count($list) > 1 ? implode(', ', array_slice($list, 0, -1)) . __(' and ', 'ffl-funnels-addons') . end($list) : implode('', $list);
+        $list = static function (array $items, bool $all): string {
+            if (count($items) < 2) {
+                return implode('', $items);
+            }
+            $last = array_pop($items);
+            $head = implode(', ', $items);
+            if (!$all) {
+                /* translators: 1: items, 2: last item, e.g. "Rifles, Shotguns or Pistols" */
+                return sprintf(__('%1$s or %2$s', 'ffl-funnels-addons'), $head, $last);
+            }
+            return 1 === count($items)
+                /* translators: 1: item, 2: item, e.g. "both Rifles and Used Guns" */
+                ? sprintf(__('both %1$s and %2$s', 'ffl-funnels-addons'), $head, $last)
+                /* translators: 1: items, 2: last item, e.g. "all of Rifles, Used Guns and Sale" */
+                : sprintf(__('all of %1$s and %2$s', 'ffl-funnels-addons'), $head, $last);
         };
-        $or = static function (array $list): string {
-            /* translators: list separator between the last two items, e.g. "Sale or Clearance" */
-            return count($list) > 1 ? implode(', ', array_slice($list, 0, -1)) . __(' or ', 'ffl-funnels-addons') . end($list) : implode('', $list);
-        };
-        $parts = [];
-        $cats = $names((array) $o['all_cats'], 'product_cat');
+        $o = self::upgrade($o);
+        $cats = $names((array) $o['cats'], 'product_cat');
         $tags = $names((array) $o['tags'], 'product_tag');
-        $without = $names((array) $o['exclude_tags'], 'product_tag');
+        $no_cats = $names((array) $o['exclude_cats'], 'product_cat');
+        $no_tags = $names((array) $o['exclude_tags'], 'product_tag');
+
+        $want = [];
         if ($cats) {
-            /* translators: %s: categories */
-            $parts[] = sprintf(__('in %s', 'ffl-funnels-addons'), $and($cats));
+            /* translators: %s: categories, e.g. "Rifles or Shotguns" */
+            $want[] = sprintf(__('in %s', 'ffl-funnels-addons'), $list($cats, 'all' === $o['cats_match']));
         }
         if ($tags) {
-            /* translators: %s: tags */
-            $parts[] = sprintf(__('tagged %s', 'ffl-funnels-addons'), 'all' === $o['tags_match'] ? $and($tags) : $or($tags));
+            /* translators: %s: tags, e.g. "Sale or Clearance" */
+            $want[] = sprintf(__('tagged %s', 'ffl-funnels-addons'), $list($tags, 'all' === $o['tags_match']));
         }
-        if ($without) {
-            /* translators: %s: tags */
-            $parts[] = sprintf(__('not tagged %s', 'ffl-funnels-addons'), $or($without));
+        $not = [];
+        if ($no_cats) {
+            /* translators: %s: categories */
+            $not[] = sprintf(__('in %s', 'ffl-funnels-addons'), $list($no_cats, false));
         }
-        if (!$parts) {
+        if ($no_tags) {
+            /* translators: %s: tags */
+            $not[] = sprintf(__('tagged %s', 'ffl-funnels-addons'), $list($no_tags, false));
+        }
+        $not = implode(__(' or ', 'ffl-funnels-addons'), $not);
+
+        if (!$want && !$not) {
             return __('This coupon does not apply to the items in your cart.', 'ffl-funnels-addons');
         }
-        /* translators: %s: e.g. "in Rifles and Used Guns, tagged Sale" */
-        return sprintf(__('This coupon is only for products %s.', 'ffl-funnels-addons'), implode(', ', $parts));
+        if (!$want) {
+            /* translators: %s: e.g. "in Consignment or tagged No discount" */
+            return sprintf(__('This coupon cannot be used on products %s.', 'ffl-funnels-addons'), $not);
+        }
+        $want = implode('or' === $o['join'] ? __(', or ', 'ffl-funnels-addons') : __(' and ', 'ffl-funnels-addons'), $want);
+        return '' === $not
+            /* translators: %s: e.g. "in Rifles or Shotguns and tagged Sale" */
+            ? sprintf(__('This coupon is only for products %s.', 'ffl-funnels-addons'), $want)
+            /* translators: 1: e.g. "in Rifles and tagged Sale", 2: e.g. "tagged Consignment" */
+            : sprintf(__('This coupon is only for products %1$s, and not for products %2$s.', 'ffl-funnels-addons'), $want, $not);
     }
 
     /** Firearms and protected categories / tags. */

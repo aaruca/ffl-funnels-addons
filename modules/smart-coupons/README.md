@@ -26,16 +26,25 @@ Extends WooCommerce coupons for FFL stores. It works on the regular WooCommerce 
 
 ## Which products (Smart Coupons tab)
 
-WooCommerce's own **Usage restriction → Product categories** matches *any* listed category, and it has no tag restriction. These fields narrow the coupon further; a product must pass WooCommerce's restrictions **and** these:
+One rule, read top to bottom:
 
-| Option | Behaviour |
+```
+(Categories: Any | All)   AND | OR   (Tags: Any | All)      then      Never for: categories, tags
+```
+
+| Part | Behaviour |
 |---|---|
-| In all of these categories | The product must be in **every** category listed. *Rifles* + *Used Guns* = used rifles only: a new rifle or a used pistol is left out. Subcategories count (a used rifle in *Bolt Action* under *Rifles* qualifies). |
-| With tags + Tag match | Only products with **any** (default) or **all** of these tags, e.g. *Sale*. Tags are searched as you type. |
-| Without tags | Products with any of these tags are left out, e.g. *consignment* or *no-discount*. |
+| Categories + **Any / All** | **Any** (default): in at least one, *Rifles* or *Shotguns*. **All**: in every one, *Rifles* + *Used Guns* = used rifles only. Subcategories count (a used rifle in *Bolt Action* under *Rifles* is in *Rifles*). Categories are listed as *Parent › Child*. |
+| **AND / OR** | Used when both categories and tags are set. **AND** (default): both must match. **OR**: either is enough, e.g. *Rifles* OR tagged *Sale*. |
+| Tags + **Any / All** | Products with **any** (default) or **all** of these tags. Tags are searched as you type. |
+| **Never for** | Products in any of these categories (subcategories count) or with any of these tags are left out, even when they match above, e.g. *NFA* or *Consignment*. |
 
+- A side left empty is not part of the rule; leave everything empty for every product.
+- WooCommerce's own **Usage restriction** (products, categories, exclusions, *Exclude sale items*) still applies on top.
+- The tab shows the whole rule as a live summary, including what the Usage restriction tab adds and whether firearms are left out by the guardrail.
 - Applies to every discount type: percentage and fixed product per line, fixed cart spread only over matching items, spend tiers counted only on matching items, buy X get Y.
-- If nothing in the cart matches, the customer is told why: "This coupon is only for products in Rifles and Used Guns, tagged Sale." Matching items that are firearms still need the coupon (or its category) to allow firearms — otherwise the firearm message is shown.
+- If nothing in the cart matches, the customer is told why: "This coupon is only for products in Rifles or Shotguns and tagged Sale." / "…in Rifles, or tagged Sale." / "This coupon cannot be used on products tagged Consignment." Matching items that are firearms still need the coupon (or its category) to allow firearms — otherwise the firearm message is shown.
+- Coupons saved before 1.55.2 with **In all of these categories** open as Categories + **All** and behave as before; **With tags**, **Tag match** and **Without tags** carry over unchanged.
 
 ## Conditions (Smart Coupons tab → When it works)
 
@@ -109,4 +118,4 @@ A fixed-cart coupon tied to the customer's email, with a running balance:
 
 ## Verification
 
-Tested on WordPress 7.1 + WooCommerce 10.2 (posts order storage) with Store API cart/checkout and the classic screens: guardrails and MAP, all-categories and tag filters, every condition, both custom types, gifts, stacking and best-wins, per-person limits, categories (one per order, no-combine both ways, monthly budget), store credit (partial use, restore on cancel, email lock, request close), bulk codes, links, throttling, the report, and the admin screens in a browser.
+Tested on WordPress 7.1 + WooCommerce 10.2 (posts order storage) with Store API cart/checkout and the classic screens: guardrails and MAP, the AND / OR product rule (any / all categories and tags, never for, old options), every condition, both custom types, gifts, stacking and best-wins, per-person limits, categories (one per order, no-combine both ways, monthly budget), store credit (partial use, restore on cancel, email lock, request close), bulk codes, links, throttling, the report, and the admin screens in a browser.

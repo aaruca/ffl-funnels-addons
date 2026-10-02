@@ -2,6 +2,11 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [Unreleased]
+
+### Changed
+- **Smart Coupons → Which products** is now one AND / OR rule: **Categories** (Any / All) **AND / OR** **Tags** (Any / All), then **Never for** categories or tags, which always wins. A live summary on the coupon shows the whole rule, including WooCommerce's Usage restriction and the firearm guardrail. Categories are listed as *Parent › Child*. Customer messages follow the rule ("only for products in Rifles, or tagged Sale"). Coupons saved with **In all of these categories** open as Categories + All and behave as before.
+
 ## [1.55.1] - 2026-10-01
 
 ### Added
