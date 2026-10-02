@@ -4,7 +4,11 @@ All notable changes to FFL Funnels Addons are documented in this file.
 
 ## [1.55.3] - 2026-10-02
 
+### Added
+- **Order actions → Update sales tax jurisdiction** (Sales Tax Resolver): looks up the order's tax address and saves it on the order, so Sales Tax Reports file the order under the right county / filing code. Nothing is recalculated: totals, tax lines, status and stock stay as charged, and the customer gets no email. An order note records the address, jurisdiction, rate and Georgia filing code, and flags orders charged a different rate than the address rate. Use it for orders created in wp-admin before this release, which reports listed as **Unmapped**.
+
 ### Fixed
+- **Orders created in wp-admin now carry their tax jurisdiction**: Recalculate (and adding or removing items, fees or coupons) on the order screen looks up the order's own address and saves it on the order. Before, it used the staff member's session, saved nothing, and Georgia counter sales landed in **Unmapped Georgia jurisdiction**.
 - **Sales Tax Reports → Georgia filing codes**: DeKalb and Clayton orders now land on **044** and **031** instead of **Unmapped Georgia jurisdiction**. The official names carry a qualifier ("DeKalb (Not Atlanta)", "Clayton (Not College Park)") that blocked the county match, so every DeKalb and Clayton order was unmapped.
 - The Atlanta and College Park special codes (044A, 060A, 801, 804) now follow the city whose tax the quote charged, not the mailing city: an "Atlanta" address in unincorporated DeKalb stays on 044. When the quote names no city, the mailing city is used as before. Regenerate reports created before this release.
 
