@@ -37,6 +37,14 @@ class Tax_Report_Service
     /** @var array<int,bool> Per-order "layaway fee includes shipping" decisions. */
     private $fee_shipping_orders = [];
 
+    /**
+     * Stored quotes set aside because they describe another address, by
+     * order ID: ['quote' => 'GA 31822', 'order' => 'MI 49735'].
+     *
+     * @var array<int,array<string,string>>
+     */
+    private $foreign_quotes = [];
+
     public function __construct()
     {
         $this->precision = function_exists('wc_get_price_decimals') ? (int) wc_get_price_decimals() : 2;
@@ -178,6 +186,7 @@ class Tax_Report_Service
 
         $filters = self::normalize_filters($filters);
         $this->counted_sales = [];
+        $this->foreign_quotes = [];
         $this->shipping_fee_keys = null;
         $this->fee_shipping_orders = [];
         $summary_only = !empty($options['summary_only']);
@@ -1472,7 +1481,36 @@ class Tax_Report_Service
         return false;
     }
 
+    /**
+     * The order's stored resolver quote, when it describes the address the
+     * order was taxed at.
+     *
+     * Before 1.55.1 checkout could copy a quote left in the session by an
+     * earlier lookup (the store's base address, another destination) onto
+     * the order. That quote must not move an out-of-state order into Georgia
+     * or file a Georgia order under another county, so a quote whose state or
+     * ZIP differs from the order's own tax address is set aside and reported
+     * as foreign_tax_quote.
+     */
     private function get_stored_quote($order): array
+    {
+        $quote = $this->read_stored_quote($order);
+        $order_id = method_exists($order, 'get_id') ? (int) $order->get_id() : 0;
+        if (empty($quote)) {
+            return [];
+        }
+
+        $mismatch = $this->quote_address_mismatch($order, $quote);
+        if (null !== $mismatch) {
+            $this->foreign_quotes[$order_id] = $mismatch;
+            return [];
+        }
+
+        unset($this->foreign_quotes[$order_id]);
+        return $quote;
+    }
+
+    private function read_stored_quote($order): array
     {
         $value = $order->get_meta('_ffla_tax_quote', true);
         if (is_array($value)) {
@@ -1483,6 +1521,42 @@ class Tax_Report_Service
         }
         $decoded = json_decode($value, true);
         return is_array($decoded) ? $decoded : [];
+    }
+
+    /**
+     * Null when the quote matches the order's own tax address (or either
+     * side lacks the data to compare), else both addresses for the evidence.
+     *
+     * @return array{quote:string,order:string}|null
+     */
+    private function quote_address_mismatch($order, array $quote): ?array
+    {
+        $address = [];
+        foreach (['normalizedAddress', 'inputAddress'] as $key) {
+            if (!empty($quote[$key]) && is_array($quote[$key])) {
+                $address = $quote[$key];
+                break;
+            }
+        }
+        $quote_state = strtoupper(trim((string) ($quote['state'] ?? $address['state'] ?? '')));
+        $quote_zip = substr((string) preg_replace('/\D/', '', (string) ($address['zip'] ?? $address['postcode'] ?? '')), 0, 5);
+
+        $own = $this->get_tax_location($order, []);
+        $own_zip = substr((string) preg_replace('/\D/', '', (string) $own['postcode']), 0, 5);
+        if ($quote_state === '' || $own['state'] === '') {
+            return null;
+        }
+
+        $state_differs = $quote_state !== $own['state'];
+        $zip_differs = $quote_zip !== '' && $own_zip !== '' && $quote_zip !== $own_zip;
+        if (!$state_differs && !$zip_differs) {
+            return null;
+        }
+
+        return [
+            'quote' => trim($quote_state . ' ' . $quote_zip),
+            'order' => trim(($own['country'] !== 'US' ? $own['country'] . ' ' : '') . $own['state'] . ' ' . $own_zip),
+        ];
     }
 
     private function sanitize_quote_evidence(array $quote, bool $include_pii): array
@@ -1549,7 +1623,16 @@ class Tax_Report_Service
         if ($order_row['snapshot_hash'] === '') {
             $add('info', 'missing_fiscal_snapshot', 'No permanent FFLA fiscal snapshot exists for this historical order. The report still uses the current stored WooCommerce values.');
         }
-        if (empty($quote) && $this->minor($order_row['tax_collected']) > 0) {
+        $foreign = $this->foreign_quotes[(int) $order->get_id()] ?? null;
+        if (null !== $foreign) {
+            $add(
+                'info',
+                'foreign_tax_quote',
+                'The stored resolver quote was for another address, so the report uses the order\'s own tax address. If this order was taxed, run Order actions → Update sales tax jurisdiction on it.',
+                '',
+                sprintf('quote %s; order %s', $foreign['quote'], $foreign['order'])
+            );
+        } elseif (empty($quote) && $this->minor($order_row['tax_collected']) > 0) {
             $add('info', 'missing_tax_quote', 'Tax was collected but no FFLA resolver quote is attached to the order.', $order_row['tax_collected']);
         }
         if (!empty($quote) && isset($quote['outcomeCode'])) {

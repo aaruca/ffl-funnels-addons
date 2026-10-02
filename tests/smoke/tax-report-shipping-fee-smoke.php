@@ -316,4 +316,53 @@ $GLOBALS['test_filters'] = ['ffla_tax_report_layaway_fee_is_shipping' => functio
 check(august()['orders'][0]['fees'] === '50.00', 'ffla_tax_report_layaway_fee_is_shipping can keep the fee as a fee');
 $GLOBALS['test_filters'] = [];
 
+// A stored quote for another address (pre-1.55.1 checkout reused the session's last quote,
+// often the store's own address) never moves an order into that state or county.
+class TestShippedOrder extends WC_Order {
+    public $ship_state = 'MI'; public $ship_zip = '49735'; public $ship_city = 'Gaylord';
+    function get_shipping_state() { return $this->ship_state; }
+    function get_billing_state() { return $this->ship_state; }
+    function __call($name, $args) {
+        if (strpos($name, '_postcode') !== false) { return $this->ship_zip; }
+        if (strpos($name, '_city') !== false) { return $this->ship_city; }
+        return '';
+    }
+}
+function exception_codes(array $report, int $order_id): array {
+    return array_values(array_map(function ($row) { return $row['code']; }, array_filter($report['exceptions'], function ($row) use ($order_id) { return (int) $row['order_id'] === $order_id; })));
+}
+$oos = new TestShippedOrder(7000, '2026-05-03', '2026-05-03');
+$oos->items = ['line_item' => [70001 => new TestLine(70001, 81.00, 0)], 'shipping' => [70002 => new TestLine(70002, 18.50, 0)]];
+$oos->meta = ['_ffla_tax_quote' => quote_json()];
+$GLOBALS['orders'] = [1000 => fixture_order(1000), 7000 => $oos];
+$ga_only = (new Tax_Report_Service())->generate(['date_from' => '2026-05-01', 'date_to' => '2026-05-31', 'states' => ['GA'], 'report_detail' => 'advanced']);
+check($ga_only['stats']['orders'] === 1 && $ga_only['stats']['orders_excluded_by_state'] === 1, 'Out-of-state order with a Georgia quote is not a Georgia sale');
+check(harris($ga_only)['orders'] === 1 && harris($ga_only)['calculated_tax'] === '10.80', 'Order whose quote matches its address still files under Harris');
+$all = report();
+$michigan = array_values(array_filter($all['summaries']['states'], function ($row) { return $row['state'] === 'MI'; }));
+check(count($michigan) === 1 && $michigan[0]['gross_sales'] === '99.50' && $michigan[0]['tax_collected'] === '0.00', 'The order is reported under the state it shipped to');
+check(in_array('foreign_tax_quote', exception_codes($all, 7000), true), 'Set-aside quote is explained as foreign_tax_quote');
+$evidence = array_values(array_filter($all['exceptions'], function ($row) { return $row['code'] === 'foreign_tax_quote'; }))[0]['evidence'];
+check($evidence === 'quote GA 31822; order MI 49735', 'Evidence names both addresses');
+check(!in_array('degraded_tax_quote', exception_codes($all, 7000), true), 'A set-aside quote is not judged as the order\'s quote');
+
+// Same state, another ZIP: the quote's county is not used; the order needs its own jurisdiction.
+$other = new TestShippedOrder(7100, '2026-05-04', '2026-05-04');
+$other->ship_state = 'GA'; $other->ship_zip = '30240'; $other->ship_city = 'LaGrange';
+$other->items = ['line_item' => [71001 => new TestLine(71001, 100.00, 7.00)], 'tax' => [1 => new TestTax(7.00)]];
+$other->meta = ['_ffla_tax_quote' => quote_json()];
+$GLOBALS['orders'] = [1000 => fixture_order(1000), 7100 => $other];
+$r = report();
+check(harris($r)['orders'] === 1, 'A quote for another Georgia ZIP does not file the order under that county');
+$unmapped = array_values(array_filter($r['summaries']['jurisdictions'], function ($row) { return $row['jurisdiction_type'] === 'unmapped'; }));
+check(count($unmapped) === 1 && $unmapped[0]['tax_collected'] === '7.00', 'It is held as Needs review until its own jurisdiction is attached');
+check(in_array('foreign_tax_quote', exception_codes($r, 7100), true) && !in_array('missing_tax_quote', exception_codes($r, 7100), true), 'One explanation, not two');
+
+// A quote without address details is still trusted (nothing to compare).
+$legacy = fixture_order(1000);
+$legacy_quote = json_decode(quote_json(), true); unset($legacy_quote['normalizedAddress']);
+$legacy->meta['_ffla_tax_quote'] = json_encode($legacy_quote);
+$GLOBALS['orders'] = [1000 => $legacy];
+check(harris(report())['orders'] === 1, 'Legacy quote without an address keeps working');
+
 echo "$checks shipping-fee reporting checks passed.\n";
