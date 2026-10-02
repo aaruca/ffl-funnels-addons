@@ -81,22 +81,29 @@ class Pickup_Shipping_Engine
     {
         if (!is_object($product) || !is_callable([$product,'get_meta'])) { return false; }
         if (function_exists('product_is_firearm') && product_is_firearm($product)) { return true; }
-        $parent_id = $product->get_parent_id();
+        // A variation's own flag counts, then its parent's (the same rule as
+        // Customer & Order Management), so a firearm variation of a mixed
+        // product is never treated as a regular item.
+        if (strtolower(trim((string) $product->get_meta('_firearm_product'))) === 'yes') { return true; }
+        $parent_id = is_callable([$product,'get_parent_id']) ? (int) $product->get_parent_id() : 0;
         $parent = $parent_id ? wc_get_product($parent_id) : null;
-        return strtolower(trim((string) ($parent ? $parent->get_meta('_firearm_product') : $product->get_meta('_firearm_product')))) === 'yes';
+        return $parent && strtolower(trim((string) $parent->get_meta('_firearm_product'))) === 'yes';
     }
     public static function package_scope(array $package, bool $requires_ffl, bool $has_firearms): string
     {
         if (!$requires_ffl) { return 'regular'; }
-        // Canonical provider compliance-only carts are entirely FFL scoped.
-        if (!$has_firearms) { return 'ffl'; }
-        $ffl = $regular = false;
-        foreach ($package['contents'] ?? [] as $item) {
-            $product = $item['data'] ?? null;
-            if (!$product || !$product->needs_shipping()) { continue; }
-            if (self::product_requires_ffl($product)) { $ffl = true; } else { $regular = true; }
+        if (!$has_firearms) {
+            // Canonical provider compliance-only carts are entirely FFL scoped.
+            $scope = 'ffl';
+        } else {
+            $ffl = $regular = false;
+            foreach ($package['contents'] ?? [] as $item) {
+                $product = $item['data'] ?? null;
+                if (!$product || !$product->needs_shipping()) { continue; }
+                if (self::product_requires_ffl($product)) { $ffl = true; } else { $regular = true; }
+            }
+            $scope = $ffl && $regular ? 'mixed' : ($ffl ? 'ffl' : 'regular');
         }
-        $scope = $ffl && $regular ? 'mixed' : ($ffl ? 'ffl' : 'regular');
         // A provider can mark its already-separated packages server-side.
         $scope = apply_filters('ffla_pickup_shipping_package_scope', $scope, $package);
         return in_array($scope,['ffl','regular','mixed'],true) ? $scope : 'mixed';

@@ -51,3 +51,37 @@ jobs:
         run: |
           php tests/smoke/customer-operations-smoke.php
           node tests/smoke/customer-operations-endpoints-smoke.js
+
+      - name: Sales tax resolver and reports regression checks
+        run: |
+          set -e
+          php tests/smoke/tax-policy-smoke.php
+          php tests/smoke/tax-resolver-fixes-smoke.php
+          php tests/smoke/tax-resolver-units-smoke.php
+          php tests/smoke/tax-report-fixes-smoke.php
+
+      - name: WooBooster, Loadout and Wishlist regression checks
+        run: |
+          set -e
+          php tests/smoke/woobooster-smart-smoke.php
+          php tests/smoke/woobooster-bundle-pricing-smoke.php
+          php tests/smoke/loadout-cart-smoke.php
+          php tests/smoke/wishlist-ajax-smoke.php
+
+      - name: Woo Sheets Sync and FFL Checkout regression checks
+        run: |
+          set -e
+          php tests/smoke/wss-sync-smoke.php
+          php tests/smoke/ffl-checkout-smoke.php
+          node tests/smoke/ffl-checkout-mapbox-smoke.js
+
+      - name: White Label, MonsterInsights Compatibility and Order Badges regression checks
+        run: |
+          set -e
+          php tests/smoke/white-label-smoke.php
+          php tests/smoke/white-label-monsterinsights-smoke.php
+          php tests/smoke/white-label-monsterinsights-smoke.php legacy
+          php tests/smoke/white-label-monsterinsights-smoke.php missing
+          php tests/smoke/white-label-monsterinsights-smoke.php no-addon
+          node tests/smoke/monsterinsights-bridge-smoke.js
+          php tests/smoke/order-badges-smoke.php

@@ -95,9 +95,14 @@ class Pickup_Shipping_Checkout
         }
         return $data;
     }
+    /** The module only touches checkout once it is set up (methods chosen). */
+    private static function configured(): bool
+    {
+        return Pickup_Shipping_Settings::configured(Pickup_Shipping_Settings::get());
+    }
     public static function update($raw): void
     {
-        if (!self::supported()) { return; }
+        if (!self::supported() || !self::configured()) { return; }
         self::$posted = self::parse($raw);
         $state = self::state();
         $previous = $state;
@@ -159,7 +164,10 @@ class Pickup_Shipping_Checkout
     }
     public static function packages(array $packages): array
     {
-        if (!self::supported()) { return $packages; }
+        // Until the module is set up, packages stay exactly as WooCommerce
+        // built them (same package hash, same cached rates). Once configured,
+        // context is added even when inactive so a later change busts caches.
+        if (!self::supported() || !self::configured()) { return $packages; }
         // Include policy/context in Woo's package hash, even on cart->checkout
         // transitions and after disabling this module's configuration.
         $active = self::active();
@@ -339,6 +347,7 @@ class Pickup_Shipping_Checkout
         $s = Pickup_Shipping_Settings::get();
         $packages = WC()->shipping()->get_packages();
         $regular = !($s['ffl_enabled'] && self::requires_ffl());
+        $details = trim($s['store_name'] . "\n" . $s['store_address'] . "\n" . $s['instructions']);
         $policy = [];
         $chosen = WC()->session->get('chosen_shipping_methods', []);
         $dealer = $s['ffl_enabled'] && self::requires_ffl() ? (self::state()['license'] ?? '') : '';
@@ -370,7 +379,6 @@ class Pickup_Shipping_Checkout
         ob_start(); ?>
         <section id="ffla-delivery-choice" class="ffla-delivery" data-ffla-shipping-policy="<?php echo $policy_attr; ?>" style="<?php echo esc_attr($styles); ?>" aria-labelledby="ffla-delivery-title">
             <h3 id="ffla-delivery-title"><?php echo esc_html($s['title']); ?></h3>
-            <?php if ($regular): ?>
             <div class="ffla-delivery__options" role="radiogroup" aria-labelledby="ffla-delivery-title">
                 <?php foreach (['pickup','ship'] as $choice):
                     if ($s['delivery'] !== 'both' && $s['delivery'] !== $choice) { continue; }
@@ -383,14 +391,13 @@ class Pickup_Shipping_Checkout
                         <input type="radio" name="ffla_delivery_mode" value="<?php echo esc_attr($choice); ?>" <?php checked($mode,$choice); disabled(!$enabled); ?>>
                         <span class="ffla-delivery__card">
                             <strong><?php echo esc_html($s[$choice . '_title']); ?></strong>
-                            <span><?php echo esc_html($s[$choice . '_description']); ?></span>
+                            <?php if (trim((string) $s[$choice . '_description']) !== ''): ?><span><?php echo esc_html($s[$choice . '_description']); ?></span><?php endif; ?>
                             <?php if (!$enabled): ?><small><?php esc_html_e('Unavailable for the current address or package.', 'ffl-funnels-addons'); ?></small><?php endif; ?>
                         </span>
                     </label>
                 <?php endforeach; ?>
             </div>
-            <?php if ($mode === 'pickup' && $s['store_address']): ?><p class="ffla-delivery__details"><?php echo nl2br(esc_html(trim($s['store_name'] . "\n" . $s['store_address'] . "\n" . $s['instructions']))); ?></p><?php endif; ?>
-            <?php endif; ?>
+            <?php if ($mode === 'pickup' && $details !== ''): ?><p class="ffla-delivery__details"><?php echo nl2br(esc_html(preg_replace("/\n{2,}/", "\n", $details))); ?></p><?php endif; ?>
             <p class="ffla-delivery__status" aria-live="polite"></p>
         </section>
         <?php return ob_get_clean();

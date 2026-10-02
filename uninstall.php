@@ -318,6 +318,11 @@ $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\
 // settings option, so it is removed whether or not the module is active.
 delete_option('ffla_order_badges_settings');
 
+// ── Pickup & Shipping cleanup ──────────────────────────────────────
+// Settings only. Delivery details saved on orders (`_ffla_delivery` on
+// shipping lines) stay with the orders; the session keys expire on their own.
+delete_option('ffla_pickup_shipping');
+
 // ── FFLA core cleanup ──────────────────────────────────────────────
 delete_option('ffla_active_modules');
 delete_transient('ffla_github_release');

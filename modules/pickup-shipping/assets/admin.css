@@ -14,8 +14,6 @@
 .ffla-ps-method-list{max-height:240px;overflow:auto;margin-top:12px}
 .ffla-ps-method-list label{display:flex;align-items:baseline;gap:8px;padding:9px 2px;overflow-wrap:anywhere}
 .ffla-ps-method-list label[hidden]{display:none}
-.ffla-ps-location{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:20px;border:1px solid #c3c4c7;border-radius:8px;margin:18px 0}
-.ffla-ps-remove{justify-self:start;align-self:end}
 .ffla-ps-alert{padding:14px 18px;border-left:4px solid #b77900;background:#fff8e5;color:#513a0a}
 .ffla-ps-preview-tools{display:flex;gap:10px;align-items:center;margin:20px 0}
 #ffla-ps-preview{width:100%;box-sizing:border-box;max-width:none}
@@ -23,4 +21,4 @@
 #ffla-ps-preview[data-width=mobile] .ffla-delivery__options{grid-template-columns:1fr}
 .ffla-ps-save{position:sticky;bottom:0;padding:16px;background:var(--wb-color-neutral-background-1,#fff);border-top:1px solid #c3c4c7;z-index:2}
 .ffla-ps-admin :focus-visible{outline:2px solid #2271b1;outline-offset:3px}
-@media(max-width:782px){.ffla-ps-grid,.ffla-ps-location{grid-template-columns:1fr}.ffla-ps-panel{padding:16px}}
+@media(max-width:782px){.ffla-ps-grid{grid-template-columns:1fr}.ffla-ps-panel{padding:16px}}

@@ -28,7 +28,7 @@ What it needs:
 4. On the **General** tab choose **Available delivery options**. Tick the method instances under **Pickup methods** and **Shipping methods**. With *Pickup & Shipping* you need at least one of each; the module stays off until you have.
 5. Choose **Default selection** and **Selector placement**. For shortcode placement, put `[ffla_delivery_choice]` inside the classic checkout form.
 6. Fill in **Store name**, **Pickup address** and **Pickup instructions**.
-7. Optional, FFL rules: set the Local Pickup FFL in g-FFL Checkout, then on the **FFL Integration** tab tick **Enable FFL delivery rules**. The detected license appears under **Local Pickup FFL — managed by FFL Checkout**. Make sure the pickup methods you ticked in step 4 are the ones for that store.
+7. Optional, FFL rules: set the Local Pickup FFL in g-FFL Checkout, then on the **FFL Integration** tab tick **Enable FFL delivery rules**. The detected license appears under **Local Pickup FFL — managed by g-FFL Checkout**. Make sure the pickup methods you ticked in step 4 are the ones for that store.
 8. On **Appearance & Text** set the wording and colors. Use **Desktop** and **Mobile** to preview.
 9. Click **Save settings**. The page confirms with "Settings saved."
 10. Test on staging first (see [Testing and QA](#testing-and-qa)), then confirm pickup cost in WooCommerce.
@@ -47,17 +47,17 @@ Under **FFL Funnels → Pickup & Shipping**, in three tabs. Needs the `manage_wo
 | Pickup methods | Method instances that count as pickup, shown as "Zone — Title (id:instance)". Lists the enabled instances of WooCommerce pickup methods (those in the `woocommerce_local_pickup_methods` filter, `local_pickup` and `legacy_local_pickup` by default, or any method that declares `local-pickup` support). The "Search methods or zones" box only filters the list. | None ticked |
 | Shipping methods | Every other enabled method instance, including "Rest of the world" zone methods. | None ticked |
 | Store name | Shown to the customer as the pickup location. | Blank |
-| Pickup address | Shown under the cards while Pickup is selected, saved on the order. Up to 1,500 characters. | Blank |
+| Pickup address | Shown under the cards while Pickup is selected (with the store name and instructions), saved on the order. Up to 1,500 characters. | Blank |
 | Pickup instructions | Saved on the order and shown in the customer's order view and emails. Up to 1,500 characters. | Blank |
 
-The pickup details block under the cards appears only when **Pickup address** is filled in. Store name and instructions are still saved on the order without it.
+The pickup details block under the cards appears while Pickup is selected and any of **Store name**, **Pickup address** or **Pickup instructions** is filled in.
 
 **FFL Integration**
 
 | Setting | What it does | Default |
 |---|---|---|
 | Enable FFL delivery rules | Applies the dealer rules to carts that need an FFL. Requires g-FFL Checkout to be active; without it the whole module pauses. | Off |
-| Local Pickup FFL — managed by FFL Checkout | Read-only. Shows the license read from g-FFL Checkout's `ffl_local_pickup` option, or "No valid Local Pickup FFL detected." It is not a setting of this module and is never written. | Detected |
+| Local Pickup FFL — managed by g-FFL Checkout | Read-only (it refers to the g-FFL Checkout plugin, not this plugin's FFL Checkout module). Shows the license read from g-FFL Checkout's `ffl_local_pickup` option, or "No valid Local Pickup FFL detected." It is not a setting of this module and is never written. | Detected |
 
 **Appearance & Text**
 
@@ -68,6 +68,7 @@ The pickup details block under the cards appears only when **Pickup address** is
 | Pickup description | Text under the pickup title. | Collect your order at our store. |
 | Shipping title | Title of the shipping card. | Ship my order |
 | Shipping description | Text under the shipping title. | Deliver to your shipping address. |
+| Heading and card title letters | *UPPERCASE* or *As typed* for the heading and the two card titles. | UPPERCASE |
 | Container background | Background of the whole selector. | Blank (transparent) |
 | Heading and container text | Heading and general text color. | Blank (inherits the site's text color) |
 | Unselected card background | Background of cards that are not selected. | Blank (transparent) |
@@ -84,7 +85,7 @@ Value formats:
 - **Colors:** HEX with 3, 4, 6 or 8 digits (`#fff`, `#2271b1`, `#2271b1cc`), `transparent`, `currentColor`, or a site CSS variable: `var(--primary)`, or just `--primary` (saved as `var(--primary)`). A variable can have a fallback: `var(--primary, #2271b1)` or `var(--primary, var(--brand, #2271b1))`. Fallbacks can nest up to four `var()` levels. Named colors (`red`), `rgb()` and `hsl()` are not accepted, in the field or as a fallback.
 - **Radius and gap:** `0`, or a number with `px`, `rem`, `em` or `%` (`12px`, `.5rem`, `50%`), or a variable with an optional fallback in the same formats (`var(--radius, 0px)`). Negative values, unitless numbers, `vw` and `calc()` are not accepted.
 - Values longer than 256 characters are rejected. The settings page flags an invalid value in red and the browser blocks the save. The server also drops any invalid value silently, so the default applies.
-- Single-line texts are limited to 400 characters and HTML is stripped. A text field you clear stays empty; the default text does not come back.
+- Single-line texts are limited to 400 characters and HTML is stripped. A cleared heading or card title goes back to its default text; a cleared description stays empty and is not shown.
 
 More on live variables and a worked example: [Site colors](#site-colors).
 
@@ -106,14 +107,14 @@ Everywhere else WooCommerce behaves as it would without the module. In particula
 - Clicking a card refreshes the checkout. The module stores the choice in the WooCommerce session, drops that cart's cached shipping rates and recalculates. Only rates from the matching list remain, and WooCommerce then selects among them by its usual rules, including free-shipping coupons.
 - A configured method keeps its own services: `ups:4` also keeps `ups:4:ground`, but never `ups:40:ground`.
 - With **Available delivery options** set to *Pickup only* or *Shipping only*, that list always applies and one card is shown, already selected.
-- With **Default selection** on *Ask the customer*, no card is selected at first. Until one is chosen, WooCommerce shows the rates from both lists and the order cannot be placed: "Choose pickup or shipping before placing your order."
+- With **Default selection** on *Ask the customer*, no card is selected at first. Until one is chosen, WooCommerce shows the rates from both lists (so the totals have a provisional shipping line) and the order cannot be placed: "Choose pickup or shipping before placing your order." Choose *Pickup* or *Shipping* as the default if you prefer one list from the start.
 - A card is greyed out with "Unavailable for the current address or package." when the last calculation found no allowed rate for it in a package.
 - The saved choice belongs to one cart and is cleared when the products or quantities change, when the cart is emptied and when the order is placed.
 - The pickup address block is shown while Pickup is selected.
 
 ### FFL carts: the dealer decides
 
-A cart counts as an FFL cart when g-FFL Checkout says an FFL selector is required (`order_requires_ffl_selector()`), its compliance mode is on (`ffl_get_checkout_compliance_type()`), a product is flagged `_firearm_product = yes` (a variation uses its parent's flag, and g-FFL Checkout's `product_is_firearm()` is honored), or the checkout review posts `compliance_mode`, `ammo_compliance=1` or `non_firearms_compliance=1`.
+A cart counts as an FFL cart when g-FFL Checkout says an FFL selector is required (`order_requires_ffl_selector()`), its compliance mode is on (`ffl_get_checkout_compliance_type()`), a product is flagged `_firearm_product = yes` (a variation counts when its own flag or its parent's is `yes`, the same rule as Customer & Order Management, and g-FFL Checkout's `product_is_firearm()` is honored), or the checkout review posts `compliance_mode`, `ammo_compliance=1` or `non_firearms_compliance=1`.
 
 With **Enable FFL delivery rules** on, an FFL package ignores the delivery cards. The selected dealer decides:
 
@@ -168,7 +169,7 @@ Classic checkout (the `[woocommerce_checkout]` form or a compatible custom templ
 - **Checkout page**: the selector section before the billing fields, or where you placed the shortcode. Not shown for carts with nothing to ship, and only as an empty placeholder for FFL-only carts.
 - **Admin notices**: shown on every admin screen to users with `manage_woocommerce`: Checkout block page, old Camarillo snippet active, or settings incomplete. Each links to the settings.
 - **Order screen**: shipping-line meta *Delivery* ("Store pickup" or "Shipping"), and for pickup *Pickup location*, *Pickup address*, *Pickup instructions* (each only when filled in). A "Delivery information" block also appears after the shipping address.
-- **Customer order view and emails**: the same "Delivery information" block after the order table, in HTML and plain-text emails, including emails sent to the store.
+- **Customer order view and emails**: the same "Delivery information" block after the order table, in HTML and plain-text emails. Store emails (New order) include it on purpose, so staff see pickup orders at a glance.
 - **Customer & Order Management module**: its Ready for Pickup check accepts a shipping line that is `local_pickup` or carries `_ffla_delivery` with mode `pickup`.
 
 ## Data and uninstall
@@ -179,12 +180,12 @@ Classic checkout (the `[woocommerce_checkout]` form or a compatible custom templ
 | Legacy locations | `locations` is kept on every save for rollback only. It is not shown in the settings and is never used to authorize pickup |
 | Checkout choice | WooCommerce session keys `ffla_pickup_shipping_state` (mode, normalized dealer license, a requires-FFL flag, a hash of the cart, a hash of the settings) and `ffla_pickup_shipping_available` (pickup/ship availability flags per package). No customer addresses |
 | Rate cache | The cart's `shipping_for_package_{key}` session entries are removed when the choice, dealer or settings change |
-| Package context | An `ffla_delivery` entry on each shipping package whenever the module is supported on the request (classic checkout flow, no old snippet), even if the settings are incomplete. It is part of WooCommerce's package hash, so rates are recalculated when the policy, the cart context or the dealer change |
+| Package context | An `ffla_delivery` entry on each shipping package once the settings are complete and the request is supported (classic checkout flow, no old snippet). It is part of WooCommerce's package hash, so rates are recalculated when the policy, the cart context or the dealer change. Before setup is complete, packages, sessions and cached rates are left exactly as WooCommerce built them |
 | Order data | On the shipping line: meta `_ffla_delivery` (`mode`, `name`, `address`, `instructions`) and the visible *Delivery*, *Pickup location*, *Pickup address*, *Pickup instructions*. Written through WooCommerce's item API, with no direct post-meta writes |
 
 - No tables, cron jobs, remote requests or product/user meta.
 - **Switching the module off** keeps the settings and all order data. WooCommerce's own delivery flow works as before.
-- **Uninstalling the plugin** does not remove this module's data. `uninstall.php` has no cleanup for it, so the option `ffla_pickup_shipping` stays in the database; delete it by hand if you want it gone. Order data stays with the orders.
+- **Uninstalling the plugin** deletes the option `ffla_pickup_shipping`. Order data stays with the orders.
 - Only orders placed through the classic checkout carry the delivery data. Orders created in the admin, by REST or by other plugins do not.
 
 ## Troubleshooting
@@ -206,7 +207,7 @@ Classic checkout (the `[woocommerce_checkout]` form or a compatible custom templ
 | "This cart needs separate FFL and customer shipping packages…" | One package holds firearm and non-firearm items. The module does not split packages; a separate plugin must, or the customer must place separate orders. |
 | "No compatible delivery method is available for this package. Review your address and selection, or contact the store." | The package has no allowed rate, or the posted method is not one of them. Check address, zone and the ticked methods. |
 | Pickup shows a price | That is the WooCommerce method's cost. Change it in the shipping zone; the module never makes a method free. |
-| Pickup details are missing under the cards | **Pickup address** is empty. |
+| Pickup details are missing under the cards | **Store name**, **Pickup address** and **Pickup instructions** are all empty, or Pickup is not the selected card. |
 | A color or size is ignored | The value is not in an accepted format (see [Settings](#settings)), or the variable does not exist on the storefront. Fix the red field; the browser will not save an invalid value. |
 | Admin preview differs from checkout | Theme variables are not loaded in wp-admin, so only their fallback shows. Add a fallback, such as `var(--primary, #2271b1)`. |
 | Heading and card titles are in capitals | The stylesheet does that. There is no setting for it. |
@@ -219,7 +220,7 @@ Classic checkout (the `[woocommerce_checkout]` form or a compatible custom templ
 
 | Filter | Arguments | Notes |
 |---|---|---|
-| `ffla_pickup_shipping_package_scope` | `string $scope`, `array $package` | Return `ffl`, `regular` or `mixed`; any other value becomes `mixed`. Runs only for carts the provider says need an FFL and that contain a firearm-flagged product, after the module's own classification. Compliance-only carts are `ffl` without the filter. Preserve real destinations and the provider's validation. |
+| `ffla_pickup_shipping_package_scope` | `string $scope`, `array $package` | Return `ffl`, `regular` or `mixed`; any other value becomes `mixed`. Runs for every package of a cart the provider says needs an FFL, after the module's own classification (compliance-only carts start as `ffl`). Carts that need no FFL are always `regular`. Preserve real destinations and the provider's validation. |
 | `ffla_pickup_shipping_keep_internal_rate` | `bool $keep` (false), `string $rate_id`, `object $rate`, `array $package`, `array $decision` | Return exactly `true` to keep an offered rate that is not in the configured lists. Only called when the package carries delivery context, `$decision['policy_permitted']` is `true`, the mode is `pickup` or `ship`, `$rate->get_id() === $rate_id`, and the cost is numeric 0. An ID alone is not authorization: verify the package and plan on your side. Does not change price, destination or mode. Added in 1.47.7. |
 
 The module also reads WooCommerce's `woocommerce_local_pickup_methods` filter to decide which methods are pickup.
@@ -252,7 +253,7 @@ The module also reads WooCommerce's `woocommerce_local_pickup_methods` filter to
 - **Markup:** `#ffla-delivery-choice` carries `data-ffla-shipping-policy`, JSON keyed by package: `mode`, `methods`, `selected`, `dealer`. The radios are named `ffla_delivery_mode` (`pickup`, `ship`).
 - **Settings save:** `admin-post.php?action=ffla_pickup_shipping_save`, nonce action `ffla_pickup_shipping_save`, capability `manage_woocommerce`, values in the POST array `ps`. No AJAX endpoints and no REST routes.
 - **Assets:** front end `ffla-delivery` (CSS; JS with jQuery and `wc-checkout`, localized as `fflaDelivery.updating` and `fflaDelivery.error`); admin `ffla-delivery-admin` (CSS and JS) and `ffla-delivery-preview` (the front-end CSS), only on `?page=ffla-pickup-shipping`.
-- **CSS custom properties** set inline on `.ffla-delivery` from the settings: `--ffla-delivery-bg`, `-text`, `-card-bg`, `-card-text`, `-accent`, `-selected-text`, `-border`, `-radius`, `-card-radius`, `-gap` (all prefixed `--ffla-delivery`). Classes: `.ffla-delivery__options`, `__option`, `__card`, `__details`, `__status`; `aria-busy` is set while updating.
+- **CSS custom properties** set inline on `.ffla-delivery` from the settings: `--ffla-delivery-bg`, `-text`, `-card-bg`, `-card-text`, `-accent`, `-selected-text`, `-border`, `-radius`, `-card-radius`, `-gap`, `-text-transform` (all prefixed `--ffla-delivery`). Classes: `.ffla-delivery__options`, `__option`, `__card`, `__details`, `__status`; `aria-busy` is set while updating.
 - **Order meta:** shipping-line `_ffla_delivery` array (`mode` is `pickup` or `ship`; `name`, `address`, `instructions` are empty for `ship`).
 - **Constants and keys:** `Pickup_Shipping_Settings::OPTION` (`ffla_pickup_shipping`), `Pickup_Shipping_Checkout::SESSION` (`ffla_pickup_shipping_state`), `Pickup_Shipping_Checkout::AVAILABLE` (`ffla_pickup_shipping_available`). The module defines no global constants; assets use `FFLA_URL` and `FFLA_VERSION`.
 - **Classes:** `Pickup_Shipping_Module`, `Pickup_Shipping_Settings` (`get()`, `defaults()`, `methods()`, `sanitize()`, `configured()`, `provider_license()`, `license()`, `appearance_value()`), `Pickup_Shipping_Engine` (`decision()`, `filter()`, `allows()`, `package_scope()`, `product_requires_ffl()`, `licensee_key()`, `same_licensee()`), `Pickup_Shipping_Checkout`. `Pickup_Shipping_Settings::license()` returns the 15-character uppercase license (nine digits, one letter, five digits) or an empty string; Customer & Order Management reuses it to normalize FFL licenses when this module is loaded.
@@ -321,7 +322,7 @@ node tests/smoke/pickup-shipping-transitions-ui-smoke.js
 - `pickup-shipping-native-conflict-smoke.php`: the raw-string local-pickup conflict and which errors may and may not be removed.
 - `pickup-shipping-transitions-smoke.php`: store → external dealer → store, cache invalidation, mixed packages, and unchanged behavior for Checkout blocks and non-checkout requests.
 - The two `.js` tests run the real admin and checkout CSS/JS in a browser. `pickup-shipping-ui-smoke.js` covers the settings page (tabs, method search, preview, color and size validation) and checkout refreshes against simulated theme styles and native dealer events. `pickup-shipping-transitions-ui-smoke.js` covers dealer changes, stale responses, late theme redraws and radio, dropdown and hidden shipping controls.
-- The PHP tests run on push and pull requests (`php-syntax` workflow); the release workflow runs all except `missing-provider` before publishing. The browser tests are not part of CI.
+- The PHP tests, including `missing-provider`, run on push and pull requests (`php-syntax` workflow) and in the release workflow before publishing. The browser tests are not part of CI; both honor `FFLA_TEST_BROWSER_CHANNEL` (for example `chromium`).
 - Fixtures: `tests/smoke/pickup-shipping-colors.json` and `pickup-shipping-radii.json` list accepted inputs with their saved form and rejected inputs, and both the PHP and browser tests read them. `php tests/smoke/pickup-shipping-smoke.php fixture "<post data>" "<ffl or empty>" "<variables or empty>"` prints the admin HTML, the checkout HTML, the filtered rates and the selected methods as JSON; the browser tests use it as their server.
 
 Browser tests require Playwright and installed Chrome (or set FFLA_TEST_BROWSER_CHANNEL).

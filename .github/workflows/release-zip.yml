@@ -87,6 +87,10 @@ jobs:
           php tests/smoke/tax-split-payment-smoke.php
           php tests/smoke/tax-order-context-smoke.php
           php tests/smoke/tax-report-shipping-fee-smoke.php
+          php tests/smoke/tax-policy-smoke.php
+          php tests/smoke/tax-resolver-fixes-smoke.php
+          php tests/smoke/tax-resolver-units-smoke.php
+          php tests/smoke/tax-report-fixes-smoke.php
 
       - name: Validate customer and order management before publishing
         if: ${{ steps.tag.outputs.skip != 'true' }}
@@ -110,7 +114,27 @@ jobs:
           php tests/smoke/pickup-shipping-smoke.php
           php tests/smoke/pickup-shipping-internal-rates-smoke.php
           php tests/smoke/pickup-shipping-native-conflict-smoke.php
+          php tests/smoke/pickup-shipping-smoke.php missing-provider
           php tests/smoke/pickup-shipping-transitions-smoke.php
+
+      - name: Validate the other modules before publishing
+        if: ${{ steps.tag.outputs.skip != 'true' }}
+        run: |
+          set -e
+          php tests/smoke/woobooster-smart-smoke.php
+          php tests/smoke/woobooster-bundle-pricing-smoke.php
+          php tests/smoke/loadout-cart-smoke.php
+          php tests/smoke/wishlist-ajax-smoke.php
+          php tests/smoke/wss-sync-smoke.php
+          php tests/smoke/ffl-checkout-smoke.php
+          node tests/smoke/ffl-checkout-mapbox-smoke.js
+          php tests/smoke/white-label-smoke.php
+          php tests/smoke/white-label-monsterinsights-smoke.php
+          php tests/smoke/white-label-monsterinsights-smoke.php legacy
+          php tests/smoke/white-label-monsterinsights-smoke.php missing
+          php tests/smoke/white-label-monsterinsights-smoke.php no-addon
+          node tests/smoke/monsterinsights-bridge-smoke.js
+          php tests/smoke/order-badges-smoke.php
 
       # This ZIP is what the built-in updater installs on every store, so it must
       # contain only runtime files. Everything below is developer tooling.

@@ -31,8 +31,10 @@ function refresh(){
   if(value)preview.style.setProperty(input.dataset.psCss,value);else preview.style.removeProperty(input.dataset.psCss);
  });
  form.querySelector('[data-ps-style-error]').hidden=!invalid;
+ const textCase=form.elements['ps[text_case]'];
+ if(textCase){if(textCase.value==='none')preview.style.setProperty('--ffla-delivery-text-transform','none');else preview.style.removeProperty('--ffla-delivery-text-transform');}
 }
-form.addEventListener('input',refresh);refresh();
+form.addEventListener('input',refresh);form.addEventListener('change',refresh);refresh();
 form.querySelectorAll('[data-preview-width]').forEach(button=>button.addEventListener('click',()=>{preview.dataset.width=button.dataset.previewWidth;form.querySelectorAll('[data-preview-width]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));}));
 form.addEventListener('invalid',e=>{const panel=e.target.closest('[data-ps-panel]');if(panel)activate(panel.dataset.psPanel,false);},true);
 })();

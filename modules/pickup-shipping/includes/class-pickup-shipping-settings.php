@@ -17,6 +17,7 @@ class Pickup_Shipping_Settings
             'accent'=>'', 'background'=>'', 'text_color'=>'',
             'card_background'=>'', 'card_text'=>'', 'selected_text'=>'', 'border_color'=>'',
             'container_radius'=>'', 'card_radius'=>'', 'card_gap'=>'16px',
+            'text_case'=>'uppercase',
         ];
     }
     public static function get(): array
@@ -57,6 +58,7 @@ class Pickup_Shipping_Settings
     public static function styles(array $s): string
     {
         $styles = [];
+        if (($s['text_case'] ?? 'uppercase') === 'none') { $styles[] = '--ffla-delivery-text-transform:none'; }
         foreach (self::appearance_fields() as $key=>$field) {
             $value = self::appearance_value($s[$key] ?? '', $field['type']);
             if ($value !== '') { $styles[] = $field['property'] . ':' . $value; }
@@ -114,24 +116,19 @@ class Pickup_Shipping_Settings
         foreach (['store_name','title','pickup_title','pickup_description','ship_title','ship_description'] as $key) {
             if (is_scalar($input[$key] ?? null)) { $s[$key] = substr(sanitize_text_field($input[$key]), 0, 400); }
         }
+        // The heading and the two card titles are what the customer chooses
+        // between: a cleared one goes back to its default instead of leaving
+        // an empty heading or a blank card. Descriptions may be left empty.
+        foreach (['title','pickup_title','ship_title'] as $key) {
+            if (trim($s[$key]) === '') { $s[$key] = self::defaults()[$key]; }
+        }
+        if (isset($input['text_case']) && in_array($input['text_case'], ['uppercase','none'], true)) { $s['text_case'] = $input['text_case']; }
         foreach (['store_address','instructions'] as $key) {
             if (is_scalar($input[$key] ?? null)) { $s[$key] = substr(sanitize_textarea_field($input[$key]), 0, 1500); }
         }
         foreach (self::appearance_fields() as $key=>$field) { $s[$key] = self::appearance_value($input[$key] ?? $s[$key], $field['type']); }
-        $seen = [];
-        foreach (array_slice(is_array($input['locations'] ?? null) ? $input['locations'] : [], 0, 25) as $row) {
-            if (!is_array($row)) { continue; }
-            $license = self::license($row['license'] ?? '');
-            $method = is_string($row['method'] ?? null) ? $row['method'] : '';
-            if (!$license || isset($seen[$license]) || !in_array($method, $s['pickup_methods'], true)) { continue; }
-            $seen[$license] = true;
-            $s['locations'][] = [
-                'license'=>$license, 'method'=>$method,
-                'name'=>is_scalar($row['name'] ?? null) ? substr(sanitize_text_field($row['name']),0,200) : '',
-                'address'=>is_scalar($row['address'] ?? null) ? substr(sanitize_textarea_field($row['address']),0,800) : '',
-                'instructions'=>is_scalar($row['instructions'] ?? null) ? substr(sanitize_textarea_field($row['instructions']),0,800) : '',
-            ];
-        }
+        // `locations` (the removed own-location list) is never taken from the
+        // form; save() keeps the previously stored value for rollback only.
         return $s;
     }
     public static function configured(array $s): bool

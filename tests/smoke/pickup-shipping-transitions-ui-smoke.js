@@ -10,7 +10,7 @@ const store='9-77-111-01-8A-05780',external='9-77-111-01-8A-99999';
 function fixture(body){return JSON.parse(execFileSync('php',[path.join(__dirname,'pickup-shipping-smoke.php'),'fixture',body,'ffl'],{encoding:'utf8'}));}
 let checks=0;function check(value,message){assert.ok(value,message);checks++;}
 (async()=>{
- const browser=await chromium.launch({headless:true,channel:'chrome'});
+ const browser=await chromium.launch({headless:true,channel:process.env.FFLA_TEST_BROWSER_CHANNEL||'chrome'});
  try{
   const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.route('**/*',r=>r.abort());
   const initial=fixture('');

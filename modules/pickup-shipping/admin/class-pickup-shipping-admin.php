@@ -96,16 +96,16 @@ class Pickup_Shipping_Admin
                 <section class="ffla-ps-panel" id="ps-panel-ffl" data-ps-panel="ffl">
                     <h3><?php esc_html_e('FFL delivery rules','ffl-funnels-addons'); ?></h3>
                     <label><input type="checkbox" name="ps[ffl_enabled]" value="1" <?php checked($s['ffl_enabled']); ?>> <?php esc_html_e('Enable FFL delivery rules','ffl-funnels-addons'); ?></label>
-                    <p><?php esc_html_e('Local pickup comes directly from the Local Pickup FFL configured in FFL Checkout. Select it using the existing FFL Checkout selector: our addon allows pickup only. Select another FFL: shipping only. No duplicate dealer setup is needed here.','ffl-funnels-addons'); ?></p>
+                    <p><?php esc_html_e('Local pickup comes directly from the Local Pickup FFL configured in the g-FFL Checkout plugin (not this plugin\'s FFL Checkout module). When the customer selects that dealer in the g-FFL Checkout selector, only pickup is offered; any other dealer means shipping only. No duplicate dealer setup is needed here.','ffl-funnels-addons'); ?></p>
                     <div class="ffla-ps-alert" id="ffla-ps-provider-pickup">
-                        <strong><?php esc_html_e('Local Pickup FFL — managed by FFL Checkout','ffl-funnels-addons'); ?></strong>
+                        <strong><?php esc_html_e('Local Pickup FFL — managed by g-FFL Checkout','ffl-funnels-addons'); ?></strong>
                         <?php if ($s['ffl_pickup_license'] !== ''): ?>
                             <p><code><?php echo esc_html($s['ffl_pickup_license']); ?></code></p>
                         <?php else: ?>
-                            <p><?php esc_html_e('No valid Local Pickup FFL detected. Configure it in FFL Checkout to enable FFL pickup. Other selected dealers use shipping; saved legacy locations do not enable pickup.','ffl-funnels-addons'); ?></p>
+                            <p><?php esc_html_e('No valid Local Pickup FFL detected. Configure it in g-FFL Checkout to enable FFL pickup. Other selected dealers use shipping; saved legacy locations do not enable pickup.','ffl-funnels-addons'); ?></p>
                         <?php endif; ?>
                     </div>
-                    <p><?php esc_html_e('Changes in FFL Checkout are read automatically. Select the corresponding WooCommerce pickup and shipping methods in General; their prices stay unchanged. Mixed carts must already have separate FFL/customer packages and destinations. Dealer names, cookies and old addon mappings never authorize pickup. FFL Checkout retains its own validation.','ffl-funnels-addons'); ?></p>
+                    <p><?php esc_html_e('Changes in g-FFL Checkout are read automatically. Select the corresponding WooCommerce pickup and shipping methods in General; their prices stay unchanged. Mixed carts must already have separate FFL/customer packages and destinations. Dealer names, cookies and old addon mappings never authorize pickup. g-FFL Checkout keeps its own validation.','ffl-funnels-addons'); ?></p>
                     <p><?php esc_html_e('The store-search button starts the native FFL selection; pickup is applied only when a dealer is selected. After each change, the addon refreshes that cart\'s cached rates and synchronizes the available method with WooCommerce before totals. Each selected method must be enabled and available in the package\'s matching WooCommerce shipping zone. If pickup is missing, check the zone and method conditions; selecting an instance here does not make it available in other zones.','ffl-funnels-addons'); ?></p>
                 </section>
                 <section class="ffla-ps-panel" id="ps-panel-appearance" data-ps-panel="appearance">
@@ -119,6 +119,7 @@ class Pickup_Shipping_Admin
                     </div>
                     <p id="ffla-ps-style-help"><?php esc_html_e('Use HEX, transparent, currentColor or a full-color CSS variable such as var(--primary, #2271b1). Radius and gap accept 0, px, rem, em, % or variables such as var(--radius, 0px) and var(--space-m, 16px). Bare --variable names also work. Variables must exist on the storefront; theme variables not loaded in wp-admin only show their fallback in this preview.','ffl-funnels-addons'); ?></p>
                     <p data-ps-style-error hidden role="status"><?php esc_html_e('Some style values are invalid. Use the formats shown above; CSS declarations and URLs are not allowed.','ffl-funnels-addons'); ?></p>
+                    <div class="ffla-ps-grid"><?php self::select('text_case',__('Heading and card title letters','ffl-funnels-addons'),['uppercase'=>__('UPPERCASE','ffl-funnels-addons'),'none'=>__('As typed','ffl-funnels-addons')],$s); ?></div>
                     <p><?php esc_html_e('Leave colors blank to inherit the site style. Prices are not inferred from descriptions: do not promise free pickup unless your WooCommerce rate is free.','ffl-funnels-addons'); ?></p>
                     <div class="ffla-ps-preview-tools">
                         <strong><?php esc_html_e('Preview','ffl-funnels-addons'); ?></strong>

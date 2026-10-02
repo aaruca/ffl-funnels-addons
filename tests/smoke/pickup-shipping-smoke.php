@@ -69,6 +69,12 @@ $s=Pickup_Shipping_Settings::sanitize([
 'delivery'=>'both','default'=>'none','pickup_methods'=>['local_pickup:1','local_pickup:3'],'shipping_methods'=>['flat_rate:2'],'store_name'=>'Sample Store','store_address'=>'100 Sample Street','instructions'=>'Wait for your ready-for-pickup email.',
 'locations'=>[['name'=>'Main store','license'=>'9-77-111-01-8A-05780','method'=>'local_pickup:1','address'=>'100 Sample Street'],['name'=>'Second store','license'=>'9-77-111-01-8A-05781','method'=>'local_pickup:3','address'=>'200 Sample Street']],
 ],$catalog);
+// Older versions stored their own pickup locations. sanitize() no longer
+// builds them from the form; keep stored ones to prove they never authorize.
+$s['locations']=[
+ ['license'=>'977111018A05780','method'=>'local_pickup:1','name'=>'Main store','address'=>'100 Sample Street','instructions'=>''],
+ ['license'=>'977111018A05781','method'=>'local_pickup:3','name'=>'Second store','address'=>'200 Sample Street','instructions'=>''],
+];
 $options[Pickup_Shipping_Settings::OPTION]=$s;
 $options['ffl_local_pickup']='9-77-111-01-8A-05780';
 $s=Pickup_Shipping_Settings::get();
@@ -116,7 +122,13 @@ foreach(array_merge($colors['rejected'],[[],null,str_repeat('a',257)]) as $input
 $options[Pickup_Shipping_Settings::OPTION]=array_merge($s,['accent'=>'var(--primary);display:none']);
 check(strpos(Pickup_Shipping_Checkout::html(),'--ffla-delivery-accent:')===false,'unsafe stored color rejected at rendering');
 $options[Pickup_Shipping_Settings::OPTION]=$s;
-check(count($s['locations'])===2,'multiple own FFLs');
+check(count($s['locations'])===2,'stored legacy own FFLs are kept for rollback');
+check(Pickup_Shipping_Settings::sanitize(['pickup_methods'=>['local_pickup:1'],'locations'=>[['license'=>'9-77-111-01-8A-05780','method'=>'local_pickup:1']]],$catalog)['locations']===[],'the form cannot post own pickup locations');
+$cleared=Pickup_Shipping_Settings::sanitize(['title'=>'','pickup_title'=>' ','ship_title'=>'','pickup_description'=>'','text_case'=>'none'],$catalog);
+check($cleared['title']===Pickup_Shipping_Settings::defaults()['title']&&$cleared['pickup_title']===Pickup_Shipping_Settings::defaults()['pickup_title']&&$cleared['ship_title']===Pickup_Shipping_Settings::defaults()['ship_title'],'cleared heading and card titles fall back to defaults');
+check($cleared['pickup_description']==='','a description may be left empty');
+check($cleared['text_case']==='none'&&strpos(Pickup_Shipping_Settings::styles($cleared),'--ffla-delivery-text-transform:none')!==false,'letter case setting saved and rendered');
+check(Pickup_Shipping_Settings::sanitize(['text_case'=>'shout'],$catalog)['text_case']==='uppercase','unknown letter case rejected');
 $radii=json_decode(file_get_contents(__DIR__.'/pickup-shipping-radii.json'),true);
 foreach($radii['accepted'] as $input=>$expected){
  $saved=Pickup_Shipping_Settings::sanitize(array_merge($s,['container_radius'=>(string)$input,'card_radius'=>(string)$input,'card_gap'=>(string)$input]),$catalog);
@@ -274,4 +286,20 @@ check(strpos($mixedHtml,'name="ffla_delivery_mode"')!==false,'separate non-FFL p
 check(strpos($mixedHtml,'Select your FFL')===false&&strpos($mixedHtml,'selected FFL requires shipping')===false,'mixed cart does not duplicate native dealer notices');
 $wc->cart->items=cart_items([1]);$ffl=false;$wc->ship->packages=[];
 check(strpos(Pickup_Shipping_Checkout::html(),'<h3')!==false,'regular checkout restores delivery selector');
+// A variation flagged as a firearm under a parent that is not flagged.
+$GLOBALS['products'][9100]=new Product(false,0);
+$fireVariation=new Product(true,9100);
+check(Pickup_Shipping_Engine::product_requires_ffl($fireVariation),'variation own firearm flag counts');
+check(Pickup_Shipping_Engine::product_requires_ffl(new Product(false,1))===Pickup_Shipping_Engine::product_requires_ffl($GLOBALS['products'][1]??new Product(false)),'unflagged variation follows its parent');
+// The package-scope filter also reaches compliance-only (no firearm) packages.
+$GLOBALS['hooks']['ffla_pickup_shipping_package_scope'][]=function($scope,$package){return !empty($package['test_regular'])?'regular':$scope;};
+check(Pickup_Shipping_Engine::package_scope(['contents'=>[],'test_regular'=>true],true,false)==='regular','scope filter runs for compliance-only packages');
+check(Pickup_Shipping_Engine::package_scope(['contents'=>[]],true,false)==='ffl','compliance-only default stays ffl');
+array_pop($GLOBALS['hooks']['ffla_pickup_shipping_package_scope']);
+// Not configured yet: packages are left exactly as WooCommerce built them.
+$savedOption=$options[Pickup_Shipping_Settings::OPTION];
+$options[Pickup_Shipping_Settings::OPTION]=array_merge($savedOption,['pickup_methods'=>[],'shipping_methods'=>[]]);
+$untouched=[['contents'=>cart_items([2])]];
+check(Pickup_Shipping_Checkout::packages($untouched)===$untouched,'unconfigured module leaves shipping packages untouched');
+$options[Pickup_Shipping_Settings::OPTION]=$savedOption;
 echo "$checks Pickup & Shipping checks passed.\n";
