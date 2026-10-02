@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.55.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.55.1-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -38,7 +38,7 @@ Short summaries of each module. The guide linked at the end of each one is the r
 
 Product recommendations, product bundles and cart coupon rules.
 
-*   **Rules:** conditions on the viewed product (category, tag, attribute, specific products or the entire store) decide when a rule applies, and actions decide what to show. Rules are managed under **FFL Funnels → WB Rules** and are checked by priority number, lowest first; the first rule whose conditions match is used.
+*   **Rules:** conditions on the viewed product (category, tag, attribute, specific products or the entire store) decide when a rule applies, and actions decide what to show. Rules are managed under **FFL Funnels → WB Rules** and are checked by priority number, lowest first (the oldest rule on a tie); the first rule whose conditions match is used.
 *   **Smart Recommendations:** Bought Together (ranked by how much more often items sell together than chance), Trending (an order's weight halves every 14 days), Recently Viewed and Similar Products (brand, key attributes such as caliber, category, price). Use them as rule actions or on their own in a Bricks loop. Bought Together and Trending are built from order history; **WB Settings** has the switches, **Rebuild Now** and Index Diagnostics. Results are cached (1 hour; 6 hours for Similar Products).
 *   **Where they show:** instead of WooCommerce's related products on classic product templates; in the Bricks query loops **WooBooster Recommendations**, **WooBooster Smart Recommendations** and **WooBooster Bundles**; and anywhere else with the `[woobooster]` shortcode.
 *   **Bundles and coupon rules:** "frequently bought together" bundles (a discount or a fixed total, added to the cart as one line) are shown by a Bricks element, and Bricks is the only way to show them on the storefront. Apply Coupon rules apply an existing WooCommerce coupon while the cart matches and remove it when it no longer does.
@@ -55,7 +55,7 @@ A lightweight wishlist for shoppers, guests included.
 *   **Where it shows:** a header counter and a wishlist page (`[alg_wishlist_page]`, or a Bricks query loop of the **Wishlist** query type). Colours, a custom icon and custom CSS are set in **FFL Funnels → Wishlist**.
 *   **Bricks and shortcodes:** **Wishlist Button** and **Wishlist Counter** elements, plus `[alg_wishlist_button]` and `[alg_wishlist_count]`.
 *   **SnapFind (Typesense):** when the SnapFind plugin is active, heart buttons appear on search results. An optional ranking boost for wishlisted products is off by default and is enabled in the Wishlist settings. A `wishlist_count` field can be added to the search index; the setup is on the **Documentation** card of the Wishlist settings page.
-*   **Caching:** a full-page cache can show one visitor's hearts and count to another. Exclude wishlist pages from the cache, or vary it on the `alg_wishlist_session` cookie.
+*   **Caching:** on a cached page the browser corrects the hearts and counter for the current visitor, and the wishlist page tells caches not to store it. Server caches that ignore `DONOTCACHEPAGE` and no-cache headers must exclude the wishlist page by hand.
 
 Guide: [modules/wishlist/README.md](modules/wishlist/README.md)
 
@@ -89,9 +89,9 @@ Two-way sync between WooCommerce products and a Google Sheet, for stores that ma
 
 *   **What syncs:** SKU, regular price, sale price, stock quantity, stock status and manage stock, one row per simple product or variation. Edit them in the sheet; WooCommerce writes its current values back, including stock sold through orders (real-time stock push, on by default). A daily sync runs at a time you choose, and **Sync Now** runs one on demand.
 *   **Connecting:** a Google service account is recommended. Paste its JSON key on the **WSS Settings** page (or set it in `wp-config.php`) and share the sheet with the service account email as an Editor. The OAuth **Connect with Google** flow is offered only when `WSS_PROXY_SECRET` is defined.
-*   **Tabs:** one spreadsheet with several tab groups; each tab gets products picked one by one, by category, by tag or all at once. Keep a product that manages stock in one tab: when tabs disagree the later tab wins, and the remembered stock quantity is per variation, not per tab. Removing a tab group on the WSS Dashboard also deletes that tab from the Google Sheet.
+*   **Tabs:** one spreadsheet with several tab groups; each tab gets products picked one by one, by category, by tag or all at once. A product can sit in several tabs: stock changes are tracked per tab, and when tabs disagree on a price the later tab wins. Removing a tab group on the WSS Dashboard asks before also deleting that tab from the Google Sheet, and never deletes a tab another group still uses.
 *   **Conflicts:** SKU, prices and manage stock follow the sheet. Stock quantity follows whichever side changed, and WooCommerce wins if both did.
-*   **Creating products:** a new row creates a simple product, or a variation under an existing variable product. A product created this way is not added to a tab group automatically.
+*   **Creating products:** a new row creates a simple product, or a variation under an existing variable product. A product created this way joins that tab's group.
 *   **REST API:** internal `wss/v1` endpoints create or update products, variations and attribute terms (see [REST API](#rest-api)).
 
 Guide: [modules/woo-sheets-sync/README.md](modules/woo-sheets-sync/README.md)
@@ -102,7 +102,7 @@ Looks up the US sales tax rate for the customer's address and applies it in the 
 
 *   **One Sales Tax line:** state, county, city and district rates are added together into one **Sales Tax** line, and the breakdown is saved on the order. When the module cannot produce a rate, WooCommerce's own tax table is used, which means no tax if that table is empty. The module is not tax or legal advice and does not check nexus or registrations.
 *   **Rate sources:** the Google Sheet ZIP dataset is the default. It needs no account and is imported monthly into local tables; lookups match ZIP, then city, then a statewide rate. With your own USGeocoder key, the default **Automatic** routing uses live address-level lookups (billed per uncached lookup) and falls back to the sheet if USGeocoder fails or finds no rate. The **Tax rate source** setting can force either source.
-*   **Scope and exemptions:** limit the resolver to the states you use (other states use WooCommerce's tax table, and unchecking a state deletes its imported sheet data). Whole-order exemptions for selected customers or roles, category and tag exemption rules, and tax holidays with date windows are available. Local pickup is taxed at the store address.
+*   **Scope and exemptions:** limit the resolver to the states you use (other states use WooCommerce's tax table, and, while **Limit resolver to selected states** is on, unchecking a state deletes its imported sheet data). Whole-order exemptions for selected customers or roles, category and tag exemption rules, and tax holidays with date windows are available. Local pickup is taxed at the store address.
 *   **Renewals:** since 1.47.8, renewals, admin **Recalculate** and Split Payment (FPPC) plan orders are taxed from the order itself and reuse the quote saved at checkout for the same address, so every payment of a plan uses the deposit's rate. Existing orders are not recalculated.
 *   **Admin tools:** Quote Lookup, Coverage Matrix, Datasets, Audit Log and Settings under **FFL Funnels → Sales Tax Resolver**, plus a REST API (see [REST API](#rest-api)). WooCommerce taxes must be enabled.
 
@@ -114,7 +114,7 @@ Sales tax filing reports built from the tax values stored on WooCommerce orders 
 
 *   **Reports:** **WooCommerce → Sales Tax Reports** has Overview, States, Jurisdictions, Orders, Reconciliation, Nexus Monitor, Delivery & History and Tools tabs. It gives one row per state and per local filing jurisdiction and currency: gross sales, taxable sales (taxed shipping included), tax collected and refunded, tax calculated from the stored rate, and over/under collection. Georgia rows use the official filing codes (`000` for the statewide row).
 *   **Downloads:** a ZIP package with CSV files, an XLSX workbook, a PDF and HTML summary, a README and a manifest with checksums. An *Advanced audit package* adds order-level files. The optional order audit includes customer names and shipping addresses, so leave it off unless the recipient needs it.
-*   **Checks:** an *Items to review* list, a reconciliation with WooCommerce Analytics and an advisory economic-nexus monitor. The nexus thresholds are unverified sample data. The module does not file returns, does not know where you are registered and is not tax advice; resolve every row marked *Needs review*.
+*   **Checks:** an *Items to review* list, a reconciliation with WooCommerce's own tax totals and an advisory economic-nexus monitor. The nexus thresholds are unverified sample data. The module does not file returns, does not know where you are registered and is not tax advice; resolve every row marked *Needs review*.
 *   **Delivery and combining:** a monthly email of the previous month's package to the recipients you set, and a tool that combines jurisdiction summaries from several stores and maps them into a state or accountant CSV template.
 *   **Split Payment (FPPC):** linked installment receipts are grouped under their original sale, which counts once with its original product quantities. Each payment and refund keeps its own date and amount. Since 1.47.9, FPPC's "Final shipping" fee counts as shipping, and so does the initial fee when the order's plan includes shipping in it. See [Split Payment: tax reports and nexus](docs/split-payment-tax-reports.md).
 
@@ -125,9 +125,10 @@ Guide: [modules/tax-reports/README.md](modules/tax-reports/README.md)
 A richer review form and list for WooCommerce products, plus review request emails after an order is completed.
 
 *   **Form and list:** an overall star rating, extra criteria (*Quality* and *Value for money* by default, up to six of your own), review text, and up to three photos or short videos. Reviews show a *Verified buyer* label, *Helpful* votes, store replies and pinned reviews. Reviews with a photo or video are always held for moderation.
+*   **Rules:** the form follows WooCommerce's review settings: reviews must be enabled for the store and the product, and *Reviews can only be left by "verified owners"* is enforced (a signed request-email link counts as proof of purchase). Photo and video uploads can be switched off.
 *   **Where to show them:** in the WooCommerce product **Reviews** tab (turn on **Replace WooCommerce reviews tab with FFL form**), with the Bricks elements **Reviews Rating Badge**, **Reviews List**, **Review Form** and **Order reviews hub** (category **FFL Funnels**), or on the order review hub page (`[ffla_order_reviews]`).
 *   **Review requests:** an email a set number of days after an order is marked Completed, either per product or one per order, with a signed link to a hub page where the customer reviews every product in the order without logging in. Choose that **Hub page** first: every request email links to it.
-*   **Moderation:** hold every new review, hold or refuse reviews that contain forbidden words, pin reviews with the **Pin review** row action under **Products → Reviews**, and send reviewers "approved" and "reply" emails.
+*   **Moderation:** hold every new review, hold or refuse reviews that contain forbidden words, pin reviews with the **Pin review** row action and see review media and helpful votes in their own columns under **Products → Reviews**, and send reviewers "approved" and "reply" emails.
 *   **Spam protection:** a security token, a honeypot field, and Cloudflare Turnstile through the [Simple Cloudflare Turnstile](https://wordpress.org/plugins/simple-cloudflare-turnstile/) plugin when it is active. Signed order-review links skip the challenge.
 
 Guide: [modules/product-reviews/README.md](modules/product-reviews/README.md)
@@ -138,9 +139,9 @@ Tiered "loadout" offers on product pages: a main product plus tiers of recommend
 
 *   **Admin:** manage loadouts, tiers, tier items and cross-sell tiles under **FFL Funnels → Loadout**. A product can link to a global loadout or have its own tiers in the **Loadout** tab of its product data.
 *   **Storefront:** rendered by four Bricks elements (the `[loadout]` shortcode works without Bricks); there is no tab on the storefront product page. Shoppers add items one at a time or a whole tier as one cart line.
-*   **Pricing:** loadout discounts are taken off the product's regular price, so a product on sale loses its sale price when a discount applies. The module guide lists known limitations; place a test order before launch.
+*   **Pricing:** loadout discounts are taken off the regular price but never charge more than the current price, so a deeper sale is kept. Prices, tiers and bonus products are checked on the server against the saved loadout; the free bonus product is one free unit while the threshold is met. Place a test order before launch.
 *   **Bricks dynamic tag:** `{ffla_product_has_loadout}` for conditional rendering.
-*   **Data:** four custom tables. Uninstalling keeps the data unless the module is on and you have set `delete_data_uninstall` in the `ffla_loadout_settings` option yourself; there is no admin setting for it.
+*   **Data:** four custom tables. Uninstalling **keeps** that data unless **Delete loadout data on uninstall** (FFL Funnels → Loadout → Data) is on.
 
 Guide: [modules/loadout/README.md](modules/loadout/README.md)
 
@@ -149,10 +150,10 @@ Guide: [modules/loadout/README.md](modules/loadout/README.md)
 Finds media the site no longer needs and moves it to a trash you can restore from. It is for administrators (`manage_options`).
 
 *   **Scans:** unused attachments, attachments whose file is missing, orphan files in the uploads folder, and byte-identical duplicates. Scans run in small batches from **FFL Funnels → Media Cleaner** (keep the tab open until it finishes) or with WP-CLI.
-*   **What it reads:** Bricks (page content, headers, footers, templates, global settings and theme styles), WooCommerce, ACF, Elementor, Beaver Builder, Oxygen, WS Form, the common WordPress surface, and this plugin's own modules (review photos and videos, Loadout images, WooBooster bundle images). Some results can still be wrong, such as duplicates and orphan files, and media used only in theme files or other plugins' tables; review before trashing.
-*   **Trash:** removals move files to `uploads/ffla-media-trash/` and hide the attachment, with restore and an optional auto-empty after 7, 30 or 90 days. **Skip the trash** deletes immediately. A new scan clears the results lists, so restore or empty the trash before scanning again.
-*   **WP-CLI:** `wp ffla-media scan`, `status`, `list`, `trash --all` and `empty_trash --yes`.
-*   **Data:** two custom tables, dropped on uninstall (cleanup runs only if the module is on at that moment). The trash folder and trashed attachments are kept; after uninstall, trashed items can only be restored by hand.
+*   **What it reads:** Bricks (page content, headers, footers, templates, global settings and theme styles), WooCommerce, ACF, Elementor, Beaver Builder, Oxygen, WS Form, the common WordPress surface, and this plugin's own modules (review photos and videos, Loadout hero, brand-logo and cross-sell images, WooBooster bundle images), plus WooCommerce downloadable files, ACF fields on posts, terms, users and options (including fields defined in PHP or local JSON) and user meta. Media used only in theme files or other plugins' tables can still be listed; review before trashing. Duplicates are only listed when nothing uses them, and the uploads-folder scan only looks at WordPress's own media folders.
+*   **Trash:** removals move files to a trash folder in uploads (with an unguessable name on new sites) and hide the attachment, with restore and an optional auto-empty after 7, 30 or 90 days. **Skip the trash** deletes immediately. New scans keep the Trash and Ignored lists.
+*   **WP-CLI:** `wp ffla-media scan [--force]`, `status`, `list`, `trash --all` and `empty-trash --yes`.
+*   **Data:** two custom tables, dropped on uninstall after everything in the trash has been put back into the Media Library.
 *   Back up the database and uploads before deleting media in bulk.
 
 Guide: [modules/media-cleaner/README.md](modules/media-cleaner/README.md)
@@ -177,7 +178,7 @@ Guide: [modules/customer-notes/README.md](modules/customer-notes/README.md)
 Optional GA4 compatibility for stores that track with MonsterInsights and its eCommerce Addon but use custom Bricks product templates and AJAX side-carts such as Merchant. It has no settings page.
 
 *   **One analytics owner:** MonsterInsights loads the Google tag, applies its excluded roles, and owns `begin_checkout`, purchases and refunds. The module never loads a Google tag and never sends purchase revenue.
-*   **Narrow coverage:** it fills in only a missing `view_item` and an AJAX `add_to_cart`, on single product pages only.
+*   **Narrow coverage:** it fills in only a missing `view_item` and an AJAX `add_to_cart` of the page's own product, on single product pages only.
 *   **Deduplication:** before sending a fallback it checks the page's `dataLayer`, and an event MonsterInsights already sent is left untouched.
 *   **Opt-in:** MonsterInsights works by itself on standard WooCommerce templates, so switch this module on only where those events are actually missing. Stores still on Google Analytics for WooCommerce keep the earlier compatibility path.
 
@@ -190,7 +191,7 @@ Decides which WooCommerce products Google for WooCommerce may send to Google Mer
 *   **Decisions:** each product category gets a rule (Allow, Block, Pending or Inherit parent), and each product can be set to Follow policy rules, Always include or Always exclude. Products flagged `_firearm_product` or `_ammunition_product` are always Blocked, even with Always include. A keyword safety scan (on by default) also blocks products whose name, description or category names match restricted-content words; it is an aid, not a compliance check.
 *   **Modes:** **Audit only** (the default) records a decision for every product and changes nothing in Google. **Enforce** sets Google for WooCommerce's Channel visibility to match each decision (Allowed products sync, Blocked and Pending products do not) and asks Google for WooCommerce to upload or remove products through its own jobs. Product saves, category changes, per-product decisions and the catalog scan all go through this two-way sync, and the module's **Google Merchant Policy** box replaces Google for WooCommerce's Channel visibility controls while Enforce is on.
 *   **Existing exclusions:** in Enforce, a product already hidden in Google for WooCommerce is kept out as Always exclude until someone chooses Follow policy rules for it.
-*   **Catalog scan:** a resumable background scan re-evaluates every published product and variation in batches, with pause and resume. It starts when you click **Save policies & start catalog scan** and whenever a product category is saved. In Enforce, a notice asks you to run it once when no scan has run yet or the last one predates 1.48.0, so two-way sync covers the whole catalog.
+*   **Catalog scan:** a resumable background scan re-evaluates every published product and variation in batches, with pause and resume. It starts when you click **Save policies & start catalog scan** and when a category's rule or parent changes. A product whose Google data blocks its removal is listed and skipped instead of stopping the scan. In Enforce, a notice asks you to run it once when no scan has run yet or the last one predates 1.48.0, so two-way sync covers the whole catalog.
 *   **Start in Audit only:** top-level categories start as Pending and Pending products are removed like Blocked ones, so switching to Enforce before setting Allow on your categories takes the whole catalog out of Google.
 *   **Limits:** a completed scan is a local result, not confirmed removal or Google approval. Check Google for WooCommerce's scheduled jobs and Merchant Center. Other feed sources are not controlled, and the module does not request an account review.
 
@@ -202,10 +203,11 @@ Brands wp-admin for client stores and limits what client logins can reach. Clien
 
 *   **Light and dark colours:** 32 colour fields and a dashboard corner radius, each with a Light and a Dark value. Each user switches modes with a sun/moon button in the admin bar, and new users start in dark mode. Nothing changes until a colour or the radius is saved.
 *   **Agency branding:** while the module is on, everyone sees the FFL Funnels logo and wordmark at the top of the admin sidebar and a text-only footer credit (filter `ffla_wl_admin_footer_text`), and the WordPress logo menu is removed from the admin bar. There is no login-screen styling.
-*   **Client restrictions:** reorder the top-level menu, add dividers, hide and block menu items by URL, and remove admin-bar items for clients. Staff are exempt by email pattern (`*@example.com`) or the `FFLA_WL_SUPERUSERS` constant and keep the native menu. Restrictions do nothing until at least one exempt pattern or constant entry exists.
-*   **Client dashboard:** an optional replacement for `/wp-admin/` with quick-link cards, 30-day WooCommerce sales figures and **MonsterInsights** and **SnapFind** analytics tabs. It shows only to users who can edit theme options (Administrators).
+*   **Client restrictions:** reorder the top-level menu, add dividers, hide and block menu items by URL (hiding a content list such as Pages also blocks adding and editing it, and every FFL Funnels page is always blocked), and remove admin-bar items for clients. Staff are exempt by email pattern (`*@example.com`) or the `FFLA_WL_SUPERUSERS` constant and keep the native menu. Restrictions do nothing until at least one exempt pattern or constant entry exists.
+*   **Client dashboard:** an optional replacement for `/wp-admin/` with quick-link cards, 30-day WooCommerce sales figures and **MonsterInsights** and **SnapFind** analytics tabs. It shows only to users who can edit theme options (Administrators and Shop Managers); other roles keep the standard dashboard.
 *   **MonsterInsights reports:** read through MonsterInsights' existing Google connection without adding tags. Pro supports 7, 30 and 90-day ranges ending yesterday and Lite only 30. The eCommerce figures need MonsterInsights 11.2 or later, Pro, an eligible license and the eCommerce Addon.
-*   **Portable settings:** export the configuration as JSON, or import a file to replace the Styles, Menu, Dashboard and Restrictions settings.
+*   **Product editor tools** (Products tab, for everyone who can edit products): search on the category, brand and tag boxes of the Edit Product screen and in Quick Edit / Bulk Edit, a folding category tree, ticked brands kept in place, optional automatic ticking of parent categories, and a tag filter plus searchable filters on the Products list.
+*   **Portable settings:** export the configuration as JSON, or import a file to replace the Styles, Menu, Dashboard, Restrictions and Products settings.
 
 Guide: [modules/white-label/README.md](modules/white-label/README.md)
 
@@ -281,7 +283,7 @@ Notes:
 3.  **Conditions:** Define *when* this rule applies (e.g., "Product Category is Firearms").
 4.  **Actions:** Define *what* to show (e.g., "Products from Category: Ammo" or "Products with Attribute: Caliber = 9mm").
 5.  Click **Create Rule**, and use **WB Diagnostics** to check which rule matches a product.
-6.  **Priority:** Rules are checked in priority order, lowest number first, and the first rule whose conditions match is used. Give rules different priorities: with equal numbers the winner is not guaranteed. Apply Coupon rules are the exception; every matching rule applies its coupon.
+6.  **Priority:** Active rules are checked lowest priority number first (the oldest rule on a tie); the first rule whose conditions match wins. Apply Coupon rules are the exception; every matching rule applies its coupon.
 
 ## Requirements
 
@@ -312,14 +314,14 @@ Base URL: `https://<your-site>/wp-json/wss/v1/`
 
 | Method | Endpoint             | Purpose                                                                                                                                  |
 | ------ | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/products/upsert`   | Create or update a simple product, matched by `sku` only (`name` is required). Creates a published product when no simple product has that SKU. |
+| POST   | `/products/upsert`   | Create or update a simple product, matched by `product_id` or `sku` (`name` is required to create). Creates a published product when none matches; optional `tab_name` adds it to that tab group. |
 | POST   | `/variations/upsert` | Create or update a variation under `parent_id` (required), matched by `sku` or the complete `attributes`.                                |
 | POST   | `/attributes/upsert` | Find or create a term (`value`, required) on an existing global attribute (`taxonomy` as `pa_*`, or `label`).                            |
 | POST   | `/batch/upsert`      | `{ "items": [{ "kind": "product\|variation\|attribute", "payload": { ... } }] }`: at most 200 items and 2 MB per call.                    |
 
-*   Field formats follow the sheet: `manage_stock` is the string `"TRUE"` or `"FALSE"`, and `attributes` is one string, `"Label: Value | Label: Value"`.
+*   Field formats follow the sheet, and JSON types are accepted too: `manage_stock` is `true`/`false` or `"TRUE"`/`"FALSE"` (also yes/no, 1/0), and `attributes` is an array or one string, `"Label: Value | Label: Value"`.
 *   Single endpoints return HTTP 400 with `{ "error": ... }` on failure; an oversized batch returns 413.
-*   Upserted products are not added to a tab group. `product_id`, `type` and `status` on `/products/upsert` and `variation_id` on `/variations/upsert` are accepted but ignored.
+*   `status` and `type` on `/products/upsert` and `variation_id` on `/variations/upsert` are honoured.
 
 Example: ensure a `pa_manufacturer` term:
 
@@ -338,9 +340,9 @@ Base URL: `https://<your-site>/wp-json/ffl-tax/v1/`
 | ------ | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | POST   | `/quote`          | Resolve the total sales-tax rate and breakdown for one address (`street`, `city`, `state`, `zip`, or a one-line `address`). Returns 200 on success, 422 when the outcome is not a success and 429 over the limit. `totalRate` is a decimal (`0.0825` = 8.25%). |
 | POST   | `/quote/batch`    | Resolve several addresses. Body: `{ "addresses": [ ... ] }`, at most 25. Returns `{ count, results }`.                                                                           |
-| GET    | `/coverage`       | Coverage Matrix per state: status, resolver, notes, whether it is enabled for the store, and the source strategy.                                                                |
-| GET    | `/health`         | Active datasets with age and freshness, coverage summary, sheet source, resolvers and 24-hour lookup stats. `cacheHitRatio24h` is always 0 because cache hits are not audited.   |
-| GET    | `/datasets`       | Up to 50 sheet dataset versions, sorted by state, then newest load.                                                                                                              |
+| GET    | `/coverage`       | Coverage Matrix per state: status, resolver, notes, whether it is enabled for the store, and the source strategy, plus `dataset` (version, load date, age, freshness).            |
+| GET    | `/health`         | Active datasets with age and freshness, coverage summary, sheet source, resolvers and 24-hour lookup stats. `cacheHitRatio24h` is always `null` (`cacheHitsAudited: false`) because cache hits are not audited. |
+| GET    | `/datasets`       | The 50 most recently loaded sheet dataset versions, newest first.                                                                                                                |
 | POST   | `/admin/sync`     | Run the sheet sync now (same as the **Sync Sheet Data** button).                                                                                                                 |
 | GET    | `/admin/audit`    | Recent audit rows. Supports `?limit=1..100` (default 25) and `?state=XX`.                                                                                                        |
 

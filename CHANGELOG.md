@@ -2,6 +2,47 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.55.1] - 2026-10-01
+
+### Added
+- **White Label → Products: product editor tools** (for everyone who can edit products; each can be switched off):
+  - **Category, brand & tag search** on the Edit Product screen and in Quick Edit / Bulk Edit: case- and accent-insensitive, every word must match, parents of each match stay visible, highlighted matches with a count, **Selected only** with a live count, a resizable list; tags get a searchable checklist kept in sync with WordPress's tag field (server search above 2,000 tags).
+  - **Collapsible category tree** with Expand all / Collapse all; lists of 15+ terms start folded with the branches that hold ticked terms open.
+  - **Ticked brands stay in place** in their tree (WooCommerce already does this for categories).
+  - **Tick parent categories automatically** (off by default).
+  - **Products list**: a **Filter by tag** dropdown, and searchable category, brand and tag filters.
+- Product Reviews: **Allow photo and video uploads** setting, **Review form title** field and **Re-subscribe an address** for the review-request opt-out list.
+- Pickup & Shipping: **Heading and card title letters** (UPPERCASE or as typed).
+- Loadout: **Delete loadout data on uninstall** under FFL Funnels → Loadout → Data.
+- Woo Sheets Sync: REST `tab_name`, `product_id`, `status`, `type` and `variation_id`; array `attributes`; boolean `manage_stock`.
+
+### Security
+- Loadout: a normal add-to-cart can no longer attach bundle prices or discounts (`loadout_context` from the request is ignored); `loadout_add_item` checks the product, tier and loadout against the saved configuration; tier-bundle price snapshots are signed by the server.
+- White Label: clients are blocked by URL from every FFL Funnels page, and hiding a content list also blocks adding and editing that content.
+
+### Fixed
+- **Media Cleaner** (data safety): a new scan no longer wipes the Trash and Ignored lists or reuses trash folder numbers; items lost that way by older versions are recovered into the Trash tab; **Empty trash** can no longer delete an attachment restored through another result, nor a newer file uploaded under the old name; with the uploads-folder scan on, unused media is reported again; duplicates are only flagged when nothing uses them; the uploads-folder scan skips other plugins' folders and ties image-edit backups to their attachment; downloadable product files, ACF fields from PHP/JSON and on terms and users, Bricks page settings and custom CSS, and user meta now count as in use; one scan at a time (`--force` to override); `wp ffla-media empty-trash` works (`empty_trash` still does); **Skip the trash** wording and a CLI confirmation; shop managers see a notice instead of controls that failed; new sites get an unguessable trash folder, plus IIS rules; uninstall puts everything in the trash back.
+- **Product Reviews**: the FFL form follows WooCommerce's review settings, the product's own reviews box and "verified owners only"; Turnstile is checked once; Media and Helpful columns show under Products → Reviews; Bricks form and badge options can be switched off; the badge uses the same numbers as the summary; **Most helpful** sorts every review; the hub element applies Bricks styling; one-email-per-order uses its own wording with the default template; caches refresh when a review is edited.
+- **Google Merchant Policy**: category edits restart the scan only when the rule or parent changes; one product with bad Google data is skipped and listed instead of stopping the scan; the watchdog stops when a scan ends; idle page loads no longer query Action Scheduler; switching the module off pauses a running scan; only changed category rules are posted (`max_input_vars`); clearer product box text and errors; Products list shows variations that are not Allowed.
+- **Pickup & Shipping**: a variation's own firearm flag counts; the package-scope filter reaches compliance-only carts; an unconfigured module leaves checkout packages untouched; cleared titles return to their defaults; pickup details show without an address; "g-FFL Checkout" labels.
+- **Loadout**: free gift really free (one unit, removed when the threshold is lost); per-product tier items get their discount; tier-bundle stock reduced once, restored on cancel and on refunds with restock; sale prices respected; progress bar, cart summary, tier slugs, perks, admin repeaters, list actions and inactive loadouts fixed; assets load only where needed.
+- **Wishlist**: the 200-item limit applies everywhere and a failed save is reported; rate limits per visitor; cached pages correct their hearts and counters; the script only touches wishlist buttons; "Hide badge when zero" off is respected; settings save for shop managers; custom CSS wins; guest lists are cleaned up daily.
+- **WooBooster**: fixed amount / fixed price bundles count quantities; required bundle items are enforced; disabled or ended bundles leave the cart; missing tables are created; export/import keep every field and every rule; Apply Coupon with Entire store, custom cart message, schedules in store time, bulk actions, Rule Tester, Clear All Data, Same Attribute and AI bundle validation work.
+- **Sales Tax Resolver / Reports**: sheet syncs keep USGeocoder routing, unchanged imports stay fresh, only changed states lose their cache, shop-base-address quotes work, zero-tax states quote 0%, orders store their own quote, rates no longer shared between customers through the object cache, exemptions cover every tax class; reconciliation can show Reconciled, template mapping and combined CSV fixes, pickup orders in the nexus monitor.
+- **Woo Sheets Sync**: stock kept per tab (no undone sales across tabs); leading-zero SKUs kept; removing a tab group asks before deleting the Google tab; sheet-created products join their group; retries really retry; REST `stock_qty` no longer fatal on PHP 8; real-time push updates every tab holding the item.
+- **FFL Checkout**: vendor pre-selection matches numeric IDs; vendor hooks only while the selector is on; the dealer finder renders once and no longer clashes with g-FFL's script; the shortcode no longer leaves an output buffer open.
+- **White Label**: Editors keep the standard dashboard; sales window in the site time zone; live preview works before the first save; old exports keep their colours; import errors are styled.
+- **MonsterInsights Compatibility**: add-to-cart is no longer reported for the page product when another product's button is used; repeated adds each send an event; `item_variant` is filled.
+- **Order Badges**: tag names show exactly as written.
+- Admin notices of type `error` are styled.
+
+### Changed
+- Uninstall now removes the settings and caches of White Label, Google Merchant Policy, Pickup & Shipping, Sales Tax Reports, Woo Sheets Sync (log table, product meta, queued jobs, OAuth connection) and Wishlist's cron, even when the module was switched off first; WooBooster and Loadout honour their delete-data opt-in in that case too. It no longer deletes `_ffl_vendor_*` order meta, which FFL Checkout never wrote.
+- Loadout: per-product **Add cart** includes the product being viewed; Loadout elements moved to the **FFL Funnels** Bricks category.
+- Wishlist: the guest cookie is set on the first save only.
+- WooBooster: the unused Rendering Method, Similar Products and per-rule Exclude Out of Stock settings were removed from the screen (saved values are kept).
+- CI and the release gate run every module's regression tests.
+
 ## [1.55.0] - 2026-10-01
 
 ### Changed
