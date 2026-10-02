@@ -18,8 +18,9 @@ class FFLA_Requests_Files
 {
     const MAX_UPLOAD = 10 * 1048576;   // What we accept from the browser.
     const MAX_STORED = 4 * 1048576;    // What we keep after processing.
-    const MAX_PER_MESSAGE = 3;
-    const MAX_PER_REQUEST = 20;
+    // No limit on files per message or, for staff, per request. Customers have
+    // a high ceiling per request only so a script cannot fill the database.
+    const MAX_PER_REQUEST = 200;
     const MAX_EDGE = 2000;
 
     const TYPES = [
@@ -27,6 +28,23 @@ class FFLA_Requests_Files
         'image/png'       => ['png'],
         'application/pdf' => ['pdf'],
     ];
+
+    /**
+     * Files the server accepts in one upload (PHP `max_file_uploads`, usually
+     * 20). Not our limit: past it PHP drops the extra files, so the forms check
+     * it first and ask to send the rest with another message.
+     */
+    public static function per_upload(): int
+    {
+        $max = (int) ini_get('max_file_uploads');
+        return $max > 0 ? $max : 20;
+    }
+
+    /** Bytes one upload may carry (PHP `post_max_size`); 0 = no limit. */
+    public static function post_limit(): int
+    {
+        return function_exists('wp_convert_hr_to_bytes') ? (int) wp_convert_hr_to_bytes((string) ini_get('post_max_size')) : 0;
+    }
 
     /**
      * Normalize $_FILES['field'] (single or multiple) into a list.
@@ -56,18 +74,14 @@ class FFLA_Requests_Files
     /**
      * Validate every file before storing any.
      *
-     * @param array $files From from_request().
-     * @param int   $existing Files already on the request.
+     * @param array    $files From from_request().
+     * @param int|null $existing Files already on the request, for a customer upload; null for staff (no limit).
      * @return array<int, array{name:string, mime:string, bytes:string}>
      * @throws InvalidArgumentException
      */
-    public static function prepare(array $files, int $existing = 0): array
+    public static function prepare(array $files, ?int $existing = 0): array
     {
-        if (count($files) > self::MAX_PER_MESSAGE) {
-            /* translators: %d: number of files */
-            throw new InvalidArgumentException(sprintf(__('Attach up to %d files at a time.', 'ffl-funnels-addons'), self::MAX_PER_MESSAGE));
-        }
-        if ($existing + count($files) > self::MAX_PER_REQUEST) {
+        if (null !== $existing && $existing + count($files) > self::MAX_PER_REQUEST) {
             throw new InvalidArgumentException(__('This request already has the maximum number of files.', 'ffl-funnels-addons'));
         }
 

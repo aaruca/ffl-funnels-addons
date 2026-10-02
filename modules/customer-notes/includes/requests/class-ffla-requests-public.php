@@ -149,7 +149,8 @@ class FFLA_Requests_Public
         $dir = dirname(__DIR__, 2) . '/assets/';
         $url = FFLA_URL . 'modules/customer-notes/assets/';
         wp_register_style('ffla-requests', $url . 'requests.css', [], (string) @filemtime($dir . 'requests.css')); // phpcs:ignore WordPress.PHP.NoSilencedErrors
-        wp_register_script('ffla-requests', $url . 'requests.js', [], (string) @filemtime($dir . 'requests.js'), true); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+        wp_register_script('ffla-request-files', $url . 'request-files.js', [], (string) @filemtime($dir . 'request-files.js'), true); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+        wp_register_script('ffla-requests', $url . 'requests.js', ['ffla-request-files'], (string) @filemtime($dir . 'requests.js'), true); // phpcs:ignore WordPress.PHP.NoSilencedErrors
 
         // Load the stylesheet in <head> when the shortcode is in the content;
         // page builders fall back to the footer copy enqueued by the shortcode.
@@ -206,8 +207,9 @@ class FFLA_Requests_Public
             'intro'         => str_replace('\\n', "\n", (string) FFLA_Requests::setting('requests_intro')),
             'guests'        => FFLA_Customer_Operations_Settings::enabled('requests_guests'),
             'uploads'       => FFLA_Customer_Operations_Settings::enabled('requests_uploads'),
-            'maxFiles'      => FFLA_Requests_Files::MAX_PER_MESSAGE,
+            'maxFiles'      => FFLA_Requests_Files::per_upload(),
             'maxFileBytes'  => FFLA_Requests_Files::MAX_UPLOAD,
+            'postLimit'     => FFLA_Requests_Files::post_limit(),
             'accept'        => '.jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf',
             'maxText'       => FFLA_Requests::MAX_TEXT,
             'loginUrl'      => $myaccount ? $myaccount : wp_login_url(),
@@ -261,9 +263,12 @@ class FFLA_Requests_Public
             'message'         => __('Describe the problem', 'ffl-funnels-addons'),
             'messageHint'     => __('Include anything that helps: what happened, when, photos of damage or labels. Do not include card numbers or ID documents.', 'ffl-funnels-addons'),
             'files'           => __('Photos or documents (optional)', 'ffl-funnels-addons'),
-            /* translators: 1: max files, 2: max size in MB */
-            'filesHint'       => __('Up to %1$d JPEG, PNG or PDF files, %2$d MB each.', 'ffl-funnels-addons'),
-            'tooManyFiles'    => __('Too many files selected.', 'ffl-funnels-addons'),
+            /* translators: %d: max size in MB */
+            'filesHint'       => __('JPEG, PNG or PDF, %d MB each. Add as many as you need; photos are resized before sending.', 'ffl-funnels-addons'),
+            /* translators: %d: number of files the server accepts at once */
+            'tooManyFiles'    => __('You can send %d files at a time. Send the rest with a reply after this one.', 'ffl-funnels-addons'),
+            'tooLarge'        => __('These files are too large to send together. Send some of them with a reply after this one.', 'ffl-funnels-addons'),
+            'preparing'       => __('Preparing photos…', 'ffl-funnels-addons'),
             'fileTooBig'      => __('One of the files is too large.', 'ffl-funnels-addons'),
             'submit'          => __('Send request', 'ffl-funnels-addons'),
             'sending'         => __('Sending…', 'ffl-funnels-addons'),

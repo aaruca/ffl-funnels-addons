@@ -2,6 +2,11 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [Unreleased]
+
+### Changed
+- **Customer requests: no limit on photos.** Staff and customers can attach as many JPEG, PNG or PDF files as they need to one message (was 3), and staff have no limit per request (was 20; customers: 200, against abuse). Photos are shrunk in the browser to 2000 px before sending, so 15+ phone photos go in one message even on hosts with a small upload size; a submit made while photos are being prepared waits for them. The only remaining cap is the server's own files-per-upload setting (`max_file_uploads`, usually 20), which the forms check first with a clear message instead of losing files.
+
 ## [1.55.2] - 2026-10-02
 
 ### Changed

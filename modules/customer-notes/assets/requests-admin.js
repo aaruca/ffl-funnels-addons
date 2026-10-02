@@ -1,4 +1,4 @@
-/* Customer requests — staff screens: reply / note tabs, copy link, request type toggle. */
+/* Customer requests — staff screens: reply / note tabs, copy link, request type toggle, attachments. */
 (function () {
 	'use strict';
 
@@ -136,5 +136,67 @@
 	});
 	if (radios.length) {
 		syncType();
+	}
+
+	// Attachments: photos are shrunk before sending (request-files.js), the
+	// server's own limits are checked first, and a submit waits until the
+	// photos are ready.
+	var lib = window.fflaReqFiles;
+	var cfg = window.fflaReqAdmin || {};
+	if (lib) {
+		document.querySelectorAll('input[type=file][data-ffla-files], input[type=file]#ffla-req-label').forEach(function (input) {
+			lib.wire(input);
+			var status = input.parentNode.querySelector('.ffla-req-files-status');
+			var say = function (text, error) {
+				if (status) {
+					status.textContent = text || '';
+					status.classList.toggle('is-error', !!error);
+				}
+			};
+			var problem = function () {
+				var issue = lib.check(input.files, cfg);
+				return issue === 'count' ? String(cfg.tooMany || '').replace('%d', cfg.perUpload)
+					: (issue === 'size' ? cfg.fileTooBig : (issue === 'total' ? cfg.tooLarge : ''));
+			};
+			input.addEventListener('ffla-files-busy', function () {
+				say(cfg.preparing);
+			});
+			input.addEventListener('ffla-files-ready', function () {
+				say(problem(), true);
+			});
+			input.addEventListener('change', function () {
+				if (!lib.busy(input)) {
+					say(problem(), true);
+				}
+			});
+			var form = input.form;
+			if (!form) {
+				return;
+			}
+			form.addEventListener('submit', function (e) {
+				if (lib.busy(input)) {
+					e.preventDefault();
+					var submitter = e.submitter && e.submitter.form === form ? e.submitter : null;
+					say(cfg.preparing);
+					lib.ready(input).then(function () {
+						var issue = problem();
+						if (issue) {
+							say(issue, true);
+						} else if (form.requestSubmit) {
+							form.requestSubmit(submitter || undefined);
+						} else {
+							form.submit();
+						}
+					});
+					return;
+				}
+				var issue = problem();
+				if (issue) {
+					e.preventDefault();
+					say(issue, true);
+					input.focus();
+				}
+			});
+		});
 	}
 })();

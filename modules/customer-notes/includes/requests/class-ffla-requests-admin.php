@@ -68,8 +68,19 @@ class FFLA_Requests_Admin
         $dir = dirname(__DIR__, 2) . '/assets/';
         $url = FFLA_URL . 'modules/customer-notes/assets/';
         wp_enqueue_style('ffla-requests-admin', $url . 'requests-admin.css', [], (string) @filemtime($dir . 'requests-admin.css')); // phpcs:ignore WordPress.PHP.NoSilencedErrors
-        wp_enqueue_script('ffla-requests-admin', $url . 'requests-admin.js', [], (string) @filemtime($dir . 'requests-admin.js'), true); // phpcs:ignore WordPress.PHP.NoSilencedErrors
-        wp_localize_script('ffla-requests-admin', 'fflaReqAdmin', ['copied' => __('Copied', 'ffl-funnels-addons')]);
+        wp_register_script('ffla-request-files', $url . 'request-files.js', [], (string) @filemtime($dir . 'request-files.js'), true); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+        wp_enqueue_script('ffla-requests-admin', $url . 'requests-admin.js', ['ffla-request-files'], (string) @filemtime($dir . 'requests-admin.js'), true); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+        wp_localize_script('ffla-requests-admin', 'fflaReqAdmin', [
+            'copied'       => __('Copied', 'ffl-funnels-addons'),
+            'perUpload'    => FFLA_Requests_Files::per_upload(),
+            'postLimit'    => FFLA_Requests_Files::post_limit(),
+            'maxFileBytes' => FFLA_Requests_Files::MAX_UPLOAD,
+            'preparing'    => __('Preparing photos…', 'ffl-funnels-addons'),
+            /* translators: %d: number of files the server accepts at once */
+            'tooMany'      => __('This server accepts %d files at a time. Send the rest with another reply or note.', 'ffl-funnels-addons'),
+            'tooLarge'     => __('These files are too large to send together. Send some of them with another reply or note.', 'ffl-funnels-addons'),
+            'fileTooBig'   => __('Each file must be up to 10 MB.', 'ffl-funnels-addons'),
+        ]);
     }
 
     /** Before output: bulk actions and the "add request" order lookup. */
@@ -688,7 +699,7 @@ class FFLA_Requests_Admin
         ];
         $actor = self::actor();
         try {
-            $prepared = FFLA_Requests_Files::prepare(FFLA_Requests_Files::from_request('files'), 0);
+            $prepared = FFLA_Requests_Files::prepare(FFLA_Requests_Files::from_request('files'), null);
             $request = FFLA_Requests::create($order, $data, 'staff', $actor);
             if ($prepared) {
                 $events = FFLA_Requests::events((int) $request->id);
@@ -739,7 +750,7 @@ class FFLA_Requests_Admin
                 case 'reply':
                 case 'note':
                     $public = 'reply' === $do;
-                    $prepared = FFLA_Requests_Files::prepare(FFLA_Requests_Files::from_request('files'), FFLA_Requests_Files::count($id));
+                    $prepared = FFLA_Requests_Files::prepare(FFLA_Requests_Files::from_request('files'), null);
                     $event_id = FFLA_Requests::add_message($r, $actor, $text, $public);
                     if ($prepared) {
                         FFLA_Requests_Files::store($r, $prepared, $actor, $public, $event_id);
@@ -759,7 +770,7 @@ class FFLA_Requests_Admin
                 case 'status':
                     $to = sanitize_key(wp_unslash($_POST['status'] ?? ''));
                     $label = 'approved' === $to ? array_slice(FFLA_Requests_Files::from_request('label'), 0, 1) : [];
-                    $prepared = $label ? FFLA_Requests_Files::prepare($label, FFLA_Requests_Files::count($id)) : [];
+                    $prepared = $label ? FFLA_Requests_Files::prepare($label, null) : [];
                     $event_id = FFLA_Requests::set_status($r, $to, $actor, true, $text);
                     if ($prepared && $event_id) {
                         FFLA_Requests_Files::store($r, $prepared, $actor, true, $event_id, 'label');
@@ -1402,12 +1413,9 @@ class FFLA_Requests_Admin
     private static function file_field(string $id): void
     {
         echo '<p class="ffla-req-field"><label for="ffla-req-files-' . esc_attr($id) . '">' . esc_html__('Attach files', 'ffl-funnels-addons') . '</label>'
-            . '<input type="file" id="ffla-req-files-' . esc_attr($id) . '" name="files[]" multiple accept=".jpg,.jpeg,.png,.pdf">'
-            . '<span class="description">' . esc_html(sprintf(
-                /* translators: %d: number of files */
-                __('Up to %d JPEG, PNG or PDF files.', 'ffl-funnels-addons'),
-                FFLA_Requests_Files::MAX_PER_MESSAGE
-            )) . '</span></p>';
+            . '<input type="file" id="ffla-req-files-' . esc_attr($id) . '" name="files[]" multiple accept=".jpg,.jpeg,.png,.pdf" data-ffla-files>'
+            . '<span class="description">' . esc_html__('JPEG, PNG or PDF, as many as you need. Photos are resized before sending.', 'ffl-funnels-addons') . '</span>'
+            . '<span class="ffla-req-files-status" role="status" aria-live="polite"></span></p>';
     }
 
     private static function flash(string $type, string $message): void

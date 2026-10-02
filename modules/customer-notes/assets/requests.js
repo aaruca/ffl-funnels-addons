@@ -495,6 +495,9 @@
 		form.addEventListener('submit', function (e) {
 			e.preventDefault();
 			error.textContent = '';
+			if (self.waitForFiles(form, files)) {
+				return;
+			}
 			var chosen = qtySelects.filter(function (s) {
 				return +s.value > 0;
 			});
@@ -625,33 +628,48 @@
 	App.prototype.fileInput = function (uid) {
 		var cfg = this.cfg;
 		var t = this.t;
+		var lib = window.fflaReqFiles;
 		var input = h('input', { id: 'ffla-f-' + uid, type: 'file', name: 'files[]', multiple: true, accept: cfg.accept, 'aria-describedby': 'ffla-fh-' + uid });
-		var status = h('span', { class: 'ffla-req-error' });
+		var status = h('span', { class: 'ffla-req-error', role: 'status', 'aria-live': 'polite' });
 		var label = h('label', { for: 'ffla-f-' + uid, text: t.files });
 		var need = h('span', { class: 'ffla-req-need', hidden: true, text: t.photoHint });
+		var limits = { perUpload: cfg.maxFiles, maxFileBytes: cfg.maxFileBytes, postLimit: cfg.postLimit };
 		function problem() {
-			var list = [].slice.call(input.files || []);
-			if (list.length > cfg.maxFiles) {
-				return t.tooManyFiles;
-			}
-			return list.some(function (f) {
-				return f.size > cfg.maxFileBytes;
-			}) ? t.fileTooBig : '';
+			var issue = lib ? lib.check(input.files, limits) : '';
+			return issue === 'count' ? format(t.tooManyFiles, cfg.maxFiles)
+				: (issue === 'size' ? t.fileTooBig : (issue === 'total' ? t.tooLarge : ''));
 		}
-		input.addEventListener('change', function () {
+		if (lib) {
+			lib.wire(input);
+		}
+		input.addEventListener('ffla-files-busy', function () {
+			status.textContent = t.preparing;
+		});
+		input.addEventListener('ffla-files-ready', function () {
 			status.textContent = problem();
+		});
+		input.addEventListener('change', function () {
+			if (!lib || !lib.busy(input)) {
+				status.textContent = problem();
+			}
 		});
 		return {
 			node: h('p', { class: 'ffla-req-field' }, [
 				label,
 				need,
 				input,
-				h('span', { id: 'ffla-fh-' + uid, class: 'ffla-req-muted', text: format(t.filesHint, cfg.maxFiles, Math.round(cfg.maxFileBytes / 1048576)) }),
+				h('span', { id: 'ffla-fh-' + uid, class: 'ffla-req-muted', text: format(t.filesHint, Math.round(cfg.maxFileBytes / 1048576)) }),
 				status
 			]),
 			problem: problem,
 			count: function () {
 				return (input.files || []).length;
+			},
+			busy: function () {
+				return !!lib && lib.busy(input);
+			},
+			ready: function () {
+				return lib ? lib.ready(input) : Promise.resolve();
 			},
 			setRequired: function (on) {
 				need.hidden = !on;
@@ -666,6 +684,20 @@
 				});
 			}
 		};
+	};
+
+	/** While photos are being shrunk, hold the submit and send once they are ready. */
+	App.prototype.waitForFiles = function (form, files) {
+		if (!files || !files.busy()) {
+			return false;
+		}
+		var self = this;
+		this.busy(form, true);
+		files.ready().then(function () {
+			self.busy(form, false);
+			form.dispatchEvent(new Event('submit', { cancelable: true }));
+		});
+		return true;
 	};
 
 	/* ── One request: tracker, history, reply ─────────────────────────── */
@@ -925,6 +957,9 @@
 		form.addEventListener('submit', function (e) {
 			e.preventDefault();
 			error.textContent = '';
+			if (self.waitForFiles(form, files)) {
+				return;
+			}
 			var problem = !message.value.trim() ? t.required : (files ? files.problem() : '');
 			if (problem) {
 				error.appendChild(notice(problem, 'error'));
