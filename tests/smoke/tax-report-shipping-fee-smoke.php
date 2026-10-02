@@ -365,4 +365,51 @@ $legacy->meta['_ffla_tax_quote'] = json_encode($legacy_quote);
 $GLOBALS['orders'] = [1000 => $legacy];
 check(harris(report())['orders'] === 1, 'Legacy quote without an address keeps working');
 
+// WooCommerce's own tax table: City 0% / County 4% / Special 0% / State 4% lines.
+class TestNativeLine extends TestLine {
+    public $rates = [];
+    function get_taxes() { return ['total' => $this->rates, 'subtotal' => $this->rates]; }
+}
+class TestNativeTax extends TestTax {
+    public $label = '';
+    function get_label() { return $this->label; }
+}
+function native_tax($rate_id, $percent, $amount, $name) {
+    $tax = new TestNativeTax($amount); $tax->rate_id = $rate_id; $tax->percent = (float) $percent;
+    $tax->code = 'US-GA-HARRIS COUNTY PINE MOUNTAIN : ' . $name; $tax->label = 'HARRIS COUNTY PINE MOUNTAIN : ' . ucwords(strtolower(preg_replace('/-\d+$/', '', $name)));
+    return $tax;
+}
+function native_order($id, $with_quote = true) {
+    $order = new WC_Order($id, '2026-05-05', '2026-05-05');
+    $line = new TestNativeLine($id * 10 + 1, 100.00, 8.00);
+    $line->rates = [1 => 0, 9 => 4.00, 10 => 0, 11 => 4.00];
+    $order->items = ['line_item' => [$id * 10 + 1 => $line], 'tax' => [
+        1 => native_tax(1, 0, 0, 'CITY TAX-1'), 2 => native_tax(9, 4, 4.00, 'COUNTY TAX-2'),
+        3 => native_tax(10, 0, 0, 'SPECIAL TAX-3'), 4 => native_tax(11, 4, 4.00, 'STATE SALES TAX-4'),
+    ]];
+    $order->meta = $with_quote ? ['_ffla_tax_quote' => quote_json()] : [];
+    return $order;
+}
+$GLOBALS['orders'] = [7200 => native_order(7200)];
+$h = harris(report());
+check($h['filing_status'] === 'Ready' && $h['calculated_tax'] === '8.00' && $h['over_under'] === '0.00', 'Empty 0% city/special lines no longer send a correct county to Needs review');
+$GLOBALS['orders'] = [7300 => native_order(7300, false)];
+$h = harris(report());
+check($h['filing_status'] === 'Ready' && $h['calculated_tax'] === '8.00', 'Same without a stored quote (filed from the tax line labels)');
+
+// A 0% line that still carries tax keeps the review flag.
+$odd = native_order(7400);
+$odd->items['tax'][1] = native_tax(1, 0, 1.00, 'CITY TAX-1');
+$GLOBALS['orders'] = [7400 => $odd];
+check(harris(report())['filing_status'] === 'Needs review', 'A 0% line with tax on it is still reviewed');
+
+// Only an empty 0% line and nothing collected (an outage order like GGA #365678):
+// the order still lands in its jurisdiction and stays under review.
+$empty = native_order(7500, true);
+$empty->items['line_item'][75001]->tax = 0; $empty->items['line_item'][75001]->rates = [1 => 0];
+$empty->items['tax'] = [1 => native_tax(1, 0, 0, 'CITY TAX-1')];
+$GLOBALS['orders'] = [7500 => $empty];
+$rows = report()['summaries']['jurisdictions'];
+check(count($rows) === 1 && $rows[0]['jurisdiction_code'] === '072' && $rows[0]['orders'] === 1 && $rows[0]['filing_status'] === 'Needs review', 'An untaxed order with only a 0% line is kept and reviewed');
+
 echo "$checks shipping-fee reporting checks passed.\n";

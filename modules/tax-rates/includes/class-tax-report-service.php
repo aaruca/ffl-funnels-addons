@@ -1790,6 +1790,7 @@ class Tax_Report_Service
 
     private function aggregate_jurisdictions(array &$totals, string $currency, array $location, array $order, array $quote, array $tax_rows, array $line_rows): void
     {
+        $tax_rows = $this->without_empty_zero_rate_rows($tax_rows);
         $collected = $this->minor($order['tax_collected']);
         $refunded = $this->minor($order['tax_refunded']);
         $gross_sales = $this->calculate_reportable_sales($line_rows);
@@ -2092,6 +2093,27 @@ class Tax_Report_Service
     /**
      * The resolver's combined synthetic tax line (rate 990000 / US-XX-FFLA-TOTAL).
      */
+    /**
+     * WooCommerce's own tax table writes a line for every matching row,
+     * including 0% rows (an unincorporated city, an unused special district).
+     * A 0% line that collected and refunded nothing has no rate base to map,
+     * so it is left out instead of sending the whole jurisdiction to Needs
+     * review. A 0% line that carries tax, and the resolver's own line, are
+     * kept. When every line would go, the rows are kept as they are so the
+     * order still lands in a jurisdiction.
+     */
+    private function without_empty_zero_rate_rows(array $tax_rows): array
+    {
+        $rated = array_values(array_filter($tax_rows, function ($tax) {
+            return $this->is_resolver_tax_line($tax)
+                || (float) ($tax['rate_percent'] ?? 0) > 0
+                || $this->minor($tax['tax_collected'] ?? 0) !== 0
+                || $this->minor($tax['tax_refunded'] ?? 0) !== 0;
+        }));
+
+        return !empty($rated) ? $rated : $tax_rows;
+    }
+
     private function is_resolver_tax_line(array $tax): bool
     {
         return (int) ($tax['rate_id'] ?? 0) === self::RESOLVER_RATE_ID
