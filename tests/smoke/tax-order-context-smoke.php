@@ -539,6 +539,11 @@ $order = counter_sale(605, 100.00);
 $order->items['line_item'][1]->taxes = [990000 => 7.00];
 do_action('woocommerce_order_action_ffla_update_tax_jurisdiction', $order);
 check(strpos($order->notes[0] ?? '', 'Check before filing: this order was charged 7%, the address rate is 8%.') !== false, 'A different charged rate is flagged, not corrected');
+reset_request();
+$order = counter_sale(609, 63.47);
+$order->items['line_item'][1]->taxes = [990000 => 3.81];
+do_action('woocommerce_order_action_ffla_update_tax_jurisdiction', $order);
+check(strpos($order->notes[0] ?? '', 'charged 6%, the address rate is 8%.') !== false, 'Charged rate is rounded to 2 decimals (6.0028% reads 6%)');
 
 reset_request();
 $order = counter_sale(606);

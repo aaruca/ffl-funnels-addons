@@ -664,7 +664,7 @@ class Tax_WooCommerce_Integration
             $note .= ' ' . __('No tax was charged on this order.', 'ffl-funnels-addons');
         } elseif (null !== $charged && abs($charged - $quoted_rate) > 0.0005) {
             /* translators: 1: rate charged, 2: rate for the address */
-            $note .= ' ' . sprintf(__('Check before filing: this order was charged %1$s%%, the address rate is %2$s%%.', 'ffl-funnels-addons'), self::percent($charged), self::percent($quoted_rate));
+            $note .= ' ' . sprintf(__('Check before filing: this order was charged %1$s%%, the address rate is %2$s%%.', 'ffl-funnels-addons'), self::percent($charged, 2), self::percent($quoted_rate));
         }
 
         return $note;
@@ -692,9 +692,10 @@ class Tax_WooCommerce_Integration
         return $base > 0 ? $tax / $base : null;
     }
 
-    private static function percent(float $rate): string
+    /** 0.0775 → "7.75"; the charged rate is shown to 2 decimals (cent rounding). */
+    private static function percent(float $rate, int $decimals = 4): string
     {
-        return rtrim(rtrim(number_format($rate * 100, 4, '.', ''), '0'), '.');
+        return rtrim(rtrim(number_format($rate * 100, $decimals, '.', ''), '0'), '.');
     }
 
     private static function address_for_note(array $address): string
