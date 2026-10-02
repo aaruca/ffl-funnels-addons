@@ -25,6 +25,22 @@ class Tax_WooCommerce_Integration
     /** How many destinations the session map keeps. */
     private const SESSION_QUOTES_LIMIT = 10;
 
+    /** Order actions → "Update sales tax jurisdiction". */
+    public const ORDER_ACTION_UPDATE_JURISDICTION = 'ffla_update_tax_jurisdiction';
+
+    /**
+     * Order-screen AJAX requests that recalculate the edited order's taxes
+     * (Recalculate, adding or removing items, fees and coupons).
+     */
+    private const ADMIN_ORDER_TAX_ACTIONS = [
+        'woocommerce_calc_line_taxes',
+        'woocommerce_add_order_item',
+        'woocommerce_remove_order_item',
+        'woocommerce_add_order_fee',
+        'woocommerce_add_coupon_discount',
+        'woocommerce_remove_order_coupon',
+    ];
+
     /**
      * Cart/checkout resolutions of the current calculation, keyed by the
      * quoted input. WooCommerce asks for rates once per line, shipping
@@ -75,6 +91,8 @@ class Tax_WooCommerce_Integration
         add_action('woocommerce_checkout_create_order', [__CLASS__, 'store_order_exemption_summary'], 20, 2);
         add_action('woocommerce_store_api_checkout_update_order_meta', [__CLASS__, 'store_api_order_exemptions'], 20, 1);
         add_action('woocommerce_checkout_create_order_tax_item', [__CLASS__, 'decorate_runtime_order_tax_item'], 10, 3);
+        add_filter('woocommerce_order_actions', [__CLASS__, 'add_order_actions'], 20, 2);
+        add_action('woocommerce_order_action_' . self::ORDER_ACTION_UPDATE_JURISDICTION, [__CLASS__, 'update_order_tax_jurisdiction'], 10, 1);
     }
 
     /**
@@ -534,6 +552,158 @@ class Tax_WooCommerce_Integration
         $order->update_meta_data('_ffla_tax_quote', wp_json_encode($quote));
         $order->update_meta_data('_ffla_tax_query_id', $quote['queryId'] ?? '');
         $order->update_meta_data('_ffla_tax_source', $quote['source'] ?? '');
+    }
+
+    /**
+     * Add "Update sales tax jurisdiction" to the order screen's Order actions.
+     *
+     * @param mixed $actions Order actions (key => label).
+     * @param mixed $order   WC_Order (WooCommerce 6.9+ passes it).
+     * @return mixed
+     */
+    public static function add_order_actions($actions, $order = null)
+    {
+        if (!is_array($actions)) {
+            return $actions;
+        }
+
+        $actions[self::ORDER_ACTION_UPDATE_JURISDICTION] = __('Update sales tax jurisdiction', 'ffl-funnels-addons');
+        return $actions;
+    }
+
+    /**
+     * Order actions → "Update sales tax jurisdiction".
+     *
+     * Looks up the order's tax address and stores that quote on the order,
+     * which is what Sales Tax Reports read to file the order under its
+     * county / filing code. Nothing is recalculated: totals, tax lines,
+     * status and stock stay as charged, and no customer email is sent.
+     * Orders created in wp-admin before 1.55.3 never stored a quote, so
+     * reports listed them as unmapped. The outcome is written as an order note.
+     *
+     * @param mixed $order WC_Order.
+     */
+    public static function update_order_tax_jurisdiction($order): void
+    {
+        if (!is_object($order) || !method_exists($order, 'get_meta') || !method_exists($order, 'add_order_note')) {
+            return;
+        }
+
+        $address = self::order_context_address($order, self::order_tax_location($order, []));
+        $where = self::address_for_note($address);
+        if ($address['country'] !== 'US' || $address['state'] === '' || ($address['street'] === '' && $address['zip'] === '')) {
+            $order->add_order_note(__('Sales tax jurisdiction not updated: this order has no US tax address. Add the address and try again.', 'ffl-funnels-addons'));
+            return;
+        }
+
+        try {
+            $quote = Tax_Quote_Engine::quote([
+                'street' => $address['street'],
+                'city'   => $address['city'],
+                'state'  => $address['state'],
+                'zip'    => $address['zip'],
+            ]);
+        } catch (\Throwable $e) {
+            /* translators: 1: address, 2: error message */
+            $order->add_order_note(sprintf(__('Sales tax jurisdiction not updated for %1$s: %2$s', 'ffl-funnels-addons'), $where, $e->getMessage()));
+            return;
+        }
+
+        if (!$quote->is_success() && $quote->outcomeCode !== Tax_Quote_Result::OUTCOME_NO_SALES_TAX) {
+            // A failed lookup never replaces the evidence the order already has.
+            /* translators: 1: address, 2: outcome code such as GEOCODE_FAILED */
+            $order->add_order_note(sprintf(__('Sales tax jurisdiction not updated: %1$s could not be looked up (%2$s). Check the address and try again.', 'ffl-funnels-addons'), $where, (string) $quote->outcomeCode));
+            return;
+        }
+
+        self::write_order_tax_quote($order, $quote->to_array());
+        if (method_exists($order, 'save')) {
+            $order->save();
+        }
+
+        $order->add_order_note(self::jurisdiction_note($order, $quote, $address, $where));
+    }
+
+    /**
+     * Order note for an updated jurisdiction: where, rate, filing code and,
+     * when it differs, the rate actually charged (totals are never changed).
+     */
+    private static function jurisdiction_note($order, Tax_Quote_Result $quote, array $address, string $where): string
+    {
+        $local = [];
+        foreach ((array) $quote->breakdown as $component) {
+            if (!is_array($component) || strtolower((string) ($component['type'] ?? '')) === 'state' || (float) ($component['rate'] ?? 0) <= 0) {
+                continue;
+            }
+            $name = trim((string) ($component['jurisdiction'] ?? $component['name'] ?? ''));
+            if ($name !== '') {
+                $local[] = $name;
+            }
+        }
+        $quoted_rate = (float) $quote->totalRate;
+        $jurisdiction = $local ? implode(', ', $local) : (string) $address['state'];
+
+        /* translators: 1: address, 2: jurisdiction names, 3: rate percent */
+        $note = sprintf(__('Sales tax jurisdiction updated from %1$s: %2$s, %3$s%%.', 'ffl-funnels-addons'), $where, $jurisdiction, self::percent($quoted_rate));
+
+        if (class_exists('Tax_Report_Jurisdiction_Registry')) {
+            $official = Tax_Report_Jurisdiction_Registry::resolve(
+                ['country' => 'US', 'state' => $address['state'], 'city' => $address['city']],
+                (array) $quote->breakdown
+            );
+            if (is_array($official) && ($official['code'] ?? '') !== '') {
+                /* translators: 1: official jurisdiction name, 2: filing code */
+                $note .= ' ' . sprintf(__('Filing jurisdiction: %1$s (%2$s).', 'ffl-funnels-addons'), (string) $official['name'], (string) $official['code']);
+            }
+        }
+
+        $note .= ' ' . __('Totals and tax lines were not changed.', 'ffl-funnels-addons');
+
+        $charged = self::order_charged_rate($order);
+        if (null === $charged && $quoted_rate > 0) {
+            $note .= ' ' . __('No tax was charged on this order.', 'ffl-funnels-addons');
+        } elseif (null !== $charged && abs($charged - $quoted_rate) > 0.0005) {
+            /* translators: 1: rate charged, 2: rate for the address */
+            $note .= ' ' . sprintf(__('Check before filing: this order was charged %1$s%%, the address rate is %2$s%%.', 'ffl-funnels-addons'), self::percent($charged, 2), self::percent($quoted_rate));
+        }
+
+        return $note;
+    }
+
+    /**
+     * Effective rate charged on the order's taxed lines, or null when no
+     * line carries tax.
+     */
+    private static function order_charged_rate($order): ?float
+    {
+        $base = 0.0;
+        $tax = 0.0;
+        foreach (['line_item', 'shipping', 'fee'] as $type) {
+            foreach ($order->get_items($type) as $item) {
+                $item_tax = method_exists($item, 'get_total_tax') ? (float) $item->get_total_tax() : 0.0;
+                if ($item_tax <= 0) {
+                    continue;
+                }
+                $base += (float) $item->get_total();
+                $tax += $item_tax;
+            }
+        }
+
+        return $base > 0 ? $tax / $base : null;
+    }
+
+    /** 0.0775 → "7.75"; the charged rate is shown to 2 decimals (cent rounding). */
+    private static function percent(float $rate, int $decimals = 4): string
+    {
+        return rtrim(rtrim(number_format($rate * 100, $decimals, '.', ''), '0'), '.');
+    }
+
+    private static function address_for_note(array $address): string
+    {
+        $street = trim((string) ($address['street'] ?? ''));
+        $place = trim(trim((string) ($address['city'] ?? '')) . ', ' . trim((string) ($address['state'] ?? '') . ' ' . (string) ($address['zip'] ?? '')), ', ');
+
+        return $street !== '' ? $street . ', ' . $place : $place;
     }
 
     /**
@@ -1204,11 +1374,15 @@ class Tax_WooCommerce_Integration
      * Whether a stored order is resolved from its own data.
      *
      * Orders carrying a stored resolver quote (checkout orders and everything
-     * copied from them: subscriptions, renewals, payoff orders) and payment
-     * plan orders use the order context. Other orders keep the session-based
-     * behavior. The checkout's own order is always excluded: Store API
-     * recalculates its draft with $order->calculate_totals() while the cart
-     * session is live, and checkout must stay exactly as it was.
+     * copied from them: subscriptions, renewals, payoff orders), payment
+     * plan orders and any order recalculated from the order screen
+     * (Recalculate, adding or removing items, fees and coupons) use the order
+     * context, which quotes the order's own address and stores that quote,
+     * so orders created in wp-admin carry the evidence reports need. Other
+     * orders keep the session-based behavior. The checkout's own order is
+     * always excluded: Store API recalculates its draft with
+     * $order->calculate_totals() while the cart session is live, and
+     * checkout must stay exactly as it was.
      */
     private static function order_context_applies($order): bool
     {
@@ -1216,9 +1390,31 @@ class Tax_WooCommerce_Integration
             return false;
         }
 
-        $applies = !empty(self::get_stored_order_quote($order)) || self::is_payment_plan_order($order);
+        $applies = !empty(self::get_stored_order_quote($order))
+            || self::is_payment_plan_order($order)
+            || self::is_admin_order_tax_request();
 
         return (bool) apply_filters('ffla_tax_order_context_enabled', $applies, $order);
+    }
+
+    /**
+     * An order-screen AJAX request that recalculates the edited order's taxes.
+     * WooCommerce verifies the nonce and capability before it recalculates.
+     */
+    private static function is_admin_order_tax_request(): bool
+    {
+        $doing_ajax = function_exists('wp_doing_ajax')
+            ? wp_doing_ajax()
+            : (defined('DOING_AJAX') && DOING_AJAX);
+        if (!$doing_ajax || !isset($_REQUEST['action'])) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+            return false;
+        }
+
+        $action = sanitize_key(wp_unslash((string) $_REQUEST['action'])); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+
+        return in_array($action, self::ADMIN_ORDER_TAX_ACTIONS, true)
+            && function_exists('current_user_can')
+            && current_user_can('edit_shop_orders');
     }
 
     private static function is_checkout_session_order($order): bool

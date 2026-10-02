@@ -37,6 +37,14 @@ class Tax_Report_Service
     /** @var array<int,bool> Per-order "layaway fee includes shipping" decisions. */
     private $fee_shipping_orders = [];
 
+    /**
+     * Stored quotes set aside because they describe another address, by
+     * order ID: ['quote' => 'GA 31822', 'order' => 'MI 49735'].
+     *
+     * @var array<int,array<string,string>>
+     */
+    private $foreign_quotes = [];
+
     public function __construct()
     {
         $this->precision = function_exists('wc_get_price_decimals') ? (int) wc_get_price_decimals() : 2;
@@ -178,6 +186,7 @@ class Tax_Report_Service
 
         $filters = self::normalize_filters($filters);
         $this->counted_sales = [];
+        $this->foreign_quotes = [];
         $this->shipping_fee_keys = null;
         $this->fee_shipping_orders = [];
         $summary_only = !empty($options['summary_only']);
@@ -1472,7 +1481,36 @@ class Tax_Report_Service
         return false;
     }
 
+    /**
+     * The order's stored resolver quote, when it describes the address the
+     * order was taxed at.
+     *
+     * Before 1.55.1 checkout could copy a quote left in the session by an
+     * earlier lookup (the store's base address, another destination) onto
+     * the order. That quote must not move an out-of-state order into Georgia
+     * or file a Georgia order under another county, so a quote whose state or
+     * ZIP differs from the order's own tax address is set aside and reported
+     * as foreign_tax_quote.
+     */
     private function get_stored_quote($order): array
+    {
+        $quote = $this->read_stored_quote($order);
+        $order_id = method_exists($order, 'get_id') ? (int) $order->get_id() : 0;
+        if (empty($quote)) {
+            return [];
+        }
+
+        $mismatch = $this->quote_address_mismatch($order, $quote);
+        if (null !== $mismatch) {
+            $this->foreign_quotes[$order_id] = $mismatch;
+            return [];
+        }
+
+        unset($this->foreign_quotes[$order_id]);
+        return $quote;
+    }
+
+    private function read_stored_quote($order): array
     {
         $value = $order->get_meta('_ffla_tax_quote', true);
         if (is_array($value)) {
@@ -1483,6 +1521,42 @@ class Tax_Report_Service
         }
         $decoded = json_decode($value, true);
         return is_array($decoded) ? $decoded : [];
+    }
+
+    /**
+     * Null when the quote matches the order's own tax address (or either
+     * side lacks the data to compare), else both addresses for the evidence.
+     *
+     * @return array{quote:string,order:string}|null
+     */
+    private function quote_address_mismatch($order, array $quote): ?array
+    {
+        $address = [];
+        foreach (['normalizedAddress', 'inputAddress'] as $key) {
+            if (!empty($quote[$key]) && is_array($quote[$key])) {
+                $address = $quote[$key];
+                break;
+            }
+        }
+        $quote_state = strtoupper(trim((string) ($quote['state'] ?? $address['state'] ?? '')));
+        $quote_zip = substr((string) preg_replace('/\D/', '', (string) ($address['zip'] ?? $address['postcode'] ?? '')), 0, 5);
+
+        $own = $this->get_tax_location($order, []);
+        $own_zip = substr((string) preg_replace('/\D/', '', (string) $own['postcode']), 0, 5);
+        if ($quote_state === '' || $own['state'] === '') {
+            return null;
+        }
+
+        $state_differs = $quote_state !== $own['state'];
+        $zip_differs = $quote_zip !== '' && $own_zip !== '' && $quote_zip !== $own_zip;
+        if (!$state_differs && !$zip_differs) {
+            return null;
+        }
+
+        return [
+            'quote' => trim($quote_state . ' ' . $quote_zip),
+            'order' => trim(($own['country'] !== 'US' ? $own['country'] . ' ' : '') . $own['state'] . ' ' . $own_zip),
+        ];
     }
 
     private function sanitize_quote_evidence(array $quote, bool $include_pii): array
@@ -1549,7 +1623,16 @@ class Tax_Report_Service
         if ($order_row['snapshot_hash'] === '') {
             $add('info', 'missing_fiscal_snapshot', 'No permanent FFLA fiscal snapshot exists for this historical order. The report still uses the current stored WooCommerce values.');
         }
-        if (empty($quote) && $this->minor($order_row['tax_collected']) > 0) {
+        $foreign = $this->foreign_quotes[(int) $order->get_id()] ?? null;
+        if (null !== $foreign) {
+            $add(
+                'info',
+                'foreign_tax_quote',
+                'The stored resolver quote was for another address, so the report uses the order\'s own tax address. If this order was taxed, run Order actions → Update sales tax jurisdiction on it.',
+                '',
+                sprintf('quote %s; order %s', $foreign['quote'], $foreign['order'])
+            );
+        } elseif (empty($quote) && $this->minor($order_row['tax_collected']) > 0) {
             $add('info', 'missing_tax_quote', 'Tax was collected but no FFLA resolver quote is attached to the order.', $order_row['tax_collected']);
         }
         if (!empty($quote) && isset($quote['outcomeCode'])) {
@@ -1707,6 +1790,7 @@ class Tax_Report_Service
 
     private function aggregate_jurisdictions(array &$totals, string $currency, array $location, array $order, array $quote, array $tax_rows, array $line_rows): void
     {
+        $tax_rows = $this->without_empty_zero_rate_rows($tax_rows);
         $collected = $this->minor($order['tax_collected']);
         $refunded = $this->minor($order['tax_refunded']);
         $gross_sales = $this->calculate_reportable_sales($line_rows);
@@ -1724,7 +1808,7 @@ class Tax_Report_Service
 
         if (!empty($valid)) {
             $rate_total = array_sum(array_column($valid, '_rate'));
-            $jurisdiction = $this->get_filing_jurisdiction($location, $valid);
+            $jurisdiction = $this->get_filing_jurisdiction($location, $valid, $breakdown);
             $calculated_tax = (int) round($taxable_sales * $rate_total);
             $effective_rate = $rate_total * 100;
             $allocation_method = 'combined_stored_quote';
@@ -2009,6 +2093,27 @@ class Tax_Report_Service
     /**
      * The resolver's combined synthetic tax line (rate 990000 / US-XX-FFLA-TOTAL).
      */
+    /**
+     * WooCommerce's own tax table writes a line for every matching row,
+     * including 0% rows (an unincorporated city, an unused special district).
+     * A 0% line that collected and refunded nothing has no rate base to map,
+     * so it is left out instead of sending the whole jurisdiction to Needs
+     * review. A 0% line that carries tax, and the resolver's own line, are
+     * kept. When every line would go, the rows are kept as they are so the
+     * order still lands in a jurisdiction.
+     */
+    private function without_empty_zero_rate_rows(array $tax_rows): array
+    {
+        $rated = array_values(array_filter($tax_rows, function ($tax) {
+            return $this->is_resolver_tax_line($tax)
+                || (float) ($tax['rate_percent'] ?? 0) > 0
+                || $this->minor($tax['tax_collected'] ?? 0) !== 0
+                || $this->minor($tax['tax_refunded'] ?? 0) !== 0;
+        }));
+
+        return !empty($rated) ? $rated : $tax_rows;
+    }
+
     private function is_resolver_tax_line(array $tax): bool
     {
         return (int) ($tax['rate_id'] ?? 0) === self::RESOLVER_RATE_ID
@@ -2025,10 +2130,16 @@ class Tax_Report_Service
         return false;
     }
 
-    private function get_filing_jurisdiction(array $location, array $breakdown): array
+    /**
+     * @param array      $breakdown           Rated components (names the non-registry jurisdiction).
+     * @param array|null $registry_components Full quote breakdown, 0% components included, for the
+     *                                        official registry (a 0% city component marks an
+     *                                        unincorporated address). Defaults to $breakdown.
+     */
+    private function get_filing_jurisdiction(array $location, array $breakdown, ?array $registry_components = null): array
     {
         if (class_exists('Tax_Report_Jurisdiction_Registry')) {
-            $official = Tax_Report_Jurisdiction_Registry::resolve($location, $breakdown);
+            $official = Tax_Report_Jurisdiction_Registry::resolve($location, $registry_components ?? $breakdown);
             if (is_array($official)) {
                 $filtered = apply_filters('ffla_tax_report_filing_jurisdiction', $official, $location, $breakdown);
                 return is_array($filtered)
@@ -2460,14 +2571,15 @@ class Tax_Report_Service
         if ($tax <= 0) {
             return;
         }
-        $breakdown = isset($quote['breakdown']) && is_array($quote['breakdown']) ? array_values(array_filter($quote['breakdown'], function ($item) {
+        $full_breakdown = isset($quote['breakdown']) && is_array($quote['breakdown']) ? array_values($quote['breakdown']) : [];
+        $breakdown = array_values(array_filter($full_breakdown, function ($item) {
             return isset($item['rate']) && (float) $item['rate'] > 0;
-        })) : [];
+        }));
         if (!empty($breakdown)) {
             $rate_total = array_sum(array_map(function ($item) {
                 return (float) $item['rate'];
             }, $breakdown));
-            $jurisdiction = $this->get_filing_jurisdiction($location, $breakdown);
+            $jurisdiction = $this->get_filing_jurisdiction($location, $breakdown, $full_breakdown);
             $effective_rate = $taxable_sales > 0 ? ($tax / $taxable_sales) * 100 : $rate_total * 100;
             $this->add_jurisdiction_bucket(
                 $totals,

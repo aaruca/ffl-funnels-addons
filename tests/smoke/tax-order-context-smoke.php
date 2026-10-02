@@ -55,9 +55,10 @@ function wp_generate_uuid4() { static $n = 0; return sprintf('00000000-0000-4000
 function sanitize_key($value) { return preg_replace('/[^a-z0-9_\-]/', '', strtolower((string) $value)); }
 function get_userdata($id) { return isset($GLOBALS['users'][$id]) ? (object) ['roles' => $GLOBALS['users'][$id]] : false; }
 function get_current_user_id() { return $GLOBALS['current_user']; }
-function wp_doing_ajax() { return false; }
+function wp_doing_ajax() { return !empty($GLOBALS['doing_ajax']); }
 function is_admin() { return false; }
-function current_user_can($cap) { return false; }
+function current_user_can($cap) { return in_array($cap, $GLOBALS['caps'] ?? [], true); }
+function wp_unslash($value) { return is_string($value) ? stripslashes($value) : $value; }
 function wc_clean($value) { return is_string($value) ? trim(strip_tags($value)) : $value; }
 function wc_normalize_postcode($postcode) { return preg_replace('/[\s\-]/', '', trim(strtoupper((string) $postcode))); }
 function wc_get_chosen_shipping_method_ids() { return $GLOBALS['chosen_methods'] ?? []; }
@@ -128,6 +129,7 @@ require_once __DIR__ . '/../../modules/tax-rates/includes/class-tax-quote-result
 require_once __DIR__ . '/../../modules/tax-rates/includes/class-tax-address-normalizer.php';
 require_once __DIR__ . '/../../modules/tax-rates/includes/class-tax-role-gate.php';
 require_once __DIR__ . '/../../modules/tax-rates/includes/class-tax-woocommerce-integration.php';
+require_once __DIR__ . '/../../modules/tax-rates/includes/class-tax-report-jurisdiction-registry.php';
 Tax_WooCommerce_Integration::init();
 
 class TestItem {
@@ -136,6 +138,7 @@ class TestItem {
     public function get_meta($key, $single = true) { return $this->meta[$key] ?? ''; }
     public function get_method_id() { return $this->method_id; }
     public function get_total() { return $this->total; }
+    public function get_total_tax() { return array_sum($this->taxes); }
 }
 class TestTaxItem {
     public $rate_id; public $label = ''; public $rate_code = ''; public $compound = false; public $rate_percent = 0.0; public $tax_total = 0.0; public $shipping_tax_total = 0.0;
@@ -160,7 +163,7 @@ function test_rates_cache_key($country, $state, $city, $postcode, $class = '') {
 }
 
 class TestOrder {
-    public $id; public $status = 'pending'; public $customer_id = 5; public $meta = [];
+    public $id; public $status = 'pending'; public $customer_id = 5; public $meta = []; public $notes = []; public $saves = 0;
     public $items = ['line_item' => [], 'fee' => [], 'shipping' => [], 'tax' => []];
     public $shipping = ['address_1' => '123 Main St', 'city' => 'Pine Mountain', 'state' => 'GA', 'postcode' => '31822', 'country' => 'US'];
     public $billing = ['address_1' => '123 Main St', 'city' => 'Pine Mountain', 'state' => 'GA', 'postcode' => '31822', 'country' => 'US'];
@@ -171,6 +174,8 @@ class TestOrder {
     public function get_meta($key, $single = true) { return $this->meta[$key] ?? ''; }
     public function update_meta_data($key, $value) { $this->meta[$key] = $value; }
     public function delete_meta_data($key) { unset($this->meta[$key]); }
+    public function add_order_note($note) { $this->notes[] = $note; return count($this->notes); }
+    public function save() { $this->saves++; return $this->id; }
     public function get_items($type = 'line_item') { return $this->items[$type] ?? []; }
     public function __call($name, $args) {
         if (preg_match('/^get_(shipping|billing)_(address_1|city|state|postcode|country)$/', $name, $m)) {
@@ -247,6 +252,7 @@ function reset_request() {
     $GLOBALS['native_table'] = $GLOBALS['native_ga']; $GLOBALS['legacy_update_taxes'] = false;
     $GLOBALS['options']['woocommerce_tax_based_on'] = 'shipping'; unset($GLOBALS['options']['ffla_tax_resolver_settings']);
     Tax_Quote_Engine::$fail = false; Tax_Role_Gate::reset_runtime_cache();
+    $GLOBALS['doing_ajax'] = false; $GLOBALS['caps'] = []; unset($_REQUEST['action']);
     unset($GLOBALS['hooks']['woocommerce_local_pickup_methods'], $GLOBALS['hooks']['ffla_tax_local_pickup_use_store_base'], $GLOBALS['hooks']['ffla_tax_order_context_enabled']);
 }
 /** Deposit quote stored at checkout, copied parent -> subscription -> renewal. */
@@ -464,5 +470,99 @@ add_filter('ffla_tax_order_context_enabled', function () { return false; });
 $order = renewal();
 $order->calculate_totals(true);
 check(tax_ids($order) === [1, 9, 10, 11], 'ffla_tax_order_context_enabled can opt an order out');
+
+/** Counter sale entered in wp-admin: store address, no stored quote, no payment plan. */
+function counter_sale(int $id, float $total = 589.99): TestOrder {
+    $order = new TestOrder($id);
+    $order->status = 'completed';
+    $order->shipping = ['address_1' => '387 Sullivan Cir', 'city' => 'PINE MOUNTAIN', 'state' => 'GA', 'postcode' => '31822', 'country' => 'US'];
+    $order->items['line_item'] = [1 => new TestItem(1, $total)];
+    return $order;
+}
+function admin_request(string $action, array $caps = ['edit_shop_orders']): void {
+    $GLOBALS['doing_ajax'] = true; $_REQUEST['action'] = $action; $GLOBALS['caps'] = $caps;
+}
+
+// 18. Order screen Recalculate on a wp-admin order quotes the order's own address and stores the quote.
+reset_request();
+$GLOBALS['wc']->session = new TestSession();
+$GLOBALS['wc']->customer = new TestCustomer(7, 'Admin Home Rd');
+admin_request('woocommerce_calc_line_taxes');
+$order = counter_sale(600);
+$order->calculate_taxes(['country' => 'US', 'state' => 'GA', 'postcode' => '31822', 'city' => 'PINE MOUNTAIN']);
+$order->calculate_totals(false);
+check(count($GLOBALS['quote_calls']) === 1 && $GLOBALS['quote_calls'][0]['street'] === '387 Sullivan Cir', 'Admin Recalculate quotes the order address, not the staff member\'s session address');
+check(tax_ids($order) === [990000] && $order->items['tax'][0]->rate_percent === 8.0, 'Admin Recalculate charges the resolver rate');
+$stored = json_decode($order->meta['_ffla_tax_quote'] ?? '', true);
+check(($stored['breakdown'][1]['jurisdiction'] ?? '') === 'Harris' && ($order->meta['_ffla_tax_query_id'] ?? '') === $stored['queryId'], 'Admin Recalculate stores the quote reports read');
+check(!isset($GLOBALS['wc']->session->data['ffla_last_tax_quote']), 'Staff member\'s session is not used or changed');
+
+foreach (['woocommerce_remove_order_item', 'woocommerce_add_coupon_discount'] as $action) {
+    reset_request();
+    admin_request($action);
+    $order = counter_sale(601);
+    $order->calculate_totals(true);
+    check(isset($order->meta['_ffla_tax_quote']), "Order-screen $action stores the quote too");
+}
+
+reset_request();
+admin_request('woocommerce_calc_line_taxes', []);
+$order = counter_sale(602);
+$order->calculate_totals(true);
+check(!isset($order->meta['_ffla_tax_quote']), 'Without edit_shop_orders the previous behavior is kept');
+reset_request();
+admin_request('heartbeat');
+$order = counter_sale(603);
+$order->calculate_totals(true);
+check(!isset($order->meta['_ffla_tax_quote']), 'Unrelated AJAX requests keep the previous behavior');
+
+// 19. Order actions → Update sales tax jurisdiction: stores the quote, changes nothing else.
+reset_request();
+$actions = apply_filters('woocommerce_order_actions', ['send_order_details' => 'Send order details'], null);
+check(($actions['ffla_update_tax_jurisdiction'] ?? '') === 'Update sales tax jurisdiction' && isset($actions['send_order_details']), 'Order action is offered next to WooCommerce\'s own');
+
+$order = counter_sale(604);
+$order->items['line_item'][1]->taxes = [990000 => 47.20];
+$taxes_before = $order->items['line_item'][1]->taxes;
+do_action('woocommerce_order_action_ffla_update_tax_jurisdiction', $order);
+$stored = json_decode($order->meta['_ffla_tax_quote'] ?? '', true);
+check(count($GLOBALS['quote_calls']) === 1 && $GLOBALS['quote_calls'][0]['street'] === '387 Sullivan Cir', 'Action quotes the order\'s tax address');
+check(($stored['totalRate'] ?? null) === 0.08 && $order->saves === 1, 'Action stores the quote and saves the order once');
+check($order->items['line_item'][1]->taxes === $taxes_before && $order->items['tax'] === [] && $order->status === 'completed', 'Action leaves tax lines, totals and status alone');
+$note = $order->notes[0] ?? '';
+check(strpos($note, '387 Sullivan Cir, PINE MOUNTAIN, GA 31822') !== false && strpos($note, 'Harris, 8%') !== false, 'Note names the address, jurisdiction and rate');
+check(strpos($note, 'Filing jurisdiction: Harris (072).') !== false, 'Note gives the Georgia filing code');
+check(strpos($note, 'Totals and tax lines were not changed.') !== false && strpos($note, 'Check before filing') === false, 'Matching rate: no warning');
+
+reset_request();
+$order = counter_sale(605, 100.00);
+$order->items['line_item'][1]->taxes = [990000 => 7.00];
+do_action('woocommerce_order_action_ffla_update_tax_jurisdiction', $order);
+check(strpos($order->notes[0] ?? '', 'Check before filing: this order was charged 7%, the address rate is 8%.') !== false, 'A different charged rate is flagged, not corrected');
+reset_request();
+$order = counter_sale(609, 63.47);
+$order->items['line_item'][1]->taxes = [990000 => 3.81];
+do_action('woocommerce_order_action_ffla_update_tax_jurisdiction', $order);
+check(strpos($order->notes[0] ?? '', 'charged 6%, the address rate is 8%.') !== false, 'Charged rate is rounded to 2 decimals (6.0028% reads 6%)');
+
+reset_request();
+$order = counter_sale(606);
+do_action('woocommerce_order_action_ffla_update_tax_jurisdiction', $order);
+check(strpos($order->notes[0] ?? '', 'No tax was charged on this order.') !== false, 'Untaxed order is flagged');
+
+reset_request();
+Tax_Quote_Engine::$fail = true;
+$order = renewal(607);
+$kept = $order->meta['_ffla_tax_quote'];
+do_action('woocommerce_order_action_ffla_update_tax_jurisdiction', $order);
+check($order->meta['_ffla_tax_quote'] === $kept && $order->saves === 0, 'A failed lookup never replaces the stored quote');
+check(strpos($order->notes[0] ?? '', 'could not be looked up (SOURCE_UNAVAILABLE)') !== false, 'Failed lookup explained in a note');
+
+reset_request();
+$order = counter_sale(608);
+$order->shipping = ['address_1' => '', 'city' => '', 'state' => '', 'postcode' => '', 'country' => ''];
+$order->billing = $order->shipping;
+do_action('woocommerce_order_action_ffla_update_tax_jurisdiction', $order);
+check(count($GLOBALS['quote_calls']) === 0 && strpos($order->notes[0] ?? '', 'no US tax address') !== false, 'Order without a US address is explained, not quoted');
 
 echo "$checks stored-order tax context checks passed.\n";

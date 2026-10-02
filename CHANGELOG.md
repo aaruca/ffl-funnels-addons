@@ -2,6 +2,18 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.55.3] - 2026-10-02
+
+### Added
+- **Order actions → Update sales tax jurisdiction** (Sales Tax Resolver): looks up the order's tax address and saves it on the order, so Sales Tax Reports file the order under the right county / filing code. Nothing is recalculated: totals, tax lines, status and stock stay as charged, and the customer gets no email. An order note records the address, jurisdiction, rate and Georgia filing code, and flags orders charged a different rate than the address rate. Use it for orders created in wp-admin before this release, which reports listed as **Unmapped**.
+
+### Fixed
+- **Sales Tax Reports ignore a tax quote saved for another address.** Before 1.55.1, checkout could save the session's last quote (often the store's own address, or another customer's) on an order. Reports trusted it, so out-of-state orders showed up as Georgia sales with **no tax collected** and some Georgia orders were filed under the wrong county. A quote whose state or ZIP differs from the order's own tax address is now set aside: the order is reported under the state it shipped to, and the report lists it as **foreign_tax_quote**. Taxed orders affected this way show as Needs review until **Update sales tax jurisdiction** is run on them.
+- **Orders created in wp-admin now carry their tax jurisdiction**: Recalculate (and adding or removing items, fees or coupons) on the order screen looks up the order's own address and saves it on the order. Before, it used the staff member's session, saved nothing, and Georgia counter sales landed in **Unmapped Georgia jurisdiction**.
+- **Sales Tax Reports: empty 0% tax lines no longer mark a county Needs review.** WooCommerce's own tax table adds a line for every matching row, including 0% ones (an unincorporated city, an unused special district). Those lines carry no tax and are now left out of the rate check. A 0% line that carries tax is still flagged.
+- **Sales Tax Reports → Georgia filing codes**: DeKalb and Clayton orders now land on **044** and **031** instead of **Unmapped Georgia jurisdiction**. The official names carry a qualifier ("DeKalb (Not Atlanta)", "Clayton (Not College Park)") that blocked the county match, so every DeKalb and Clayton order was unmapped.
+- The Atlanta and College Park special codes (044A, 060A, 801, 804) now follow the city whose tax the quote charged, not the mailing city: an "Atlanta" address in unincorporated DeKalb stays on 044. When the quote names no city, the mailing city is used as before. Regenerate reports created before this release.
+
 ## [1.55.2] - 2026-10-02
 
 ### Changed

@@ -24,6 +24,10 @@ class Tax_Report_Jurisdiction_Registry
      * Georgia returns an explicit Needs Review row when no official code can
      * be proven; WooCommerce tax-line labels are never promoted to invented
      * filing jurisdictions.
+     *
+     * Pass every quote component, including 0% ones: a 0% city component is
+     * how a quote says "unincorporated", which decides the Atlanta / College
+     * Park special codes when the postal city says otherwise.
      */
     public static function resolve(array $location, array $components = []): ?array
     {
@@ -56,7 +60,13 @@ class Tax_Report_Jurisdiction_Registry
         }
 
         $search = self::normalize_text(implode(' | ', $texts));
-        $city = self::normalize_text((string) ($location['city'] ?? ''));
+        // The quote's city component is the city whose tax was charged; the
+        // postal city is only a fallback ("Atlanta" mail covers unincorporated
+        // DeKalb, Fulton and Clayton addresses that are not in the City of Atlanta).
+        $city = self::quote_city($components);
+        if ($city === null) {
+            $city = self::normalize_text((string) ($location['city'] ?? ''));
+        }
         $county_code = self::match_georgia_county_code($search, $entries);
         if ($county_code === '') {
             foreach ($texts as $text) {
@@ -294,7 +304,10 @@ DATA;
             if ($entry['type'] !== 'county') {
                 continue;
             }
-            $county = preg_replace('/\s+\(.+$/', '', self::normalize_text($entry['name']));
+            // Drop the official qualifier ("DeKalb (Not Atlanta)") before
+            // normalizing; normalize_text() turns "(" into a space, so stripping
+            // it afterwards never matched and DeKalb / Clayton were always unmapped.
+            $county = self::normalize_text((string) preg_replace('/\s*\(.*\)\s*$/', '', $entry['name']));
             if ($county === '') {
                 continue;
             }
@@ -307,6 +320,30 @@ DATA;
         }
 
         return '';
+    }
+
+    /**
+     * City named by the quote's city component, normalized and without the
+     * trailing "City" the API adds. '' when the quote says unincorporated;
+     * null when the quote has no named city component (use the postal city).
+     */
+    private static function quote_city(array $components): ?string
+    {
+        foreach ($components as $component) {
+            if (!is_array($component) || strtolower((string) ($component['type'] ?? '')) !== 'city') {
+                continue;
+            }
+            $name = self::normalize_text((string) ($component['jurisdiction'] ?? $component['name'] ?? ''));
+            if ($name === '' || $name === 'CITY TAX') {
+                continue;
+            }
+            if (preg_match('/^UN ?INCORPORATED(?:\s|$)/', $name)) {
+                return '';
+            }
+            return (string) preg_replace('/\s+CITY$/', '', $name);
+        }
+
+        return null;
     }
 
     private static function special_georgia_code(string $county_code, string $city, string $search): string
