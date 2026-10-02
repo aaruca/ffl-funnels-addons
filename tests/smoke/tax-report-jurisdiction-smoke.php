@@ -58,6 +58,68 @@ $fulton_atlanta = Tax_Report_Jurisdiction_Registry::resolve(
 );
 ffla_jurisdiction_assert(($fulton_atlanta['code'] ?? '') === '060A', 'Fulton Atlanta must use special code 060A.');
 
+// Counties whose official name carries a qualifier ("DeKalb (Not Atlanta)",
+// "Clayton (Not College Park)") must still match USGeocoder's "<County> County".
+$ga_quote = function (string $county, string $city, float $city_rate) {
+    return [
+        ['type' => 'state', 'jurisdiction' => 'GA', 'rate' => 0.04],
+        ['type' => 'county', 'jurisdiction' => $county, 'rate' => 0.04],
+        ['type' => 'city', 'jurisdiction' => $city, 'rate' => $city_rate],
+    ];
+};
+
+$dekalb_dunwoody = Tax_Report_Jurisdiction_Registry::resolve(
+    ['country' => 'US', 'state' => 'GA', 'city' => 'DUNWOODY'],
+    $ga_quote('Dekalb County', 'Dunwoody City', 0)
+);
+ffla_jurisdiction_assert(($dekalb_dunwoody['code'] ?? '') === '044', 'DeKalb outside Atlanta must resolve to 044.');
+ffla_jurisdiction_assert(($dekalb_dunwoody['status'] ?? '') === 'ready', 'DeKalb outside Atlanta must be Ready, not Needs Review.');
+
+$clayton = Tax_Report_Jurisdiction_Registry::resolve(
+    ['country' => 'US', 'state' => 'GA', 'city' => 'JONESBORO'],
+    $ga_quote('Clayton County', 'Un-incorporated City', 0)
+);
+ffla_jurisdiction_assert(($clayton['code'] ?? '') === '031', 'Clayton outside College Park must resolve to 031.');
+
+$dekalb_atlanta = Tax_Report_Jurisdiction_Registry::resolve(
+    ['country' => 'US', 'state' => 'GA', 'city' => 'ATLANTA'],
+    [
+        ['type' => 'state', 'jurisdiction' => 'GA', 'rate' => 0.04],
+        ['type' => 'county', 'jurisdiction' => 'Dekalb County', 'rate' => 0.03],
+        ['type' => 'city', 'jurisdiction' => 'Atlanta City', 'rate' => 0.019],
+    ]
+);
+ffla_jurisdiction_assert(($dekalb_atlanta['code'] ?? '') === '044A', 'DeKalb inside the City of Atlanta must resolve to 044A.');
+
+$dekalb_unincorporated_atlanta_mail = Tax_Report_Jurisdiction_Registry::resolve(
+    ['country' => 'US', 'state' => 'GA', 'city' => 'ATLANTA'],
+    $ga_quote('Dekalb County', 'Un-incorporated City', 0)
+);
+ffla_jurisdiction_assert(
+    ($dekalb_unincorporated_atlanta_mail['code'] ?? '') === '044',
+    'An "Atlanta" postal address the quote marks unincorporated must stay on DeKalb 044, not 044A.'
+);
+
+$clayton_college_park = Tax_Report_Jurisdiction_Registry::resolve(
+    ['country' => 'US', 'state' => 'GA', 'city' => 'RIVERDALE'],
+    $ga_quote('Clayton County', 'College Park City', 0.01)
+);
+ffla_jurisdiction_assert(($clayton_college_park['code'] ?? '') === '804', 'Clayton inside College Park (per the quote city) must resolve to 804.');
+
+$fulton_unnamed_city = Tax_Report_Jurisdiction_Registry::resolve(
+    ['country' => 'US', 'state' => 'GA', 'city' => 'Atlanta'],
+    $ga_quote('Fulton County', 'City Tax', 0.019)
+);
+ffla_jurisdiction_assert(($fulton_unnamed_city['code'] ?? '') === '060A', 'An unnamed quote city component must fall back to the postal city.');
+
+$service_for_quote = new Tax_Report_Service();
+$filing = new ReflectionMethod(Tax_Report_Service::class, 'get_filing_jurisdiction');
+$filing->setAccessible(true);
+$full = $ga_quote('Dekalb County', 'Un-incorporated City', 0);
+$rated = array_values(array_filter($full, function ($item) { return $item['rate'] > 0; }));
+$via_service = $filing->invoke($service_for_quote, ['country' => 'US', 'state' => 'GA', 'city' => 'ATLANTA'], $rated, $full);
+ffla_jurisdiction_assert(($via_service['code'] ?? '') === '044', 'The report must hand the registry the 0% city component so unincorporated "Atlanta" mail stays on 044.');
+
 $unknown = Tax_Report_Jurisdiction_Registry::resolve(
     ['country' => 'US', 'state' => 'GA', 'city' => 'Imaginary'],
     [['name' => 'IMAGINARY DISTRICT : City Tax']]

@@ -1724,7 +1724,7 @@ class Tax_Report_Service
 
         if (!empty($valid)) {
             $rate_total = array_sum(array_column($valid, '_rate'));
-            $jurisdiction = $this->get_filing_jurisdiction($location, $valid);
+            $jurisdiction = $this->get_filing_jurisdiction($location, $valid, $breakdown);
             $calculated_tax = (int) round($taxable_sales * $rate_total);
             $effective_rate = $rate_total * 100;
             $allocation_method = 'combined_stored_quote';
@@ -2025,10 +2025,16 @@ class Tax_Report_Service
         return false;
     }
 
-    private function get_filing_jurisdiction(array $location, array $breakdown): array
+    /**
+     * @param array      $breakdown           Rated components (names the non-registry jurisdiction).
+     * @param array|null $registry_components Full quote breakdown, 0% components included, for the
+     *                                        official registry (a 0% city component marks an
+     *                                        unincorporated address). Defaults to $breakdown.
+     */
+    private function get_filing_jurisdiction(array $location, array $breakdown, ?array $registry_components = null): array
     {
         if (class_exists('Tax_Report_Jurisdiction_Registry')) {
-            $official = Tax_Report_Jurisdiction_Registry::resolve($location, $breakdown);
+            $official = Tax_Report_Jurisdiction_Registry::resolve($location, $registry_components ?? $breakdown);
             if (is_array($official)) {
                 $filtered = apply_filters('ffla_tax_report_filing_jurisdiction', $official, $location, $breakdown);
                 return is_array($filtered)
@@ -2460,14 +2466,15 @@ class Tax_Report_Service
         if ($tax <= 0) {
             return;
         }
-        $breakdown = isset($quote['breakdown']) && is_array($quote['breakdown']) ? array_values(array_filter($quote['breakdown'], function ($item) {
+        $full_breakdown = isset($quote['breakdown']) && is_array($quote['breakdown']) ? array_values($quote['breakdown']) : [];
+        $breakdown = array_values(array_filter($full_breakdown, function ($item) {
             return isset($item['rate']) && (float) $item['rate'] > 0;
-        })) : [];
+        }));
         if (!empty($breakdown)) {
             $rate_total = array_sum(array_map(function ($item) {
                 return (float) $item['rate'];
             }, $breakdown));
-            $jurisdiction = $this->get_filing_jurisdiction($location, $breakdown);
+            $jurisdiction = $this->get_filing_jurisdiction($location, $breakdown, $full_breakdown);
             $effective_rate = $taxable_sales > 0 ? ($tax / $taxable_sales) * 100 : $rate_total * 100;
             $this->add_jurisdiction_bucket(
                 $totals,
