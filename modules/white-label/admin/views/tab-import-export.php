@@ -50,7 +50,7 @@ if (!empty($import_notice) && is_array($import_notice)) {
     <div class="wb-card__header"><h3><?php esc_html_e('Import settings', 'ffl-funnels-addons'); ?></h3></div>
     <div class="wb-card__body">
         <p class="wb-field__desc">
-            <?php esc_html_e('Upload an exported .json file, or paste its contents below. This replaces the current Styles, Menu, Dashboard, and Restrictions settings — it can’t be undone, so export a backup first.', 'ffl-funnels-addons'); ?>
+            <?php esc_html_e('Upload an exported .json file, or paste its contents below. This replaces the current Styles, Menu, Dashboard, Restrictions and Products settings — it can’t be undone, so export a backup first.', 'ffl-funnels-addons'); ?>
         </p>
 
         <form method="post"

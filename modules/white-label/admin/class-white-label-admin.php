@@ -70,6 +70,7 @@ class White_Label_Admin
             'menu'         => __('Menu', 'ffl-funnels-addons'),
             'dashboard'    => __('Dashboard', 'ffl-funnels-addons'),
             'restrictions' => __('Restrictions', 'ffl-funnels-addons'),
+            'products'     => __('Products', 'ffl-funnels-addons'),
             'import-export' => __('Import / Export', 'ffl-funnels-addons'),
         ];
     }
@@ -442,6 +443,10 @@ class White_Label_Admin
             'hidden_menu'   => isset($restrictions['hidden_menu']) && is_array($restrictions['hidden_menu']) ? $restrictions['hidden_menu'] : [],
             'hidden_adminbar' => isset($restrictions['hidden_adminbar']) && is_array($restrictions['hidden_adminbar']) ? $restrictions['hidden_adminbar'] : [],
             'dashboard'     => $this->get_dashboard_settings(),
+            'term_search_enabled' => class_exists('White_Label_Term_Search') ? White_Label_Term_Search::enabled() : true,
+            'term_search_tools'   => class_exists('White_Label_Term_Search')
+                ? array_combine(array_keys(White_Label_Term_Search::DEFAULTS), array_map([White_Label_Term_Search::class, 'setting'], array_keys(White_Label_Term_Search::DEFAULTS)))
+                : [],
             'superusers_defined' => defined(White_Label_Access::SUPERUSERS_CONSTANT),
             'was_saved'     => $this->just_saved(),
             // Live preview: the theme stylesheet only loads once Styles are saved,
@@ -665,6 +670,11 @@ class White_Label_Admin
         $settings['restrictions'] = $this->sanitize_restrictions($raw_restrictions);
         $settings['menu']         = $this->sanitize_menu($raw_menu);
         $settings['dashboard']    = $this->sanitize_dashboard($raw_dashboard);
+        // The Products tab always posts this section (a hidden "0" + the toggle);
+        // without it, the saved value is kept as it is.
+        if (isset($submitted['term_search']) && is_array($submitted['term_search'])) {
+            $settings['term_search'] = $this->sanitize_term_search($submitted['term_search']);
+        }
         // Never let an operator lock themselves out by editing the exempt list.
         $settings                 = $this->keep_current_user_exempt($settings);
         White_Label_Settings::save($settings);
@@ -759,7 +769,7 @@ class White_Label_Admin
         // Accept either the export envelope or a bare settings array.
         if (isset($decoded['marker']) && self::EXPORT_MARKER === $decoded['marker']) {
             $incoming = isset($decoded['settings']) && is_array($decoded['settings']) ? $decoded['settings'] : null;
-        } elseif (isset($decoded['styles']) || isset($decoded['restrictions']) || isset($decoded['menu']) || isset($decoded['dashboard'])) {
+        } elseif (isset($decoded['styles']) || isset($decoded['restrictions']) || isset($decoded['menu']) || isset($decoded['dashboard']) || isset($decoded['term_search'])) {
             $incoming = $decoded;
         } else {
             $incoming = null;
@@ -919,12 +929,43 @@ class White_Label_Admin
             $restrictions['exempt_emails'] = implode("\n", $restrictions['exempt_emails']);
         }
 
-        return [
+        $settings = [
             'styles'       => $this->sanitize_styles($styles),
             'restrictions' => $this->sanitize_restrictions($restrictions),
             'menu'         => $this->sanitize_menu($menu),
             'dashboard'    => $this->sanitize_dashboard($dashboard),
         ];
+
+        // Files exported before the Products tab have no term_search section:
+        // leave the key out, which means on (the default).
+        if (isset($incoming['term_search']) && is_array($incoming['term_search'])) {
+            $settings['term_search'] = $this->sanitize_term_search($incoming['term_search']);
+        }
+
+        return $settings;
+    }
+
+    /**
+     * Sanitise the Products tab (product editor tools on/off). Only keys that
+     * were sent are stored; a missing key keeps meaning its default.
+     *
+     * @param array<string, mixed> $raw
+     * @return array<string, bool>
+     */
+    private function sanitize_term_search(array $raw): array
+    {
+        $keys = class_exists('White_Label_Term_Search')
+            ? array_keys(White_Label_Term_Search::DEFAULTS)
+            : ['enabled', 'keep_order', 'collapse_tree', 'auto_parents', 'list_filters'];
+        $out = [];
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $raw)) {
+                $value = $raw[$key];
+                $out[$key] = is_bool($value) ? $value : (is_scalar($value) && !in_array((string) $value, ['', '0', 'false'], true));
+            }
+        }
+
+        return $out;
     }
 
     /**

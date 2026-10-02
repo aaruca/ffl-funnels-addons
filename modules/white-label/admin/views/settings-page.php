@@ -41,7 +41,7 @@ if (!empty($self_exempt_email)) {
 <div class="ffla-wl-header">
     <h2 class="ffla-wl-header__title"><?php esc_html_e('White Label', 'ffl-funnels-addons'); ?></h2>
     <p class="ffla-wl-header__desc">
-        <?php esc_html_e('Brand and lock down wp-admin for client logins — light/dark admin colours, agency branding, client menu order, hidden and blocked admin screens and admin-bar items, and an optional client dashboard.', 'ffl-funnels-addons'); ?>
+        <?php esc_html_e('Brand and lock down wp-admin for client logins — light/dark admin colours, agency branding, client menu order, hidden and blocked admin screens and admin-bar items, an optional client dashboard, and category & tag search on products.', 'ffl-funnels-addons'); ?>
     </p>
 </div>
 
@@ -74,6 +74,8 @@ if (!empty($self_exempt_email)) {
                     <?php include __DIR__ . '/tab-dashboard.php'; ?>
                 <?php elseif ('restrictions' === $tab_slug) : ?>
                     <?php include __DIR__ . '/tab-restrictions.php'; ?>
+                <?php elseif ('products' === $tab_slug) : ?>
+                    <?php include __DIR__ . '/tab-products.php'; ?>
                 <?php endif; ?>
             </div>
         <?php endforeach; ?>

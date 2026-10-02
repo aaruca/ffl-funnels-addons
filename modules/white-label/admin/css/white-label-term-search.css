@@ -1,0 +1,246 @@
+/**
+ * White Label — category & tag search on the Edit Product screen and in
+ * Quick / Bulk Edit. Native wp-admin look; works in the 280px side column.
+ */
+
+.ffla-ts {
+    margin: 0 0 8px;
+}
+
+.ffla-ts .ffla-ts-input {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    box-sizing: border-box;
+}
+
+.ffla-ts-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 10px;
+    margin-top: 4px;
+    min-height: 18px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #646970;
+}
+
+.ffla-ts-status:empty {
+    display: none;
+}
+
+.ffla-ts.is-filtering .ffla-ts-status {
+    color: #1d2327;
+    font-weight: 600;
+}
+
+.ffla-ts-only {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    font-size: 12px;
+    color: #1d2327;
+    cursor: pointer;
+}
+
+.ffla-ts-only input[type="checkbox"] {
+    margin: 0;
+}
+
+/* Filtering states (on core's own list items). */
+li.ffla-ts-hidden {
+    display: none !important;
+}
+
+li.ffla-ts-ancestor > label {
+    color: #646970;
+}
+
+mark.ffla-ts-mark {
+    padding: 0;
+    border-radius: 2px;
+    background: #fcf0a1;
+    color: inherit;
+}
+
+.ffla-ts-empty {
+    margin: 8px 0;
+    color: #646970;
+    font-style: italic;
+}
+
+/* Hierarchical boxes: the All panel can be dragged taller. Only lists longer
+   than the default box get a fixed starting height, so short lists keep
+   WordPress's auto height. */
+.categorydiv div.tabs-panel.ffla-ts-resizable {
+    height: 200px;
+    max-height: none;
+    min-height: 100px;
+    resize: vertical;
+}
+
+/* Flat boxes (tags): checklist of existing terms under core's field. */
+.ffla-ts--tags {
+    margin: 12px 0 0;
+}
+
+.ffla-ts-panel {
+    max-height: 200px;
+    margin-top: 6px;
+    padding: 0 0.9em;
+    overflow: auto;
+    border: 1px solid #dcdcde;
+    background: #fff;
+}
+
+.ffla-ts-panel.ffla-ts-resizable {
+    height: 180px;
+    max-height: none;
+    min-height: 80px;
+    resize: vertical;
+}
+
+.ffla-ts-list {
+    margin: 0.5em 0;
+}
+
+.ffla-ts-list li {
+    margin: 0 0 6px;
+    padding: 0;
+    line-height: 1.69230769;
+    word-wrap: break-word;
+}
+
+.ffla-ts-list li:last-child {
+    margin-bottom: 0;
+}
+
+.ffla-ts-panel .ffla-ts-empty {
+    margin: 0.5em 0;
+}
+
+/* Quick Edit / Bulk Edit. */
+.inline-edit-row .ffla-ts--inline {
+    margin: 2px 0 4px;
+}
+
+.inline-edit-row .ffla-ts--inline .ffla-ts-bar:empty,
+.inline-edit-row .ffla-ts--inline .ffla-ts-bar:has(.ffla-ts-status:empty) {
+    display: none;
+}
+
+/* Search switched off: only the tree buttons remain in the bar. */
+.ffla-ts--no-search .ffla-ts-bar {
+    margin-top: 0;
+}
+
+.ffla-ts--no-search .ffla-ts-bar:has(.ffla-ts-tree-actions[hidden]) {
+    display: none;
+}
+
+/* Folding tree. Leaves line up with their parents' labels. */
+.ffla-ts-tree li {
+    position: relative;
+}
+
+.ffla-ts-tree li:not(.ffla-ts-parent) > label {
+    margin-left: 18px;
+}
+
+.ffla-ts-twisty {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: #50575e;
+    cursor: pointer;
+    vertical-align: middle;
+}
+
+.ffla-ts-twisty::before {
+    content: "";
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid currentColor;
+    transition: transform 0.12s ease;
+}
+
+li.ffla-ts-collapsed > .ffla-ts-twisty::before {
+    transform: rotate(-90deg);
+}
+
+.ffla-ts-twisty:hover {
+    color: #2271b1;
+}
+
+.ffla-ts-twisty:focus-visible {
+    outline: 2px solid #2271b1;
+    outline-offset: 1px;
+    border-radius: 2px;
+}
+
+li.ffla-ts-collapsed > ul {
+    display: none;
+}
+
+.ffla-ts-filtering li.ffla-ts-collapsed > ul {
+    display: block;
+}
+
+.ffla-ts-filtering li.ffla-ts-collapsed > .ffla-ts-twisty::before {
+    transform: none;
+}
+
+.ffla-ts-tree-actions {
+    display: inline-flex;
+    gap: 8px;
+}
+
+.ffla-ts-tree-actions[hidden] {
+    display: none;
+}
+
+.ffla-ts-tree-action.button-link {
+    font-size: 12px;
+    text-decoration: none;
+}
+
+.ffla-ts-tree-action.button-link:hover {
+    text-decoration: underline;
+}
+
+/* Quick / Bulk Edit: the bar also carries the tree buttons. */
+.inline-edit-row .ffla-ts--inline .ffla-ts-bar:has(.ffla-ts-tree-actions:not([hidden])) {
+    display: flex;
+}
+
+/* Products list: searchable filters keep WordPress's control height. */
+.tablenav .ffla-ts-filter + .select2-container {
+    min-width: 170px;
+    max-width: 260px;
+    margin: 0 6px 4px 0;
+    vertical-align: top;
+}
+
+.tablenav .ffla-ts-filter + .select2-container .select2-selection--single {
+    height: 30px;
+    border-color: #8c8f94;
+}
+
+.tablenav .ffla-ts-filter + .select2-container .select2-selection__rendered {
+    line-height: 28px;
+}
+
+.tablenav .ffla-ts-filter + .select2-container .select2-selection__arrow {
+    height: 28px;
+}

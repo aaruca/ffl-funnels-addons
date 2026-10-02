@@ -1,6 +1,6 @@
 # White Label
 
-Brands wp-admin for client stores and limits what client logins can reach. It recolours the admin with a light and a dark palette (each user switches with a sun/moon button), adds FFL Funnels branding, reorders the sidebar for clients, hides and blocks admin screens and admin-bar items for clients, and can replace the WordPress dashboard with a branded client dashboard. Clients usually log in as Administrators, so the module tells your staff and clients apart by **email address**, not by role. Module ID: `white-label`, off until it is switched on in **FFL Funnels → Dashboard**. Like every module it needs WooCommerce active; MonsterInsights and SnapFind are optional data sources for the dashboard.
+Brands wp-admin for client stores and limits what client logins can reach. It recolours the admin with a light and a dark palette (each user switches with a sun/moon button), adds FFL Funnels branding, reorders the sidebar for clients, hides and blocks admin screens and admin-bar items for clients, can replace the WordPress dashboard with a branded client dashboard, and makes categories, brands and tags easy to find on products (product editor tools). Clients usually log in as Administrators, so the module tells your staff and clients apart by **email address**, not by role. Module ID: `white-label`, off until it is switched on in **FFL Funnels → Dashboard**. Like every module it needs WooCommerce active; MonsterInsights and SnapFind are optional data sources for the dashboard.
 
 > **Read this first.** Restrictions do nothing until at least one **Exempt email pattern** is saved (or `FFLA_WL_SUPERUSERS` in `wp-config.php` lists at least one address). From then on every logged-in user who does not match is a client: the FFL Funnels menu disappears for them, they cannot open these settings, and every restriction applies. Save the exempt list while logged in as yourself: if the list would not cover the person saving it, their email is added automatically and the page shows a notice saying so.
 
@@ -11,6 +11,7 @@ Brands wp-admin for client stores and limits what client logins can reach. It re
 - **Sidebar order and dividers** for clients.
 - **Restrictions** for clients: hide menu items (also blocked by direct URL) and remove admin-bar items.
 - **Client dashboard**: replaces `/wp-admin/` with quick-link cards, 30-day WooCommerce sales, and MonsterInsights and SnapFind analytics tabs.
+- **Product editor tools**, for everyone who can edit products: search on the category, brand and tag boxes and in Quick Edit / Bulk Edit, a folding category tree, ticked brands kept in place, optional parent ticking, and searchable Products list filters with a new tag filter.
 - **Import / export** of the whole configuration as JSON.
 
 ## Setup
@@ -24,13 +25,14 @@ Brands wp-admin for client stores and limits what client logins can reach. It re
 4. **Menu** tab: drag the top-level items into order and add dividers.
 5. **Restrictions** tab: tick the menu items and admin-bar items clients should not see.
 6. **Dashboard** tab: switch on **Replace the WordPress dashboard** and fill in the quick-link URLs.
-7. Click **Save Settings**. One button saves the Styles, Menu, Dashboard and Restrictions tabs together.
-8. Log in as a client account to check the result. Exempt staff keep the native menu, so the order, dividers and hidden items do not show in your own sidebar.
-9. **Import / Export** tab: download a backup (**Download .json**).
+7. **Products** tab: the product editor tools are on by default (parent ticking is off); switch off any you do not want.
+8. Click **Save Settings**. One button saves the Styles, Menu, Dashboard, Restrictions and Products tabs together.
+9. Log in as a client account to check the result. Exempt staff keep the native menu, so the order, dividers and hidden items do not show in your own sidebar.
+10. **Import / Export** tab: download a backup (**Download .json**).
 
 ## Settings
 
-All settings are on **FFL Funnels → White Label**, in five tabs.
+All settings are on **FFL Funnels → White Label**, in six tabs.
 
 ### Styles
 
@@ -97,10 +99,22 @@ Type a hex colour (`#rgb` or `#rrggbb`) or pick one with the swatch; anything el
 | Menu visibility | Tick any menu item or sub-item to hide it from clients and block its page by URL; hiding a content list also blocks adding and editing that content. Grouped by top-level menu. | Nothing hidden |
 | Admin bar | Tick top-level admin-bar items to remove for clients, listed with their node ID. Only needed for items that do not link to a page hidden above (dropdowns, custom URLs). | Nothing removed |
 
+### Products
+
+| Setting | What it does | Default |
+|---|---|---|
+| Category, brand & tag search | Search fields on the Edit Product screen's taxonomy boxes and on the Quick Edit / Bulk Edit checklists, a "Selected only" view and a tag checklist. | On |
+| Keep ticked brands and terms in place | Stops WordPress moving ticked terms to the top of Brands and other nested product taxonomies (WooCommerce already does this for categories). | On |
+| Collapsible category tree | Fold arrows on parent categories, **Expand all** / **Collapse all**; long lists start folded. | On |
+| Tick parent categories automatically | Ticking a subcategory ticks its parents. | Off |
+| Better Products list filters | A **Filter by tag** dropdown on Products; the category, brand and tag filters become searchable. | On |
+
+These apply to everyone who can edit products, exempt staff and clients alike. A setting that was never saved uses its default.
+
 ### Import / Export
 
 - **Export settings** shows the configuration as JSON, with **Download .json** (file `white-label-<host>-<YYYYMMDD>.json`) and **Copy to clipboard**.
-- **Import settings** takes a `.json` file (**Choose a .json file**) or pasted JSON (**…or paste JSON**); the file is used when both are given. After a confirmation it **replaces** the Styles, Menu, Dashboard and Restrictions settings; a section missing from the file is reset to empty. It cannot be undone, so export first. Imported data goes through the same checks as the form. Exports from before light/dark mode (one flat set of colours) import as the dark palette, the way those settings were already shown.
+- **Import settings** takes a `.json` file (**Choose a .json file**) or pasted JSON (**…or paste JSON**); the file is used when both are given. After a confirmation it **replaces** the Styles, Menu, Dashboard, Restrictions and Products settings; a section missing from the file is reset to empty (for Products: back to the defaults). It cannot be undone, so export first. Imported data goes through the same checks as the form. Exports from before light/dark mode (one flat set of colours) import as the dark palette, the way those settings were already shown.
 
 ## How it works
 
@@ -158,6 +172,18 @@ When **Replace the WordPress dashboard** is on, `/wp-admin/` shows a greeting, t
 
 **SnapFind tab.** Needs SnapFind's analytics. Shows **Searches**, **Product clicks**, **Search CTR** and **Search conversion** with change against the previous period, a funnel (Searches → Product clicks → Purchases) and the top 10 search terms. Cached for 10 minutes.
 
+### Product editor tools
+
+They work on WordPress's own boxes, in the browser, and never replace them: the product is saved exactly as before, and other plugins that read or change those boxes keep working.
+
+- **Category and brand boxes** (any nested product taxonomy with a box): a search field above the *All* / *Most Used* tabs filters the *All* list as you type. Matching ignores case and accents (`senal` finds *Señales*), matches anywhere in the name, and every word typed must match (`pump shot` finds *Pump Action Shotguns*). The parents of each match stay visible, greyed, so you can tell which branch it is in; matches are highlighted and counted, and "No matches" shows when nothing fits. **Esc** clears the search; **Enter** never submits the product. **Selected only** shows just the ticked terms (with their parents) and a live "N selected" count. The *All* panel can be dragged taller. Terms added with **+ Add new category** become searchable straight away.
+- **Folding tree**: every parent category gets an arrow that shows or hides its subcategories, plus **Expand all** and **Collapse all**. Lists with 15 or more terms (filter `ffla_term_search_collapse_min`) start folded, with every branch that holds a ticked term open. While searching, folded branches open so every match shows.
+- **Tags** (and other flat product taxonomies): under WordPress's own field, a search field and a scrollable checklist of every existing tag. Ticking assigns the tag, unticking removes it, through WordPress's own tag field, so the chips and the checklist always agree (adding a tag by typing, or removing a chip, updates the ticks). With more than 2,000 tags (filter `ffla_term_search_inline_limit`) the list shows the product's tags and searches the server from 2 characters (50 results).
+- **Quick Edit and Bulk Edit** on Products: the same search and folding tree above each category checklist.
+- **Tick parent categories automatically**: ticking a subcategory ticks every parent above it, in all of these boxes. Unticking never changes anything else.
+- **Products list**: **Filter by tag** lists the tags in use with their product counts (up to 1,000). The category (when WooCommerce lists it as a plain dropdown), brand and tag filters become searchable dropdowns.
+- Only on the classic product editor. WooCommerce's new block-based product editor is not covered.
+
 ## Where it shows up
 
 | Place | What | Who |
@@ -171,6 +197,7 @@ When **Replace the WordPress dashboard** is on, `/wp-admin/` shows a greeting, t
 | Admin sidebar | Order, dividers, no default separators | Clients |
 | Sidebar, admin bar (wp-admin and front end), page URLs | Hidden and blocked items, hidden FFL Funnels menu | Clients, once restrictions are active |
 | `/wp-admin/` | Client dashboard (when switched on) | Users who can edit theme options (Administrators, Shop Managers) |
+| **Products → Edit Product**, Quick Edit, Bulk Edit, Products list filters | Product editor tools | Everyone who can edit products |
 
 ## Data and uninstall
 
@@ -191,7 +218,9 @@ When **Replace the WordPress dashboard** is on, `/wp-admin/` shows a greeting, t
 - **Colours don't change.** Nothing applies until one valid colour or the radius is saved. Values that are not `#rgb` or `#rrggbb` are dropped on save.
 - **Everyone sees the dark palette.** Dark is the default for every user until they click the sun/moon button.
 - **Some users see the standard dashboard.** The branded dashboard only shows to users who can edit theme options (Administrators, Shop Managers); Editors and other roles keep the WordPress dashboard.
-- **Import errors.** "No file or JSON was provided." or "That file is not a valid White Label export." The file must be a White Label export or a settings object with at least one of `styles`, `restrictions`, `menu`, `dashboard`.
+- **Import errors.** "No file or JSON was provided." or "That file is not a valid White Label export." The file must be a White Label export or a settings object with at least one of `styles`, `restrictions`, `menu`, `dashboard`, `term_search`.
+- **No search box on a product's category box.** **Category, brand & tag search** is off on the Products tab, or the page uses WooCommerce's block-based product editor.
+- **The category list starts folded.** Lists with 15 or more terms start folded on purpose; use **Expand all**, search, or switch off **Collapsible category tree**.
 - **MonsterInsights tab messages.**
   - "Activate and connect MonsterInsights…": MonsterInsights is not active.
   - "Your role does not have permission to view MonsterInsights reports…": grant report access in MonsterInsights.
@@ -205,6 +234,9 @@ When **Replace the WordPress dashboard** is on, `/wp-admin/` shows a greeting, t
 - **Filters**
   - `ffla_wl_is_exempt` (`bool $exempt`, `WP_User $user`) — final exemption decision, memoised per request.
   - `ffla_wl_admin_footer_text` (`string $text`) — the footer credit HTML (dynamic parts already escaped). Runs at `PHP_INT_MAX` on `admin_footer_text`.
+  - `ffla_term_search_post_types` (`string[] $post_types`, default `['product']`) — edit screens that get the product editor tools.
+  - `ffla_term_search_inline_limit` (`int $limit` 2000, `string $taxonomy`) — flat taxonomies with more terms are searched over AJAX.
+  - `ffla_term_search_collapse_min` (`int` 15) — lists with at least this many terms start folded.
 - **JS event**: `ffla-wl-theme-changed` on `document` when the mode is toggled; `event.detail.mode` is `light` or `dark`.
 - **Body classes** (wp-admin): `ffla-theme-light` / `ffla-theme-dark`.
 - **CSS variables**: `--ffla-wl-<key>` per mode on `body.ffla-theme-<mode>` (keys as in the option below), plus `--ffla-wl-dashRadius` and `--ffla-wl-contentBg` on `body.wp-admin.wp-core-ui`.
@@ -214,10 +246,11 @@ When **Replace the WordPress dashboard** is on, `/wp-admin/` shows a greeting, t
   restrictions: { exempt_emails: [], hidden_menu: [], hidden_adminbar: [] }
   menu:         { top: [] }
   dashboard:    { enabled: bool, links: { support, knowledge_base, cockpit, command_center } }
+  term_search:  { enabled, keep_order, collapse_tree, list_filters: bool (default true), auto_parents: bool (default false) }
   ```
   `hidden_menu` holds menu slugs, sub-items as `parent::child`. Divider tokens in `menu.top` start with `ffla-divider-`.
 - **Export envelope**: `{ marker: "ffla_white_label", version, exported (UTC ISO 8601), site, settings }`. Import also accepts a bare settings object.
-- **Endpoints**: `admin-post.php` actions `ffla_wl_save_settings`, `ffla_wl_export`, `ffla_wl_import` (`manage_woocommerce`, exempt once restrictions are active, nonces). AJAX `ffla_wl_toggle_theme` (POST `mode`, nonce `ffla_wl_theme_mode`) and `ffla_wl_dashboard_analytics` (POST `source` = `google` | `snapfind`, `range` = 7 | 30 | 90, optional `force=1`; needs `edit_theme_options`). The MonsterInsights tab is `google` internally.
+- **Endpoints**: `admin-post.php` actions `ffla_wl_save_settings`, `ffla_wl_export`, `ffla_wl_import` (`manage_woocommerce`, exempt once restrictions are active, nonces). AJAX `ffla_wl_term_search` (POST `taxonomy`, `q`; nonce `ffla_wl_term_search`; the taxonomy's `assign_terms` capability) for large tag lists, `ffla_wl_toggle_theme` (POST `mode`, nonce `ffla_wl_theme_mode`) and `ffla_wl_dashboard_analytics` (POST `source` = `google` | `snapfind`, `range` = 7 | 30 | 90, optional `force=1`; needs `edit_theme_options`). The MonsterInsights tab is `google` internally.
 - **DOM**: admin-bar node `ffla-wl-theme-toggle`; sidebar brand `#ffla-wl-brand`.
 - **Redirect flags** on the settings page: `settings-updated=1`, `ffla_wl_import=success|empty|invalid`, and `ffla_wl_self_exempt=1` when the save or import added the current user to the exempt list.
-- **Tests**: `php tests/smoke/white-label-smoke.php` (blocking of FFL Funnels pages and hidden post types, admin-bar removal, flat-format import, self-exempt flag, dashboard capability, site time zone sales window), `php tests/smoke/white-label-monsterinsights-smoke.php [legacy|missing|no-addon]` (offline report checks) and `tests/smoke/white-label-monsterinsights-ui-smoke.js` (Playwright, offline fixtures).
+- **Tests**: `php tests/smoke/white-label-smoke.php` (blocking of FFL Funnels pages and hidden post types, admin-bar removal, flat-format import, self-exempt flag, dashboard capability, site time zone sales window), `php tests/smoke/white-label-monsterinsights-smoke.php [legacy|missing|no-addon]` (offline report checks) `tests/smoke/white-label-monsterinsights-ui-smoke.js` (Playwright, offline fixtures) and `tests/smoke/white-label-term-search-ui-smoke.js` (Playwright against a test site: search, folding tree, parent ticking, tags, Quick and Bulk Edit, list filters, settings, 390px layout; creates and removes its own data).

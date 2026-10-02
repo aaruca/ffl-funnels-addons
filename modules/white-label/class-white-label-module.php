@@ -33,7 +33,7 @@ class White_Label_Module extends FFLA_Module
 
     public function get_description(): string
     {
-        return __('Brand and lock down wp-admin for client logins — light/dark admin colours, agency branding, client menu order, hidden and blocked admin screens and admin-bar items, and an optional client dashboard.', 'ffl-funnels-addons');
+        return __('Brand and lock down wp-admin for client logins — light/dark admin colours, agency branding, client menu order, hidden and blocked admin screens and admin-bar items, an optional client dashboard, and category & tag search on products.', 'ffl-funnels-addons');
     }
 
     public function get_icon_svg(): string
@@ -68,6 +68,15 @@ class White_Label_Module extends FFLA_Module
         }
 
         if (is_admin()) {
+            // Product editor tools (category, brand & tag search, tree order,
+            // collapsible tree, parent ticking, Products list filters) — for
+            // everyone who can edit products, restricted or not. Each one is
+            // switched on or off on the Products tab.
+            require_once $this->get_path() . 'includes/class-white-label-term-search.php';
+            if (White_Label_Term_Search::any_enabled()) {
+                (new White_Label_Term_Search())->register_hooks();
+            }
+
             require_once $this->get_path() . 'admin/class-white-label-admin.php';
             $this->admin = new White_Label_Admin();
             $this->admin->init();

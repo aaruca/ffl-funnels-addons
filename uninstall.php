@@ -21,10 +21,10 @@ global $wpdb;
 $ffla_active_modules = get_option('ffla_active_modules', []);
 
 // ── WooBooster cleanup ──────────────────────────────────────────────
-if (in_array('woobooster', $ffla_active_modules, true)) {
-    $wb_settings = get_option('woobooster_settings', []);
-
-    if (!empty($wb_settings['delete_data_uninstall'])) {
+// The delete-data opt-in is honoured even if the module was switched off first.
+$wb_settings = get_option('woobooster_settings', []);
+if (in_array('woobooster', $ffla_active_modules, true) || (is_array($wb_settings) && !empty($wb_settings['delete_data_uninstall']))) {
+    if (is_array($wb_settings) && !empty($wb_settings['delete_data_uninstall'])) {
         // Rules engine tables.
         $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}woobooster_rules");
         $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}woobooster_rule_conditions");
@@ -53,6 +53,9 @@ if (in_array('woobooster', $ffla_active_modules, true)) {
 
         // Clear copurchase meta from all products.
         $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key = '_woobooster_copurchased'");
+
+        // Cached recommendation results, trending lists and AI lookups.
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_wbrc\\_%' OR option_name LIKE '\\_transient\\_timeout\\_wbrc\\_%' OR option_name LIKE '\\_transient\\_wb\\_trending\\_%' OR option_name LIKE '\\_transient\\_timeout\\_wb\\_trending\\_%' OR option_name LIKE '\\_transient\\_wb\\_ai\\_%' OR option_name LIKE '\\_transient\\_timeout\\_wb\\_ai\\_%'");
     }
 
     // Cron events are cleared on deactivate(), but uninstall can run without a
@@ -78,6 +81,10 @@ if (in_array('wishlist', $ffla_active_modules, true)) {
         delete_option('alg_wishlist_db_version');
     }
 }
+// Guest-list cleanup cron and caches (icon and rate-limit transients). Not
+// customer data, so removed whether or not the opt-in is set.
+wp_clear_scheduled_hook('alg_wishlist_cleanup_guests');
+$wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_alg\\_wl\\_%' OR option_name LIKE '\\_transient\\_timeout\\_alg\\_wl\\_%'");
 
 // ── Legacy cleanup: Doofinder Sync (addon removed in v1.31.0) ───────
 // Purge orphaned options from installs that ran the old Doofinder Sync
@@ -86,16 +93,14 @@ delete_option('dsync_settings');
 delete_option('dsync_layer_hash');
 
 // ── FFL Checkout cleanup ────────────────────────────────────────────
-if (in_array('ffl-checkout', $ffla_active_modules, true)) {
+// Settings and caches only. Order data is never deleted: vendor line-item meta
+// belongs to the orders, and `_ffl_vendor_*` order meta is not written by this
+// module (other FFL plugins may use those keys).
+if (in_array('ffl-checkout', $ffla_active_modules, true) || false !== get_option('ffl_checkout_settings', false)) {
     delete_option('ffl_checkout_settings');
-    // Clean up per-order meta (classic orders in postmeta).
-    $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key IN ('_ffl_vendor_id', '_ffl_vendor_name', '_ffl_vendor_license')");
-    // HPOS order meta table when WooCommerce uses custom order tables.
-    $orders_meta = $wpdb->prefix . 'wc_orders_meta';
-    // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-    if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $orders_meta)) === $orders_meta) {
-        $wpdb->query("DELETE FROM {$orders_meta} WHERE meta_key IN ('_ffl_vendor_id', '_ffl_vendor_name', '_ffl_vendor_license')");
-    }
+    delete_transient('ffla_borrowed_mapbox_token');
+    delete_transient('ffla_borrowed_mapbox_token_fail');
+    $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_ffl\\_vendor\\_%' OR option_name LIKE '\\_transient\\_timeout\\_ffl\\_vendor\\_%'");
 }
 
 // ── Tax Rates cleanup ───────────────────────────────────────────────
@@ -121,6 +126,9 @@ if (in_array('tax-rates', $ffla_active_modules, true) || $tax_has_tables || get_
     delete_option('ffla_tax_last_cache_flush');
 
     delete_transient('ffla_tax_key_validation');
+    delete_transient('ffla_tax_reconcile_lock');
+    $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_ffla\\_tax\\_rl\\_%' OR option_name LIKE '\\_transient\\_timeout\\_ffla\\_tax\\_rl\\_%'");
+    // Order meta `_ffla_tax_based_on` and the tax snapshots are kept (fiscal records).
 
     wp_clear_scheduled_hook('ffla_tax_dataset_sync');
     wp_clear_scheduled_hook('ffla_tax_cache_cleanup');
@@ -128,8 +136,47 @@ if (in_array('tax-rates', $ffla_active_modules, true) || $tax_has_tables || get_
     wp_clear_scheduled_hook('ffla_tax_cache_flush');
 }
 
+// ── Sales Tax Reports cleanup ───────────────────────────────────────
+// Settings, histories, locks and scheduled sends. Order meta (the
+// `_ffla_tax_report_snapshot*` records and `_ffla_tax_based_on`) is kept.
+if (in_array('tax-reports', $ffla_active_modules, true)
+    || false !== get_option('ffla_tax_report_email_settings', false)
+    || false !== get_option('ffla_tax_report_runs', false)
+    || false !== get_option('ffla_tax_reports_module_migrated', false)) {
+    delete_option('ffla_tax_report_email_settings');
+    delete_option('ffla_tax_report_email_history');
+    delete_option('ffla_tax_report_runs');
+    delete_option('ffla_tax_report_tool_lock');
+    delete_option('ffla_tax_reports_module_migrated');
+    delete_transient('ffla_tax_report_email_lock');
+    $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_ffla\\_tax\\_report\\_tool\\_%' OR option_name LIKE '\\_transient\\_timeout\\_ffla\\_tax\\_report\\_tool\\_%'");
+    wp_clear_scheduled_hook('ffla_tax_report_monthly_email');
+    wp_clear_scheduled_hook('ffla_tax_report_email_send');
+    if (function_exists('as_unschedule_all_actions')) {
+        as_unschedule_all_actions('ffla_tax_report_monthly_email', [], '');
+        as_unschedule_all_actions('ffla_tax_report_email_send', [], '');
+    }
+}
+
 // ── Woo Sheets Sync cleanup ────────────────────────────────────────
-if (in_array('woo-sheets-sync', $ffla_active_modules, true)) {
+$wss_log_table = $wpdb->prefix . 'wss_log';
+$wss_has_data  = false !== get_option('wss_settings', false)
+    || $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wss_log_table)) === $wss_log_table;
+if (in_array('woo-sheets-sync', $ffla_active_modules, true) || $wss_has_data) {
+    // Revoke a Google OAuth connection (best effort) before deleting it.
+    $wss_includes = dirname(__FILE__) . '/modules/woo-sheets-sync/includes/';
+    if (get_option('wss_google_tokens') && file_exists($wss_includes . 'class-wss-google-oauth.php')) {
+        try {
+            require_once $wss_includes . 'interface-wss-token-provider.php';
+            require_once $wss_includes . 'class-wss-google-oauth.php';
+            if (class_exists('WSS_Google_OAuth')) {
+                (new WSS_Google_OAuth())->revoke();
+            }
+        } catch (\Throwable $e) {
+            // Never block uninstall on a remote call.
+        }
+    }
+
     // Active runtime options used by the module.
     delete_option('wss_settings');
     delete_option('wss_google_tokens');
@@ -145,12 +192,19 @@ if (in_array('woo-sheets-sync', $ffla_active_modules, true)) {
     delete_transient('wss_sa_access_token');
     $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_wss_oauth_state_%' OR option_name LIKE '_transient_timeout_wss_oauth_state_%'");
 
-    // Unschedule cron events.
+    // Unschedule cron events and queued sync jobs.
     wp_clear_scheduled_hook('wss_daily_sync');
+    $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_wss\\_sync\\_job\\_%' OR option_name LIKE '\\_transient\\_timeout\\_wss\\_sync\\_job\\_%' OR option_name LIKE '\\_wss\\_variation\\_upsert\\_lock\\_%'");
+    if (function_exists('as_unschedule_all_actions')) {
+        as_unschedule_all_actions('wss_run_sync_job');
+    }
 
-    // Clean up any leftover per-product sync meta.
+    // Sync log table.
+    $wpdb->query("DROP TABLE IF EXISTS {$wss_log_table}");
+
+    // Per-product sync meta.
     // phpcs:ignore WordPress.DB.DirectDatabaseQuery
-    $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key = '_wss_sync_enabled'");
+    $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key IN ('_wss_sync_enabled','_wss_last_synced','_wss_snaps','_wss_snap_woo','_wss_snap_sheet','_wss_unconfirmed_sheet_row','_wss_unconfirmed_sheet_fingerprint','_wss_unconfirmed_sheet_context')");
 
     // Clean up debug log files.
     $upload_dir = wp_upload_dir();
@@ -199,14 +253,17 @@ if (in_array('product-reviews', $ffla_active_modules, true) || false !== get_opt
 // destroys them unless the module's delete-data flag is explicitly set. This
 // branch previously did not exist at all, leaving the tables and the DB-version
 // option orphaned forever.
-if (in_array('loadout', $ffla_active_modules, true)) {
-    $lo_settings = get_option('ffla_loadout_settings', []);
+$lo_settings = get_option('ffla_loadout_settings', []);
+if (in_array('loadout', $ffla_active_modules, true) || (is_array($lo_settings) && !empty($lo_settings['delete_data_uninstall']))) {
 
     if (is_array($lo_settings) && !empty($lo_settings['delete_data_uninstall'])) {
         $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}ffla_loadout_cross_sells");
         $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}ffla_loadout_tier_items");
         $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}ffla_loadout_tiers");
         $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}ffla_loadouts");
+
+        // Products' Loadout tab settings. Order line meta is kept (order history, stock records).
+        $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key IN ('_ffla_product_loadout_link', '_ffla_product_loadout_tiers', '_ffla_loadout_last_save', '_ffla_product_loadout_enable_tab')");
 
         delete_option('ffla_loadout_settings');
         delete_option('ffla_loadout_db_version');
@@ -322,6 +379,18 @@ delete_option('ffla_order_badges_settings');
 // Settings only. Delivery details saved on orders (`_ffla_delivery` on
 // shipping lines) stay with the orders; the session keys expire on their own.
 delete_option('ffla_pickup_shipping');
+
+// ── White Label cleanup ────────────────────────────────────────────
+// Settings, per-user preferences and caches only; removed whether or not the
+// module is active (it may have been switched off before the plugin was deleted).
+delete_option('ffla_white_label_settings');
+delete_transient('ffla_wl_adminbar_nodes');
+$wpdb->delete($wpdb->usermeta, ['meta_key' => 'ffla_wl_theme_mode']);
+$wpdb->delete($wpdb->usermeta, ['meta_key' => 'ffla_wl_dashboard_analytics_source']);
+$wpdb->delete($wpdb->usermeta, ['meta_key' => 'ffla_wl_dashboard_analytics_range']);
+// ffla_wl_dash_* (sales/SnapFind) and ffla_wl_mi_* (MonsterInsights) caches.
+// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+$wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_ffla\\_wl\\_%' OR option_name LIKE '\\_transient\\_timeout\\_ffla\\_wl\\_%'");
 
 // ── FFLA core cleanup ──────────────────────────────────────────────
 delete_option('ffla_active_modules');
