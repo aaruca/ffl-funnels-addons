@@ -489,7 +489,11 @@ class FFLA_Requests_Mail
         if (!is_email($request->customer_email)) {
             return false;
         }
-        return self::send($request, [$request->customer_email], $subject, $heading, $body, 'customer:' . $label);
+        $reply_to = class_exists('FFLA_Requests_Inbound') ? FFLA_Requests_Inbound::reply_to($request) : '';
+        if ('' !== $reply_to) {
+            $body .= '<p style="color:#646970;font-size:13px;">' . esc_html__('You can reply to this email to answer us — attach photos if they help.', 'ffl-funnels-addons') . '</p>';
+        }
+        return self::send($request, [$request->customer_email], $subject, $heading, $body, 'customer:' . $label, $reply_to);
     }
 
     private static function send_staff($request, array $to, string $subject, string $heading, string $body, string $label): bool
@@ -497,15 +501,19 @@ class FFLA_Requests_Mail
         return $to ? self::send($request, $to, $subject, $heading, $body, $label) : false;
     }
 
-    private static function send($request, array $to, string $subject, string $heading, string $body, string $label): bool
+    private static function send($request, array $to, string $subject, string $heading, string $body, string $label, string $reply_to = ''): bool
     {
         $ok = false;
         try {
+            $headers = ['Content-Type: text/html; charset=UTF-8'];
+            if ('' !== $reply_to && is_email($reply_to)) {
+                $headers[] = 'Reply-To: ' . $reply_to;
+            }
             if (function_exists('WC') && WC() && method_exists(WC(), 'mailer')) {
                 $mailer = WC()->mailer();
-                $ok = (bool) $mailer->send(implode(',', $to), $subject, $mailer->wrap_message($heading, $body));
+                $ok = (bool) $mailer->send(implode(',', $to), $subject, $mailer->wrap_message($heading, $body), implode("\r\n", $headers) . "\r\n");
             } else {
-                $ok = (bool) wp_mail($to, $subject, '<h2>' . esc_html($heading) . '</h2>' . $body, ['Content-Type: text/html; charset=UTF-8']);
+                $ok = (bool) wp_mail($to, $subject, '<h2>' . esc_html($heading) . '</h2>' . $body, $headers);
             }
             $status = $ok ? 'accepted' : 'failed';
         } catch (Throwable $e) {

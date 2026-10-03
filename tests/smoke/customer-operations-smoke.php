@@ -11,6 +11,8 @@ function esc_html($s) { return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8'
 function esc_attr($s) { return esc_html($s); } function esc_textarea($s) { return esc_html($s); }
 function esc_url($s,$protocols=null) { return preg_match('~^https?://~', $s) ? esc_attr($s) : ''; }
 function sanitize_text_field($s) { return trim(preg_replace('/[\r\n]+/', ' ', strip_tags(is_scalar($s) ? (string)$s : ''))); }
+function esc_url_raw($url, $protocols = null) { $url = trim((string) $url); $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME)); return ($url !== '' && (!$protocols || in_array($scheme, (array) $protocols, true)) && filter_var($url, FILTER_VALIDATE_URL)) ? $url : ''; }
+function sanitize_email($email) { $email = trim((string) $email); return filter_var($email, FILTER_VALIDATE_EMAIL) ? $email : ''; }
 function sanitize_textarea_field($s) { return trim(strip_tags(is_scalar($s) ? (string)$s : '')); }
 function sanitize_key($s) { return strtolower(preg_replace('/[^a-zA-Z0-9_-]/','',is_scalar($s) ? $s : '')); }
 function sanitize_file_name($s) { return basename($s); } function absint($n) { return abs((int)$n); }
@@ -184,6 +186,11 @@ check(FFLA_Customer_Operations::statuses([])===[],'disabled unused status not ad
 switches(['invoice_serials'=>true]);check(!FFLA_Customer_Operations_Settings::enabled('invoice_serials'),'PDF depends on serials');
 $clean=FFLA_Customer_Operations_Settings::sanitize(['reminder_days'=>'900','reminder_max'=>'-1','store_name'=>['bad'],'pickup'=>'1']);
 check($clean['reminder_days']===30&&$clean['reminder_max']===1&&$clean['store_name']===''&&$clean['pickup'],'settings bounds and scalar validation');
+$clean=FFLA_Customer_Operations_Settings::sanitize(['requests_alerts_url'=>'http://hooks.example.com/x','requests_inbound_address'=>'not an email']);
+check($clean['requests_alerts_url']===''&&$clean['requests_inbound_address']==='','alerts link must be https; reply address must be an email');
+$clean=FFLA_Customer_Operations_Settings::sanitize(['requests_alerts_url'=>' https://hooks.slack.com/services/T0/B0/x ','requests_inbound_address'=>'requests@reply.example.com']);
+check($clean['requests_alerts_url']==='https://hooks.slack.com/services/T0/B0/x'&&$clean['requests_inbound_address']==='requests@reply.example.com','https alerts link and reply address saved');
+check(!FFLA_Customer_Operations_Settings::enabled('requests_inbound')&&$defaults['requests_inbound']===false,'reply by email is off by default');
 all_on();$o=fixture_order();check(FFLA_Customer_Operations::staff($o),'staff allowed');$o->id=999;check(!FFLA_Customer_Operations::staff($o),'object capability required');$o->id=1;
 $GLOBALS['staff']=false;check(!FFLA_Customer_Operations::staff($o),'buyer cannot staff-edit');check(FFLA_Customer_Operations::owner($o),'signed owner allowed');$GLOBALS['uid']=8;check(!FFLA_Customer_Operations::owner($o),'different buyer denied');$GLOBALS['uid']=0;$o->customer=0;check(!FFLA_Customer_Operations::owner($o),'guest id zero not authorization');$GLOBALS['uid']=7;$GLOBALS['staff']=true;$o->customer=7;
 check(strpos(FFLA_Customer_Operations::ready_error($o),'serial')!==false,'missing serial gate');

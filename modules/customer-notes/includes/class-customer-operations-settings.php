@@ -57,6 +57,7 @@ class FFLA_Customer_Operations_Settings
             'requests_close_days' => ['Request Automation', 'Close after (days)', '1–90 days of waiting for the customer. Set it longer than the reminder.', 'number', 14],
             'requests_staff_digest' => ['Request Automation', 'Daily staff digest', 'Each morning, email the staff notification addresses a list of overdue requests and requests waiting for a staff reply. Skipped when there is nothing to report.', 'switch', false],
             'requests_uploads' => ['Customer Requests', 'Customer photos and documents', 'JPEG, PNG or PDF files, as many as needed. Photos are resized (in the browser and again on the server) and their location data removed. Stored in private database tables, never in the Media Library.', 'switch', true],
+            'requests_videos' => ['Customer Requests', 'Videos', 'Customers and staff can attach short MP4 or MOV videos (for example an unboxing that shows the damage), up to 100 MB each or less if your server accepts less. Kept in a private folder in uploads, not in the database; customers can add up to 10 per request.', 'switch', true],
             'requests_emails' => ['Customer Requests', 'Customer emails', 'Confirmation with a private tracking link, staff replies, return approval with instructions, the status updates you choose to announce and the closing resolution. Staff are notified of new requests and customer replies either way.', 'switch', true],
             'requests_issue_days' => ['Customer Requests', 'Issue window (days)', 'How many days after the order date customers can report an issue (1–365). Staff can always open one.', 'number', 90],
             'requests_return_days' => ['Customer Requests', 'Return window (days)', 'How many days after the order was completed (or paid) customers can request a return (1–365).', 'number', 30],
@@ -65,6 +66,12 @@ class FFLA_Customer_Operations_Settings
             'requests_intro' => ['Customer Requests', 'Form introduction', 'Short text shown above the request form.', 'textarea', 'Problem with an order or need to return something? Enter your order number and the email you used at checkout.'],
             'requests_return_instructions' => ['Customer Requests', 'Return instructions', 'Included when you approve a return. Variables: {request_number}, {order_number}, {customer_name}, {store_name}.', 'textarea', 'Your return {request_number} is approved.\nPack the item(s) securely, write {request_number} on the outside of the box and ship it back to us. Reply to this request with your tracking number.'],
             'requests_firearm_notice' => ['Customer Requests', 'Firearm return notice', 'Shown to the customer when a request includes a firearm.', 'textarea', 'Firearms can only be returned through a licensed dealer (FFL). Do not ship a firearm yourself — we will contact you with transfer instructions.'],
+            'requests_alerts_url' => ['Request Connections', 'Alerts link (webhook)', 'Paste a Slack incoming-webhook link, a ClickUp Automation webhook link, a Discord or Google Chat webhook link, or any https address that accepts JSON. Leave empty for no alerts. Send a test from the setup panel below.', 'text', ''],
+            'requests_alert_new' => ['Request Connections', 'Alert on new requests', 'Requests customers open from the form or My Account (not the ones staff create).', 'switch', true],
+            'requests_alert_reply' => ['Request Connections', 'Alert when a customer replies', 'From the request page or by email.', 'switch', true],
+            'requests_alert_rating' => ['Request Connections', 'Alert on 1–2 star ratings', 'So a poor experience gets a quick follow-up.', 'switch', true],
+            'requests_inbound' => ['Request Connections', 'Reply by email', 'Customers answer request emails and the answer — photos, PDFs and videos included — lands on the request, with quoted text removed. Needs an inbound email service (Postmark, Mailgun or SendGrid) pointed at this site; see the setup panel below. Replies from an address other than the customer’s are kept as internal notes.', 'switch', false],
+            'requests_inbound_address' => ['Request Connections', 'Reply address', 'The address your inbound email service receives, for example requests@reply.yourstore.com or the …@inbound.postmarkapp.com address Postmark gives you. Customer emails use it with a +code that identifies the request.', 'text', ''],
             'requests_delete_data' => ['Customer Requests', 'Delete requests on uninstall', 'Removes all requests, messages and files when the plugin is deleted. Leave off to keep the history.', 'switch', false],
         ];
     }
@@ -92,7 +99,8 @@ class FFLA_Customer_Operations_Settings
         return ['partial_pickup'=>['pickup'], 'require_serials'=>['serials'], 'invoice_serials'=>['serials'], 'packing_serials'=>['serials'],
             'attachments'=>['followup'], 'auto_ready'=>['pickup','notifications'], 'pickup_reminders'=>['auto_ready'], 'staff_reminders'=>['followup','notifications'],
             'customer_serials'=>['serials','customer_progress'], 'customer_help'=>['followup','customer_progress'], 'customer_tracking'=>['customer_progress'], 'customer_documents'=>['customer_progress'],
-            'requests_issues'=>['requests'], 'requests_returns'=>['requests'], 'requests_guests'=>['requests'], 'requests_account_tab'=>['requests'], 'requests_uploads'=>['requests'], 'requests_photo_required'=>['requests','requests_uploads'], 'requests_ffl_required'=>['requests'], 'requests_ratings'=>['requests'], 'requests_auto_remind'=>['requests','requests_emails'], 'requests_auto_close'=>['requests'], 'requests_staff_digest'=>['requests'], 'requests_emails'=>['requests']];
+            'requests_issues'=>['requests'], 'requests_returns'=>['requests'], 'requests_guests'=>['requests'], 'requests_account_tab'=>['requests'], 'requests_uploads'=>['requests'], 'requests_videos'=>['requests'], 'requests_photo_required'=>['requests','requests_uploads'], 'requests_ffl_required'=>['requests'], 'requests_ratings'=>['requests'], 'requests_auto_remind'=>['requests','requests_emails'], 'requests_auto_close'=>['requests'], 'requests_staff_digest'=>['requests'], 'requests_emails'=>['requests'],
+            'requests_alert_new'=>['requests'], 'requests_alert_reply'=>['requests'], 'requests_alert_rating'=>['requests'], 'requests_inbound'=>['requests','requests_emails']];
     }
 
     /**
@@ -107,7 +115,7 @@ class FFLA_Customer_Operations_Settings
             'reminder_subject'=>['pickup_reminders'], 'reminder_body'=>['pickup_reminders'], 'public_subject'=>['public_messages','notifications'],
             'requests_account_label'=>['requests_account_tab'], 'requests_restocking_fee'=>['requests'], 'requests_remind_days'=>['requests_auto_remind'], 'requests_close_days'=>['requests_auto_close'],
             'requests_issue_days'=>['requests'], 'requests_return_days'=>['requests'], 'requests_page'=>['requests'], 'requests_staff_emails'=>['requests'], 'requests_intro'=>['requests'],
-            'requests_return_instructions'=>['requests'], 'requests_firearm_notice'=>['requests']];
+            'requests_return_instructions'=>['requests'], 'requests_firearm_notice'=>['requests'], 'requests_alerts_url'=>['requests'], 'requests_inbound_address'=>['requests_inbound']];
         return self::dependencies()[$key] ?? $values[$key] ?? [];
     }
 
@@ -129,6 +137,8 @@ class FFLA_Customer_Operations_Settings
             if ($f[3] === 'switch') { $out[$key] = $v === '1' || $v === true; }
             elseif ($f[3] === 'number') { [$min, $max] = self::range($key); $out[$key] = max($min, min($max, (int) $v)); }
             elseif ($f[3] === 'page') { $out[$key] = absint($v); }
+            elseif ($key === 'requests_alerts_url') { $out[$key] = esc_url_raw(trim((string) $v), ['https']); }
+            elseif ($key === 'requests_inbound_address') { $out[$key] = sanitize_email((string) $v); }
             else { $out[$key] = substr($f[3] === 'textarea' ? sanitize_textarea_field($v) : sanitize_text_field($v), 0, 5000); }
         }
         return $out;

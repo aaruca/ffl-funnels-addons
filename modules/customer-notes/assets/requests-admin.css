@@ -100,3 +100,14 @@ details.ffla-req-box[open] > summary { margin-bottom: 10px; }
 .ffla-req-two input, .ffla-req-two select { width: 100%; max-width: 100%; box-sizing: border-box; }
 .ffla-req-files-status { display: block; margin-top: 4px; font-size: 12px; color: #50575e; }
 .ffla-req-files-status.is-error { color: #b32d2e; font-weight: 600; }
+.ffla-req-files video { width: 150px; height: 100px; object-fit: cover; border: 1px solid #dcdcde; border-radius: 4px; background: #000; }
+.ffla-req-filesbox p { margin: 6px 0; }
+.ffla-req-claim { margin-top: 8px; border-top: 1px solid #f0f0f1; padding-top: 8px; }
+.ffla-req-claim summary { cursor: pointer; font-weight: 600; }
+.ffla-req-claim form label { display: block; margin: 8px 0 3px; font-weight: 600; font-size: 12px; }
+.ffla-req-claim form input[type=text], .ffla-req-claim form input[type=date], .ffla-req-claim form select, .ffla-req-claim form textarea { width: 100%; max-width: 100%; box-sizing: border-box; }
+.ffla-req-claim form .ffla-req-check { display: flex; gap: 6px; align-items: center; font-weight: 400; margin-top: 10px; }
+.ffla-inbound-url { display: flex; gap: 6px; align-items: center; }
+.ffla-inbound-url input { flex: 1; min-width: 0; font-family: monospace; }
+.ffla-inbound-log { margin: 6px 0 0; padding: 0; list-style: none; font-size: 12px; }
+.ffla-inbound-log li { padding: 3px 0; border-bottom: 1px solid #f0f0f1; }

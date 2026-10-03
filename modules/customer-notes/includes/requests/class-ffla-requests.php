@@ -23,7 +23,7 @@ defined('ABSPATH') || exit;
 
 class FFLA_Requests
 {
-    const DB_VERSION = '2';
+    const DB_VERSION = '3';
     const DB_OPTION = 'ffla_requests_db_version';
 
     /** Per order: at most this many requests open at once, and in total. */
@@ -147,6 +147,7 @@ class FFLA_Requests
             mime varchar(50) NOT NULL,
             size int(10) unsigned NOT NULL DEFAULT 0,
             data longblob NOT NULL,
+            path varchar(80) NOT NULL DEFAULT '',
             is_public tinyint(1) NOT NULL DEFAULT 0,
             kind varchar(20) NOT NULL DEFAULT '',
             actor_type varchar(10) NOT NULL,
@@ -978,7 +979,7 @@ class FFLA_Requests
         global $wpdb;
         $t = self::tables();
         $id = (int) $request->id;
-        $wpdb->delete($t['files'], ['request_id' => $id]);
+        FFLA_Requests_Files::delete_for_request($id);
         $wpdb->delete($t['events'], ['request_id' => $id]);
         $wpdb->delete($t['requests'], ['id' => $id]);
         self::order_note($request, sprintf('Customer request %s deleted by staff.', $request->number));

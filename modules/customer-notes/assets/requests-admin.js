@@ -138,14 +138,15 @@
 		syncType();
 	}
 
-	// Attachments: photos are shrunk before sending (request-files.js), the
-	// server's own limits are checked first, and a submit waits until the
+	// Attachments: the picker (request-files.js) shows thumbnails, adds to the
+	// list, accepts drag & drop and pasted screenshots, and shrinks photos;
+	// the server's own limits are checked first, and a submit waits until the
 	// photos are ready.
 	var lib = window.fflaReqFiles;
 	var cfg = window.fflaReqAdmin || {};
 	if (lib) {
-		document.querySelectorAll('input[type=file][data-ffla-files], input[type=file]#ffla-req-label').forEach(function (input) {
-			lib.wire(input);
+		document.querySelectorAll('input[type=file][data-ffla-files]').forEach(function (input) {
+			lib.wire(input, cfg, cfg);
 			var status = input.parentNode.querySelector('.ffla-req-files-status');
 			var say = function (text, error) {
 				if (status) {
@@ -159,7 +160,7 @@
 					: (issue === 'size' ? cfg.fileTooBig : (issue === 'total' ? cfg.tooLarge : ''));
 			};
 			input.addEventListener('ffla-files-busy', function () {
-				say(cfg.preparing);
+				say('');
 			});
 			input.addEventListener('ffla-files-ready', function () {
 				say(problem(), true);

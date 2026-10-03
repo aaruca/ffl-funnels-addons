@@ -355,8 +355,25 @@ if (is_array($ffla_ops_settings) && !empty($ffla_ops_settings['requests_delete_d
     delete_option('ffla_requests_db_version');
     delete_option('ffla_requests_rules');
     delete_option('ffla_requests_replies');
+    // Videos live in a private folder in uploads, not in the tables.
+    $ffla_req_dir = get_option('ffla_requests_files_dir', '');
+    if (is_string($ffla_req_dir) && preg_match('/^ffla-request-files-[a-z0-9]{16}$/', $ffla_req_dir)) {
+        $ffla_req_uploads = wp_upload_dir(null, false);
+        $ffla_req_path = trailingslashit($ffla_req_uploads['basedir']) . $ffla_req_dir;
+        if (is_dir($ffla_req_path)) {
+            foreach ((array) scandir($ffla_req_path) as $ffla_req_entry) {
+                if (is_string($ffla_req_entry) && '.' !== $ffla_req_entry && '..' !== $ffla_req_entry && is_file($ffla_req_path . '/' . $ffla_req_entry)) {
+                    @unlink($ffla_req_path . '/' . $ffla_req_entry); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+                }
+            }
+            @rmdir($ffla_req_path); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+        }
+    }
+    delete_option('ffla_requests_files_dir');
 }
 wp_clear_scheduled_hook('ffla_requests_hourly');
+delete_option('ffla_requests_inbound_secret');
+delete_option('ffla_requests_inbound_log');
 delete_option('ffla_requests_digest_day');
 
 delete_option('ffla_requests_endpoint'); // My Account tab permalink flag.

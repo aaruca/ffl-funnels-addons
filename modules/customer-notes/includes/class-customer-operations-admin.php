@@ -46,6 +46,7 @@ class FFLA_Customer_Operations_Admin
             'visibility'    => ['Customer Visibility', 'Customer visibility', 'What signed-in customers see on their orders in My Account.', ''],
             'requests'      => ['Customer Requests', 'Customer requests', 'Issue reports and returns that customers start themselves and follow until they are closed.', 'requests'],
             'automation'    => ['Request Automation', 'Request automation', 'Reminders, auto-close and a daily digest for open customer requests.', ''],
+            'connections'   => ['Request Connections', 'Alerts & email replies', 'Post new requests, customer replies and low ratings to Slack, ClickUp or another app, and let customers answer request emails directly.', ''],
         ];
     }
 
@@ -72,6 +73,7 @@ class FFLA_Customer_Operations_Admin
         $labels = array_map(static function ($f) { return $f[1]; }, $all);
         $tools = ['email-preview' => 'Email preview'];
         if (class_exists('FFLA_Requests_Admin')) { $tools['request-form'] = 'Request form setup'; }
+        if (class_exists('FFLA_Requests_Inbound')) { $tools['connections-setup'] = 'Alerts & email replies setup'; }
 
         echo '<div class="ffla-ops ffla-set" data-ffla-settings>';
         echo '<header class="ffla-set-head"><h1>Customer &amp; Order Management</h1>'
@@ -123,6 +125,12 @@ class FFLA_Customer_Operations_Admin
                 . '<header class="ffla-set-panel-head"><h2 id="ffla-set-title-request-form">Request form setup</h2><p>Where customers find the issue and return form, and whether it is in place.</p></header><div class="ffla-set-row ffla-set-stack">';
             FFLA_Requests_Admin::setup_panel(true);
             echo '</div></section>';
+        }
+        if (class_exists('FFLA_Requests_Inbound')) {
+            echo '<section class="ffla-set-panel ffla-set-tool ffla-ops-section" id="connections-setup" data-section="connections-setup" aria-labelledby="ffla-set-title-connections-setup">'
+                . '<header class="ffla-set-panel-head"><h2 id="ffla-set-title-connections-setup">Alerts & email replies setup</h2><p>Test the alerts link and connect an inbound email service so customers can reply to request emails.</p></header><div class="ffla-set-row ffla-set-stack"><div class="ffla-set-text">';
+            FFLA_Requests_Inbound::setup_panel();
+            echo '</div></div></section>';
         }
         echo '</div></div></div>';
     }

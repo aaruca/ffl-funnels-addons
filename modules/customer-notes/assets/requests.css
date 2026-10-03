@@ -154,3 +154,4 @@
 @media (max-width: 540px) {
 	.ffla-req-ffl-grid, .ffla-req-inline { grid-template-columns: minmax(0, 1fr); }
 }
+.ffla-req-files video { width: 160px; height: 110px; object-fit: cover; border-radius: 6px; border: 1px solid var(--ffla-req-border); background: #000; }

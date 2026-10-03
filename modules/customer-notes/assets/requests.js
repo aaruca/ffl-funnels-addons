@@ -631,19 +631,26 @@
 		var lib = window.fflaReqFiles;
 		var input = h('input', { id: 'ffla-f-' + uid, type: 'file', name: 'files[]', multiple: true, accept: cfg.accept, 'aria-describedby': 'ffla-fh-' + uid });
 		var status = h('span', { class: 'ffla-req-error', role: 'status', 'aria-live': 'polite' });
-		var label = h('label', { for: 'ffla-f-' + uid, text: t.files });
+		var label = h('label', { for: 'ffla-f-' + uid, text: t.filesLabel });
 		var need = h('span', { class: 'ffla-req-need', hidden: true, text: t.photoHint });
-		var limits = { perUpload: cfg.maxFiles, maxFileBytes: cfg.maxFileBytes, postLimit: cfg.postLimit };
+		var limits = { perUpload: cfg.maxFiles, maxFileBytes: cfg.maxFileBytes, maxVideoBytes: cfg.maxVideoBytes, postLimit: cfg.postLimit, heicServer: cfg.heicServer };
 		function problem() {
 			var issue = lib ? lib.check(input.files, limits) : '';
 			return issue === 'count' ? format(t.tooManyFiles, cfg.maxFiles)
-				: (issue === 'size' ? t.fileTooBig : (issue === 'total' ? t.tooLarge : ''));
+				: (issue === 'size' ? t.fileTooBig.replace('%d', Math.round(cfg.maxFileBytes / 1048576)) : (issue === 'total' ? t.tooLarge : ''));
 		}
+		var node = h('div', { class: 'ffla-req-field ffla-req-files-field' }, [
+			label,
+			need,
+			input,
+			h('span', { id: 'ffla-fh-' + uid, class: 'ffla-req-muted', text: t.filesHint }),
+			status
+		]);
 		if (lib) {
-			lib.wire(input);
+			lib.wire(input, limits, t);
 		}
 		input.addEventListener('ffla-files-busy', function () {
-			status.textContent = t.preparing;
+			status.textContent = '';
 		});
 		input.addEventListener('ffla-files-ready', function () {
 			status.textContent = problem();
@@ -654,13 +661,7 @@
 			}
 		});
 		return {
-			node: h('p', { class: 'ffla-req-field' }, [
-				label,
-				need,
-				input,
-				h('span', { id: 'ffla-fh-' + uid, class: 'ffla-req-muted', text: format(t.filesHint, Math.round(cfg.maxFileBytes / 1048576)) }),
-				status
-			]),
+			node: node,
 			problem: problem,
 			count: function () {
 				return (input.files || []).length;
@@ -673,10 +674,7 @@
 			},
 			setRequired: function (on) {
 				need.hidden = !on;
-				label.textContent = t.files.replace(/\s*\(.*\)$/, '') + (on ? ' *' : '');
-				if (!on) {
-					label.textContent = t.files;
-				}
+				label.textContent = on ? t.filesLabel.replace(/\s*\(.*\)$/, '') + ' *' : t.filesLabel;
 			},
 			append: function (fd) {
 				[].forEach.call(input.files || [], function (f) {
@@ -688,10 +686,12 @@
 
 	/** While photos are being shrunk, hold the submit and send once they are ready. */
 	App.prototype.waitForFiles = function (form, files) {
-		if (!files || !files.busy()) {
+		if (!files || !files.busy() || form.fflaWaits > 3) {
+			form.fflaWaits = 0;
 			return false;
 		}
 		var self = this;
+		form.fflaWaits = (form.fflaWaits || 0) + 1;
 		this.busy(form, true);
 		files.ready().then(function () {
 			self.busy(form, false);
@@ -784,13 +784,16 @@
 		}
 
 		nodes.push(h('h4', { class: 'ffla-req-h', text: t.timeline }));
-		nodes.push(h('ol', { class: 'ffla-req-timeline' }, r.timeline.map(function (e) {
+		nodes.push(h('ol', { class: 'ffla-req-timeline', 'data-ffla-gallery': true }, r.timeline.map(function (e) {
 			return h('li', { class: 'ffla-req-event ffla-req-event--' + e.who + ' ffla-req-event--' + e.kind }, [
 				h('div', { class: 'ffla-req-event-head' }, [h('strong', { text: e.title }), h('time', { class: 'ffla-req-muted', text: e.time })]),
 				e.text ? text(e.text) : null,
 				e.files.length ? h('ul', { class: 'ffla-req-files' }, e.files.map(function (f) {
-					return h('li', {}, h('a', { href: f.url, target: '_blank', rel: 'noopener' }, [
+					var view = f.image ? 'image' : (f.video ? 'video' : null);
+					return h('li', {}, h('a', { href: f.url, target: '_blank', rel: 'noopener', 'data-ffla-view': view, 'data-name': f.name }, [
 						f.image ? h('img', { src: f.url, alt: '', loading: 'lazy' }) : null,
+						f.video ? h('video', { src: f.url + '#t=0.1', muted: true, preload: 'metadata', playsinline: true }) : null,
+						f.video ? h('span', { class: 'ffla-req-play', 'aria-hidden': 'true', text: '▶' }) : null,
 						h('span', { text: f.name + ' (' + f.size + ')' })
 					]));
 				})) : null

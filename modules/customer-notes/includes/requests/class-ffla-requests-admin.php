@@ -68,13 +68,11 @@ class FFLA_Requests_Admin
         $dir = dirname(__DIR__, 2) . '/assets/';
         $url = FFLA_URL . 'modules/customer-notes/assets/';
         wp_enqueue_style('ffla-requests-admin', $url . 'requests-admin.css', [], (string) @filemtime($dir . 'requests-admin.css')); // phpcs:ignore WordPress.PHP.NoSilencedErrors
-        wp_register_script('ffla-request-files', $url . 'request-files.js', [], (string) @filemtime($dir . 'request-files.js'), true); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+        FFLA_Requests_Files::register_assets($url, $dir);
+        wp_enqueue_style('ffla-request-files');
         wp_enqueue_script('ffla-requests-admin', $url . 'requests-admin.js', ['ffla-request-files'], (string) @filemtime($dir . 'requests-admin.js'), true); // phpcs:ignore WordPress.PHP.NoSilencedErrors
-        wp_localize_script('ffla-requests-admin', 'fflaReqAdmin', [
+        wp_localize_script('ffla-requests-admin', 'fflaReqAdmin', FFLA_Requests_Files::client_config() + FFLA_Requests_Files::picker_strings() + [
             'copied'       => __('Copied', 'ffl-funnels-addons'),
-            'perUpload'    => FFLA_Requests_Files::per_upload(),
-            'postLimit'    => FFLA_Requests_Files::post_limit(),
-            'maxFileBytes' => FFLA_Requests_Files::MAX_UPLOAD,
             'preparing'    => __('Preparing photos…', 'ffl-funnels-addons'),
             /* translators: %d: number of files the server accepts at once */
             'tooMany'      => __('This server accepts %d files at a time. Send the rest with another reply or note.', 'ffl-funnels-addons'),
@@ -289,7 +287,7 @@ class FFLA_Requests_Admin
         echo '</tbody></table></div>';
 
         // Timeline.
-        echo '<div class="ffla-req-box"><h2>' . esc_html__('History', 'ffl-funnels-addons') . '</h2><ol class="ffla-req-timeline">';
+        echo '<div class="ffla-req-box"><h2>' . esc_html__('History', 'ffl-funnels-addons') . '</h2><ol class="ffla-req-timeline" data-ffla-gallery>';
         foreach ($events as $event) {
             self::render_event($r, $event, $files_by_event[(int) $event->id] ?? []);
         }
@@ -327,6 +325,7 @@ class FFLA_Requests_Admin
         echo '</form></div></div>';
 
         echo '</div><div class="ffla-req-side">';
+        FFLA_Requests_Claim::box($r, $order ?: null, $files);
         self::render_sidebar($r, $order, $emails_on);
         echo '</div></div></div>';
     }
@@ -415,9 +414,10 @@ class FFLA_Requests_Admin
                     'file'     => $file->token,
                     '_wpnonce' => wp_create_nonce('ffla_req_file_' . (int) $r->id),
                 ], admin_url('admin-ajax.php'));
-                $image = 0 === strpos($file->mime, 'image/');
-                echo '<li><a href="' . esc_url($url) . '" target="_blank" rel="noopener">'
-                    . ($image ? '<img src="' . esc_url($url) . '" alt="" loading="lazy">' : '')
+                $kind = FFLA_Requests_Files::kind_of($file);
+                echo '<li><a href="' . esc_url($url) . '" target="_blank" rel="noopener"' . ('file' !== $kind ? ' data-ffla-view="' . esc_attr($kind) . '" data-name="' . esc_attr($file->name) . '"' : '') . '>'
+                    . ('image' === $kind ? '<img src="' . esc_url($url) . '" alt="" loading="lazy">' : '')
+                    . ('video' === $kind ? '<video src="' . esc_url($url) . '#t=0.1" muted preload="metadata" playsinline></video><span class="ffla-req-play" aria-hidden="true">▶</span>' : '')
                     . '<span>' . esc_html($file->name . ' (' . size_format((int) $file->size) . ')') . '</span></a>'
                     . ((int) $file->is_public ? '' : ' <span class="ffla-req-private">' . esc_html__('Internal', 'ffl-funnels-addons') . '</span>') . '</li>';
             }
@@ -462,7 +462,7 @@ class FFLA_Requests_Admin
                     echo '<p class="ffla-req-firearm-note">' . esc_html__('Includes a firearm: arrange an FFL-to-FFL transfer. The firearm notice from settings is added for the customer.', 'ffl-funnels-addons') . '</p>';
                 }
                 echo '<label for="ffla-req-label">' . esc_html__('Prepaid return label (optional)', 'ffl-funnels-addons') . '</label>'
-                    . '<input type="file" id="ffla-req-label" name="label" accept=".pdf,.jpg,.jpeg,.png">'
+                    . '<input type="file" id="ffla-req-label" name="label" accept=".pdf,.jpg,.jpeg,.png,.heic,.heif">'
                     . '<span class="description">' . esc_html__('PDF or image. The customer sees it as “Your return label”.', 'ffl-funnels-addons') . '</span>';
                 echo '<div class="ffla-req-two"><span><label for="ffla-req-label-carrier">' . esc_html__('Carrier', 'ffl-funnels-addons') . '</label>' . self::carrier_select('ffla-req-label-carrier', '') . '</span>'
                     . '<span><label for="ffla-req-label-tracking">' . esc_html__('Label tracking no. (optional)', 'ffl-funnels-addons') . '</label><input type="text" id="ffla-req-label-tracking" name="tracking" maxlength="60"></span></div>';
@@ -1175,7 +1175,7 @@ class FFLA_Requests_Admin
             }
             $wpdb->update($t['requests'], ['customer_name' => '', 'customer_email' => '', 'customer_id' => 0, 'access_secret' => FFLA_Requests::random_hex(16)], ['id' => (int) $r->id]);
             $wpdb->update($t['events'], ['body' => '[' . __('removed', 'ffl-funnels-addons') . ']'], ['request_id' => (int) $r->id, 'actor_type' => 'customer']);
-            $wpdb->delete($t['files'], ['request_id' => (int) $r->id, 'actor_type' => 'customer']);
+            FFLA_Requests_Files::delete_for_request((int) $r->id, ['actor_type' => 'customer']);
             $out['items_removed'] = true;
         }
         return $out;
@@ -1413,8 +1413,10 @@ class FFLA_Requests_Admin
     private static function file_field(string $id): void
     {
         echo '<p class="ffla-req-field"><label for="ffla-req-files-' . esc_attr($id) . '">' . esc_html__('Attach files', 'ffl-funnels-addons') . '</label>'
-            . '<input type="file" id="ffla-req-files-' . esc_attr($id) . '" name="files[]" multiple accept=".jpg,.jpeg,.png,.pdf" data-ffla-files>'
-            . '<span class="description">' . esc_html__('JPEG, PNG or PDF, as many as you need. Photos are resized before sending.', 'ffl-funnels-addons') . '</span>'
+            . '<input type="file" id="ffla-req-files-' . esc_attr($id) . '" name="files[]" multiple accept="' . esc_attr(FFLA_Requests_Files::accept()) . '" data-ffla-files>'
+            . '<span class="description">' . esc_html(FFLA_Requests_Files::videos_enabled()
+                ? __('Photos (JPEG, PNG, iPhone HEIC), PDFs or short videos, as many as you need. Drag them in or paste a screenshot. Photos are resized before sending.', 'ffl-funnels-addons')
+                : __('Photos (JPEG, PNG, iPhone HEIC) or PDFs, as many as you need. Drag them in or paste a screenshot. Photos are resized before sending.', 'ffl-funnels-addons')) . '</span>'
             . '<span class="ffla-req-files-status" role="status" aria-live="polite"></span></p>';
     }
 

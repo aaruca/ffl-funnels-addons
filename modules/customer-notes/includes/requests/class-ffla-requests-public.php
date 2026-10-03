@@ -148,8 +148,8 @@ class FFLA_Requests_Public
     {
         $dir = dirname(__DIR__, 2) . '/assets/';
         $url = FFLA_URL . 'modules/customer-notes/assets/';
-        wp_register_style('ffla-requests', $url . 'requests.css', [], (string) @filemtime($dir . 'requests.css')); // phpcs:ignore WordPress.PHP.NoSilencedErrors
-        wp_register_script('ffla-request-files', $url . 'request-files.js', [], (string) @filemtime($dir . 'request-files.js'), true); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+        FFLA_Requests_Files::register_assets($url, $dir);
+        wp_register_style('ffla-requests', $url . 'requests.css', ['ffla-request-files'], (string) @filemtime($dir . 'requests.css')); // phpcs:ignore WordPress.PHP.NoSilencedErrors
         wp_register_script('ffla-requests', $url . 'requests.js', ['ffla-request-files'], (string) @filemtime($dir . 'requests.js'), true); // phpcs:ignore WordPress.PHP.NoSilencedErrors
 
         // Load the stylesheet in <head> when the shortcode is in the content;
@@ -210,7 +210,9 @@ class FFLA_Requests_Public
             'maxFiles'      => FFLA_Requests_Files::per_upload(),
             'maxFileBytes'  => FFLA_Requests_Files::MAX_UPLOAD,
             'postLimit'     => FFLA_Requests_Files::post_limit(),
-            'accept'        => '.jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf',
+            'maxVideoBytes' => FFLA_Requests_Files::videos_enabled() ? FFLA_Requests_Files::video_limit() : 0,
+            'heicServer'    => FFLA_Requests_Files::heic_supported(),
+            'accept'        => FFLA_Requests_Files::accept(),
             'maxText'       => FFLA_Requests::MAX_TEXT,
             'loginUrl'      => $myaccount ? $myaccount : wp_login_url(),
             'reasons'       => ['issue' => FFLA_Requests::reasons('issue'), 'return' => FFLA_Requests::reasons('return')],
@@ -220,7 +222,7 @@ class FFLA_Requests_Public
             'feeWaived'     => array_values(FFLA_Requests_Rules::fee_waived_reasons()),
             'fflRequired'   => FFLA_Customer_Operations_Settings::enabled('requests_ffl_required'),
             'carriers'      => FFLA_Requests::carriers(),
-            'i18n'          => self::strings(),
+            'i18n'          => self::strings() + FFLA_Requests_Files::picker_strings(),
         ];
     }
 
@@ -262,9 +264,10 @@ class FFLA_Requests_Public
             'noPreference'    => __('— Choose —', 'ffl-funnels-addons'),
             'message'         => __('Describe the problem', 'ffl-funnels-addons'),
             'messageHint'     => __('Include anything that helps: what happened, when, photos of damage or labels. Do not include card numbers or ID documents.', 'ffl-funnels-addons'),
-            'files'           => __('Photos or documents (optional)', 'ffl-funnels-addons'),
-            /* translators: %d: max size in MB */
-            'filesHint'       => __('JPEG, PNG or PDF, %d MB each. Add as many as you need; photos are resized before sending.', 'ffl-funnels-addons'),
+            'filesLabel'      => __('Photos or documents (optional)', 'ffl-funnels-addons'),
+            'filesHint'       => FFLA_Requests_Files::videos_enabled()
+                ? __('Photos, PDFs or short videos — as many as you need. Photos are resized before sending.', 'ffl-funnels-addons')
+                : __('Photos or PDFs — as many as you need. Photos are resized before sending.', 'ffl-funnels-addons'),
             /* translators: %d: number of files the server accepts at once */
             'tooManyFiles'    => __('You can send %d files at a time. Send the rest with a reply after this one.', 'ffl-funnels-addons'),
             'tooLarge'        => __('These files are too large to send together. Send some of them with a reply after this one.', 'ffl-funnels-addons'),
@@ -557,7 +560,7 @@ class FFLA_Requests_Public
 
         try {
             $files = FFLA_Customer_Operations_Settings::enabled('requests_uploads') ? FFLA_Requests_Files::from_request('files') : [];
-            $prepared = $files ? FFLA_Requests_Files::prepare($files, FFLA_Requests_Files::count((int) $request->id)) : [];
+            $prepared = $files ? FFLA_Requests_Files::prepare($files, FFLA_Requests_Files::count((int) $request->id), FFLA_Requests_Files::count_videos((int) $request->id)) : [];
             $event_id = FFLA_Requests::add_message($request, $actor, $text, true);
         } catch (InvalidArgumentException $e) {
             self::fail($e->getMessage());
@@ -570,6 +573,7 @@ class FFLA_Requests_Public
 
         $request = FFLA_Requests::get((int) $request->id);
         FFLA_Requests_Mail::staff_reply($request, $text);
+        do_action('ffla_request_customer_replied', $request, $text, 'page');
         wp_send_json_success(['kind' => 'request', 'request' => self::view_payload($request)]);
     }
 
@@ -802,6 +806,8 @@ class FFLA_Requests_Public
                 'name'  => $file->name,
                 'url'   => add_query_arg(['action' => 'ffla_req_file', 'number' => rawurlencode($request->number), 'key' => $key, 'file' => $file->token], admin_url('admin-ajax.php')),
                 'image' => 0 === strpos($file->mime, 'image/'),
+                'video' => 0 === strpos($file->mime, 'video/'),
+                'mime'  => $file->mime,
                 'size'  => size_format((int) $file->size),
             ];
             $files_by_event[(int) $file->event_id][] = $entry;

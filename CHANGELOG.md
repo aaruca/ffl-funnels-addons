@@ -2,10 +2,21 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
-## [Unreleased]
+## [1.55.3] - 2026-10-02
+
+### Added
+- **Customer requests — photos and videos:**
+  - **No limit on photos.** Attach as many photos as needed to one message (was 3); staff have no limit per request (was 20; customers: 200, against abuse). Phone photos are shrunk in the browser to 2000 px before sending, so 15+ photos go in one message even on hosts with a small upload size; the server's own files-per-upload cap is checked first with a clear message.
+  - **Photo picker:** thumbnails before sending, remove one, choosing again adds instead of replacing, drag & drop, paste a screenshot (Ctrl+V / ⌘V); a submit made while photos are being prepared waits for them.
+  - **iPhone HEIC photos** are converted to JPEG (in Safari, or on servers with HEIC-capable Imagick), otherwise flagged with how to send them as JPEG.
+  - **Short videos** (MP4, MOV, up to 100 MB or the server's limit), kept in a private uploads folder, streamed with seeking, deleted with the request. Switch **Videos**.
+  - **Full-size viewer** with arrows, keyboard and swipe, for staff and customers.
+- **Customer requests — Photos & files box:** **Download all (ZIP)** and a one-click **Claim packet** for carrier damage / loss and manufacturer warranty claims: printable summary (store, shipment, tracking, value, items, what happened, conversation) plus every photo, video and document; details prefilled from shipment tracking and remembered.
+- **Customer requests — alerts** to Slack, ClickUp (Automation webhook), Discord, Google Chat or any JSON webhook for new requests, customer replies and 1–2 star ratings, with a test button.
+- **Customer requests — reply by email:** customers answer request emails and the reply (attachments included, quoted text removed) lands on the request, through Postmark, Mailgun or SendGrid inbound; signed reply addresses, replies from other senders kept as internal notes.
 
 ### Changed
-- **Customer requests: no limit on photos.** Staff and customers can attach as many JPEG, PNG or PDF files as they need to one message (was 3), and staff have no limit per request (was 20; customers: 200, against abuse). Photos are shrunk in the browser to 2000 px before sending, so 15+ phone photos go in one message even on hosts with a small upload size; a submit made while photos are being prepared waits for them. The only remaining cap is the server's own files-per-upload setting (`max_file_uploads`, usually 20), which the forms check first with a clear message instead of losing files.
+- Request photos are turned upright from the camera's rotation before their metadata is removed.
 
 ## [1.55.2] - 2026-10-02
 
