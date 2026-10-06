@@ -128,8 +128,11 @@ Each condition is **is** or **is not**. **Condition Exclusions** (**Exclude Cate
 
 ### Analytics attribution
 
-- Products shown by a rule (or a Smart loop) are remembered in the shopper's WooCommerce session, up to 500. When one of them is added to the cart later in that session, from any page, the cart line is tagged with that rule, counted in that day's add-to-carts and carried onto the order line.
-- **WB Analytics** sums the line subtotals of tagged lines in completed and processing orders, scanning at most 5,000 orders per period. Bundle widgets do not register recommendations.
+- Products shown by a rule (or a Smart loop) are remembered in the shopper's WooCommerce session, up to 500. When one of them is added to the cart later in that session, from any page, that successful add is counted in that day's add-to-carts. This is session-based exposure attribution, not click tracking.
+- Attribution is attached **after** WooCommerce chooses the cart line, so analytics never change cart-item identity. Identical ordinary/recommended adds merge; variations, bundle unique keys and fulfillment options still participate in identity normally. `_wb_attribution_quantities` records attributed units per rule (`-1` = Smart); organic units are the remainder. `_wb_source_rule` is retained as a compatibility tag for the first attributed rule, not the source of truth for new orders.
+- Cart quantity reductions scale credits proportionally (units are fungible); manual increases are organic. This can produce fractional attribution credits. Removing/undoing a cart line preserves its snapshot. Subsequent successful recommended adds receive fresh credits. Add-to-cart counters remain event counts, not quantities.
+- **WB Analytics** credits only attributed quantities and their proportional line subtotal/tax in completed and processing orders, scanning at most 5,000 orders per period. Historic orders with only `_wb_source_rule` still credit the full line; a new quantity map takes precedence, even if empty. Bundle widgets do not register recommendations.
+- Existing split cart keys and historic orders are not automatically consolidated or rewritten. Test with a fresh cart after updating; customers with pre-update split lines can remove and re-add them.
 
 ## Where it shows up
 
@@ -146,7 +149,7 @@ Each condition is **is** or **is not**. **Condition Exclusions** (**Exclude Cate
 | Bricks element | **WooBooster Bundle** (category *FFL Funnels*): checkbox widget with totals, savings and **Add Selected to Cart**. |
 | Shortcode | `[woobooster product_id="" limit="" fallback=""]` |
 | Cart and checkout | Coupons applied by Apply Coupon rules; bundle lines with name, Includes list and image. |
-| Orders | `_wb_source_rule` on attributed lines; `_woobooster_bundle_id` and **Bundle contents** on bundle lines. No emails of its own. |
+| Orders | `_wb_source_rule` and `_wb_attribution_quantities` on attributed lines; `_woobooster_bundle_id` and **Bundle contents** on bundle lines. No emails of its own. |
 
 - **WooBooster Recommendations loop:** **Specific Rule** (*Auto* matches by priority; a pinned rule skips conditions but still needs to be active and in schedule), **Product Source** (Current Product, Manual Product ID, Last Added to Cart), **Max Products (override)**, **Exclude Out of Stock** (on by default; replaces the global setting for this loop), **Fallback if No Match** (Show Nothing, WooCommerce Related (default), Recent Products, Bestselling Products).
 - **WooBooster Smart Recommendations loop:** **Smart Strategy** (Similar (default), Frequently Bought Together, Trending, Recently Viewed), Product Source, **Max Products** (default 4), Exclude Out of Stock, **Fallback if Empty**. No rule is involved; analytics shows these loops as one **Smart (all)** row.
@@ -159,7 +162,7 @@ Each condition is **is** or **is not**. **Condition Exclusions** (**Exclude Cate
 |---|---|
 | Tables | `{prefix}woobooster_rules`, `_rule_conditions`, `_rule_actions`, `_rule_index`; `{prefix}woobooster_bundles`, `_bundle_items`, `_bundle_actions`, `_bundle_conditions`, `_bundle_index`. |
 | Options | `woobooster_settings` (not autoloaded; may hold API keys; also holds the `rule_dates_gmt` migration flag), `woobooster_version`, `woobooster_db_version` (`1.10.0`), `woobooster_last_build`, `woobooster_atc_counter` (add-to-carts per rule per day; older versions wrote per month), `woobooster_cache_version`. |
-| Meta | Product: `_woobooster_copurchased`. Order item: `_wb_source_rule`, `_woobooster_bundle_id`, **Bundle contents**. |
+| Meta | Product: `_woobooster_copurchased`. Order item: `_wb_source_rule`, `_wb_attribution_quantities`, `_woobooster_bundle_id`, **Bundle contents**. |
 | Transients | `wbrc_*` (cached results), `wb_trending_cat_{term_id}` and `wb_trending_global` (2 days), `wb_ai_*` (15 minutes). |
 | Session, cookie, browser | WooCommerce session keys `woobooster_recommendations` and `woobooster_auto_coupons`; cookie `woobooster_recently_viewed`; localStorage `wb_ai_chat_history`, `wb_ai_bundle_history`. |
 | Cron | `woobooster_copurchase_event` (daily) and `woobooster_trending_event` (schedule `woobooster_6hours`), added or removed to match the Smart toggles. |

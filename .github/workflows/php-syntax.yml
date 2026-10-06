@@ -11,6 +11,21 @@ on:
     - cron: '17 9 * * 1'
 
 jobs:
+  woobooster-attribution:
+    name: WooBooster attribution (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['7.4', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - name: Check cart consolidation and purchase attribution
+        run: php tests/smoke/woobooster-attribution-smoke.php
+
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -65,6 +80,7 @@ jobs:
           set -e
           php tests/smoke/woobooster-smart-smoke.php
           php tests/smoke/woobooster-bundle-pricing-smoke.php
+          php tests/smoke/woobooster-attribution-smoke.php
           php tests/smoke/loadout-cart-smoke.php
           php tests/smoke/wishlist-ajax-smoke.php
 

@@ -123,6 +123,7 @@ jobs:
           set -e
           php tests/smoke/woobooster-smart-smoke.php
           php tests/smoke/woobooster-bundle-pricing-smoke.php
+          php tests/smoke/woobooster-attribution-smoke.php
           php tests/smoke/loadout-cart-smoke.php
           php tests/smoke/wishlist-ajax-smoke.php
           php tests/smoke/wss-sync-smoke.php

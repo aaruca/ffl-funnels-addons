@@ -195,40 +195,48 @@ class WooBooster_Analytics
             $order_has_wb = false;
 
             foreach ($order->get_items() as $item) {
-                $rule_id = (int) $item->get_meta('_wb_source_rule');
-                if (0 === $rule_id) {
+                $line_qty = (float) $item->get_quantity();
+                $metadata = array(WooBooster_Tracker::META_SOURCE_RULE => $item->get_meta(WooBooster_Tracker::META_SOURCE_RULE));
+                if ($item->meta_exists(WooBooster_Tracker::META_ATTRIBUTION)) {
+                    $metadata[WooBooster_Tracker::META_ATTRIBUTION] = $item->get_meta(WooBooster_Tracker::META_ATTRIBUTION);
+                }
+                $quantities = WooBooster_Tracker::get_attribution_quantities($metadata, $line_qty);
+                if (!$quantities) {
                     continue;
                 }
 
                 $order_has_wb = true;
-                $subtotal = (float) $item->get_subtotal();
-                $subtotal_tax = (float) $item->get_subtotal_tax();
-                $qty = (int) $item->get_quantity();
+                $line_subtotal = (float) $item->get_subtotal();
+                $line_tax = (float) $item->get_subtotal_tax();
                 $product_id = $item->get_product_id();
 
-                // Stats.
-                $stats['net_revenue'] += $subtotal;
-                $stats['tax_revenue'] += $subtotal_tax;
-                $stats['items_sold'] += $qty;
+                // Mixed cart lines credit only attributed units, possibly from
+                // several rules. Legacy orders still credit their entire line.
+                foreach ($quantities as $rule_id => $qty) {
+                    $share = $qty / $line_qty;
+                    $subtotal = $line_subtotal * $share;
+                    $subtotal_tax = $line_tax * $share;
 
-                // Daily WB revenue.
-                if (isset($day_wb[$day_key])) {
-                    $day_wb[$day_key] += $subtotal;
-                }
+                    $stats['net_revenue'] += $subtotal;
+                    $stats['tax_revenue'] += $subtotal_tax;
+                    $stats['items_sold'] += $qty;
 
-                // Rules aggregation.
-                if (!isset($rules_data[$rule_id])) {
-                    $rules_data[$rule_id] = array('revenue' => 0, 'items' => 0);
-                }
-                $rules_data[$rule_id]['revenue'] += $subtotal;
-                $rules_data[$rule_id]['items'] += $qty;
+                    if (isset($day_wb[$day_key])) {
+                        $day_wb[$day_key] += $subtotal;
+                    }
 
-                // Products aggregation.
-                if (!isset($products_data[$product_id])) {
-                    $products_data[$product_id] = array('revenue' => 0, 'count' => 0);
+                    if (!isset($rules_data[$rule_id])) {
+                        $rules_data[$rule_id] = array('revenue' => 0, 'items' => 0);
+                    }
+                    $rules_data[$rule_id]['revenue'] += $subtotal;
+                    $rules_data[$rule_id]['items'] += $qty;
+
+                    if (!isset($products_data[$product_id])) {
+                        $products_data[$product_id] = array('revenue' => 0, 'count' => 0);
+                    }
+                    $products_data[$product_id]['revenue'] += $subtotal;
+                    $products_data[$product_id]['count'] += $qty;
                 }
-                $products_data[$product_id]['revenue'] += $subtotal;
-                $products_data[$product_id]['count'] += $qty;
             }
 
             if ($order_has_wb) {

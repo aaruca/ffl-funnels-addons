@@ -17,6 +17,8 @@ class WooBooster_Tracker
 {
 
     const SESSION_KEY = 'woobooster_recommendations';
+    const META_SOURCE_RULE = '_wb_source_rule';
+    const META_ATTRIBUTION = '_wb_attribution_quantities';
 
     /**
      * Option key for the add-to-cart counter.
@@ -45,11 +47,11 @@ class WooBooster_Tracker
      */
     public function init()
     {
-        // Cart: capture attribution from AJAX add-to-cart.
-        add_filter('woocommerce_add_cart_item_data', array($this, 'capture_cart_item_data'), 10, 2);
-
-        // Cart: increment add-to-cart counter.
-        add_action('woocommerce_add_to_cart', array($this, 'track_add_to_cart'), 10, 6);
+        // Attribution must not participate in WooCommerce's cart identity.
+        // Attach it after the add succeeds, before WC persists the cart (10)
+        // and calculates totals (20). Works for both new and merged lines.
+        add_action('woocommerce_add_to_cart', array($this, 'track_add_to_cart'), 5, 6);
+        add_action('woocommerce_after_cart_item_quantity_update', array($this, 'update_attributed_quantity'), 5, 4);
 
         // Order: persist attribution to order line item meta.
         add_action('woocommerce_checkout_create_order_line_item', array($this, 'persist_order_item_meta'), 10, 4);
@@ -87,31 +89,81 @@ class WooBooster_Tracker
     }
 
     /**
-     * Capture attribution data from the AJAX add-to-cart request.
+     * Read and bound attributed quantities, including legacy whole-line tags.
      *
-     * Hooked on woocommerce_add_cart_item_data.
+     * An explicit empty/new map takes precedence over the legacy tag. Quantities
+     * may be fractional after a proportional cart reduction. Organic units are
+     * implicit: line quantity minus the sum of the attributed quantities.
      *
-     * @param array $cart_item_data Existing cart item data.
-     * @param int   $product_id    Product being added.
-     * @return array
+     * @param array $values   Cart or order attribution metadata.
+     * @param float $quantity Maximum attributable line quantity.
+     * @return array Rule ID => attributed quantity.
      */
-    public function capture_cart_item_data($cart_item_data, $product_id)
+    public static function get_attribution_quantities($values, $quantity)
+    {
+        $quantity = (float) $quantity;
+        if (!is_finite($quantity) || $quantity <= 0) {
+            return array();
+        }
+
+        if (array_key_exists(self::META_ATTRIBUTION, $values)) {
+            $raw = is_array($values[self::META_ATTRIBUTION]) ? $values[self::META_ATTRIBUTION] : array();
+        } else {
+            $rule_id = isset($values[self::META_SOURCE_RULE]) ? (int) $values[self::META_SOURCE_RULE] : 0;
+            $raw = $rule_id ? array($rule_id => $quantity) : array();
+        }
+
+        $quantities = array();
+        foreach ($raw as $rule_id => $qty) {
+            // Rule IDs can be positive or the Smart pseudo-ID (-1), never zero.
+            if (!is_numeric($rule_id) || (string) (int) $rule_id !== (string) $rule_id || !is_numeric($qty)) {
+                continue;
+            }
+            $rule_id = (int) $rule_id;
+            $qty = (float) $qty;
+            if (0 !== $rule_id && is_finite($qty) && $qty > 0) {
+                $quantities[$rule_id] = min($qty, $quantity);
+            }
+        }
+
+        $total = array_sum($quantities);
+        if ($total > $quantity) {
+            foreach ($quantities as $rule_id => $qty) {
+                $quantities[$rule_id] = $qty * ($quantity / $total);
+            }
+        }
+        return $quantities;
+    }
+
+    /**
+     * Current session attribution; a displayed recommendation, not a click.
+     */
+    private function get_session_rule_id($product_id, $variation_id)
     {
         if (!function_exists('WC') || !WC()->session) {
-            return $cart_item_data;
+            return 0;
         }
-
         $stored = WC()->session->get(self::SESSION_KEY, array());
-        if (!is_array($stored) || !isset($stored[(int) $product_id])) {
-            return $cart_item_data;
+        if (!is_array($stored)) {
+            return 0;
         }
-
-        $rule_id = (int) $stored[(int) $product_id];
-        if (0 !== $rule_id) {
-            $cart_item_data['_wb_source_rule'] = $rule_id;
+        if ($variation_id && isset($stored[(int) $variation_id])) {
+            return (int) $stored[(int) $variation_id];
         }
+        return isset($stored[(int) $product_id]) ? (int) $stored[(int) $product_id] : 0;
+    }
 
-        return $cart_item_data;
+    /**
+     * Keep the legacy tag for compatibility; the quantity map is authoritative.
+     */
+    private function set_cart_attribution($cart, $cart_item_key, $quantities)
+    {
+        $cart->cart_contents[$cart_item_key][self::META_ATTRIBUTION] = $quantities;
+        if ($quantities) {
+            $cart->cart_contents[$cart_item_key][self::META_SOURCE_RULE] = (int) array_key_first($quantities);
+        } else {
+            unset($cart->cart_contents[$cart_item_key][self::META_SOURCE_RULE]);
+        }
     }
 
     /**
@@ -126,12 +178,25 @@ class WooBooster_Tracker
      */
     public function track_add_to_cart($cart_item_key, $product_id, $quantity, $variation_id, $variation, $cart_item_data)
     {
-        if (!isset($cart_item_data['_wb_source_rule'])) {
+        if (!function_exists('WC') || !WC()->cart || !isset(WC()->cart->cart_contents[$cart_item_key])) {
             return;
         }
 
-        $rule_id = (int) $cart_item_data['_wb_source_rule'];
-        if (0 === $rule_id) {
+        $cart = WC()->cart;
+        $values = $cart->cart_contents[$cart_item_key];
+        $line_quantity = (float) $values['quantity'];
+        $added_quantity = min(max(0, (float) $quantity), $line_quantity);
+        // A legacy tag describes only the units that existed before this add.
+        $quantities = self::get_attribution_quantities($values, $line_quantity - $added_quantity);
+        $rule_id = $this->get_session_rule_id($product_id, $variation_id);
+        if (0 !== $rule_id && $added_quantity > 0) {
+            $quantities[$rule_id] = (isset($quantities[$rule_id]) ? $quantities[$rule_id] : 0) + $added_quantity;
+        }
+
+        if ($quantities || array_key_exists(self::META_ATTRIBUTION, $values) || isset($values[self::META_SOURCE_RULE])) {
+            $this->set_cart_attribution($cart, $cart_item_key, $quantities);
+        }
+        if (0 === $rule_id || $added_quantity <= 0) {
             return;
         }
 
@@ -164,6 +229,29 @@ class WooBooster_Tracker
     }
 
     /**
+     * Quantity edits have no recommendation event. Increases are organic;
+     * decreases retain the same attribution proportions (units are fungible).
+     * Never resurrect removed attribution when the quantity increases again.
+     */
+    public function update_attributed_quantity($cart_item_key, $quantity, $old_quantity, $cart)
+    {
+        if (!isset($cart->cart_contents[$cart_item_key])) {
+            return;
+        }
+        $values = $cart->cart_contents[$cart_item_key];
+        if (!array_key_exists(self::META_ATTRIBUTION, $values) && !isset($values[self::META_SOURCE_RULE])) {
+            return;
+        }
+        $quantities = self::get_attribution_quantities($values, $old_quantity);
+        $ratio = $old_quantity > 0 ? min(1, max(0, (float) $quantity) / $old_quantity) : 0;
+        foreach ($quantities as $rule_id => $qty) {
+            $quantities[$rule_id] = $qty * $ratio;
+        }
+        $quantities = self::get_attribution_quantities(array(self::META_ATTRIBUTION => $quantities), $quantity);
+        $this->set_cart_attribution($cart, $cart_item_key, $quantities);
+    }
+
+    /**
      * Persist the attribution to order line item meta.
      *
      * @param WC_Order_Item_Product $item          Order line item.
@@ -173,16 +261,13 @@ class WooBooster_Tracker
      */
     public function persist_order_item_meta($item, $cart_item_key, $values, $order)
     {
-        if (!isset($values['_wb_source_rule'])) {
+        $quantities = self::get_attribution_quantities($values, $item->get_quantity());
+        if (!$quantities) {
             return;
         }
 
-        $rule_id = (int) $values['_wb_source_rule'];
-        if (0 === $rule_id) {
-            return;
-        }
-
-        $item->add_meta_data('_wb_source_rule', $rule_id, true);
+        $item->add_meta_data(self::META_SOURCE_RULE, (int) array_key_first($quantities), true);
+        $item->add_meta_data(self::META_ATTRIBUTION, $quantities, true);
     }
 
     /**
