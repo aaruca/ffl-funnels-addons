@@ -131,9 +131,39 @@ class FFLA_Customer_Operations
         }
     }
 
+    /**
+     * Status as stored in the database, ignoring unsaved changes on order objects in memory.
+     * WooCommerce catches an exception thrown during save() (see guard_status()), adds an
+     * "Error saving order" note and still runs status_transition() from the rejected in-memory
+     * status, so status hooks must not trust $to or $order->get_status().
+     */
+    public static function persisted_status(int $id): string
+    {
+        if ($id <= 0) { return ''; }
+        if (class_exists('Automattic\WooCommerce\Utilities\OrderUtil')) {
+            global $wpdb;
+            $raw = \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled()
+                ? $wpdb->get_var($wpdb->prepare('SELECT status FROM ' . \Automattic\WooCommerce\Utilities\OrderUtil::get_table_for_orders() . ' WHERE id = %d', $id))
+                : get_post_status($id);
+        } else {
+            $stored = wc_get_order($id);
+            $raw = $stored ? $stored->get_status() : '';
+        }
+        return (string) preg_replace('/^wc-/', '', (string) $raw);
+    }
+
     public static function status_changed($id, $from, $to, $order): void
     {
         if ($from === $to || ($from !== self::STATUS && $to !== self::STATUS)) { return; }
+        $stored = self::persisted_status((int) $id);
+        if ($stored !== $to) {
+            // The save was rejected: keep the pickup record and send nothing.
+            if ($to === self::STATUS && $order instanceof WC_Order) {
+                self::audit($order, 'Ready for Pickup was not saved; the order is still ' . wc_get_order_status_name($stored)
+                    . '. No Ready for Pickup email was sent. Move the order to Processing first, then mark it ready.');
+            }
+            return;
+        }
         $data = self::data($order);
         if ($to === self::STATUS) {
             update_option('_ffla_ops_ready_used', true, false);
