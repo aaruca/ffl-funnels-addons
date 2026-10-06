@@ -37,6 +37,8 @@ class FFLA_Email_Ready_For_Pickup extends WC_Email
     {
         if (!$this->is_enabled()) { return false; }
         $order = $order instanceof WC_Order ? $order : wc_get_order($order_id);
+        // WooCommerce fires the notification even when the save was rejected; email only an order stored as ready.
+        if (!$order instanceof WC_Order || FFLA_Customer_Operations::persisted_status($order->get_id()) !== FFLA_Customer_Operations::STATUS) { return false; }
         $sent = $this->send_for($order);
         // A resend box records its own "manually sent" note; only note automatic sends.
         $resend = did_action('woocommerce_before_resend_order_emails') > did_action('woocommerce_after_resend_order_email');

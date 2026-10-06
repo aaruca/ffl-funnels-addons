@@ -295,6 +295,28 @@ FFLA_Customer_Operations_Messages::send_ready(wc_get_order(1),'manual:plain');ch
 $s['pickup']=false;switches($s);check(FFLA_Customer_Operations_Ready_Email::register([])===[]&&FFLA_Customer_Operations_Ready_Email::rest_templates([],$ready)===[],'nothing registered while Ready for Pickup is off');
 all_on();$GLOBALS['wc_emails']=[];
 
+// Rejected Ready for Pickup save. Unlike the update_status() mock above, real WooCommerce catches the exception thrown by
+// guard_status() during save() ("Error saving order ID ..."), then still runs status_transition() from the rejected
+// in-memory status, firing the ready notification and woocommerce_order_status_changed.
+all_on();$GLOBALS['sent']=[];$GLOBALS['events']=[];
+$emails=FFLA_Customer_Operations_Ready_Email::register([]);$email=$emails['FFLA_Email_Ready_For_Pickup'];$email->enabled='yes';$email->email_type='plain';
+$wc_save=static function(WC_Order $o,string $to)use($email){$from=$o->status;$o->status=$to;$o->changes=['status'=>$to];
+    try{$o->save();}catch(Exception $e){$o->add_order_note('Error saving order ID '.$o->id.'. '.$e->getMessage());$o->changes=[];}
+    if($from!==$to){$email->trigger($o->id,$o);FFLA_Customer_Operations::status_changed($o->id,$from,$to,$o);}};
+foreach(['pre-ordered','completed'] as $n=>$stored_status){
+    $id=30+$n;$o=new WC_Order($id);$o->items[11]->update_meta_data(FFLA_Customer_Operations::ITEM,['serials'=>['SN-1','SN-2']]);
+    $o->status=$stored_status;$o->meta[FFLA_Customer_Operations::DATA]=['revision'=>'before','collected_at'=>1700000000];$o->save_meta_data();
+    $wc_save($o,'ffla-ready');$after=wc_get_order($id);$d=FFLA_Customer_Operations::data($after);
+    check($after->get_status()===$stored_status,"rejected ready save keeps $stored_status");
+    check($email->sent===[]&&$GLOBALS['events']===[],"no ready email or reminder after a rejected save from $stored_status");
+    check($d['revision']==='before'&&$d['ready_cycle']===''&&$d['collected_at']===1700000000,"pickup record untouched after a rejected save from $stored_status");
+    check(strpos(end($after->notes)[0],'Ready for Pickup was not saved; the order is still '.ucfirst($stored_status))!==false,"rejection explained in order notes ($stored_status)");
+}
+$o=new WC_Order(32);$o->items[11]->update_meta_data(FFLA_Customer_Operations::ITEM,['serials'=>['SN-1','SN-2']]);$o->save_meta_data();
+$wc_save($o,'ffla-ready');$d=FFLA_Customer_Operations::data(wc_get_order(32));
+check(wc_get_order(32)->get_status()==='ffla-ready'&&count($email->sent)===1&&$d['ready_cycle']!==''&&count($GLOBALS['events'])===1,'saved processing to ready still emails and starts a ready cycle');
+unset($GLOBALS['orders'][30],$GLOBALS['orders'][31],$GLOBALS['orders'][32]);$GLOBALS['sent']=[];$GLOBALS['events']=[];
+
 // Order Management panel: serial numbers, then checklist, then Ready for Pickup.
 $panel=output_of(static function(){FFLA_Customer_Operations_Admin::render(fixture_order());});
 $at=static function($needle)use($panel){$p=strpos($panel,$needle);check($p!==false,'panel shows '.$needle);return $p;};

@@ -2,6 +2,11 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Ready for Pickup:** when an order that is not Processing (for example Pre-Ordered or Completed) is set to **Ready for Pickup**, the change is still refused, but the customer no longer gets a *Ready for pickup* email and the pickup record is no longer marked ready. WooCommerce runs status hooks even after a refused save, so the module now checks the status actually saved. The order notes say why the change was refused: move the order to **Processing** first, then mark it ready.
+
 ## [1.55.3] - 2026-10-02
 
 ### Added
