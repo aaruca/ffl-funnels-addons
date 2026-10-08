@@ -54,6 +54,7 @@ function wp_date($format, $timestamp = null) { return gmdate($format, $timestamp
 function get_option($key, $default = false) { return isset($GLOBALS['options'][$key]) ? $GLOBALS['options'][$key] : $default; }
 function update_option($key, $value, $autoload = null) { $GLOBALS['options'][$key] = $value; }
 function __($text, $domain = '') { return $text; }
+function number_format_i18n($number, $decimals = 0) { return number_format($number, $decimals); }
 function wc_get_orders($args) { return $args['offset'] ? array() : $GLOBALS['orders']; }
 function wc_get_product($id) {
     return new class($id) {
@@ -281,5 +282,25 @@ WC()->cart->add_to_cart(44, 0.5);
 check(quantities($key) === array(-1 => 0.5), 'fractional adds track only their actual units');
 WC()->cart->set_quantity($key, 0.5);
 check(quantities($key) === array(-1 => 0.25), 'fractional quantity reduction is proportional');
+
+// Proportional reductions are rounded; the legacy tag names the largest rule.
+$tracker = fresh_cart();
+WooBooster_Tracker::register_recommendation(-1, array(44));
+$key = WC()->cart->add_to_cart(44);
+WooBooster_Tracker::register_recommendation(7, array(44));
+WC()->cart->add_to_cart(44, 2);
+check(WC()->cart->cart_contents[$key]['_wb_source_rule'] === 7, 'cart legacy tag names the rule with the most units');
+WC()->cart->set_quantity($key, 2);
+check(quantities($key) === array(-1 => 0.6667, 7 => 1.3333), 'repeating decimals are rounded to four places');
+$item = checkout_item($tracker, $key, 10, 1);
+check($item->get_meta('_wb_source_rule') === 7 && $item->get_meta(WooBooster_Tracker::META_ATTRIBUTION) === array(-1 => 0.6667, 7 => 1.3333), 'order meta stores the rounded map and the largest rule');
+check(WooBooster_Tracker::get_order_item_attribution($item) === array(-1 => 0.6667, 7 => 1.3333), 'order item helper reads the stored map');
+$data = analytics(array($item));
+check(near($data['stats']['net_revenue'], 20) && near($data['stats']['items_sold'], 2), 'rounded credits still add up to the line');
+check(array() === WooBooster_Tracker::normalize_quantities(array(-1 => 0.00001), 1), 'credits that round to zero are dropped');
+$format = new ReflectionMethod('WooBooster_Analytics', 'format_quantity');
+$format->setAccessible(true);
+$analytics = new WooBooster_Analytics();
+check('1.5' === $format->invoke($analytics, 1.5) && '2' === $format->invoke($analytics, 2.0) && '0.7' === $format->invoke($analytics, 0.6667), 'dashboard shows fractional units with one decimal');
 
 echo $checks . " checks passed (woobooster attribution).\n";

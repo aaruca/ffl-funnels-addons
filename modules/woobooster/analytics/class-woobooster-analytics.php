@@ -196,11 +196,7 @@ class WooBooster_Analytics
 
             foreach ($order->get_items() as $item) {
                 $line_qty = (float) $item->get_quantity();
-                $metadata = array(WooBooster_Tracker::META_SOURCE_RULE => $item->get_meta(WooBooster_Tracker::META_SOURCE_RULE));
-                if ($item->meta_exists(WooBooster_Tracker::META_ATTRIBUTION)) {
-                    $metadata[WooBooster_Tracker::META_ATTRIBUTION] = $item->get_meta(WooBooster_Tracker::META_ATTRIBUTION);
-                }
-                $quantities = WooBooster_Tracker::get_attribution_quantities($metadata, $line_qty);
+                $quantities = WooBooster_Tracker::get_order_item_attribution($item);
                 if (!$quantities) {
                     continue;
                 }
@@ -627,7 +623,7 @@ class WooBooster_Analytics
             <?php
             $this->render_card(__('WB Net Revenue', 'ffl-funnels-addons'), wc_price($stats['net_revenue']), $stats['net_revenue'], $prev_stats['net_revenue']);
             $this->render_card(__('Tax Generated', 'ffl-funnels-addons'), wc_price($stats['tax_revenue']), $stats['tax_revenue'], $prev_stats['tax_revenue']);
-            $this->render_card(__('Items Sold', 'ffl-funnels-addons'), number_format_i18n($stats['items_sold']), $stats['items_sold'], $prev_stats['items_sold']);
+            $this->render_card(__('Items Sold', 'ffl-funnels-addons'), $this->format_quantity($stats['items_sold']), $stats['items_sold'], $prev_stats['items_sold']);
             $this->render_card(__('% of Total Revenue', 'ffl-funnels-addons'), $pct . '%', null, null);
             ?>
         </div>
@@ -640,6 +636,16 @@ class WooBooster_Analytics
             ?>
         </div>
         <?php
+    }
+
+    /**
+     * Attributed unit counts can be fractional after a proportional cart
+     * reduction; show one decimal only when the value is not a whole number.
+     */
+    private function format_quantity($quantity)
+    {
+        $quantity = (float) $quantity;
+        return number_format_i18n($quantity, abs($quantity - round($quantity)) < 0.05 ? 0 : 1);
     }
 
     /**
@@ -694,7 +700,7 @@ class WooBooster_Analytics
                     </div>
                     <div class="wba-funnel__step">
                         <div class="wba-funnel__icon">✅</div>
-                        <div class="wba-funnel__count"><?php echo esc_html(number_format_i18n($conversion['purchased'])); ?>
+                        <div class="wba-funnel__count"><?php echo esc_html($this->format_quantity($conversion['purchased'])); ?>
                         </div>
                         <div class="wba-funnel__label"><?php esc_html_e('Purchased Items', 'ffl-funnels-addons'); ?></div>
                     </div>
@@ -750,7 +756,7 @@ class WooBooster_Analytics
                                 <tr>
                                     <td><?php echo esc_html($row['name']); ?></td>
                                     <td style="text-align:right;"><?php echo wp_kses_post(wc_price($row['revenue'])); ?></td>
-                                    <td style="text-align:right;"><?php echo esc_html(number_format_i18n($row['items'])); ?></td>
+                                    <td style="text-align:right;"><?php echo esc_html($this->format_quantity($row['items'])); ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -792,7 +798,7 @@ class WooBooster_Analytics
                                         </div>
                                     </td>
                                     <td style="text-align:right;"><?php echo wp_kses_post(wc_price($row['revenue'])); ?></td>
-                                    <td style="text-align:right;"><?php echo esc_html(number_format_i18n($row['count'])); ?></td>
+                                    <td style="text-align:right;"><?php echo esc_html($this->format_quantity($row['count'])); ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>

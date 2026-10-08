@@ -21,6 +21,12 @@ class WooBooster_Tracker
     const META_ATTRIBUTION = '_wb_attribution_quantities';
 
     /**
+     * Decimal places kept for attributed quantities. Proportional reductions
+     * produce repeating decimals; four places keeps stored meta readable.
+     */
+    const QUANTITY_PRECISION = 4;
+
+    /**
      * Option key for the add-to-cart counter.
      *
      * Shape: date key => [rule_id => count]. New counts use day keys
@@ -89,10 +95,10 @@ class WooBooster_Tracker
     }
 
     /**
-     * Read and bound attributed quantities, including legacy whole-line tags.
+     * Read attributed quantities from cart item values or order item meta.
      *
-     * An explicit empty/new map takes precedence over the legacy tag. Quantities
-     * may be fractional after a proportional cart reduction. Organic units are
+     * An explicit map takes precedence over the legacy tag, even when empty or
+     * malformed. A legacy tag alone credits the whole line. Organic units are
      * implicit: line quantity minus the sum of the attributed quantities.
      *
      * @param array $values   Cart or order attribution metadata.
@@ -101,16 +107,46 @@ class WooBooster_Tracker
      */
     public static function get_attribution_quantities($values, $quantity)
     {
-        $quantity = (float) $quantity;
-        if (!is_finite($quantity) || $quantity <= 0) {
-            return array();
-        }
-
         if (array_key_exists(self::META_ATTRIBUTION, $values)) {
-            $raw = is_array($values[self::META_ATTRIBUTION]) ? $values[self::META_ATTRIBUTION] : array();
+            $raw = $values[self::META_ATTRIBUTION];
         } else {
             $rule_id = isset($values[self::META_SOURCE_RULE]) ? (int) $values[self::META_SOURCE_RULE] : 0;
             $raw = $rule_id ? array($rule_id => $quantity) : array();
+        }
+        return self::normalize_quantities($raw, $quantity);
+    }
+
+    /**
+     * Attributed quantities of an order line; see get_attribution_quantities().
+     *
+     * @param WC_Order_Item_Product $item Order line item.
+     * @return array Rule ID => attributed quantity.
+     */
+    public static function get_order_item_attribution($item)
+    {
+        $values = array(self::META_SOURCE_RULE => $item->get_meta(self::META_SOURCE_RULE));
+        if ($item->meta_exists(self::META_ATTRIBUTION)) {
+            $values[self::META_ATTRIBUTION] = $item->get_meta(self::META_ATTRIBUTION);
+        }
+        return self::get_attribution_quantities($values, $item->get_quantity());
+    }
+
+    /**
+     * Validate a rule => quantity map and cap it to the line quantity.
+     *
+     * Drops zero or malformed rule IDs and non-positive or non-finite
+     * quantities, rounds to QUANTITY_PRECISION, and scales the map down
+     * proportionally when its sum exceeds the line.
+     *
+     * @param mixed $raw      Rule ID => quantity map; anything else is empty.
+     * @param float $quantity Maximum attributable line quantity.
+     * @return array Rule ID => attributed quantity.
+     */
+    public static function normalize_quantities($raw, $quantity)
+    {
+        $quantity = (float) $quantity;
+        if (!is_array($raw) || !is_finite($quantity) || $quantity <= 0) {
+            return array();
         }
 
         $quantities = array();
@@ -121,18 +157,34 @@ class WooBooster_Tracker
             }
             $rule_id = (int) $rule_id;
             $qty = (float) $qty;
-            if (0 !== $rule_id && is_finite($qty) && $qty > 0) {
-                $quantities[$rule_id] = min($qty, $quantity);
+            if (0 === $rule_id || !is_finite($qty) || $qty <= 0) {
+                continue;
+            }
+            $qty = round(min($qty, $quantity), self::QUANTITY_PRECISION);
+            if ($qty > 0) {
+                $quantities[$rule_id] = $qty;
             }
         }
 
         $total = array_sum($quantities);
         if ($total > $quantity) {
             foreach ($quantities as $rule_id => $qty) {
-                $quantities[$rule_id] = $qty * ($quantity / $total);
+                $quantities[$rule_id] = round($qty * ($quantity / $total), self::QUANTITY_PRECISION);
             }
+            $quantities = array_filter($quantities);
         }
         return $quantities;
+    }
+
+    /**
+     * Rule credited with the most units (first on a tie); the legacy tag.
+     *
+     * @param array $quantities Non-empty rule ID => attributed quantity map.
+     * @return int
+     */
+    private static function primary_rule($quantities)
+    {
+        return (int) array_search(max($quantities), $quantities, true);
     }
 
     /**
@@ -160,14 +212,18 @@ class WooBooster_Tracker
     {
         $cart->cart_contents[$cart_item_key][self::META_ATTRIBUTION] = $quantities;
         if ($quantities) {
-            $cart->cart_contents[$cart_item_key][self::META_SOURCE_RULE] = (int) array_key_first($quantities);
+            $cart->cart_contents[$cart_item_key][self::META_SOURCE_RULE] = self::primary_rule($quantities);
         } else {
             unset($cart->cart_contents[$cart_item_key][self::META_SOURCE_RULE]);
         }
     }
 
     /**
-     * Increment the add-to-cart counter when a WooBooster-attributed item is added.
+     * Credit a successful add to the recommendation the shopper was shown.
+     *
+     * Runs after WooCommerce has chosen the cart line (new or merged), so
+     * attribution never changes cart-item identity. Only the units added now
+     * are credited, and the rule gets one add-to-cart event.
      *
      * @param string $cart_item_key Cart item key.
      * @param int    $product_id    Product ID.
@@ -182,13 +238,25 @@ class WooBooster_Tracker
             return;
         }
 
-        $cart = WC()->cart;
+        $rule_id = $this->get_session_rule_id($product_id, $variation_id);
+        $added_quantity = $this->attribute_added_units(WC()->cart, $cart_item_key, $quantity, $rule_id);
+        if (0 !== $rule_id && $added_quantity > 0) {
+            $this->count_add_to_cart($rule_id);
+        }
+    }
+
+    /**
+     * Credit the units just added to $rule_id (0 = organic); existing credits stay.
+     *
+     * @return float Units added by this event.
+     */
+    private function attribute_added_units($cart, $cart_item_key, $quantity, $rule_id)
+    {
         $values = $cart->cart_contents[$cart_item_key];
         $line_quantity = (float) $values['quantity'];
         $added_quantity = min(max(0, (float) $quantity), $line_quantity);
         // A legacy tag describes only the units that existed before this add.
         $quantities = self::get_attribution_quantities($values, $line_quantity - $added_quantity);
-        $rule_id = $this->get_session_rule_id($product_id, $variation_id);
         if (0 !== $rule_id && $added_quantity > 0) {
             $quantities[$rule_id] = (isset($quantities[$rule_id]) ? $quantities[$rule_id] : 0) + $added_quantity;
         }
@@ -196,10 +264,14 @@ class WooBooster_Tracker
         if ($quantities || array_key_exists(self::META_ATTRIBUTION, $values) || isset($values[self::META_SOURCE_RULE])) {
             $this->set_cart_attribution($cart, $cart_item_key, $quantities);
         }
-        if (0 === $rule_id || $added_quantity <= 0) {
-            return;
-        }
+        return $added_quantity;
+    }
 
+    /**
+     * Count one add-to-cart event for a rule, per store day.
+     */
+    private function count_add_to_cart($rule_id)
+    {
         $counter = get_option(self::COUNTER_OPTION, array());
         if (!is_array($counter)) {
             $counter = array();
@@ -229,9 +301,14 @@ class WooBooster_Tracker
     }
 
     /**
-     * Quantity edits have no recommendation event. Increases are organic;
-     * decreases retain the same attribution proportions (units are fungible).
-     * Never resurrect removed attribution when the quantity increases again.
+     * Keep a line's credits in step with quantity changes that are not
+     * recommendation events.
+     *
+     * Fires for cart edits and also when an add merges into an existing line:
+     * WC_Cart::add_to_cart() calls set_quantity() before woocommerce_add_to_cart,
+     * so the increase is left organic here and track_add_to_cart() then credits
+     * the added units. Decreases keep the same proportions (units are fungible);
+     * a later increase never resurrects credit that was removed.
      */
     public function update_attributed_quantity($cart_item_key, $quantity, $old_quantity, $cart)
     {
@@ -247,8 +324,7 @@ class WooBooster_Tracker
         foreach ($quantities as $rule_id => $qty) {
             $quantities[$rule_id] = $qty * $ratio;
         }
-        $quantities = self::get_attribution_quantities(array(self::META_ATTRIBUTION => $quantities), $quantity);
-        $this->set_cart_attribution($cart, $cart_item_key, $quantities);
+        $this->set_cart_attribution($cart, $cart_item_key, self::normalize_quantities($quantities, $quantity));
     }
 
     /**
@@ -266,7 +342,7 @@ class WooBooster_Tracker
             return;
         }
 
-        $item->add_meta_data(self::META_SOURCE_RULE, (int) array_key_first($quantities), true);
+        $item->add_meta_data(self::META_SOURCE_RULE, self::primary_rule($quantities), true);
         $item->add_meta_data(self::META_ATTRIBUTION, $quantities, true);
     }
 
