@@ -195,40 +195,44 @@ class WooBooster_Analytics
             $order_has_wb = false;
 
             foreach ($order->get_items() as $item) {
-                $rule_id = (int) $item->get_meta('_wb_source_rule');
-                if (0 === $rule_id) {
+                $line_qty = (float) $item->get_quantity();
+                $quantities = WooBooster_Tracker::get_order_item_attribution($item);
+                if (!$quantities) {
                     continue;
                 }
 
                 $order_has_wb = true;
-                $subtotal = (float) $item->get_subtotal();
-                $subtotal_tax = (float) $item->get_subtotal_tax();
-                $qty = (int) $item->get_quantity();
+                $line_subtotal = (float) $item->get_subtotal();
+                $line_tax = (float) $item->get_subtotal_tax();
                 $product_id = $item->get_product_id();
 
-                // Stats.
-                $stats['net_revenue'] += $subtotal;
-                $stats['tax_revenue'] += $subtotal_tax;
-                $stats['items_sold'] += $qty;
+                // Mixed cart lines credit only attributed units, possibly from
+                // several rules. Legacy orders still credit their entire line.
+                foreach ($quantities as $rule_id => $qty) {
+                    $share = $qty / $line_qty;
+                    $subtotal = $line_subtotal * $share;
+                    $subtotal_tax = $line_tax * $share;
 
-                // Daily WB revenue.
-                if (isset($day_wb[$day_key])) {
-                    $day_wb[$day_key] += $subtotal;
-                }
+                    $stats['net_revenue'] += $subtotal;
+                    $stats['tax_revenue'] += $subtotal_tax;
+                    $stats['items_sold'] += $qty;
 
-                // Rules aggregation.
-                if (!isset($rules_data[$rule_id])) {
-                    $rules_data[$rule_id] = array('revenue' => 0, 'items' => 0);
-                }
-                $rules_data[$rule_id]['revenue'] += $subtotal;
-                $rules_data[$rule_id]['items'] += $qty;
+                    if (isset($day_wb[$day_key])) {
+                        $day_wb[$day_key] += $subtotal;
+                    }
 
-                // Products aggregation.
-                if (!isset($products_data[$product_id])) {
-                    $products_data[$product_id] = array('revenue' => 0, 'count' => 0);
+                    if (!isset($rules_data[$rule_id])) {
+                        $rules_data[$rule_id] = array('revenue' => 0, 'items' => 0);
+                    }
+                    $rules_data[$rule_id]['revenue'] += $subtotal;
+                    $rules_data[$rule_id]['items'] += $qty;
+
+                    if (!isset($products_data[$product_id])) {
+                        $products_data[$product_id] = array('revenue' => 0, 'count' => 0);
+                    }
+                    $products_data[$product_id]['revenue'] += $subtotal;
+                    $products_data[$product_id]['count'] += $qty;
                 }
-                $products_data[$product_id]['revenue'] += $subtotal;
-                $products_data[$product_id]['count'] += $qty;
             }
 
             if ($order_has_wb) {
@@ -619,7 +623,7 @@ class WooBooster_Analytics
             <?php
             $this->render_card(__('WB Net Revenue', 'ffl-funnels-addons'), wc_price($stats['net_revenue']), $stats['net_revenue'], $prev_stats['net_revenue']);
             $this->render_card(__('Tax Generated', 'ffl-funnels-addons'), wc_price($stats['tax_revenue']), $stats['tax_revenue'], $prev_stats['tax_revenue']);
-            $this->render_card(__('Items Sold', 'ffl-funnels-addons'), number_format_i18n($stats['items_sold']), $stats['items_sold'], $prev_stats['items_sold']);
+            $this->render_card(__('Items Sold', 'ffl-funnels-addons'), $this->format_quantity($stats['items_sold']), $stats['items_sold'], $prev_stats['items_sold']);
             $this->render_card(__('% of Total Revenue', 'ffl-funnels-addons'), $pct . '%', null, null);
             ?>
         </div>
@@ -632,6 +636,16 @@ class WooBooster_Analytics
             ?>
         </div>
         <?php
+    }
+
+    /**
+     * Attributed unit counts can be fractional after a proportional cart
+     * reduction; show one decimal only when the value is not a whole number.
+     */
+    private function format_quantity($quantity)
+    {
+        $quantity = (float) $quantity;
+        return number_format_i18n($quantity, abs($quantity - round($quantity)) < 0.05 ? 0 : 1);
     }
 
     /**
@@ -686,7 +700,7 @@ class WooBooster_Analytics
                     </div>
                     <div class="wba-funnel__step">
                         <div class="wba-funnel__icon">✅</div>
-                        <div class="wba-funnel__count"><?php echo esc_html(number_format_i18n($conversion['purchased'])); ?>
+                        <div class="wba-funnel__count"><?php echo esc_html($this->format_quantity($conversion['purchased'])); ?>
                         </div>
                         <div class="wba-funnel__label"><?php esc_html_e('Purchased Items', 'ffl-funnels-addons'); ?></div>
                     </div>
@@ -742,7 +756,7 @@ class WooBooster_Analytics
                                 <tr>
                                     <td><?php echo esc_html($row['name']); ?></td>
                                     <td style="text-align:right;"><?php echo wp_kses_post(wc_price($row['revenue'])); ?></td>
-                                    <td style="text-align:right;"><?php echo esc_html(number_format_i18n($row['items'])); ?></td>
+                                    <td style="text-align:right;"><?php echo esc_html($this->format_quantity($row['items'])); ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -784,7 +798,7 @@ class WooBooster_Analytics
                                         </div>
                                     </td>
                                     <td style="text-align:right;"><?php echo wp_kses_post(wc_price($row['revenue'])); ?></td>
-                                    <td style="text-align:right;"><?php echo esc_html(number_format_i18n($row['count'])); ?></td>
+                                    <td style="text-align:right;"><?php echo esc_html($this->format_quantity($row['count'])); ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>

@@ -2,6 +2,12 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.55.4] - 2026-10-08
+
+### Fixed
+- **WooBooster attribution:** recommendation analytics no longer change cart-item identity, so identical ordinary and recommended additions consolidate. Merged lines retain quantities per recommendation rule; purchase analytics credit only those quantities and their proportional subtotal/tax, while historic `_wb_source_rule` orders retain their whole-line attribution. Quantity reductions preserve attribution proportions; manual increases remain organic. Existing split carts and orders are not rewritten.
+- **WB Analytics:** fractional attributed units (from proportional quantity reductions) are kept to four decimals and shown with one decimal instead of being rounded to whole numbers.
+
 ## [1.55.3] - 2026-10-02
 
 ### Added
