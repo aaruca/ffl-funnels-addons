@@ -2,6 +2,11 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.55.7] - 2026-10-13
+
+### Fixed
+- **Google Merchant Policy:** products restored from the trash are re-evaluated at `untrashed_post` priority 80, before Google for WooCommerce's priority-90 upload/removal handler. Old Allow decisions and channel visibility can no longer survive a restore after category rules or the detector change. Regression coverage verifies the stale decision is replaced before Google reads the product.
+
 ## [1.55.6] - 2026-10-13
 
 ### Fixed
