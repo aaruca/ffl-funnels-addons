@@ -38,6 +38,9 @@ class Google_Merchant_Policy_Engine
             add_action($hook, [__CLASS__, 'on_wc_product_saved'], 80, 2);
         }
         add_action('woocommerce_process_product_meta', [__CLASS__, 'on_wc_product_saved'], 80, 1);
+        // Restoring a trashed product does not run WooCommerce's save hooks.
+        // Re-check its old decision before Google's untrashed_post handler (90).
+        add_action('untrashed_post', [__CLASS__, 'on_wc_product_saved'], 80, 1);
         add_action('created_product_cat', [__CLASS__, 'on_category_created'], 10, 2);
         add_action('edit_terms', [__CLASS__, 'remember_category_parent'], 10, 2);
         add_action('edited_product_cat', [__CLASS__, 'on_category_edited'], 40, 2);
