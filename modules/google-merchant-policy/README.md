@@ -81,9 +81,9 @@ Scanned text: the product name, short description, description (HTML removed) an
 |---|---|
 | ammunition | ammunition, ammo, cartridge, round, primer, gunpowder, smokeless powder |
 | firearm | firearm, handgun, pistol, revolver, rifle, shotgun, machine gun, short-barreled (or short barreled), SBR, NFA |
-| regulated part | receiver (including upper and lower receiver), frame, barrel, trigger, bolt carrier, magazine, suppressor, silencer |
+| regulated part | receiver (including upper and lower receiver), frame, barrel, trigger, bolt carrier, magazine, suppressor, silencer, slide completion kit, slide assembly, firing pin, fire-control group/kit |
 | weapon accessory | riflescope, rifle/gun scope, weapon/gun/night sight, red dot, reflex/holographic/laser sight, sight magnifier, night vision/thermal scope or sight, thermal SCP, scope ring/base/mount/part, optic mount, bipod, gun/rifle/shooting tripod, gun/rifle/pistol grip, gun/rifle stock, bump stock, conversion kit |
-| other weapon | less-lethal weapon, taser, tazer, stun gun, pepper spray, expandable/telescopic/tactical/police baton (including steel baton), tactical/self-defense pen, switchblade, balisong, butterfly/fighting/combat/military knife, push dagger, throwing star/axe, brass knuckles, sword-cane |
+| other weapon | less-lethal weapon, taser, tazer, stun gun, pepper spray, expandable/telescopic/tactical/police baton (including steel baton), tactical/self-defense pen, switchblade, balisong, butterfly/fighting/combat/military/automatic/spring-assisted/assisted-opening knife, OTF/out-the-front knife/dagger/tanto, push dagger, throwing star/axe, brass knuckles, sword-cane |
 
 For the firearm list only, accessory phrases are ignored: *gun, firearm, handgun, pistol, revolver, rifle* or *shotgun* directly followed by *case, safe, cabinet, vault, lock, rack, bag, holster, sling* or *cleaning mat* (optionally with *carrying, storage, hard* or *soft* in between). "Rifle Case" passes; "Precision Rifle with case" is still blocked. The exception does not apply to the other lists: "Range Bag with magazine pouch" is blocked as a regulated part.
 

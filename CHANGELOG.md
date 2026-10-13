@@ -2,6 +2,11 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.55.6] - 2026-10-13
+
+### Fixed
+- **Google Merchant Policy:** catch OTF/out-the-front, automatic and assisted-opening knife descriptions even when imports put them in fishing or hunting categories; also catch slide completion kits, slide assemblies, firing pins and fire-control kits outside the Gun Parts category. Regression fixtures cover misclassified live catalog products.
+
 ## [1.55.5] - 2026-10-13
 
 ### Fixed
