@@ -82,11 +82,14 @@ Scanned text: the product name, short description, description (HTML removed) an
 | ammunition | ammunition, ammo, cartridge, round, primer, gunpowder, smokeless powder |
 | firearm | firearm, handgun, pistol, revolver, rifle, shotgun, machine gun, short-barreled (or short barreled), SBR, NFA |
 | regulated part | receiver (including upper and lower receiver), frame, barrel, trigger, bolt carrier, magazine, suppressor, silencer |
-| weapon accessory | rifle scope, gun scope, weapon sight, night vision scope, thermal scope, less-lethal weapon, taser, tazer, stun gun |
+| weapon accessory | riflescope, rifle/gun scope, weapon/gun/night sight, red dot, reflex/holographic/laser sight, sight magnifier, night vision/thermal scope or sight, thermal SCP, scope ring/base/mount/part, optic mount, bipod, gun/rifle/shooting tripod, gun/rifle/pistol grip, gun/rifle stock, bump stock, conversion kit |
+| other weapon | less-lethal weapon, taser, tazer, stun gun, pepper spray, expandable/telescopic/tactical/police baton (including steel baton), tactical/self-defense pen, switchblade, balisong, butterfly/fighting/combat/military knife, push dagger, throwing star/axe, brass knuckles, sword-cane |
 
 For the firearm list only, accessory phrases are ignored: *gun, firearm, handgun, pistol, revolver, rifle* or *shotgun* directly followed by *case, safe, cabinet, vault, lock, rack, bag, holster, sling* or *cleaning mat* (optionally with *carrying, storage, hard* or *soft* in between). "Rifle Case" passes; "Precision Rifle with case" is still blocked. The exception does not apply to the other lists: "Range Bag with magazine pouch" is blocked as a regulated part.
 
 Limits:
+
+- Do not set a mixed parent such as **Scopes, Sights & Optics** or **Duty Gear** to Allow without reviewing its descendants. Use Pending on the mixed parent, Block on firearm sights/mounts and weapons, and explicit Allow on reviewed binoculars, spotting scopes, rangefinders, covers and ordinary carrying accessories. The safety scan catches common wording, not every model abbreviation. After updating from a version before 1.55.5, review category rules and run a catalog scan so existing submissions are withdrawn.
 
 - It is keyword matching. Everyday senses of *round, frame, barrel, trigger, magazine, primer* or *cartridge* cause blocks, and anything not in the lists (brand or model names, for example) is not detected.
 - Category names are scanned, so while the scan is on every product in a category whose name matches (for example *Magazines*) is blocked, whatever that category's rule.
@@ -177,7 +180,7 @@ Google for WooCommerce data written (Enforce only): `_wc_gla_visibility`. Read o
 
 **Filter**
 
-- `ffla_google_merchant_hard_block_patterns` (`array $patterns`, `WC_Product $product`): the safety-scan keyword lists as label => regex. Default labels: `ammunition`, `firearm`, `regulated_part`, `weapon_accessory`. Runs only while the safety scan is on, for the product (a variation's parent) and again for a variation itself. The text is lowercased; the `firearm` pattern runs on the text with accessory phrases removed, every other pattern on the full text. Each match adds "Hard block: restricted {label} content detected." (underscores become spaces). Non-string values are ignored.
+- `ffla_google_merchant_hard_block_patterns` (`array $patterns`, `WC_Product $product`): the safety-scan keyword lists as label => regex. Default labels: `ammunition`, `firearm`, `regulated_part`, `weapon_accessory`, `other_weapon`. Runs only while the safety scan is on, for the product (a variation's parent) and again for a variation itself. The text is lowercased; the `firearm` pattern runs on the text with accessory phrases removed, every other pattern on the full text. Each match adds "Hard block: restricted {label} content detected." (underscores become spaces). Non-string values are ignored.
 
 ```php
 add_filter('ffla_google_merchant_hard_block_patterns', function ($patterns, $product) {
@@ -218,7 +221,7 @@ The module fires no actions or other filters of its own.
 **Tests**
 
 ```bash
-php tests/smoke/google-merchant-policy-smoke.php                                  # offline, 90 checks
+php tests/smoke/google-merchant-policy-smoke.php                                  # offline regression checks
 php tests/smoke/google-merchant-policy-smoke.php /path/to/wp-includes/class-wp-hook.php    # adds real WP_Hook dispatch checks
 php tests/smoke/google-merchant-gla-contract.php /path/to/google-listings-and-ads          # 54 checks against a real copy (or set FFLA_GLA_ROOT)
 node tests/smoke/google-merchant-policy-ui-smoke.js [screenshot-dir]                        # Playwright + Chrome, settings page

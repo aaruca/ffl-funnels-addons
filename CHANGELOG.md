@@ -2,6 +2,11 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.55.5] - 2026-10-13
+
+### Fixed
+- **Google Merchant Policy:** the restricted-content scan now recognizes common product and category names for gun sights, red dots, thermal sights, scope rings/bases/mounts, sight magnifiers, bipods, firearm tripods, grips, stocks, and conversion kits. It also catches expandable batons, tactical pens, pepper spray, and prohibited knife designs. These items no longer pass merely because a category is set to Allow. Generic binoculars, spotting scopes, camera tripods, rangefinders, covers, and safety accessories remain outside the new patterns. Existing manual overrides retain their documented behavior; run a catalog scan after reviewing category rules to withdraw previously submitted products.
+
 ## [1.55.4] - 2026-10-08
 
 ### Fixed

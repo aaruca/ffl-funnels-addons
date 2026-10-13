@@ -53,7 +53,7 @@ function get_term_meta($id, $key, $single = true) { return $GLOBALS['policies'][
 function update_term_meta($id, $key, $value) { $GLOBALS['policies'][$id] = $value; return true; }
 function get_term($id, $taxonomy = '') { return (object) ['parent' => $id === 2 ? 1 : 0, 'name' => 'Accessories']; }
 function wp_get_post_terms($id, $taxonomy, $args = []) {
-    return ($args['fields'] ?? '') === 'names' ? ['Accessories'] : ($GLOBALS['products'][$id]->terms ?? []);
+    return ($args['fields'] ?? '') === 'names' ? ($GLOBALS['products'][$id]->term_names ?? ['Accessories']) : ($GLOBALS['products'][$id]->terms ?? []);
 }
 function wc_get_product($id) { return $GLOBALS['products'][$id] ?? false; }
 function callback_key($cb) {
@@ -165,7 +165,7 @@ class FakeRequest {
     public function get_method() { return $this->method; }
 }
 class Product {
-    public $id, $name, $parent = 0, $description = '', $meta = [], $terms = [1], $type = 'simple', $on_save, $children = [];
+    public $id, $name, $parent = 0, $description = '', $meta = [], $terms = [1], $term_names = ['Accessories'], $type = 'simple', $on_save, $children = [];
     public function get_children() { return $this->children; }
     public function delete_meta_data($key) { unset($this->meta[$key]); }
     // A WooCommerce save runs the product update hooks: this addon (80), Google (90).
@@ -189,6 +189,40 @@ use Google_Merchant_Policy_Google_Sync as Sync;
 use Google_Merchant_Policy_Reconciler as Scan;
 update_option(Engine::OPTION, ['mode' => 'enforce', 'content_safety' => '1', 'batch_size' => 10]);
 function decision($id) { Engine::reset_runtime_cache(); return Engine::evaluate_product($GLOBALS['products'][$id])['status']; }
+// Catalog wording that escaped the safety scan under an Allow category.
+foreach ([
+    ['CANIK MECANIK MO1 MINI RED DOT SIGHT', 'Red Dots Sights'],
+    ['GLOCK OEM NIGHT SIGHT SET AMGLO .200', 'Gun Sights'],
+    ['ATN THOR5 5-40X 640X480 THERMAL SCP', 'Night Vision'],
+    ['RIX LPR-L6R 640X512 3-9X50 LRF THERM', 'Thermal Sights'],
+    ['IRAYUSA ADM-RQD MOUNT FOR RICO', 'Red Dot Mounts'],
+    ['Leupold 51041 Ringmounts 30mm Tube', 'Scope Rings'],
+    ['Leupold 50021 Standard Base', 'Scope Bases'],
+    ['Harris adjustable support', 'Bipods & Tripods'],
+    ['Cold Steel Expandable Steel Baton 21 inch', 'Duty Gear'],
+    ['CRKT WILLIAMS TACTICAL PEN', 'Duty Gear'],
+    ['Compact pepper spray', 'Personal Defense'],
+    ['Benchmade Balisong', 'Knives'],
+    ['AR conversion kit', 'Accessories'],
+] as $fixture) {
+    $products[900] = new Product(900, $fixture[0]);
+    $products[900]->term_names = [$fixture[1]];
+    check(decision(900) === 'blocked', 'Restricted catalog wording blocked: ' . $fixture[0]);
+    Engine::apply_to_product($products[900]);
+    check($products[900]->get_meta(Engine::VISIBILITY_META) === 'dont-sync-and-show', 'Restricted product excluded from Google: ' . $fixture[0]);
+}
+foreach (['Binoculars 10x42', 'Spotting Scope 20-60x', 'Camera Tripod', 'Range Finder', 'Gun Lock', 'Rifle Safe', 'Scope Cover', 'Scope Cleaning Cloth', 'Hearing Protection'] as $name) {
+    $products[900] = new Product(900, $name);
+    check(decision(900) === 'allowed', 'Ordinary optics and safety accessories remain allowed: ' . $name);
+}
+// Upload filtering evaluates the policy even if visibility is still enabled.
+$products[900] = new Product(900, 'CANIK MINI RED DOT SIGHT');
+$products[900]->meta[Engine::VISIBILITY_META] = 'sync-and-show';
+$products[901] = new Product(901, 'Binoculars 10x42');
+Engine::reset_runtime_cache();
+check(Engine::filter_sync_ready_products([$products[900], $products[901]]) === [$products[901]], 'Google sync-ready list rejects missed optics before upload');
+unset($products[900], $products[901]);
+Engine::reset_runtime_cache();
 $products[1] = new Product(1, 'Precision Rifle with case');
 check(decision(1) === 'blocked', 'Included case must not neutralize firearm detection');
 $products[2] = new Product(2, 'Rifle Case');
