@@ -204,6 +204,14 @@ foreach ([
     ['Compact pepper spray', 'Personal Defense'],
     ['Benchmade Balisong', 'Knives'],
     ['AR conversion kit', 'Accessories'],
+    ['CobraTec FS-3 Fishing Lure Medium 3 inch OTF Dagger', 'Freshwater Fishing Tackle'],
+    ['CobraTec FS-3 Fishing Lure 3 inch OTF Tanto', 'Freshwater Fishing Tackle'],
+    ['Automatic Knife', 'Hunting Accessories'],
+    ['Spring-Assisted Knife', 'Hunting Accessories'],
+    ['Rival Arms Slide Completion Kit fits Glock Gen5', 'Hunting Accessories'],
+    ['Glock Firing Pin', 'Accessories'],
+    ['Butterfly Knife', 'Hunting Accessories'],
+    ['Glock Slide Assembly', 'Hunting Accessories'],
 ] as $fixture) {
     $products[900] = new Product(900, $fixture[0]);
     $products[900]->term_names = [$fixture[1]];

@@ -24,7 +24,7 @@ class Google_Merchant_Policy_Engine
     const OVERRIDE_META = '_ffla_gmp_override';
     /** 'manual', or 'google-for-woocommerce' for a kept Channel visibility exclusion. */
     const OVERRIDE_SOURCE_META = '_ffla_gmp_override_source';
-    const ENGINE_VERSION = '1.3';
+    const ENGINE_VERSION = '1.4';
 
     /** @var array<int,array> */
     private static $decision_cache = [];
@@ -470,12 +470,12 @@ class Google_Merchant_Policy_Engine
         $patterns = apply_filters('ffla_google_merchant_hard_block_patterns', [
             'ammunition' => '/\b(ammunition|ammo|cartridges?|rounds?|primers?|gunpowder|smokeless powder)\b/i',
             'firearm' => '/\b(firearms?|handguns?|pistols?|revolvers?|rifles?|shotguns?|machine guns?|short[- ]barreled|sbr|nfa)\b/i',
-            'regulated_part' => '/\b(receivers?|frames?|barrels?|triggers?|bolt carriers?|upper receivers?|lower receivers?|magazines?|suppressors?|silencers?)\b/i',
+            'regulated_part' => '/\b(receivers?|frames?|barrels?|triggers?|bolt carriers?|upper receivers?|lower receivers?|magazines?|suppressors?|silencers?|slide (?:completion kits?|assembl(?:y|ies))|firing pins?|fire control (?:groups?|kits?))\b/i',
             // Match catalog/category wording, not just "rifle scope". Do not
             // block generic optics: binoculars, spotting scopes and rangefinders
             // are not firearm sights, and camera tripods are not gun supports.
             'weapon_accessory' => '/\b(riflescopes?|rifle scopes?|gun scopes?|weapon sights?|gun sights?|night sights?|red[- ]dots?(?: sights?)?|reflex sights?|holographic sights?|laser sights?|sight magnifiers?|night vision (?:scopes?|sights?)|thermal (?:scopes?|sights?|scp)|scope (?:rings?|bases?|mounts?|parts?)|optic(?:s)? mounts?|bipods?|(?:gun|rifle|shooting) tripods?|(?:gun|rifle|pistol) grips?|(?:gun|rifle) stocks?|bump stocks?|conversion kits?)\b/i',
-            'other_weapon' => '/\b(less[- ]lethal weapons?|tasers?|tazers?|stun guns?|pepper sprays?|(?:expandable|telescopic|tactical|police) (?:steel )?batons?|tactical pens?|self[- ]defen[cs]e pens?|switchblades?|balisongs?|butterfly knives?|(?:fighting|combat|military) knives?|push daggers?|throwing (?:stars?|axes?)|brass knuckles?|sword[- ]canes?)\b/i',
+            'other_weapon' => '/\b(less[- ]lethal weapons?|tasers?|tazers?|stun guns?|pepper sprays?|(?:expandable|telescopic|tactical|police) (?:steel )?batons?|tactical pens?|self[- ]defen[cs]e pens?|switchblades?|balisongs?|butterfly (?:knife|knives)|(?:fighting|combat|military|automatic|spring[- ]assisted|assisted[- ]opening) (?:knife|knives)|(?:otf|out[- ]the[- ]front) (?:knife|knives|daggers?|tanto)|push daggers?|throwing (?:stars?|axes?)|brass knuckles?|sword[- ]canes?)\b/i',
         ], $product);
 
         foreach ((array) $patterns as $label => $pattern) {
