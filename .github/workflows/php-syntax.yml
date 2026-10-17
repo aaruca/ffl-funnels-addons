@@ -51,6 +51,8 @@ jobs:
           php tests/smoke/tax-split-payment-smoke.php
           php tests/smoke/tax-order-context-smoke.php
           php tests/smoke/tax-report-shipping-fee-smoke.php
+          php tests/smoke/tax-report-memory-smoke.php
+          php tests/smoke/tax-report-email-smoke.php
 
       - name: Google Merchant policy and Google for WooCommerce compatibility
         run: |

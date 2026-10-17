@@ -12,6 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+require_once __DIR__ . '/class-tax-report-memory.php';
 require_once __DIR__ . '/class-tax-report-sale-identity.php';
 
 class Tax_Report_Service
@@ -177,6 +178,7 @@ class Tax_Report_Service
         }
 
         $filters = self::normalize_filters($filters);
+        Tax_Report_Memory::prepare();
         $this->counted_sales = [];
         $this->shipping_fee_keys = null;
         $this->fee_shipping_orders = [];
@@ -429,6 +431,64 @@ class Tax_Report_Service
         $report['manifest']['limitations'] = $this->get_limitations($report);
 
         return $report;
+    }
+
+    /**
+     * How many orders a report for these filters reads: orders created in the
+     * period with the selected or Split Payment statuses. One COUNT query.
+     *
+     * Used to decide whether a report can be built while the browser waits.
+     *
+     * @throws InvalidArgumentException When the filters are invalid.
+     */
+    public static function estimate_order_count(array $filters): int
+    {
+        if (!function_exists('wc_get_orders')) {
+            return 0;
+        }
+        $filters = self::normalize_filters($filters);
+        $timezone = wp_timezone();
+        $from = new DateTimeImmutable($filters['date_from'] . ' 00:00:00', $timezone);
+        $to = new DateTimeImmutable($filters['date_to'] . ' 23:59:59', $timezone);
+        $result = wc_get_orders([
+            'type'         => 'shop_order',
+            'status'       => array_values(array_unique(array_merge($filters['statuses'], Tax_Report_Sale_Identity::PLAN_STATUSES))),
+            'date_created' => $from->getTimestamp() . '...' . $to->getTimestamp(),
+            'limit'        => 1,
+            'page'         => 1,
+            'paginate'     => true,
+            'return'       => 'ids',
+        ]);
+        return is_object($result) && isset($result->total) ? max(0, (int) $result->total) : 0;
+    }
+
+    /**
+     * Changes whenever an order or refund is created, edited, trashed or
+     * deleted: the count and the latest modification time of both types.
+     * Empty when it cannot be read, so callers must not cache on it.
+     */
+    public static function order_data_fingerprint(): string
+    {
+        global $wpdb;
+        if (!isset($wpdb) || !is_object($wpdb) || !method_exists($wpdb, 'get_row')) {
+            return '';
+        }
+
+        $order_util = '\Automattic\WooCommerce\Utilities\OrderUtil';
+        $hpos = class_exists($order_util) && method_exists($order_util, 'custom_orders_table_usage_is_enabled')
+            && $order_util::custom_orders_table_usage_is_enabled();
+        if ($hpos && method_exists($order_util, 'get_table_for_orders')) {
+            $table = (string) $order_util::get_table_for_orders();
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- WooCommerce table name.
+            $row = $wpdb->get_row("SELECT COUNT(*) AS records, MAX(date_updated_gmt) AS modified FROM {$table} WHERE type IN ('shop_order', 'shop_order_refund')", ARRAY_A);
+        } else {
+            $row = $wpdb->get_row("SELECT COUNT(*) AS records, MAX(post_modified_gmt) AS modified FROM {$wpdb->posts} WHERE post_type IN ('shop_order', 'shop_order_refund')", ARRAY_A);
+        }
+
+        if (!is_array($row) || !isset($row['records'])) {
+            return '';
+        }
+        return md5((string) $row['records'] . '|' . (string) ($row['modified'] ?? ''));
     }
 
     /**
@@ -2384,6 +2444,8 @@ class Tax_Report_Service
                 }
                 $this->aggregate_exceptions($exception_totals, [$exception]);
             }
+            unset($refunds, $refund, $order, $result);
+            Tax_Report_Memory::release_page();
             $page++;
         } while ($page <= $pages);
     }

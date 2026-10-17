@@ -67,6 +67,7 @@ class Tax_Reports_Module extends FFLA_Module
     {
         wp_clear_scheduled_hook('ffla_tax_report_monthly_email');
         wp_clear_scheduled_hook('ffla_tax_report_email_send');
+        wp_clear_scheduled_hook('ffla_tax_report_on_demand');
 
         if (!class_exists('Tax_Report_Email')) {
             require_once FFLA_PATH . 'modules/tax-rates/includes/class-tax-report-email.php';

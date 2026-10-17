@@ -17,11 +17,16 @@ class Tax_Report_Email
     const SEND_HOOK = 'ffla_tax_report_email_send';
     const ACTION_GROUP = 'ffla-tax-reports';
     const LOCK_TRANSIENT = 'ffla_tax_report_email_lock';
+    /** Background build of one report, emailed to the admin who asked for it. */
+    const ON_DEMAND_HOOK = 'ffla_tax_report_on_demand';
+    /** How many times a request waits for another report email to finish. */
+    const ON_DEMAND_MAX_ATTEMPTS = 6;
 
     public static function init(): void
     {
         add_action(self::SCHEDULE_HOOK, [__CLASS__, 'run_scheduled'], 10, 1);
         add_action(self::SEND_HOOK, [__CLASS__, 'run'], 10, 4);
+        add_action(self::ON_DEMAND_HOOK, [__CLASS__, 'run_on_demand'], 10, 3);
         // WooCommerce initializes Action Scheduler at init priority 1.
         add_action('init', [__CLASS__, 'ensure_schedule'], 20);
     }
@@ -207,9 +212,11 @@ class Tax_Report_Email
         if (self::action_scheduler_ready() && function_exists('as_unschedule_all_actions')) {
             as_unschedule_all_actions(self::SCHEDULE_HOOK, [], '');
             as_unschedule_all_actions(self::SEND_HOOK, [], '');
+            as_unschedule_all_actions(self::ON_DEMAND_HOOK, [], '');
         }
         wp_clear_scheduled_hook(self::SCHEDULE_HOOK);
         wp_clear_scheduled_hook(self::SEND_HOOK);
+        wp_clear_scheduled_hook(self::ON_DEMAND_HOOK);
     }
 
     public static function get_next_run(): int
@@ -293,8 +300,6 @@ class Tax_Report_Email
         }
 
         set_transient(self::LOCK_TRANSIENT, 1, 30 * MINUTE_IN_SECONDS);
-        $attachments = [];
-        $package = [];
         $report = [];
         try {
             if (empty($settings['recipients'])) {
@@ -315,40 +320,16 @@ class Tax_Report_Email
                 'report_detail'           => $settings['report_detail'],
                 'include_pii'             => $settings['include_pii'] === '1',
             ];
-            $service = new Tax_Report_Service();
-            $report = $service->generate($filters);
-            $package = Tax_Report_Exporter::create_package($report);
+            $sent = self::deliver($filters, $settings['recipients'], $mode, (int) $settings['max_attachment_mb'], $report);
 
-            $max_bytes = (int) $settings['max_attachment_mb'] * 1024 * 1024;
-            $summary_only = (int) ($package['bytes'] ?? 0) > $max_bytes;
-            if ($summary_only) {
-                Tax_Report_Exporter::cleanup_file((string) ($package['path'] ?? ''));
-                $package = Tax_Report_Exporter::create_summary_pdf($report);
-            }
-            $attachments[] = (string) $package['path'];
-
-            $subject = self::build_subject($report, $mode);
-            $message = self::build_message($report, $settings, $package, $summary_only);
-            $headers = ['Content-Type: text/html; charset=UTF-8'];
-            $sent = wp_mail($settings['recipients'], $subject, $message, $headers, $attachments);
-            if (!$sent) {
-                throw new RuntimeException(__('WordPress could not hand the message to the configured mail transport.', 'ffl-funnels-addons'));
-            }
-
-            self::record_history([
-                'status'          => $summary_only ? 'sent_summary_only' : 'sent',
+            self::record_history(array_merge([
                 'mode'            => $mode,
                 'attempt'         => $attempt,
                 'date_from'       => $date_from,
                 'date_to'         => $date_to,
                 'report_id'       => (string) ($report['manifest']['report_id'] ?? ''),
                 'recipients'      => $settings['recipients'],
-                'attachment_name' => (string) ($package['filename'] ?? ''),
-                'attachment_bytes'=> (int) ($package['bytes'] ?? 0),
-                'message'         => $summary_only
-                    ? 'The filing package exceeded the configured limit, so the PDF filing summary was sent.'
-                    : 'The sales tax filing report was accepted by the mail transport.',
-            ]);
+            ], $sent));
             return true;
         } catch (Throwable $e) {
             $error = sanitize_text_field($e->getMessage());
@@ -368,13 +349,182 @@ class Tax_Report_Email
             }
             return false;
         } finally {
+            delete_transient(self::LOCK_TRANSIENT);
+        }
+    }
+
+    /**
+     * Queue a report to be built in the background and emailed to one admin.
+     *
+     * Used by "Email me this report" and for downloads too large to build
+     * while the browser waits. The filters travel with the queued action; the
+     * address is read from the user account when the action runs.
+     *
+     * @throws InvalidArgumentException When the filters are invalid.
+     */
+    public static function queue_on_demand(array $filters, int $user_id): bool
+    {
+        if ($user_id <= 0) {
+            return false;
+        }
+        $args = [$user_id, self::on_demand_filters($filters), 0];
+        if (self::has_scheduled_action(self::ON_DEMAND_HOOK, $args)) {
+            return true;
+        }
+        if (self::action_scheduler_ready() && function_exists('as_enqueue_async_action')) {
+            return (int) as_enqueue_async_action(self::ON_DEMAND_HOOK, $args, self::ACTION_GROUP, true) > 0;
+        }
+
+        $scheduled = wp_schedule_single_event(time() + 5, self::ON_DEMAND_HOOK, $args, true);
+        return !is_wp_error($scheduled) && (bool) $scheduled;
+    }
+
+    /**
+     * Build and email a report queued by queue_on_demand().
+     *
+     * @param int   $user_id Admin who asked; the report goes to their account email.
+     * @param array $filters Report filters captured when it was requested.
+     * @param int   $attempt Times this request already waited for another email.
+     */
+    public static function run_on_demand($user_id = 0, $filters = [], $attempt = 0): bool
+    {
+        $user_id = (int) $user_id;
+        $attempt = max(0, (int) $attempt);
+        $filters = is_array($filters) ? $filters : [];
+        $date_from = sanitize_text_field((string) ($filters['date_from'] ?? ''));
+        $date_to = sanitize_text_field((string) ($filters['date_to'] ?? ''));
+
+        $user = $user_id > 0 && function_exists('get_userdata') ? get_userdata($user_id) : false;
+        $email = $user && !empty($user->user_email) && is_email($user->user_email) ? (string) $user->user_email : '';
+        if (!$user || $email === '' || !user_can($user, 'manage_woocommerce')) {
+            self::record_history([
+                'status'    => 'failed',
+                'mode'      => 'on_demand',
+                'attempt'   => $attempt,
+                'date_from' => $date_from,
+                'date_to'   => $date_to,
+                'message'   => 'The person who requested this report can no longer receive sales tax reports.',
+            ]);
+            return false;
+        }
+
+        if (get_transient(self::LOCK_TRANSIENT)) {
+            $retry = $attempt + 1 < self::ON_DEMAND_MAX_ATTEMPTS;
+            if ($retry) {
+                self::schedule_single(time() + 5 * MINUTE_IN_SECONDS, self::ON_DEMAND_HOOK, [$user_id, $filters, $attempt + 1], true);
+            }
+            self::record_history([
+                'status'    => $retry ? 'waiting' : 'failed',
+                'mode'      => 'on_demand',
+                'attempt'   => $attempt,
+                'date_from' => $date_from,
+                'date_to'   => $date_to,
+                'message'   => $retry
+                    ? 'Another tax report email is being generated. This report will try again in 5 minutes.'
+                    : 'Another tax report email kept the queue busy, so this report was not sent. Request it again.',
+            ]);
+            return false;
+        }
+
+        set_transient(self::LOCK_TRANSIENT, 1, 30 * MINUTE_IN_SECONDS);
+        $report = [];
+        try {
+            $filters = self::on_demand_filters($filters);
+            $settings = self::get_settings();
+            $sent = self::deliver($filters, [$email], 'on_demand', (int) $settings['max_attachment_mb'], $report);
+            self::record_history(array_merge([
+                'mode'       => 'on_demand',
+                'attempt'    => $attempt,
+                'date_from'  => $filters['date_from'],
+                'date_to'    => $filters['date_to'],
+                'report_id'  => (string) ($report['manifest']['report_id'] ?? ''),
+                'recipients' => [$email],
+            ], $sent));
+            return true;
+        } catch (Throwable $e) {
+            $error = sanitize_text_field($e->getMessage());
+            self::record_history([
+                'status'     => 'failed',
+                'mode'       => 'on_demand',
+                'attempt'    => $attempt,
+                'date_from'  => $date_from,
+                'date_to'    => $date_to,
+                'report_id'  => (string) ($report['manifest']['report_id'] ?? ''),
+                'recipients' => [$email],
+                'message'    => $error,
+            ]);
+            self::log_error($error, 'on_demand', $attempt);
+            return false;
+        } finally {
+            delete_transient(self::LOCK_TRANSIENT);
+        }
+    }
+
+    /**
+     * The report filters an on-demand request keeps, validated and normalized.
+     *
+     * @throws InvalidArgumentException When the filters are invalid.
+     */
+    private static function on_demand_filters(array $filters): array
+    {
+        $filters = Tax_Report_Service::normalize_filters($filters);
+        return [
+            'date_from'               => $filters['date_from'],
+            'date_to'                 => $filters['date_to'],
+            'statuses'                => array_values($filters['statuses']),
+            'states'                  => array_values($filters['states']),
+            'include_negative_orders' => (bool) $filters['include_negative_orders'],
+            'report_detail'           => $filters['report_detail'],
+            'include_pii'             => (bool) $filters['include_pii'],
+        ];
+    }
+
+    /**
+     * Generate, package and email one report, then delete its temporary files.
+     *
+     * @param array $report Receives the generated report so a failure can still name it.
+     * @return array History fields describing what was sent.
+     * @throws Throwable When generation, packaging or the mail handoff fails.
+     */
+    private static function deliver(array $filters, array $recipients, string $mode, int $max_attachment_mb, array &$report): array
+    {
+        $attachments = [];
+        $package = [];
+        try {
+            $service = new Tax_Report_Service();
+            $report = $service->generate($filters);
+            $package = Tax_Report_Exporter::create_package($report);
+
+            $max_bytes = max(1, $max_attachment_mb) * 1024 * 1024;
+            $summary_only = (int) ($package['bytes'] ?? 0) > $max_bytes;
+            if ($summary_only) {
+                Tax_Report_Exporter::cleanup_file((string) ($package['path'] ?? ''));
+                $package = Tax_Report_Exporter::create_summary_pdf($report);
+            }
+            $attachments[] = (string) $package['path'];
+
+            $subject = self::build_subject($report, $mode);
+            $message = self::build_message($report, $mode, !empty($filters['include_pii']), $package, $summary_only);
+            $headers = ['Content-Type: text/html; charset=UTF-8'];
+            if (!wp_mail($recipients, $subject, $message, $headers, $attachments)) {
+                throw new RuntimeException(__('WordPress could not hand the message to the configured mail transport.', 'ffl-funnels-addons'));
+            }
+
+            return [
+                'status'           => $summary_only ? 'sent_summary_only' : 'sent',
+                'attachment_name'  => (string) ($package['filename'] ?? ''),
+                'attachment_bytes' => (int) ($package['bytes'] ?? 0),
+                'message'          => $summary_only
+                    ? 'The filing package exceeded the configured limit, so the PDF filing summary was sent.'
+                    : 'The sales tax filing report was accepted by the mail transport.',
+            ];
+        } finally {
             foreach ($attachments as $attachment) {
                 Tax_Report_Exporter::cleanup_file((string) $attachment);
             }
             if (!empty($package['path'])) {
                 Tax_Report_Exporter::cleanup_file((string) $package['path']);
             }
-            delete_transient(self::LOCK_TRANSIENT);
         }
     }
 
@@ -413,7 +563,7 @@ class Tax_Report_Email
         );
     }
 
-    private static function build_message(array $report, array $settings, array $attachment, bool $summary_only): string
+    private static function build_message(array $report, string $mode, bool $include_pii, array $attachment, bool $summary_only): string
     {
         $manifest = (array) ($report['manifest'] ?? []);
         $filters = (array) ($manifest['filters'] ?? []);
@@ -424,7 +574,9 @@ class Tax_Report_Email
             return ($state['filing_status'] ?? '') === __('Needs review', 'ffl-funnels-addons');
         }));
 
-        $message = '<h2>' . esc_html__('Monthly sales tax filing report', 'ffl-funnels-addons') . '</h2>';
+        $message = '<h2>' . esc_html($mode === 'on_demand'
+            ? __('Sales tax filing report', 'ffl-funnels-addons')
+            : __('Monthly sales tax filing report', 'ffl-funnels-addons')) . '</h2>';
         $message .= '<p><strong>' . esc_html__('Period:', 'ffl-funnels-addons') . '</strong> '
             . esc_html((string) ($filters['date_from'] ?? '') . ' — ' . (string) ($filters['date_to'] ?? '')) . '<br>';
         $message .= '<strong>' . esc_html__('Orders:', 'ffl-funnels-addons') . '</strong> ' . esc_html((string) ($stats['orders'] ?? 0)) . '<br>';
@@ -453,9 +605,11 @@ class Tax_Report_Email
             $message .= '<p><strong>' . esc_html__('Attachment notice:', 'ffl-funnels-addons') . '</strong> '
                 . esc_html__('The filing package exceeded the configured email size limit, so the PDF filing summary is attached.', 'ffl-funnels-addons') . '</p>';
         } else {
-            $message .= '<p>' . esc_html__('The filing package is attached with state totals, jurisdiction detail, XLSX and PDF. An order audit is included only when enabled in the schedule.', 'ffl-funnels-addons') . '</p>';
+            $message .= '<p>' . esc_html($mode === 'on_demand'
+                ? __('The filing package is attached with state totals, jurisdiction detail, XLSX and PDF. An order audit is included only when the shipping-address audit option was selected.', 'ffl-funnels-addons')
+                : __('The filing package is attached with state totals, jurisdiction detail, XLSX and PDF. An order audit is included only when enabled in the schedule.', 'ffl-funnels-addons')) . '</p>';
         }
-        if ($settings['include_pii'] === '1') {
+        if ($include_pii) {
             $message .= '<p><strong>' . esc_html__('Confidential:', 'ffl-funnels-addons') . '</strong> '
                 . esc_html__('This attachment includes customer and shipping-address information. Store and forward it securely.', 'ffl-funnels-addons') . '</p>';
         }

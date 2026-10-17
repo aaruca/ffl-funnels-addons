@@ -12,6 +12,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+require_once __DIR__ . '/class-tax-report-memory.php';
+
 if (class_exists('Tax_Report_Reconciliation', false)) {
     return;
 }
@@ -670,6 +672,8 @@ class Tax_Report_Reconciliation
                         $totals['orders_count']++;
                     }
                 }
+                unset($orders, $order, $response);
+                Tax_Report_Memory::release_page();
                 $page++;
             } while ($page <= $pages);
 
@@ -726,6 +730,8 @@ class Tax_Report_Reconciliation
                         $totals['shipping_tax_minor'] -= $components['shipping'];
                         $totals['tax_total_minor'] -= $components['total'];
                     }
+                    unset($refunds, $refund, $parent, $response);
+                    Tax_Report_Memory::release_page();
                     $page++;
                 } while ($page <= $pages);
             }

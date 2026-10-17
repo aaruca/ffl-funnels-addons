@@ -14,6 +14,20 @@ class Tax_Reports_Admin
     /** @var string */
     private static $tool_lock_token = '';
 
+    /** How long a preview is reused while no order or refund changes. */
+    const PREVIEW_CACHE_TTL = 600;
+
+    /**
+     * Most orders a filing report reads while the browser waits. Larger
+     * downloads are built in the background and emailed; larger previews ask
+     * for that instead. About 15 ms per order including the package, so this
+     * stays well inside common 100-second proxy timeouts.
+     */
+    const BROWSER_ORDER_LIMIT = 6000;
+
+    /** The same limit for the advanced package or the shipping-address audit. */
+    const BROWSER_DETAIL_ORDER_LIMIT = 3000;
+
     public static function init(): void
     {
         add_action('admin_menu', [__CLASS__, 'register_woocommerce_menu'], 70);
@@ -108,6 +122,18 @@ class Tax_Reports_Admin
         try {
             $input = is_array($_POST) ? wp_unslash($_POST) : [];
             $input = self::apply_period_preset($input);
+            $email_requested = isset($input['delivery']) && sanitize_key((string) $input['delivery']) === 'email';
+            $estimate = $email_requested ? 0 : Tax_Report_Service::estimate_order_count($input);
+            $too_large = !$email_requested && $estimate > self::browser_order_limit(Tax_Report_Service::normalize_filters($input));
+            if ($email_requested || $too_large) {
+                if (!Tax_Report_Email::queue_on_demand($input, get_current_user_id())) {
+                    throw new RuntimeException(__('The report could not be queued for background delivery. Try again, or narrow the date range and download it.', 'ffl-funnels-addons'));
+                }
+                self::redirect_to_reports([
+                    'email_queued'  => 'on_demand',
+                    'queued_orders' => $too_large ? $estimate : 0,
+                ]);
+            }
             $service = new Tax_Report_Service();
             $report = $service->generate($input);
             Tax_Report_Exporter::download_package($report);
@@ -502,6 +528,7 @@ class Tax_Reports_Admin
         $filters['include_pii'] = false;
         $report = null;
         $error = '';
+        $cached_at = 0;
 
         try {
             if (!empty($input['run_report'])) {
@@ -517,11 +544,12 @@ class Tax_Reports_Admin
                 } elseif ($active_tab === 'nexus') {
                     $report = ['manifest' => ['filters' => $filters], 'stats' => [], 'summaries' => []];
                 } else {
-                    $service = new Tax_Report_Service();
-                    $report = $service->generate($filters, [
+                    $preview = self::load_preview($filters, [
                         'summary_only'    => $filters['report_detail'] !== 'advanced' && empty($filters['include_pii']),
                         'exception_limit' => 100,
-                    ]);
+                    ], !empty($input['fresh']));
+                    $report = $preview['report'];
+                    $cached_at = $preview['cached_at'];
                 }
             }
         } catch (Throwable $e) {
@@ -547,6 +575,13 @@ class Tax_Reports_Admin
         self::render_report_tabs($active_tab, !empty($input['run_report']));
 
         if (is_array($report)) {
+            if ($cached_at > 0) {
+                echo '<p class="ffla-tax-report-callout">' . esc_html(sprintf(
+                    /* translators: %s: time the figures were calculated */
+                    __('Figures as of %s. No order or refund has changed since then. Select Preview filing report to recalculate.', 'ffl-funnels-addons'),
+                    wp_date(get_option('time_format') ?: 'g:i a', $cached_at)
+                )) . '</p>';
+            }
             self::render_preview($report, $active_tab);
         } elseif (!in_array($active_tab, ['delivery', 'tools'], true) && $error === '') {
             echo '<div class="notice notice-info inline ffla-tax-report-empty-state"><p>'
@@ -571,6 +606,8 @@ class Tax_Reports_Admin
         echo '<input type="hidden" name="page" value="ffla-sales-tax-reports">';
         echo '<input type="hidden" name="report_tab" value="' . esc_attr($active_tab) . '">';
         echo '<input type="hidden" name="run_report" value="1">';
+        // Only the form asks for a fresh preview; tab links reuse a recent one.
+        echo '<input type="hidden" name="fresh" value="1">';
         echo '<input type="hidden" name="action" value="ffla_tax_report_export">';
         wp_nonce_field('ffla_tax_report_export');
         echo '<div class="wb-card__header"><h3>' . esc_html__('Filing period', 'ffl-funnels-addons') . '</h3></div>';
@@ -616,9 +653,80 @@ class Tax_Reports_Admin
         echo '<div class="ffla-tax-report-actions">';
         echo '<button type="submit" class="wb-btn wb-btn--subtle">' . esc_html__('Preview filing report', 'ffl-funnels-addons') . '</button>';
         echo '<button type="submit" class="wb-btn wb-btn--primary" formmethod="post" formaction="' . esc_url(admin_url('admin-post.php')) . '">' . esc_html__('Download filing report', 'ffl-funnels-addons') . '</button>';
+        echo '<button type="submit" class="wb-btn wb-btn--subtle" name="delivery" value="email" formmethod="post" formaction="' . esc_url(admin_url('admin-post.php')) . '">' . esc_html__('Email me this report', 'ffl-funnels-addons') . '</button>';
         echo '</div>';
         echo '<p class="wb-field__desc">' . esc_html__('The download is generated on demand and is not retained on the server. Only a non-PII manifest and file checksums are kept in the generation history.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('Email me this report builds the same package in the background and sends it to your account email. Long periods are always delivered this way, because building them takes longer than a browser waits.', 'ffl-funnels-addons') . '</p>';
         echo '</div></form>';
+    }
+
+    /**
+     * Build the preview, or reuse one built in the last few minutes while no
+     * order or refund has changed, so switching tabs does not read every order
+     * again. The form's Preview button always recalculates.
+     *
+     * @return array{report: array, cached_at: int}
+     * @throws Throwable When the filters are invalid or the report cannot be built.
+     */
+    private static function load_preview(array $filters, array $options, bool $fresh): array
+    {
+        unset($filters['_period_preset']);
+        $filters = Tax_Report_Service::normalize_filters($filters);
+
+        $key = '';
+        if (!empty($options['summary_only'])) {
+            $fingerprint = Tax_Report_Service::order_data_fingerprint();
+            if ($fingerprint !== '') {
+                $key = 'ffla_tax_report_preview_' . md5((string) wp_json_encode([
+                    $filters,
+                    $options,
+                    Tax_Report_Service::SCHEMA_VERSION,
+                    defined('FFLA_VERSION') ? FFLA_VERSION : '',
+                    function_exists('get_user_locale') ? get_user_locale() : '',
+                    $fingerprint,
+                ]));
+            }
+        }
+
+        if ($key !== '' && !$fresh) {
+            $cached = get_transient($key);
+            if (is_array($cached) && isset($cached['report'], $cached['cached_at']) && is_array($cached['report'])) {
+                return ['report' => $cached['report'], 'cached_at' => (int) $cached['cached_at']];
+            }
+        }
+
+        $estimate = Tax_Report_Service::estimate_order_count($filters);
+        $limit = self::browser_order_limit($filters);
+        if ($estimate > $limit) {
+            throw new RuntimeException(sprintf(
+                /* translators: 1: orders in the period, 2: orders a preview reads */
+                __('This period has about %1$s orders; a preview reads at most %2$s while the browser waits. Use Email me this report to build it in the background, or narrow the date range.', 'ffl-funnels-addons'),
+                number_format_i18n($estimate),
+                number_format_i18n($limit)
+            ));
+        }
+
+        $service = new Tax_Report_Service();
+        $report = $service->generate($filters, $options);
+        if ($key !== '') {
+            $stored = $report;
+            // The preview never shows these summaries; leaving them out keeps the cache small.
+            unset($stored['summaries']['products'], $stored['summaries']['payments']);
+            set_transient($key, ['report' => $stored, 'cached_at' => time()], self::PREVIEW_CACHE_TTL);
+        }
+        return ['report' => $report, 'cached_at' => 0];
+    }
+
+    /**
+     * Most orders a report reads while the browser waits.
+     *
+     * Filter `ffla_tax_report_browser_order_limit` adjusts it per store.
+     */
+    private static function browser_order_limit(array $filters): int
+    {
+        $detailed = ($filters['report_detail'] ?? 'filing') === 'advanced' || !empty($filters['include_pii']);
+        $limit = $detailed ? self::BROWSER_DETAIL_ORDER_LIMIT : self::BROWSER_ORDER_LIMIT;
+        return max(100, (int) apply_filters('ffla_tax_report_browser_order_limit', $limit, $filters));
     }
 
     private static function normalize_report_tab(string $tab): string
@@ -732,7 +840,24 @@ class Tax_Reports_Admin
         if (!empty($input['email_saved'])) {
             FFLA_Admin::render_notice('success', esc_html__('Monthly report email settings saved.', 'ffl-funnels-addons'));
         }
-        if (!empty($input['email_queued'])) {
+        if (!empty($input['email_queued']) && sanitize_key((string) $input['email_queued']) === 'on_demand') {
+            $user = wp_get_current_user();
+            $email = $user && !empty($user->user_email) ? (string) $user->user_email : '';
+            $orders = isset($input['queued_orders']) ? absint($input['queued_orders']) : 0;
+            $message = $orders > 0
+                ? sprintf(
+                    /* translators: 1: number of orders, 2: email address */
+                    __('This period has about %1$s orders, more than can be built while the browser waits, so the report is being built in the background and will be emailed to %2$s.', 'ffl-funnels-addons'),
+                    number_format_i18n($orders),
+                    $email
+                )
+                : sprintf(
+                    /* translators: %s: email address */
+                    __('The report is being built in the background and will be emailed to %s.', 'ffl-funnels-addons'),
+                    $email
+                );
+            FFLA_Admin::render_notice('success', esc_html($message . ' ' . __('Its status appears under Delivery & History.', 'ffl-funnels-addons')));
+        } elseif (!empty($input['email_queued'])) {
             $mode = sanitize_key((string) $input['email_queued']);
             $message = $mode === 'test'
                 ? __('A test report was queued for the configured recipients.', 'ffl-funnels-addons')
