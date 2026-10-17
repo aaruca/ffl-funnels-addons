@@ -12,6 +12,15 @@ define('ABSPATH', __DIR__ . '/');
 define('MINUTE_IN_SECONDS', 60);
 
 $GLOBALS['options'] = ['admin_email' => 'owner@example.com'];
+$GLOBALS['temp_dir'] = sys_get_temp_dir() . '/ffla-email-smoke-' . bin2hex(random_bytes(4));
+mkdir($GLOBALS['temp_dir']);
+register_shutdown_function(static function () {
+    // Runs on failure too, so a failed check never leaves files behind.
+    foreach (array_merge($GLOBALS['temp_files'] ?? [], glob($GLOBALS['temp_dir'] . '/*/*') ?: []) as $file) { @unlink($file); }
+    foreach (glob($GLOBALS['temp_dir'] . '/*', GLOB_ONLYDIR) ?: [] as $dir) { @rmdir($dir); }
+    @rmdir($GLOBALS['temp_dir']);
+});
+$GLOBALS['hooks'] = [];
 $GLOBALS['transients'] = [];
 $GLOBALS['mail'] = [];
 $GLOBALS['actions'] = [];
@@ -41,11 +50,26 @@ function get_bloginfo($k) { return 'Fixture Store'; }
 function wp_specialchars_decode($s, $q = null) { return $s; }
 function size_format($b, $d = 0) { return $b . ' B'; }
 function get_userdata($id) { return $GLOBALS['users'][$id] ?? false; }
+function sanitize_file_name($s) { return preg_replace('/[^A-Za-z0-9._-]/', '', basename((string) $s)); }
+function trailingslashit($s) { return rtrim((string) $s, '/\\') . '/'; }
+function get_temp_dir() { return $GLOBALS['temp_dir']; }
+function wp_generate_password($length = 12, $special = true) { return substr(bin2hex(random_bytes($length)), 0, $length); }
+function wp_mkdir_p($dir) { return is_dir($dir) || mkdir($dir, 0777, true); }
+function add_action($hook, $callback) { $GLOBALS['hooks'][$hook][] = $callback; return true; }
+function remove_action($hook, $callback) { $GLOBALS['hooks'][$hook] = array_values(array_filter($GLOBALS['hooks'][$hook] ?? [], static function ($c) use ($callback) { return $c !== $callback; })); return true; }
+function do_action($hook, ...$args) { foreach ($GLOBALS['hooks'][$hook] ?? [] as $callback) { $callback(...$args); } }
+class WP_Error { private $message; function __construct($code, $message) { $this->message = $message; } function get_error_message() { return $this->message; } }
 function user_can($user, $cap) { return in_array($cap, $user->caps ?? [], true); }
 function wp_mail($to, $subject, $message, $headers, $attachments) {
     $exists = array_map('is_file', (array) $attachments);
-    $GLOBALS['mail'][] = compact('to', 'subject', 'message', 'attachments', 'exists');
-    return empty($GLOBALS['mail_fails']);
+    $names = array_map('basename', (array) $attachments);
+    $GLOBALS['mail'][] = compact('to', 'subject', 'message', 'attachments', 'exists', 'names');
+    if (!empty($GLOBALS['mail_fails'])) {
+        // Like wp_mail()/FluentSMTP: report the transport's error, then return false.
+        do_action('wp_mail_failed', new WP_Error('wp_mail_failed', $GLOBALS['mail_fails']));
+        return false;
+    }
+    return true;
 }
 function as_enqueue_async_action($hook, $args, $group, $unique) { $GLOBALS['actions'][] = ['async', $hook, $args, $group]; return count($GLOBALS['actions']); }
 function as_schedule_single_action($ts, $hook, $args, $group, $unique) { $GLOBALS['actions'][] = ['single', $hook, $args, $group, $ts]; return count($GLOBALS['actions']); }
@@ -96,7 +120,11 @@ require_once __DIR__ . '/../../modules/tax-rates/includes/class-tax-report-email
 $checks = 0;
 function check($ok, $label) { global $checks; if (!$ok) { throw new RuntimeException($label); } $checks++; }
 function history(): array { return $GLOBALS['options'][Tax_Report_Email::HISTORY_OPTION] ?? []; }
-function no_temp_files_left(): bool { foreach ($GLOBALS['temp_files'] as $path) { if (is_file($path)) { return false; } } return true; }
+function no_temp_files_left(): bool {
+    foreach ($GLOBALS['temp_files'] as $path) { if (is_file($path)) { return false; } }
+    // Named attachments live in ffla-tax-mail-* folders, which must be gone too.
+    return glob($GLOBALS['temp_dir'] . '/ffla-tax-mail-*') === [];
+}
 function reset_state(): void {
     $GLOBALS['mail'] = []; $GLOBALS['actions'] = []; $GLOBALS['generated'] = []; $GLOBALS['transients'] = [];
     $GLOBALS['options'][Tax_Report_Email::HISTORY_OPTION] = []; $GLOBALS['package_bytes'] = 2048; $GLOBALS['generate_error'] = '';
@@ -126,6 +154,8 @@ check($GLOBALS['generated'][0]['date_from'] === '2026-01-01' && $GLOBALS['genera
 check(strpos($GLOBALS['mail'][0]['subject'], '2026-01-01 to 2026-10-16') !== false, 'Subject names the period');
 check(strpos($GLOBALS['mail'][0]['message'], '<h2>Sales tax filing report</h2>') !== false, 'Background email is not labeled monthly');
 check($GLOBALS['mail'][0]['exists'] === [true], 'Package exists while it is sent');
+check($GLOBALS['mail'][0]['names'] === ['package.zip'], 'Attachment carries the package name, not a .tmp temporary name (Amazon SES rejects .tmp)');
+check(empty($GLOBALS['hooks']['wp_mail_failed']), 'The mail-error listener is removed after sending');
 check(no_temp_files_left(), 'Package deleted after sending');
 $entry = history()[0];
 check($entry['status'] === 'sent' && $entry['mode'] === 'on_demand' && $entry['report_id'] === 'rep-1', 'History records the sent request');
@@ -162,15 +192,17 @@ check(history()[0]['status'] === 'failed' && strpos(history()[0]['message'], 'me
 check(empty($GLOBALS['actions']), 'A failed build is not retried automatically');
 check(!isset($GLOBALS['transients'][Tax_Report_Email::LOCK_TRANSIENT]), 'Lock released after a failure');
 reset_state();
-$GLOBALS['mail_fails'] = true;
+$GLOBALS['mail_fails'] = "SimpleEmailService::sendRawEmail(): Sender - InvalidParameterValue: Illegal filename 'report.tmp'.";
 check(Tax_Report_Email::run_on_demand(7, $queued_filters, 0) === false && history()[0]['status'] === 'failed', 'Mail transport refusal is a failure');
+check(strpos(history()[0]['message'], 'The mail service said:') !== false && strpos(history()[0]['message'], 'Illegal filename') !== false, 'History shows the mail service\'s own error');
+check(empty($GLOBALS['hooks']['wp_mail_failed']), 'The mail-error listener is removed after a failure');
 check(no_temp_files_left(), 'Package deleted after a refused send');
 
 // 7. Package above the attachment limit: the PDF summary is sent instead.
 reset_state();
 $GLOBALS['package_bytes'] = 16 * 1024 * 1024;
 Tax_Report_Email::run_on_demand(7, $queued_filters, 0);
-check(history()[0]['status'] === 'sent_summary_only' && basename($GLOBALS['mail'][0]['attachments'][0]) !== '' && $GLOBALS['mail'][0]['exists'] === [true], 'Oversized package falls back to the PDF summary');
+check(history()[0]['status'] === 'sent_summary_only' && $GLOBALS['mail'][0]['names'] === ['summary.pdf'] && $GLOBALS['mail'][0]['exists'] === [true], 'Oversized package falls back to the PDF summary, sent under its own name');
 check(no_temp_files_left(), 'Both package and summary deleted');
 
 // 8. Monthly email still sends to the configured recipients (shared delivery refactor).

@@ -183,6 +183,7 @@ Compares the report's tax totals with WooCommerce's own: total tax, product and 
 - **Content**: the email body has the filing totals; the ZIP package is attached, or only the PDF filing summary when the ZIP is over **Maximum attachment size**.
 - **Retries**: a failed scheduled send is retried after 15 minutes, 1 hour and 6 hours.
 - **Overlap**: only one report email is generated at a time; a second run is skipped (scheduled runs retry).
+- **Attachment name**: the ZIP or PDF is attached under its own file name (for example `ffla-tax-filing-report-{from}-to-{to}-{id}.zip`), never as a temporary `.tmp` file, which services such as Amazon SES refuse.
 - **Cleanup**: temporary files are deleted after each attempt.
 - **Recent email history** shows the last 10 attempts: status `sent`, `sent_summary_only`, `failed`, `skipped` or `waiting`, mode, period, number of recipients, attachment and details. Only the number of recipients is stored, not their addresses; entries saved by older versions are converted the next time an attempt is recorded.
 
@@ -274,7 +275,7 @@ The report shows snapshot coverage and flags orders without one (older orders, o
 | **Orders** tab is empty | Choose *Advanced audit package* or tick the order audit option, then preview again. |
 | Reconciliation says *Review needed* | Read the checks and warnings. Most often WooCommerce Analytics' date type is not *Date created* (**Analytics → Settings → Date type**), the report has Split Payment sales, or the period does not match the report's dates. |
 | Nexus shows `indeterminate` or *Currency review* | Orders in another currency than the threshold's need conversion, or a Split Payment sale needs review. |
-| Monthly email did not arrive | Check **Recent email history** and **Next scheduled run** (*Not currently scheduled* means delivery is off). Check Action Scheduler (WooCommerce → Status → Scheduled Actions, group `ffla-tax-reports`) or WP-Cron, and your SMTP logs. `sent` only means WordPress handed it to the mail transport. |
+| Monthly email did not arrive | Check **Recent email history** and **Next scheduled run** (*Not currently scheduled* means delivery is off). A `failed` entry includes the mail service's own error (since 1.56.0). Check Action Scheduler (WooCommerce → Status → Scheduled Actions, group `ffla-tax-reports`) or WP-Cron, and your SMTP logs. `sent` only means WordPress handed it to the mail transport. Before 1.56.0, stores sending through Amazon SES could not send any report email ("Illegal filename … .tmp"). |
 | Tools produced no file | **Most recent tool diagnostics** shows each error (shown once). Typical causes: a ZIP without exactly one `jurisdiction-summary.csv`, ZipArchive missing on the server, missing `state`/`currency` columns, a jurisdiction with sales that has no row in the template (*Report jurisdictions missing from the template*), or template keys that match nothing. |
 | `missing_fiscal_snapshot` on old orders | Normal for orders from before the module was on; figures still come from the order. |
 

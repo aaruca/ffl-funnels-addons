@@ -489,6 +489,7 @@ class Tax_Report_Email
     private static function deliver(array $filters, array $recipients, string $mode, int $max_attachment_mb, array &$report): array
     {
         $attachments = [];
+        $attachment_dir = '';
         $package = [];
         try {
             $service = new Tax_Report_Service();
@@ -501,13 +502,32 @@ class Tax_Report_Email
                 Tax_Report_Exporter::cleanup_file((string) ($package['path'] ?? ''));
                 $package = Tax_Report_Exporter::create_summary_pdf($report);
             }
-            $attachments[] = (string) $package['path'];
+            $named = self::named_attachment((string) $package['path'], (string) ($package['filename'] ?? ''));
+            $attachment_dir = $named['dir'];
+            $attachments[] = $named['path'];
 
             $subject = self::build_subject($report, $mode);
             $message = self::build_message($report, $mode, !empty($filters['include_pii']), $package, $summary_only);
             $headers = ['Content-Type: text/html; charset=UTF-8'];
-            if (!wp_mail($recipients, $subject, $message, $headers, $attachments)) {
-                throw new RuntimeException(__('WordPress could not hand the message to the configured mail transport.', 'ffl-funnels-addons'));
+            $mail_error = '';
+            $capture_error = static function ($error) use (&$mail_error): void {
+                if (is_object($error) && method_exists($error, 'get_error_message')) {
+                    $mail_error = (string) $error->get_error_message();
+                }
+            };
+            add_action('wp_mail_failed', $capture_error);
+            try {
+                $sent = wp_mail($recipients, $subject, $message, $headers, $attachments);
+            } finally {
+                remove_action('wp_mail_failed', $capture_error);
+            }
+            if (!$sent) {
+                $reason = __('WordPress could not hand the message to the configured mail transport.', 'ffl-funnels-addons');
+                if ($mail_error !== '') {
+                    /* translators: %s: error returned by the mail service */
+                    $reason .= ' ' . sprintf(__('The mail service said: %s', 'ffl-funnels-addons'), substr($mail_error, 0, 300));
+                }
+                throw new RuntimeException($reason);
             }
 
             return [
@@ -525,7 +545,43 @@ class Tax_Report_Email
             if (!empty($package['path'])) {
                 Tax_Report_Exporter::cleanup_file((string) $package['path']);
             }
+            if ($attachment_dir !== '' && is_dir($attachment_dir)) {
+                @rmdir($attachment_dir);
+            }
         }
+    }
+
+    /**
+     * Give the package its real file name for the email attachment.
+     *
+     * Packages are built as temporary files ending in .tmp. Mail services such
+     * as Amazon SES refuse .tmp attachments outright ("Illegal filename"), and
+     * others deliver a file the recipient cannot open, so the file is moved to
+     * a private folder under its own name. Mail plugins attach a file by its
+     * base name, so this works with core wp_mail() and its replacements.
+     *
+     * @return array{path: string, dir: string}
+     * @throws RuntimeException When the file cannot be prepared.
+     */
+    private static function named_attachment(string $source, string $filename): array
+    {
+        $filename = sanitize_file_name($filename);
+        if ($source === '' || !is_file($source) || $filename === '' || strpos($filename, '.') === false) {
+            throw new RuntimeException(__('The report attachment could not be prepared.', 'ffl-funnels-addons'));
+        }
+
+        $dir = trailingslashit(get_temp_dir()) . 'ffla-tax-mail-' . wp_generate_password(20, false);
+        if (!wp_mkdir_p($dir)) {
+            throw new RuntimeException(__('The report attachment folder could not be created.', 'ffl-funnels-addons'));
+        }
+
+        $path = trailingslashit($dir) . $filename;
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- temporary file inside the same request.
+        if (!@rename($source, $path) && !@copy($source, $path)) {
+            @rmdir($dir);
+            throw new RuntimeException(__('The report attachment could not be prepared.', 'ffl-funnels-addons'));
+        }
+        return ['path' => $path, 'dir' => $dir];
     }
 
     public static function get_history(int $limit = 10): array
