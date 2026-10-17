@@ -14,7 +14,7 @@ Module ID: `tax-reports`, off until it is switched on in **FFL Funnels → Dashb
 - Refunds count in the period they were created.
 - Split Payment (FPPC) installments are grouped under their original sale.
 - Downloads a ZIP package (CSV files, an XLSX workbook, a PDF and an HTML summary, a README and a manifest with checksums). An *Advanced audit package* adds orders, lines, tax lines, refunds, products, payments and exceptions.
-- Emails the previous month's package on a set day.
+- Emails the previous month's package on a set day, and any report on request (*Email me this report*), built in the background.
 - Combines the jurisdiction summaries of several stores and maps them into a state or accountant CSV template.
 - Saves a fiscal snapshot on each order whenever its tax-relevant values change.
 
@@ -23,7 +23,7 @@ Module ID: `tax-reports`, off until it is switched on in **FFL Funnels → Dashb
 1. Switch on **Sales Tax Reports** in **FFL Funnels → Dashboard**.
 2. Open **WooCommerce → Sales Tax Reports**. Choose a **Period preset** or dates, the **States** (empty for all) and the **Included order statuses**. Click **Preview filing report**.
 3. Read **Overview**: the *Complete tax filing table*, *Filing totals* and *Items to review*. Open **States** and **Jurisdictions** for rows marked *Needs review*.
-4. Click **Download filing report** for the ZIP package. Choose *Advanced audit package* when your accountant needs order-level detail. Leave **Include optional order audit with shipping addresses** off unless they need customer names and addresses.
+4. Click **Download filing report** for the ZIP package, or **Email me this report** to have it built in the background and sent to your account email. Long periods are always emailed (see [Limits](#limits)). Choose *Advanced audit package* when your accountant needs order-level detail. Leave **Include optional order audit with shipping addresses** off unless they need customer names and addresses.
 5. Optional, for monthly email: open **Delivery & History**, fill in **Recipients**, **Day of month** and **Send time**, tick **Enable monthly delivery**, click **Save email schedule**, then **Send test report**. Configure a transactional SMTP service; the history shows whether WordPress handed the email over, not whether it arrived.
 6. Optional: use **Nexus Monitor** for a period that matches each state's measurement period, and **Reconciliation** to compare with WooCommerce's own tax totals.
 
@@ -41,7 +41,9 @@ Module ID: `tax-reports`, off until it is switched on in **FFL Funnels → Dashb
 | **Include negative-total orders** | Includes orders whose final total is below zero (manual adjustments). | Off |
 | **Include optional order audit with shipping addresses** | Adds the *Order Audit* worksheet and CSV with customer names and the full shipping address. Off masks names, street, email, phone, transaction ID and customer note everywhere in the package. | Off |
 
-**Preview filing report** shows the tabs on screen; **Download filing report** builds the ZIP. Nothing is stored on the server except a generation history entry without customer data (filters, counts, currencies, file names and each file's SHA-256 checksum).
+**Preview filing report** shows the tabs on screen; **Download filing report** builds the ZIP; **Email me this report** builds the same ZIP in the background and emails it to you. Nothing is stored on the server except a generation history entry without customer data (filters, counts, currencies, file names and each file's SHA-256 checksum).
+
+A filing-summary preview is reused for 10 minutes while no order, refund, order item or order meta has been created, edited, trashed or deleted (on HPOS and legacy order storage alike), so switching tabs does not rebuild it; the page then says *Figures as of {time}*. **Preview filing report** always recalculates.
 
 ### Monthly email delivery (*Delivery & History* tab)
 
@@ -180,9 +182,18 @@ Compares the report's tax totals with WooCommerce's own: total tax, product and 
 - **Scheduling**: one action is scheduled per month through WooCommerce's Action Scheduler (group `ffla-tax-reports`), or WP-Cron when Action Scheduler is not available. **Next scheduled run** shows when it will run.
 - **Content**: the email body has the filing totals; the ZIP package is attached, or only the PDF filing summary when the ZIP is over **Maximum attachment size**.
 - **Retries**: a failed scheduled send is retried after 15 minutes, 1 hour and 6 hours.
-- **Overlap**: only one report email is generated at a time; a second run is skipped (scheduled runs retry).
+- **Overlap**: only one report email is generated at a time, *Email me this report* included. A second scheduled run retries later, an *Email me this report* request waits and retries, and **Send test report** or **Send previous month now** is skipped (send it again).
+- **Attachment name**: the ZIP or PDF is attached under its own file name (for example `ffla-tax-filing-report-{from}-to-{to}-{id}.zip`), never as a temporary `.tmp` file, which services such as Amazon SES refuse.
 - **Cleanup**: temporary files are deleted after each attempt.
-- **Recent email history** shows the last 10 attempts: status `sent`, `sent_summary_only`, `failed` or `skipped`, mode, period, number of recipients, attachment and details. Only the number of recipients is stored, not their addresses; entries saved by older versions are converted the next time an attempt is recorded.
+- **Recent email history** shows the last 10 attempts: status `sent`, `sent_summary_only`, `failed`, `skipped` or `waiting`, mode, period, number of recipients, attachment and details. Only the number of recipients is stored, not their addresses; entries saved by older versions are converted the next time an attempt is recorded.
+
+### Email me this report
+
+- **Email me this report** queues one background action (Action Scheduler group `ffla-tax-reports`, or WP-Cron) with the filters on screen. It builds the same ZIP as **Download filing report** and emails it to the account email of the admin who asked; the monthly recipients are not used. The body is the same as the monthly email, without *Monthly* in the heading.
+- A download or preview of a period with more orders than the browser limit (see [Limits](#limits)) is queued this way automatically, and the page says so.
+- When another report email is being built, the request waits and tries again every 5 minutes, up to 6 times (history status `waiting`). A failed build is recorded with its reason and is not retried; request it again.
+- The request is dropped, with a `failed` history entry, when that user was deleted or no longer has `manage_woocommerce`.
+- The attachment-size limit and PDF-summary fallback of the monthly email apply: a package larger than **Maximum attachment size** arrives as its PDF filing summary, so use a shorter period to receive the full package. A package with the shipping-address audit carries the *Confidential* note.
 
 ### Combining reports
 
@@ -210,6 +221,8 @@ The report shows snapshot coverage and flags orders without one (older orders, o
 ### Limits
 
 - **Order caps**: 50,000 for a filing summary, 25,000 with order rows, 10,000 for an advanced package. Advanced packages are also capped at 100,000 detail rows.
+- **While the browser waits**: previews and downloads read at most 8,000 orders created in the period (4,000 for the advanced package or the shipping-address audit). Above that, downloads are emailed instead and previews ask you to use **Email me this report** or a shorter period. On a production store a filing report took about 5 ms per order.
+- **Memory**: every report loop (report, refunds, reconciliation, nexus) releases WordPress' in-memory object cache after each page of orders, so memory no longer grows with the length of the period. A year-to-date report of about 2,900 orders peaks near 130 MB. With Redis or Memcached only the drop-in's own runtime copy is released; the shared cache is never flushed. If a report still gets within 15% of the PHP memory limit, it stops with *The report stopped before it reached this server's memory limit* instead of crashing the page.
 - **Nexus monitor**: 50,000 orders and refunds.
 - Reaching a cap stops the report with an error instead of returning partial totals.
 - Currencies are never converted or added together.
@@ -240,8 +253,11 @@ The report shows snapshot coverage and flags orders without one (older orders, o
 | Tax basis at the first snapshot | Order meta `_ffla_tax_based_on` (`shipping`, `billing` or `base`) | Permanently, with the order |
 | Report packages | Temporary files | Deleted after the download or email attempt |
 | Tool lock, diagnostics, rate limit | Option `ffla_tax_report_tool_lock`; transients `ffla_tax_report_tool_diag_{user}` (10 minutes), `ffla_tax_report_tool_rate_{user}` (10 seconds), `ffla_tax_report_email_lock` (30 minutes) | Short-lived |
+| Recent previews (filing summary only: state, jurisdiction and totals tables; no order rows or customer data) | Transients `ffla_tax_report_preview_{hash}` | 10 minutes |
+| Order data version (a random value that changes when orders change, so previews are not reused) | Option `ffla_tax_report_data_version` | Until uninstall |
+| Queued *Email me this report* requests (user ID and report filters) | Action Scheduler action `ffla_tax_report_on_demand` | Until it runs |
 
-- **Switching the module off** removes the scheduled monthly email and any queued sends. Reports, snapshots and history stay; snapshots stop being captured.
+- **Switching the module off** removes the scheduled monthly email and any queued sends, including *Email me this report* requests. Reports, snapshots and history stay; snapshots stop being captured.
 - **Uninstalling the plugin** does not remove any Sales Tax Reports option or order meta. Delete them by hand if they are no longer needed.
 
 ## Troubleshooting
@@ -251,13 +267,16 @@ The report shows snapshot coverage and flags orders without one (older orders, o
 | No **Sales Tax Reports** menu | The module must be on, and your user needs `manage_woocommerce`. |
 | "The report preview link expired" | Submit the filters again. |
 | "…reached its order safety cap" or "detail-row safety cap" | Use a shorter period (or filing detail), or raise the cap with a filter. |
+| "This period has about N orders; a preview reads at most …" | Click **Email me this report**, or use a shorter period. Stores on fast hosting can raise the limit with `ffla_tax_report_browser_order_limit`. |
+| "The report stopped before it reached this server's memory limit" | Use a shorter period or the filing summary, or raise PHP's `memory_limit`. Before 1.56.0 the same situation showed WordPress' *There has been a critical error* page. |
+| *Email me this report* did not arrive | Check **Recent email history** (`waiting` means another report email was running), your account email under **Users → Profile**, Action Scheduler (group `ffla-tax-reports`) and your SMTP logs. |
 | "Split Payment receipt N needs review: a confirmed payment date is unavailable." | That payment order is paid but has no paid date. Fix the order, then run the report again. |
 | A state shows *Needs review* | Look at *Sales needing review* and the state's jurisdictions, then **Items to review**. Untaxed sales into states where you do not collect count as needing review. |
 | *Unmapped Georgia jurisdiction* | The order's tax components did not match a Georgia county or special code. Check the order's quote or tax line labels. |
 | **Orders** tab is empty | Choose *Advanced audit package* or tick the order audit option, then preview again. |
 | Reconciliation says *Review needed* | Read the checks and warnings. Most often WooCommerce Analytics' date type is not *Date created* (**Analytics → Settings → Date type**), the report has Split Payment sales, or the period does not match the report's dates. |
 | Nexus shows `indeterminate` or *Currency review* | Orders in another currency than the threshold's need conversion, or a Split Payment sale needs review. |
-| Monthly email did not arrive | Check **Recent email history** and **Next scheduled run** (*Not currently scheduled* means delivery is off). Check Action Scheduler (WooCommerce → Status → Scheduled Actions, group `ffla-tax-reports`) or WP-Cron, and your SMTP logs. `sent` only means WordPress handed it to the mail transport. |
+| Monthly email did not arrive | Check **Recent email history** and **Next scheduled run** (*Not currently scheduled* means delivery is off). A `failed` entry includes the mail service's own error (since 1.56.0). Check Action Scheduler (WooCommerce → Status → Scheduled Actions, group `ffla-tax-reports`) or WP-Cron, and your SMTP logs. `sent` only means WordPress handed it to the mail transport. Before 1.56.0, stores sending through Amazon SES could not send any report email ("Illegal filename … .tmp"). |
 | Tools produced no file | **Most recent tool diagnostics** shows each error (shown once). Typical causes: a ZIP without exactly one `jurisdiction-summary.csv`, ZipArchive missing on the server, missing `state`/`currency` columns, a jurisdiction with sales that has no row in the template (*Report jurisdictions missing from the template*), or template keys that match nothing. |
 | `missing_fiscal_snapshot` on old orders | Normal for orders from before the module was on; figures still come from the order. |
 
@@ -270,6 +289,9 @@ The code lives in `modules/tax-rates/` (`includes/class-tax-report-*.php`, `incl
 | Hook | Arguments |
 |---|---|
 | `ffla_tax_report_max_orders`, `ffla_tax_report_max_detail_rows` | `int $cap`, `array $filters`, `array $options` |
+| `ffla_tax_report_browser_order_limit` | `int $limit` (8,000; 4,000 for the advanced package or shipping-address audit), `array $filters` |
+| `ffla_tax_report_flush_runtime_cache` | `bool $flush` (default `true`): release the in-memory object cache after each page |
+| `ffla_tax_report_memory_ceiling` | `float $share` of the PHP memory limit at which a report stops (default `0.85`, kept between `0.5` and `0.95`) |
 | `ffla_tax_report_columns` | `array $columns`, `string $dataset` |
 | `ffla_tax_report_order_row` | `array $row`, `WC_Order $order`, `array $quote`, `array $location` |
 | `ffla_tax_report_line_row` | `array $row`, `WC_Order_Item $item`, `WC_Order $order` |
@@ -293,8 +315,9 @@ The code lives in `modules/tax-rates/` (`includes/class-tax-report-*.php`, `incl
 |---|---|---|
 | `ffla_tax_report_monthly_email` | `YYYY-MM` | Single action for the next send; the next month is scheduled when it runs |
 | `ffla_tax_report_email_send` | `mode`, `attempt`, `date_from`, `date_to` | Manual and test sends, retries |
+| `ffla_tax_report_on_demand` | `user_id`, `filters`, `attempt` | *Email me this report* and downloads over the browser limit; retried while another report email runs |
 
-**Admin-post actions**: `ffla_tax_report_export`, `ffla_tax_report_email_save`, `ffla_tax_report_email_send`, `ffla_tax_report_combine`. All check `manage_woocommerce` and a nonce.
+**Admin-post actions**: `ffla_tax_report_export` (with `delivery=email` it queues *Email me this report* instead of downloading), `ffla_tax_report_email_save`, `ffla_tax_report_email_send`, `ffla_tax_report_combine`. All check `manage_woocommerce` and a nonce.
 
 **PHP entry points**
 

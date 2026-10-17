@@ -147,14 +147,18 @@ if (in_array('tax-reports', $ffla_active_modules, true)
     delete_option('ffla_tax_report_email_history');
     delete_option('ffla_tax_report_runs');
     delete_option('ffla_tax_report_tool_lock');
+    delete_option('ffla_tax_report_data_version');
     delete_option('ffla_tax_reports_module_migrated');
     delete_transient('ffla_tax_report_email_lock');
     $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_ffla\\_tax\\_report\\_tool\\_%' OR option_name LIKE '\\_transient\\_timeout\\_ffla\\_tax\\_report\\_tool\\_%'");
-    wp_clear_scheduled_hook('ffla_tax_report_monthly_email');
-    wp_clear_scheduled_hook('ffla_tax_report_email_send');
+    $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_ffla\\_tax\\_report\\_preview\\_%' OR option_name LIKE '\\_transient\\_timeout\\_ffla\\_tax\\_report\\_preview\\_%'");
+    wp_unschedule_hook('ffla_tax_report_monthly_email');
+    wp_unschedule_hook('ffla_tax_report_email_send');
+    wp_unschedule_hook('ffla_tax_report_on_demand');
     if (function_exists('as_unschedule_all_actions')) {
         as_unschedule_all_actions('ffla_tax_report_monthly_email', [], '');
         as_unschedule_all_actions('ffla_tax_report_email_send', [], '');
+        as_unschedule_all_actions('ffla_tax_report_on_demand', [], '');
     }
 }
 

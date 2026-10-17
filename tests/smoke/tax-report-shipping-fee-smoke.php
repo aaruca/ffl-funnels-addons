@@ -30,7 +30,9 @@ function wc_get_orders($query) {
             && $date && $date->getTimestamp() >= $start && $date->getTimestamp() <= $end;
     }));
     usort($rows, static function ($a, $b) { return $a->get_date_created() <=> $b->get_date_created(); });
-    return (object) ['orders' => array_slice($rows, ($query['page'] - 1) * $query['limit'], $query['limit']), 'max_num_pages' => (int) ceil(count($rows) / $query['limit'])];
+    $slice = array_slice($rows, ($query['page'] - 1) * $query['limit'], $query['limit']);
+    if (($query['return'] ?? 'objects') === 'ids') { $slice = array_map(static function ($order) { return $order->get_id(); }, $slice); }
+    return (object) ['orders' => $slice, 'total' => count($rows), 'max_num_pages' => (int) ceil(count($rows) / $query['limit'])];
 }
 
 class WC_Order {

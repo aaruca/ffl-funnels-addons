@@ -2,10 +2,15 @@
 /** Read-only Split Payment receipt/underlying-sale adapter. No gateway or order writes. */
 defined('ABSPATH') || exit;
 
+require_once __DIR__ . '/class-tax-report-memory.php';
+
 class Tax_Report_Sale_Identity
 {
     const PLAN_STATUSES = ['fppc-plan-hold', 'fppc-paid-manual', 'fppc-defaulted', 'fppc-denied', 'pending', 'failed', 'cancelled'];
     public $pages_processed = 0;
+
+    /** @var array<int,bool>|null Page hint: does an order have any Split Payment line-item meta? */
+    private $item_flag_hint = null;
 
     public static function policy(): string
     {
@@ -52,7 +57,7 @@ class Tax_Report_Sale_Identity
         }
         $managed = $plan_id > 0 || $this->meta($order, '_fppc_managed_plan') === 'yes'
             || (bool) $this->meta($order, '_fppc_plan_principals');
-        if (!$managed && method_exists($order, 'get_items')) {
+        if (!$managed && method_exists($order, 'get_items') && $this->may_have_managed_items($id)) {
             foreach ($order->get_items('line_item') as $item) {
                 if ($this->meta($item, '_fppc_managed_plan') === 'yes' || $this->meta($item, '_fppc_plan_snapshot_v2')) {
                     $managed = true;
@@ -110,23 +115,43 @@ class Tax_Report_Sale_Identity
         return !$identity['managed'] || (!$identity['issues'] && $identity['recognized_at'] >= $from && $identity['recognized_at'] <= $to);
     }
 
-    /** Two bounded, HPOS-compatible queries; ordinary orders keep their existing date/status basis. */
+    /**
+     * Two bounded, HPOS-compatible queries; ordinary orders keep their existing date/status basis.
+     *
+     * The first pass reads every order created in the period. The second can
+     * only add Split Payment receipts created before it, so it asks for IDs and
+     * loads just the orders the first pass did not see. The object cache is
+     * released after every page, which keeps memory flat however long the period.
+     */
     public function orders(array $statuses, int $from, int $to, int $page_size, int $cap): Generator
     {
         $seen = [];
         $scanned = 0;
         $capture_refs = [];
         $this->pages_processed = 0;
+        $query_statuses = array_values(array_unique(array_merge($statuses, self::PLAN_STATUSES)));
         foreach (['date_created', 'date_paid'] as $date_field) {
             $page = 1;
             do {
-                $query = ['type' => 'shop_order', 'status' => array_values(array_unique(array_merge($statuses, self::PLAN_STATUSES))),
+                $query = ['type' => 'shop_order', 'status' => $query_statuses,
                     $date_field => $from . '...' . $to, 'orderby' => 'date', 'order' => 'ASC',
-                    'limit' => $page_size, 'page' => $page, 'paginate' => true, 'return' => 'objects'];
+                    'limit' => $page_size, 'page' => $page, 'paginate' => true,
+                    'return' => $date_field === 'date_created' ? 'objects' : 'ids'];
                 $result = wc_get_orders($query);
                 $this->pages_processed++;
-                $orders = is_object($result) && isset($result->orders) ? $result->orders : (is_array($result) ? $result : []);
+                $rows = is_object($result) && isset($result->orders) ? $result->orders : (is_array($result) ? $result : []);
                 $pages = is_object($result) && isset($result->max_num_pages) ? max(1, (int) $result->max_num_pages) : 1;
+                unset($result);
+                $orders = [];
+                foreach ($rows as $row) {
+                    $row_id = is_object($row) && method_exists($row, 'get_id') ? (int) $row->get_id() : (is_numeric($row) ? (int) $row : 0);
+                    if ($row_id <= 0 || isset($seen[$row_id])) { continue; }
+                    $orders[] = is_object($row) ? $row : (function_exists('wc_get_order') ? wc_get_order($row_id) : null);
+                }
+                unset($rows, $row);
+                $this->load_item_flag_hint(array_map(static function ($order) {
+                    return is_object($order) && method_exists($order, 'get_id') ? (int) $order->get_id() : 0;
+                }, $orders));
                 foreach ($orders as $order) {
                     if (!is_object($order) || !method_exists($order, 'get_id')) { continue; }
                     $id = (int) $order->get_id();
@@ -158,8 +183,71 @@ class Tax_Report_Sale_Identity
                     }
                     yield ['order' => $order, 'identity' => $identity];
                 }
+                unset($orders, $order);
+                $this->item_flag_hint = null;
+                Tax_Report_Memory::release_page();
                 $page++;
             } while ($page <= $pages);
+        }
+    }
+
+    /**
+     * Whether describe() still has to read an order's line items.
+     *
+     * Without a page hint, or for an order the hint does not cover, the answer
+     * is always yes, so describe() keeps its full check.
+     */
+    private function may_have_managed_items(int $order_id): bool
+    {
+        return !is_array($this->item_flag_hint)
+            || !array_key_exists($order_id, $this->item_flag_hint)
+            || $this->item_flag_hint[$order_id];
+    }
+
+    /**
+     * One query per page: which orders have any Split Payment line-item meta.
+     *
+     * An order with no such row cannot be flagged by its line items, so its
+     * items need not be loaded just to learn that. Only stored values that read
+     * back as empty or false are excluded; any order that might be flagged is
+     * still checked item by item. On a database error no hint is used.
+     *
+     * @param int[] $order_ids
+     */
+    private function load_item_flag_hint(array $order_ids): void
+    {
+        global $wpdb;
+        $this->item_flag_hint = null;
+        $order_ids = array_values(array_unique(array_filter(array_map('intval', $order_ids))));
+        if (empty($order_ids) || !isset($wpdb) || !is_object($wpdb) || !method_exists($wpdb, 'get_col') || !method_exists($wpdb, 'prepare')) {
+            return;
+        }
+        // A plugin filtering these values can make get_meta() differ from the database.
+        if (function_exists('has_filter')
+            && (has_filter('woocommerce_order_item_get__fppc_managed_plan') || has_filter('woocommerce_order_item_get__fppc_plan_snapshot_v2'))) {
+            return;
+        }
+
+        $falsy_values = ['', '0', 'a:0:{}', 'b:0;', 'i:0;', 'd:0;', 'N;', 's:0:"";'];
+        $sql = 'SELECT DISTINCT items.order_id FROM ' . $wpdb->prefix . 'woocommerce_order_items AS items'
+            . ' INNER JOIN ' . $wpdb->prefix . 'woocommerce_order_itemmeta AS meta ON meta.order_item_id = items.order_item_id'
+            . ' WHERE items.order_id IN (' . implode(',', array_fill(0, count($order_ids), '%d')) . ')'
+            . " AND items.order_item_type = 'line_item'"
+            . ' AND meta.meta_key IN (%s, %s)'
+            // Byte comparison: the column's usual collation ignores case and
+            // trailing spaces, which would exclude values PHP reads as true.
+            . ' AND CAST(meta.meta_value AS BINARY) NOT IN (' . implode(',', array_fill(0, count($falsy_values), '%s')) . ')';
+        $prepared = $wpdb->prepare($sql, array_merge($order_ids, ['_fppc_managed_plan', '_fppc_plan_snapshot_v2'], $falsy_values));
+        $wpdb->last_error = '';
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- prepared above.
+        $flagged = is_string($prepared) && $prepared !== '' ? $wpdb->get_col($prepared) : null;
+        if (!is_array($flagged) || (string) $wpdb->last_error !== '') {
+            return;
+        }
+
+        $this->item_flag_hint = array_fill_keys($order_ids, false);
+        foreach ($flagged as $flagged_id) {
+            $this->item_flag_hint[(int) $flagged_id] = true;
         }
     }
 }
