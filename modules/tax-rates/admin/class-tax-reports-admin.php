@@ -20,13 +20,17 @@ class Tax_Reports_Admin
     /**
      * Most orders a filing report reads while the browser waits. Larger
      * downloads are built in the background and emailed; larger previews ask
-     * for that instead. About 15 ms per order including the package, so this
-     * stays well inside common 100-second proxy timeouts.
+     * for that instead. Measured on a production store: about 5 ms per order,
+     * so the limit stays well inside common 60 to 100-second proxy timeouts on
+     * slower hosts too. Filter: ffla_tax_report_browser_order_limit.
      */
-    const BROWSER_ORDER_LIMIT = 6000;
+    const BROWSER_ORDER_LIMIT = 8000;
 
-    /** The same limit for the advanced package or the shipping-address audit. */
-    const BROWSER_DETAIL_ORDER_LIMIT = 3000;
+    /**
+     * The same limit for the advanced package or the shipping-address audit,
+     * which also keep about 22 KB of row data per order and build larger files.
+     */
+    const BROWSER_DETAIL_ORDER_LIMIT = 4000;
 
     public static function init(): void
     {

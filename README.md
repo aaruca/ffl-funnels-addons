@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.55.7-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.56.0-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -115,7 +115,7 @@ Sales tax filing reports built from the tax values stored on WooCommerce orders 
 *   **Reports:** **WooCommerce → Sales Tax Reports** has Overview, States, Jurisdictions, Orders, Reconciliation, Nexus Monitor, Delivery & History and Tools tabs. It gives one row per state and per local filing jurisdiction and currency: gross sales, taxable sales (taxed shipping included), tax collected and refunded, tax calculated from the stored rate, and over/under collection. Georgia rows use the official filing codes (`000` for the statewide row).
 *   **Downloads:** a ZIP package with CSV files, an XLSX workbook, a PDF and HTML summary, a README and a manifest with checksums. An *Advanced audit package* adds order-level files. The optional order audit includes customer names and shipping addresses, so leave it off unless the recipient needs it.
 *   **Checks:** an *Items to review* list, a reconciliation with WooCommerce's own tax totals and an advisory economic-nexus monitor. The nexus thresholds are unverified sample data. The module does not file returns, does not know where you are registered and is not tax advice; resolve every row marked *Needs review*.
-*   **Delivery and combining:** a monthly email of the previous month's package to the recipients you set, and a tool that combines jurisdiction summaries from several stores and maps them into a state or accountant CSV template.
+*   **Delivery and combining:** a monthly email of the previous month's package to the recipients you set, **Email me this report** to have any period built in the background and emailed to you (long periods always go this way), and a tool that combines jurisdiction summaries from several stores and maps them into a state or accountant CSV template.
 *   **Split Payment (FPPC):** linked installment receipts are grouped under their original sale, which counts once with its original product quantities. Each payment and refund keeps its own date and amount. Since 1.47.9, FPPC's "Final shipping" fee counts as shipping, and so does the initial fee when the order's plan includes shipping in it. See [Split Payment: tax reports and nexus](docs/split-payment-tax-reports.md).
 
 Guide: [modules/tax-reports/README.md](modules/tax-reports/README.md)
