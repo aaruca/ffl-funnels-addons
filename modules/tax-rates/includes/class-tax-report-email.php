@@ -204,7 +204,7 @@ class Tax_Report_Email
             // and current Action Scheduler versions cancel every argument set.
             as_unschedule_all_actions(self::SCHEDULE_HOOK, [], '');
         }
-        wp_clear_scheduled_hook(self::SCHEDULE_HOOK);
+        self::unschedule_cron_hook(self::SCHEDULE_HOOK);
     }
 
     public static function clear_all_schedules(): void
@@ -214,9 +214,23 @@ class Tax_Report_Email
             as_unschedule_all_actions(self::SEND_HOOK, [], '');
             as_unschedule_all_actions(self::ON_DEMAND_HOOK, [], '');
         }
-        wp_clear_scheduled_hook(self::SCHEDULE_HOOK);
-        wp_clear_scheduled_hook(self::SEND_HOOK);
-        wp_clear_scheduled_hook(self::ON_DEMAND_HOOK);
+        self::unschedule_cron_hook(self::SCHEDULE_HOOK);
+        self::unschedule_cron_hook(self::SEND_HOOK);
+        self::unschedule_cron_hook(self::ON_DEMAND_HOOK);
+    }
+
+    /**
+     * Remove every WP-Cron fallback event of a hook, whatever its arguments.
+     * wp_clear_scheduled_hook() without arguments only removes events that
+     * have none, and all of these events carry arguments.
+     */
+    public static function unschedule_cron_hook(string $hook): void
+    {
+        if (function_exists('wp_unschedule_hook')) {
+            wp_unschedule_hook($hook);
+            return;
+        }
+        wp_clear_scheduled_hook($hook);
     }
 
     public static function get_next_run(): int
@@ -367,12 +381,19 @@ class Tax_Report_Email
         if ($user_id <= 0) {
             return false;
         }
-        $args = [$user_id, self::on_demand_filters($filters), 0];
-        if (self::has_scheduled_action(self::ON_DEMAND_HOOK, $args)) {
-            return true;
+        $filters = self::on_demand_filters($filters);
+        // The same request already queued, or waiting to retry, is not queued twice.
+        for ($attempt = 0; $attempt < self::ON_DEMAND_MAX_ATTEMPTS; $attempt++) {
+            if (self::has_scheduled_action(self::ON_DEMAND_HOOK, [$user_id, $filters, $attempt])) {
+                return true;
+            }
         }
+        $args = [$user_id, $filters, 0];
+        // Not "unique": before Action Scheduler 4.0 that compares only the hook
+        // and group, which would refuse every request while another one (from
+        // any admin, for any period) is queued or running.
         if (self::action_scheduler_ready() && function_exists('as_enqueue_async_action')) {
-            return (int) as_enqueue_async_action(self::ON_DEMAND_HOOK, $args, self::ACTION_GROUP, true) > 0;
+            return (int) as_enqueue_async_action(self::ON_DEMAND_HOOK, $args, self::ACTION_GROUP, false) > 0;
         }
 
         $scheduled = wp_schedule_single_event(time() + 5, self::ON_DEMAND_HOOK, $args, true);
@@ -409,10 +430,10 @@ class Tax_Report_Email
         }
 
         if (get_transient(self::LOCK_TRANSIENT)) {
-            $retry = $attempt + 1 < self::ON_DEMAND_MAX_ATTEMPTS;
-            if ($retry) {
-                self::schedule_single(time() + 5 * MINUTE_IN_SECONDS, self::ON_DEMAND_HOOK, [$user_id, $filters, $attempt + 1], true);
-            }
+            // This action is still running, so the retry must not be "unique"
+            // (Action Scheduler before 4.0 would refuse it as a duplicate).
+            $retry = $attempt + 1 < self::ON_DEMAND_MAX_ATTEMPTS
+                && self::schedule_single(time() + 5 * MINUTE_IN_SECONDS, self::ON_DEMAND_HOOK, [$user_id, $filters, $attempt + 1], false);
             self::record_history([
                 'status'    => $retry ? 'waiting' : 'failed',
                 'mode'      => 'on_demand',
@@ -421,7 +442,7 @@ class Tax_Report_Email
                 'date_to'   => $date_to,
                 'message'   => $retry
                     ? 'Another tax report email is being generated. This report will try again in 5 minutes.'
-                    : 'Another tax report email kept the queue busy, so this report was not sent. Request it again.',
+                    : 'Another tax report email kept the queue busy, or the retry could not be scheduled, so this report was not sent. Request it again.',
             ]);
             return false;
         }

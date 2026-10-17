@@ -222,6 +222,11 @@ class Tax_Report_Sale_Identity
         if (empty($order_ids) || !isset($wpdb) || !is_object($wpdb) || !method_exists($wpdb, 'get_col') || !method_exists($wpdb, 'prepare')) {
             return;
         }
+        // A plugin filtering these values can make get_meta() differ from the database.
+        if (function_exists('has_filter')
+            && (has_filter('woocommerce_order_item_get__fppc_managed_plan') || has_filter('woocommerce_order_item_get__fppc_plan_snapshot_v2'))) {
+            return;
+        }
 
         $falsy_values = ['', '0', 'a:0:{}', 'b:0;', 'i:0;', 'd:0;', 'N;', 's:0:"";'];
         $sql = 'SELECT DISTINCT items.order_id FROM ' . $wpdb->prefix . 'woocommerce_order_items AS items'
@@ -229,7 +234,9 @@ class Tax_Report_Sale_Identity
             . ' WHERE items.order_id IN (' . implode(',', array_fill(0, count($order_ids), '%d')) . ')'
             . " AND items.order_item_type = 'line_item'"
             . ' AND meta.meta_key IN (%s, %s)'
-            . ' AND meta.meta_value NOT IN (' . implode(',', array_fill(0, count($falsy_values), '%s')) . ')';
+            // Byte comparison: the column's usual collation ignores case and
+            // trailing spaces, which would exclude values PHP reads as true.
+            . ' AND CAST(meta.meta_value AS BINARY) NOT IN (' . implode(',', array_fill(0, count($falsy_values), '%s')) . ')';
         $prepared = $wpdb->prepare($sql, array_merge($order_ids, ['_fppc_managed_plan', '_fppc_plan_snapshot_v2'], $falsy_values));
         $wpdb->last_error = '';
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- prepared above.

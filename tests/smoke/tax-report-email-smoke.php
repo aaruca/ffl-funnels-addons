@@ -71,8 +71,12 @@ function wp_mail($to, $subject, $message, $headers, $attachments) {
     }
     return true;
 }
-function as_enqueue_async_action($hook, $args, $group, $unique) { $GLOBALS['actions'][] = ['async', $hook, $args, $group]; return count($GLOBALS['actions']); }
-function as_schedule_single_action($ts, $hook, $args, $group, $unique) { $GLOBALS['actions'][] = ['single', $hook, $args, $group, $ts]; return count($GLOBALS['actions']); }
+function as_enqueue_async_action($hook, $args, $group, $unique) { $GLOBALS['actions'][] = ['async', $hook, $args, $group, $unique]; return count($GLOBALS['actions']); }
+function as_schedule_single_action($ts, $hook, $args, $group, $unique) {
+    if (!empty($GLOBALS['schedule_fails'])) { return 0; }
+    $GLOBALS['actions'][] = ['single', $hook, $args, $group, $unique, $ts];
+    return count($GLOBALS['actions']);
+}
 function as_has_scheduled_action($hook, $args, $group) {
     foreach ($GLOBALS['actions'] as $action) {
         if ($action[1] === $hook && $action[2] === $args) { return true; }
@@ -128,7 +132,7 @@ function no_temp_files_left(): bool {
 function reset_state(): void {
     $GLOBALS['mail'] = []; $GLOBALS['actions'] = []; $GLOBALS['generated'] = []; $GLOBALS['transients'] = [];
     $GLOBALS['options'][Tax_Report_Email::HISTORY_OPTION] = []; $GLOBALS['package_bytes'] = 2048; $GLOBALS['generate_error'] = '';
-    unset($GLOBALS['mail_fails']);
+    unset($GLOBALS['mail_fails'], $GLOBALS['schedule_fails']);
 }
 $request = ['date_from' => '2026-01-01', 'date_to' => '2026-10-16', 'statuses' => ['completed', 'refunded'], 'report_detail' => 'filing',
     'page' => 'ffla-sales-tax-reports', '_wpnonce' => 'abc', 'action' => 'ffla_tax_report_export', 'delivery' => 'email'];
@@ -141,6 +145,12 @@ check(count($GLOBALS['actions']) === 1 && $GLOBALS['actions'][0][1] === Tax_Repo
 check($queued_user === 7 && $queued_attempt === 0, 'Action carries the requesting user and attempt 0');
 check(!isset($queued_filters['_wpnonce']) && !isset($queued_filters['action']) && $queued_filters['date_to'] === '2026-10-16' && $queued_filters['include_pii'] === false, 'Only normalized report filters are stored with the action');
 check(Tax_Report_Email::queue_on_demand($request, 7) === true && count($GLOBALS['actions']) === 1, 'An identical pending request is not queued twice');
+check($GLOBALS['actions'][0][4] === false, 'Queued without "unique": before Action Scheduler 4.0 that ignores the arguments');
+check(Tax_Report_Email::queue_on_demand(array_merge($request, ['date_from' => '2026-07-01']), 7) === true && count($GLOBALS['actions']) === 2, 'Another period is queued while the first request is pending');
+check(Tax_Report_Email::queue_on_demand($request, 8) === true && count($GLOBALS['actions']) === 3, 'Another admin\'s request is queued too');
+$GLOBALS['actions'] = [['single', Tax_Report_Email::ON_DEMAND_HOOK, [7, $queued_filters, 2], Tax_Report_Email::ACTION_GROUP, false, 0]];
+check(Tax_Report_Email::queue_on_demand($request, 7) === true && count($GLOBALS['actions']) === 1, 'A request waiting to retry is not queued a second time');
+$GLOBALS['actions'] = [];
 check(Tax_Report_Email::queue_on_demand($request, 0) === false, 'A request needs a user');
 $threw = false;
 try { Tax_Report_Email::queue_on_demand(['date_from' => 'bad'], 7); } catch (InvalidArgumentException $e) { $threw = true; }
@@ -172,10 +182,15 @@ reset_state();
 $GLOBALS['transients'][Tax_Report_Email::LOCK_TRANSIENT] = 1;
 check(Tax_Report_Email::run_on_demand(7, $queued_filters, 0) === false && empty($GLOBALS['mail']) && empty($GLOBALS['generated']), 'Nothing is built while another report email runs');
 check(count($GLOBALS['actions']) === 1 && $GLOBALS['actions'][0][0] === 'single' && $GLOBALS['actions'][0][2] === [7, $queued_filters, 1], 'Retried later as attempt 1 with the same filters');
+check($GLOBALS['actions'][0][4] === false, 'Retry is not "unique", so the still-running action cannot block it');
 check(history()[0]['status'] === 'waiting', 'History shows the request waiting');
 $GLOBALS['actions'] = [];
 Tax_Report_Email::run_on_demand(7, $queued_filters, Tax_Report_Email::ON_DEMAND_MAX_ATTEMPTS - 1);
 check(empty($GLOBALS['actions']) && history()[0]['status'] === 'failed', 'Last attempt stops retrying and reports a failure');
+$GLOBALS['schedule_fails'] = true;
+Tax_Report_Email::run_on_demand(7, $queued_filters, 0);
+check(history()[0]['status'] === 'failed' && strpos(history()[0]['message'], 'could not be scheduled') !== false, 'A retry that cannot be scheduled is reported as a failure, not as waiting');
+unset($GLOBALS['schedule_fails']);
 check(!empty($GLOBALS['transients'][Tax_Report_Email::LOCK_TRANSIENT]), 'Another job\'s lock is left alone');
 
 // 5. A user who lost access gets nothing.

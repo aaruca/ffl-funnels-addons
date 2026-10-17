@@ -860,7 +860,8 @@ class Tax_Reports_Admin
                     __('The report is being built in the background and will be emailed to %s.', 'ffl-funnels-addons'),
                     $email
                 );
-            FFLA_Admin::render_notice('success', esc_html($message . ' ' . __('Its status appears under Delivery & History.', 'ffl-funnels-addons')));
+            $message .= ' ' . __('Its status appears under Delivery & History. A package larger than the email attachment limit set there is replaced by its PDF filing summary; use a shorter period to receive the full package.', 'ffl-funnels-addons');
+            FFLA_Admin::render_notice('success', esc_html($message));
         } elseif (!empty($input['email_queued'])) {
             $mode = sanitize_key((string) $input['email_queued']);
             $message = $mode === 'test'

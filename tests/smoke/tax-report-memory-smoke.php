@@ -9,6 +9,7 @@
  */
 
 define('ABSPATH', __DIR__ . '/');
+define('ARRAY_A', 'ARRAY_A');
 
 $GLOBALS['ext_cache'] = false;
 $GLOBALS['flushes'] = 0;
@@ -16,6 +17,11 @@ $GLOBALS['loaded'] = [];
 $GLOBALS['queries'] = [];
 $GLOBALS['ids_supported'] = true;
 $GLOBALS['test_filters'] = [];
+$GLOBALS['options'] = [];
+$GLOBALS['option_writes'] = [];
+$GLOBALS['actions'] = [];
+$GLOBALS['filtered_hooks'] = [];
+$GLOBALS['post_types'] = [];
 
 function __($s, $domain = null) { return $s; }
 function apply_filters($hook, $value, ...$args) { return isset($GLOBALS['test_filters'][$hook]) ? $GLOBALS['test_filters'][$hook]($value, ...$args) : $value; }
@@ -29,7 +35,11 @@ function get_bloginfo($key) { return 'Fixture'; }
 function home_url($p) { return 'https://fixture.invalid' . $p; }
 function wp_json_encode($v) { return json_encode($v); }
 function wc_get_price_decimals() { return 2; }
-function get_option($key, $default = false) { return $default; }
+function get_option($key, $default = false) { return $GLOBALS['options'][$key] ?? $default; }
+function update_option($key, $value, $autoload = null) { $GLOBALS['options'][$key] = $value; $GLOBALS['option_writes'][] = $key; return true; }
+function add_action($hook, $callback, $priority = 10, $args = 1) { $GLOBALS['actions'][$hook][] = $callback; return true; }
+function has_filter($hook) { return !empty($GLOBALS['filtered_hooks'][$hook]); }
+function get_post_type($id) { return $GLOBALS['post_types'][$id] ?? false; }
 function esc_html($s) { return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8'); }
 function wp_using_ext_object_cache() { return $GLOBALS['ext_cache']; }
 function wp_cache_flush_runtime() { $GLOBALS['flushes']++; return true; }
@@ -116,6 +126,8 @@ class TestWpdb {
     public $prefix = 'wp_'; public $last_error = ''; public $flagged = []; public $fail = false; public $sql = []; public $args = [];
     function prepare($query, $args) { $this->args[] = $args; return $query; }
     function get_col($query) { $this->sql[] = $query; if ($this->fail) { $this->last_error = 'Table missing'; return []; } return $this->flagged; }
+    public $posts = 'wp_posts';
+    function get_row($query, $output = null) { $this->sql[] = $query; return ['records' => '42', 'modified' => '2026-10-16 12:00:00']; }
 }
 
 require_once __DIR__ . '/../../modules/tax-rates/includes/class-tax-report-service.php';
@@ -192,8 +204,18 @@ foreach ([1, 2, 4, 5, 6] as $n) {
 }
 check($GLOBALS['orders'][3]->item_reads === 1, 'An order with Split Payment item meta is still checked item by item');
 check(strpos($GLOBALS['wpdb']->sql[0], "order_item_type = 'line_item'") !== false, 'Query is limited to line items');
+check(strpos($GLOBALS['wpdb']->sql[0], 'CAST(meta.meta_value AS BINARY) NOT IN') !== false, 'Values are compared byte for byte, not with the case- and space-insensitive collation');
 check(in_array('_fppc_managed_plan', $GLOBALS['wpdb']->args[0], true) && in_array('_fppc_plan_snapshot_v2', $GLOBALS['wpdb']->args[0], true), 'Query covers both Split Payment item keys');
 check(in_array('b:0;', $GLOBALS['wpdb']->args[0], true) && in_array('a:0:{}', $GLOBALS['wpdb']->args[0], true), 'Only stored values that read back as false are excluded');
+
+// 2b. A plugin filtering the Split Payment item values: no query, items read as before.
+build_fixtures();
+$GLOBALS['wpdb'] = new TestWpdb();
+$GLOBALS['filtered_hooks']['woocommerce_order_item_get__fppc_managed_plan'] = true;
+$run = receipts();
+check($run['ids'] === [1, 2, 3, 4, 5, 101] && empty($GLOBALS['wpdb']->sql), 'No line-item query when a plugin filters the item values');
+check($GLOBALS['orders'][1]->item_reads >= 1, 'Items are read normally when the values are filtered');
+$GLOBALS['filtered_hooks'] = [];
 
 // 3. A failed line-item query falls back to reading items.
 build_fixtures();
@@ -248,7 +270,30 @@ $child = shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($dir . '/r
 @rmdir($dir);
 check(trim((string) $child) === 'compat-safe', 'WordPress compat fallback (full flush of the shared cache) is never called');
 
-// 7. Memory limit parsing and the guard.
+// 7. Preview freshness: order saves change the data version on both storages.
+$changed = new ReflectionProperty('Tax_Report_Service', 'order_data_changed');
+$changed->setAccessible(true);
+Tax_Report_Service::track_order_changes();
+foreach (['woocommerce_update_order', 'woocommerce_order_refunded', 'woocommerce_update_order_item', 'updated_order_item_meta', 'updated_post_meta'] as $hook) {
+    check(!empty($GLOBALS['actions'][$hook]), 'Change tracking listens to ' . $hook);
+}
+$GLOBALS['wpdb'] = new TestWpdb();
+$before = Tax_Report_Service::order_data_fingerprint();
+check($before !== '' && strpos(end($GLOBALS['wpdb']->sql), "'shop_subscription'") !== false, 'Fingerprint also covers Split Payment subscriptions');
+$GLOBALS['post_types'] = [500 => 'product', 501 => 'shop_order'];
+Tax_Report_Service::mark_post_meta_changed(1, 500);
+check(Tax_Report_Service::order_data_fingerprint() === $before && empty($GLOBALS['option_writes']), 'Product meta does not invalidate previews');
+Tax_Report_Service::mark_post_meta_changed(2, 501);
+$after = Tax_Report_Service::order_data_fingerprint();
+check($after !== $before, 'Order meta saved without a new modification time (legacy storage) invalidates previews');
+Tax_Report_Service::mark_order_data_changed();
+Tax_Report_Service::mark_post_meta_changed(3, 501);
+check(count($GLOBALS['option_writes']) === 1 && count($GLOBALS['actions']['shutdown'] ?? []) === 1, 'One write on the first change, one more at shutdown, however many orders a request saves');
+($GLOBALS['actions']['shutdown'][0])();
+check(Tax_Report_Service::order_data_fingerprint() !== $after, 'The shutdown write invalidates previews built during the request');
+$changed->setValue(null, false);
+
+// 8. Memory limit parsing and the guard.
 $previous_limit = ini_get('memory_limit');
 ini_set('memory_limit', '-1');
 check(Tax_Report_Memory::limit_bytes() === 0, 'Unlimited memory has no ceiling');

@@ -51,6 +51,7 @@ class Tax_Reports_Module extends FFLA_Module
 
         Tax_Report_Snapshot::init();
         Tax_Report_Email::init();
+        Tax_Report_Service::track_order_changes();
 
         if (is_admin()) {
             require_once $report_base . 'admin/class-tax-reports-admin.php';
@@ -65,9 +66,9 @@ class Tax_Reports_Module extends FFLA_Module
 
     public function deactivate(): void
     {
-        wp_clear_scheduled_hook('ffla_tax_report_monthly_email');
-        wp_clear_scheduled_hook('ffla_tax_report_email_send');
-        wp_clear_scheduled_hook('ffla_tax_report_on_demand');
+        wp_unschedule_hook('ffla_tax_report_monthly_email');
+        wp_unschedule_hook('ffla_tax_report_email_send');
+        wp_unschedule_hook('ffla_tax_report_on_demand');
 
         if (!class_exists('Tax_Report_Email')) {
             require_once FFLA_PATH . 'modules/tax-rates/includes/class-tax-report-email.php';

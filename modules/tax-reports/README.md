@@ -43,7 +43,7 @@ Module ID: `tax-reports`, off until it is switched on in **FFL Funnels → Dashb
 
 **Preview filing report** shows the tabs on screen; **Download filing report** builds the ZIP; **Email me this report** builds the same ZIP in the background and emails it to you. Nothing is stored on the server except a generation history entry without customer data (filters, counts, currencies, file names and each file's SHA-256 checksum).
 
-A filing-summary preview is reused for 10 minutes while no order or refund has been created, edited, trashed or deleted, so switching tabs does not rebuild it; the page then says *Figures as of {time}*. **Preview filing report** always recalculates.
+A filing-summary preview is reused for 10 minutes while no order, refund, order item or order meta has been created, edited, trashed or deleted (on HPOS and legacy order storage alike), so switching tabs does not rebuild it; the page then says *Figures as of {time}*. **Preview filing report** always recalculates.
 
 ### Monthly email delivery (*Delivery & History* tab)
 
@@ -182,7 +182,7 @@ Compares the report's tax totals with WooCommerce's own: total tax, product and 
 - **Scheduling**: one action is scheduled per month through WooCommerce's Action Scheduler (group `ffla-tax-reports`), or WP-Cron when Action Scheduler is not available. **Next scheduled run** shows when it will run.
 - **Content**: the email body has the filing totals; the ZIP package is attached, or only the PDF filing summary when the ZIP is over **Maximum attachment size**.
 - **Retries**: a failed scheduled send is retried after 15 minutes, 1 hour and 6 hours.
-- **Overlap**: only one report email is generated at a time; a second run is skipped (scheduled runs retry).
+- **Overlap**: only one report email is generated at a time, *Email me this report* included. A second scheduled run retries later, an *Email me this report* request waits and retries, and **Send test report** or **Send previous month now** is skipped (send it again).
 - **Attachment name**: the ZIP or PDF is attached under its own file name (for example `ffla-tax-filing-report-{from}-to-{to}-{id}.zip`), never as a temporary `.tmp` file, which services such as Amazon SES refuse.
 - **Cleanup**: temporary files are deleted after each attempt.
 - **Recent email history** shows the last 10 attempts: status `sent`, `sent_summary_only`, `failed`, `skipped` or `waiting`, mode, period, number of recipients, attachment and details. Only the number of recipients is stored, not their addresses; entries saved by older versions are converted the next time an attempt is recorded.
@@ -193,7 +193,7 @@ Compares the report's tax totals with WooCommerce's own: total tax, product and 
 - A download or preview of a period with more orders than the browser limit (see [Limits](#limits)) is queued this way automatically, and the page says so.
 - When another report email is being built, the request waits and tries again every 5 minutes, up to 6 times (history status `waiting`). A failed build is recorded with its reason and is not retried; request it again.
 - The request is dropped, with a `failed` history entry, when that user was deleted or no longer has `manage_woocommerce`.
-- The attachment-size limit and PDF-summary fallback of the monthly email apply. A package with the shipping-address audit carries the *Confidential* note.
+- The attachment-size limit and PDF-summary fallback of the monthly email apply: a package larger than **Maximum attachment size** arrives as its PDF filing summary, so use a shorter period to receive the full package. A package with the shipping-address audit carries the *Confidential* note.
 
 ### Combining reports
 
@@ -254,6 +254,7 @@ The report shows snapshot coverage and flags orders without one (older orders, o
 | Report packages | Temporary files | Deleted after the download or email attempt |
 | Tool lock, diagnostics, rate limit | Option `ffla_tax_report_tool_lock`; transients `ffla_tax_report_tool_diag_{user}` (10 minutes), `ffla_tax_report_tool_rate_{user}` (10 seconds), `ffla_tax_report_email_lock` (30 minutes) | Short-lived |
 | Recent previews (filing summary only: state, jurisdiction and totals tables; no order rows or customer data) | Transients `ffla_tax_report_preview_{hash}` | 10 minutes |
+| Order data version (a random value that changes when orders change, so previews are not reused) | Option `ffla_tax_report_data_version` | Until uninstall |
 | Queued *Email me this report* requests (user ID and report filters) | Action Scheduler action `ffla_tax_report_on_demand` | Until it runs |
 
 - **Switching the module off** removes the scheduled monthly email and any queued sends, including *Email me this report* requests. Reports, snapshots and history stay; snapshots stop being captured.

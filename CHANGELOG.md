@@ -9,11 +9,12 @@ All notable changes to FFL Funnels Addons are documented in this file.
 - The paid-date pass added for Split Payment in 1.47.5 no longer reloads every order of the period: it asks for order IDs and loads only orders the first pass did not see. One query per page tells the report which orders have Split Payment line items, so other orders are not read item by item just to check.
 - **Report emails were refused by Amazon SES.** The package was attached as its temporary file, whose name ends in `.tmp`. SES rejects that file type ("Illegal filename"), so on stores sending through SES every monthly, test and manual report email since 1.42.0 failed with *WordPress could not hand the message to the configured mail transport*. Other mail services delivered an attachment the recipient could not open. The ZIP (or PDF summary) is now attached under its real name, e.g. `ffla-tax-filing-report-2026-09-01-to-2026-09-30-….zip`.
 - When a report email fails, **Recent email history** now includes the mail service's own error message.
+- Switching the module off or uninstalling now also removes report emails queued through WP-Cron (stores without Action Scheduler); their events carry arguments, which `wp_clear_scheduled_hook()` did not remove.
 - Report figures are unchanged: a new regression test compares complete reports with and without these changes, and on a production store the third quarter matched the previous version to the cent (1,074 receipts, 44 jurisdiction rows).
 
 ### Added
 - **Email me this report:** builds the selected report in the background and emails the package to your account email. Downloads of periods with more than 8,000 orders (4,000 for the advanced package or the shipping-address audit) go this way automatically instead of timing out, and previews of such periods point to it. Status appears in **Recent email history** (mode `on_demand`; `waiting` while another report email is being built). Limit filter: `ffla_tax_report_browser_order_limit`.
-- **Faster tab switching:** a filing-summary preview is reused for 10 minutes while no order or refund changes, with a *Figures as of* note. **Preview filing report** always recalculates.
+- **Faster tab switching:** a filing-summary preview is reused for 10 minutes while no order, refund, order item or order meta changes (tracked through WooCommerce's save hooks, since legacy order storage does not update an order's modification time for item, total or meta edits), with a *Figures as of* note. **Preview filing report** always recalculates.
 
 ## [1.55.7] - 2026-10-13
 

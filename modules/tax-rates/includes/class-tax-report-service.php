@@ -19,6 +19,8 @@ class Tax_Report_Service
 {
     const SCHEMA_VERSION = '2.8.0';
     const HISTORY_OPTION = 'ffla_tax_report_runs';
+    /** Changes whenever order data changes; part of the preview cache key. */
+    const DATA_VERSION_OPTION = 'ffla_tax_report_data_version';
 
     /** "Calculate tax based on" value recorded with an order's first snapshot. */
     const TAX_BASIS_META = '_ffla_tax_based_on';
@@ -37,6 +39,9 @@ class Tax_Report_Service
 
     /** @var array<int,bool> Per-order "layaway fee includes shipping" decisions. */
     private $fee_shipping_orders = [];
+
+    /** @var bool Whether this request already changed order data. */
+    private static $order_data_changed = false;
 
     public function __construct()
     {
@@ -463,9 +468,74 @@ class Tax_Report_Service
     }
 
     /**
-     * Changes whenever an order or refund is created, edited, trashed or
-     * deleted: the count and the latest modification time of both types.
-     * Empty when it cannot be read, so callers must not cache on it.
+     * Watch order data so a cached preview is never reused after a change.
+     *
+     * The modification time alone is not enough: with legacy (posts) order
+     * storage WooCommerce updates it only when an order's date, status or
+     * parent changes, while line items, totals, addresses and meta are saved
+     * without it. These hooks cover those saves on both storages, including
+     * direct meta writes by other plugins.
+     */
+    public static function track_order_changes(): void
+    {
+        $hooks = [
+            'woocommerce_new_order', 'woocommerce_update_order', 'woocommerce_delete_order',
+            'woocommerce_trash_order', 'woocommerce_untrash_order', 'woocommerce_order_status_changed',
+            'woocommerce_order_refunded', 'woocommerce_refund_created', 'woocommerce_refund_deleted',
+            'woocommerce_new_order_item', 'woocommerce_update_order_item', 'woocommerce_delete_order_item',
+            'added_order_item_meta', 'updated_order_item_meta', 'deleted_order_item_meta',
+            'woocommerce_new_subscription', 'woocommerce_update_subscription',
+        ];
+        foreach ($hooks as $hook) {
+            add_action($hook, [__CLASS__, 'mark_order_data_changed'], 10, 0);
+        }
+        foreach (['added_post_meta', 'updated_post_meta', 'deleted_post_meta'] as $hook) {
+            add_action($hook, [__CLASS__, 'mark_post_meta_changed'], 10, 2);
+        }
+    }
+
+    /**
+     * Post meta hook: only order, refund and subscription posts count.
+     *
+     * @param int|int[] $meta_ids  Unused.
+     * @param int       $object_id Post the meta belongs to.
+     */
+    public static function mark_post_meta_changed($meta_ids, $object_id): void
+    {
+        if (self::$order_data_changed || !function_exists('get_post_type')) {
+            return;
+        }
+        $type = get_post_type((int) $object_id);
+        if (in_array($type, ['shop_order', 'shop_order_refund', 'shop_subscription', 'shop_order_placehold'], true)) {
+            self::mark_order_data_changed();
+        }
+    }
+
+    /**
+     * Store a new data version now and again when the request ends, so a
+     * preview built between two changes of the same request is not reused.
+     * At most two option writes per request, however many orders it saves.
+     */
+    public static function mark_order_data_changed(): void
+    {
+        if (self::$order_data_changed) {
+            return;
+        }
+        self::$order_data_changed = true;
+        self::store_data_version();
+        add_action('shutdown', [__CLASS__, 'store_data_version']);
+    }
+
+    public static function store_data_version(): void
+    {
+        update_option(self::DATA_VERSION_OPTION, uniqid('', true), false);
+    }
+
+    /**
+     * Changes whenever an order, refund or subscription is created, edited,
+     * trashed or deleted: their count, latest modification time and the data
+     * version kept by track_order_changes(). Empty when it cannot be read, so
+     * callers must not cache on it.
      */
     public static function order_data_fingerprint(): string
     {
@@ -480,15 +550,15 @@ class Tax_Report_Service
         if ($hpos && method_exists($order_util, 'get_table_for_orders')) {
             $table = (string) $order_util::get_table_for_orders();
             // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- WooCommerce table name.
-            $row = $wpdb->get_row("SELECT COUNT(*) AS records, MAX(date_updated_gmt) AS modified FROM {$table} WHERE type IN ('shop_order', 'shop_order_refund')", ARRAY_A);
+            $row = $wpdb->get_row("SELECT COUNT(*) AS records, MAX(date_updated_gmt) AS modified FROM {$table} WHERE type IN ('shop_order', 'shop_order_refund', 'shop_subscription')", ARRAY_A);
         } else {
-            $row = $wpdb->get_row("SELECT COUNT(*) AS records, MAX(post_modified_gmt) AS modified FROM {$wpdb->posts} WHERE post_type IN ('shop_order', 'shop_order_refund')", ARRAY_A);
+            $row = $wpdb->get_row("SELECT COUNT(*) AS records, MAX(post_modified_gmt) AS modified FROM {$wpdb->posts} WHERE post_type IN ('shop_order', 'shop_order_refund', 'shop_subscription')", ARRAY_A);
         }
 
         if (!is_array($row) || !isset($row['records'])) {
             return '';
         }
-        return md5((string) $row['records'] . '|' . (string) ($row['modified'] ?? ''));
+        return md5((string) $row['records'] . '|' . (string) ($row['modified'] ?? '') . '|' . (string) get_option(self::DATA_VERSION_OPTION, ''));
     }
 
     /**
