@@ -2,6 +2,16 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.55.8] - 2026-10-19
+
+### Fixed
+- **MonsterInsights Compatibility:** `add_to_cart` was counted twice in GA4. The MonsterInsights eCommerce Addon already sends `add_to_cart` from the server (Measurement Protocol) for every add to cart, AJAX included; that event never reaches the browser's `dataLayer`, so the module's duplicate check could not see it and always sent a second copy. The browser `add_to_cart` fallback is removed; the module now fills in only a missing `view_item` on single product pages. Found on a live store: one add to cart produced one server-side and one browser `add_to_cart` for the same visitor.
+- **MonsterInsights Compatibility:** product names, categories, variants and brands were sent to GA4 with HTML entities (`H&amp;R … 22&#8243;`). They are now decoded, in the module's `view_item` and in MonsterInsights' own server-side events.
+- **MonsterInsights Compatibility:** MonsterInsights computes the `add_to_cart` and `remove_from_cart` value from whole-dollar prices (174.99 was sent as 174.00), and sends `begin_checkout` with no value or currency. The module now corrects these through the `monsterinsights_mp_v4_api_call` filter. Purchase totals, refunds and identifiers are not changed.
+
+### Changed
+- **MonsterInsights Compatibility:** the product-page script no longer depends on jQuery or listens for WooCommerce cart events. The existing dataLayer duplicate check for `view_item` is unchanged. New offline regression check `tests/smoke/monsterinsights-payload-smoke.php`.
+
 ## [1.55.7] - 2026-10-13
 
 ### Fixed

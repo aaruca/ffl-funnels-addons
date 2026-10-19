@@ -1,8 +1,15 @@
 /**
- * MonsterInsights storefront compatibility for Bricks + AJAX side-carts.
+ * MonsterInsights storefront compatibility for Bricks product templates.
  *
- * MonsterInsights owns the tag and purchase/refund lifecycle. This file only
- * fills an event when the active page's dataLayer does not already contain it.
+ * MonsterInsights owns the tag and every cart and order event: its eCommerce
+ * Addon sends add_to_cart, remove_from_cart, begin_checkout, purchase and
+ * refunds from the server. This file only fills in view_item on a single
+ * product page, when the page's dataLayer does not already contain one for
+ * MonsterInsights (a custom Bricks template can skip the WooCommerce hook
+ * MonsterInsights prints it from).
+ *
+ * It deliberately sends no add_to_cart: MonsterInsights' server-side event is
+ * invisible to the dataLayer, so a browser copy would always be a duplicate.
  */
 (function (window, document) {
     'use strict';
@@ -10,16 +17,11 @@
     var config = window.fflaMonsterInsightsBridge || {};
     var measurementId = String(config.measurementId || '');
     var layer = window.dataLayer = window.dataLayer || [];
-    var currentItems = Array.isArray(config.items) ? config.items.slice() : [];
-    var bound = false;
+    var items = Array.isArray(config.items) ? config.items.slice() : [];
 
-    if (!/^G-[A-Z0-9]+$/.test(measurementId) || !currentItems.length) {
+    if (!/^G-[A-Z0-9]+$/.test(measurementId) || !items.length) {
         return;
     }
-
-    // The page product as printed by PHP, restored when a variation is cleared.
-    var baseItem = Object.assign({}, currentItems[0]);
-    var pageProductId = String(config.productId || baseItem.item_id || '');
 
     function tracker() {
         return typeof window.__gtagTracker === 'function' ? window.__gtagTracker : null;
@@ -59,18 +61,15 @@
         }).indexOf(measurementId) !== -1;
     }
 
-    function eventAlreadySent(name, itemId, startIndex) {
-        var start = Math.max(0, Number(startIndex) || 0);
-
-        for (var index = start; index < layer.length; index++) {
+    function eventAlreadySent(name) {
+        for (var index = 0; index < layer.length; index++) {
             var command = asCommand(layer[index]);
             if (!command || command.type !== 'event' || command.name !== name) {
                 continue;
             }
 
             var parameters = command.parameters || {};
-            // Our own earlier fallback (e.g. a previous add to cart on this
-            // page) is not MonsterInsights' event for the current action.
+            // Our own earlier fallback is not MonsterInsights' event.
             if (parameters.ffla_bridge) {
                 continue;
             }
@@ -82,16 +81,7 @@
                 continue;
             }
 
-            if (!itemId) {
-                return true;
-            }
-
-            var items = Array.isArray(parameters.items) ? parameters.items : [];
-            if (items.some(function (item) {
-                return String(item.item_id || item.id || '') === String(itemId);
-            })) {
-                return true;
-            }
+            return true;
         }
 
         return false;
@@ -117,143 +107,32 @@
         }
     }
 
-    function sendFallback(name, parameters, itemId, startIndex, delay) {
+    function sendViewItem() {
         window.setTimeout(function () {
             waitForTracker(function () {
-                if (eventAlreadySent(name, itemId, startIndex)) {
+                if (eventAlreadySent('view_item')) {
                     return;
                 }
 
-                parameters.send_to = measurementId;
-                parameters.ffla_bridge = 'monsterinsights_compatibility';
+                var firstItem = items[0] || {};
                 try {
-                    tracker()('event', name, parameters);
+                    tracker()('event', 'view_item', {
+                        currency: String(config.currency || 'USD'),
+                        value: Number(firstItem.price || config.value || 0),
+                        items: items,
+                        send_to: measurementId,
+                        ffla_bridge: 'monsterinsights_compatibility'
+                    });
                 } catch (error) {
-                    // Analytics must never interrupt product or cart behavior.
+                    // Analytics must never interrupt product behavior.
                 }
             });
-        }, delay || 0);
-    }
-
-    function baseParameters(items, value) {
-        return {
-            currency: String(config.currency || 'USD'),
-            value: Number(value || 0),
-            items: items
-        };
-    }
-
-    function beginProductEvent() {
-        var firstItem = currentItems[0] || {};
-
-        sendFallback(
-            'view_item',
-            baseParameters(currentItems, firstItem.price || config.value),
-            '',
-            0,
-            900
-        );
-    }
-
-    function bindWooCommerceEvents(attempt) {
-        attempt = attempt || 0;
-
-        if (bound) {
-            return;
-        }
-
-        if (!window.jQuery || !document.body) {
-            if (attempt < 40) {
-                window.setTimeout(function () {
-                    bindWooCommerceEvents(attempt + 1);
-                }, 250);
-            }
-            return;
-        }
-
-        bound = true;
-        var $ = window.jQuery;
-
-        $(document.body).on('found_variation.fflaMonsterInsightsBridge', 'form.variations_form', function (event, variation) {
-            if (!currentItems[0] || !variation) {
-                return;
-            }
-
-            currentItems[0].item_id = String(variation.variation_id || currentItems[0].item_id || '');
-            if (typeof variation.display_price !== 'undefined') {
-                currentItems[0].price = Number(variation.display_price || 0);
-            }
-
-            // item_variant: the chosen options as the shopper sees them.
-            var labels = [];
-            $(this).find('select[name^="attribute_"]').each(function () {
-                var $select = $(this);
-                var label = String($select.find('option:selected').text() || '').trim();
-                if ($select.val() && label) {
-                    labels.push(label);
-                }
-            });
-            if (labels.length) {
-                currentItems[0].item_variant = labels.join(', ');
-            } else {
-                delete currentItems[0].item_variant;
-            }
-        });
-
-        // Choice cleared: back to the parent product's data.
-        $(document.body).on('reset_data.fflaMonsterInsightsBridge', 'form.variations_form', function () {
-            currentItems[0] = Object.assign({}, baseItem);
-        });
-
-        $(document.body).on('added_to_cart.fflaMonsterInsightsBridge', function (event, fragments, cartHash, $button) {
-            if (!currentItems[0]) {
-                return;
-            }
-
-            var item = Object.assign({}, currentItems[0]);
-            var startIndex = Math.max(0, layer.length - 6);
-            var $source = $button && $button.jquery ? $button : $(event.target);
-            var $form = $source.closest('form.cart');
-            var quantity = Number($source.data('quantity') || $form.find('input.qty').val() || 1);
-            var variationId = String($form.find('input[name="variation_id"]').val() || '');
-
-            // Which product was added? Loop buttons carry data-product_id; the
-            // product form names it in add-to-cart / product_id. Another
-            // product's button (related products, upsells) is skipped, because
-            // only this page's product data is available. When nothing names a
-            // product (a side-cart that passes no button), it is this page's.
-            var addedId = String(
-                $source.data('product_id') ||
-                $form.find('[name="add-to-cart"]').val() ||
-                $form.find('input[name="product_id"]').val() ||
-                ''
-            );
-            if (addedId && addedId !== pageProductId && addedId !== String(item.item_id) && addedId !== variationId) {
-                return;
-            }
-
-            item.quantity = quantity > 0 ? quantity : 1;
-            if (variationId && variationId !== '0') {
-                item.item_id = variationId;
-            }
-
-            sendFallback(
-                'add_to_cart',
-                baseParameters([item], Number(item.price || 0) * item.quantity),
-                '',
-                startIndex,
-                180
-            );
-        });
+        }, 900);
     }
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function () {
-            bindWooCommerceEvents();
-            beginProductEvent();
-        });
+        document.addEventListener('DOMContentLoaded', sendViewItem);
     } else {
-        bindWooCommerceEvents();
-        beginProductEvent();
+        sendViewItem();
     }
 })(window, document);
