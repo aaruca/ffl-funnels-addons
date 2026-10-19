@@ -3,18 +3,26 @@
  * MonsterInsights Compatibility — entry point.
  *
  * MonsterInsights remains the analytics owner: it loads the Google tag and
- * records checkout, purchases, and refunds. This optional module only restores
- * storefront events that custom Bricks product templates and AJAX side-carts can prevent WooCommerce
- * integrations from seeing. Every JavaScript fallback first checks the shared
- * dataLayer, so it does not duplicate an event MonsterInsights already sent.
+ * records add to cart, remove from cart, checkout, purchases, and refunds. Its
+ * eCommerce Addon sends those cart and order events from the server (GA4
+ * Measurement Protocol), on WooCommerce's own hooks, so they never appear in
+ * the browser's dataLayer and are not affected by Bricks templates or AJAX
+ * side-carts.
+ *
+ * With MonsterInsights this module therefore does two things only:
+ *  - fills in a missing `view_item` on single product pages, where a custom
+ *    Bricks product template skips the WooCommerce hook MonsterInsights uses
+ *    (the browser fallback first checks the dataLayer, so it never doubles one);
+ *  - corrects MonsterInsights' server-side payloads: HTML-encoded item text,
+ *    cart values computed from whole-dollar prices, and a begin_checkout with
+ *    no value or currency (see Ga4_Bridge_Payload).
+ *
+ * It does NOT send add_to_cart in the browser: MonsterInsights already sends it
+ * from the server for every add, AJAX included, so a browser copy would be
+ * counted twice (the dataLayer cannot see a server-side event to deduplicate).
  *
  * Backward compatibility for Google Analytics for WooCommerce is retained for
  * stores that have not migrated yet, but no second Google tag is ever loaded.
- *
- * MonsterInsights fallback scope: single product pages only. add_to_cart is
- * reported for the page's product (or its chosen variation); an AJAX add of a
- * different product on that page (related products, upsells) is not reported,
- * because its item data is not available here.
  *
  * Known limits of the Google Analytics for WooCommerce path:
  *  - products without an add-to-cart form (e.g. out of stock) get no view_item,
@@ -30,6 +38,8 @@
 if (!defined('ABSPATH')) {
     exit;
 }
+
+require_once __DIR__ . '/includes/class-ga4-bridge-payload.php';
 
 class Ga4_Bridge_Module extends FFLA_Module
 {
@@ -53,7 +63,7 @@ class Ga4_Bridge_Module extends FFLA_Module
 
     public function get_description(): string
     {
-        return __('Optional compatibility for missing GA4 product views and AJAX add-to-cart events on Bricks and Merchant-powered WooCommerce stores.', 'ffl-funnels-addons');
+        return __('Optional MonsterInsights fixes for Bricks WooCommerce stores: fills in missing GA4 product views and corrects product names and cart values in MonsterInsights eCommerce events.', 'ffl-funnels-addons');
     }
 
     public function get_icon_svg(): string
@@ -67,6 +77,28 @@ class Ga4_Bridge_Module extends FFLA_Module
         add_action('woocommerce_add_to_cart', [$this, 'persist_added_to_cart'], 99, 5);
         add_action('wp_enqueue_scripts', [$this, 'enqueue_monsterinsights_bridge'], 99);
         add_action('admin_notices', [$this, 'render_dependency_notice']);
+        add_filter('monsterinsights_mp_v4_api_call', [$this, 'normalize_monsterinsights_payload'], 20);
+    }
+
+    /**
+     * Correct MonsterInsights' server-side GA4 payload before it is sent:
+     * decoded item text, cart values with cents, and value/currency on
+     * begin_checkout. Purchase totals and identifiers are left untouched.
+     *
+     * @param mixed $body Measurement Protocol body built by MonsterInsights.
+     * @return mixed
+     */
+    public function normalize_monsterinsights_payload($body)
+    {
+        try {
+            $currency = function_exists('get_woocommerce_currency') ? (string) get_woocommerce_currency() : '';
+            $decimals = function_exists('wc_get_price_decimals') ? (int) wc_get_price_decimals() : 2;
+
+            return Ga4_Bridge_Payload::normalize_body($body, $currency, $decimals);
+        } catch (\Throwable $e) {
+            // Analytics must never break the request that triggered it.
+            return $body;
+        }
     }
 
     public function activate(): void
@@ -143,7 +175,7 @@ class Ga4_Bridge_Module extends FFLA_Module
     public function persist_added_to_cart($cart_item_key, $product_id, $quantity, $variation_id, $variation): void
     {
         try {
-            // MonsterInsights is handled immediately in the browser. Keeping
+            // MonsterInsights sends add_to_cart itself (server side). Keeping
             // the legacy payload as well would duplicate add_to_cart when both
             // integrations are temporarily present during a migration.
             if ($this->is_monsterinsights_ready()) {
@@ -183,8 +215,9 @@ class Ga4_Bridge_Module extends FFLA_Module
     }
 
     /**
-     * Add the small provider-aware fallback on product screens.
-     * It never loads gtag.js; events are sent through MonsterInsights' tracker.
+     * Add the small view_item fallback on single product pages.
+     * It never loads gtag.js; the event is sent through MonsterInsights' tracker,
+     * and only when the page's dataLayer has no view_item for MonsterInsights.
      */
     public function enqueue_monsterinsights_bridge(): void
     {
@@ -213,7 +246,7 @@ class Ga4_Bridge_Module extends FFLA_Module
         wp_enqueue_script(
             self::SCRIPT_HANDLE,
             FFLA_URL . 'modules/ga4-bridge/assets/js/monsterinsights-bridge.js',
-            ['jquery'],
+            [],
             FFLA_VERSION,
             true
         );
@@ -223,9 +256,6 @@ class Ga4_Bridge_Module extends FFLA_Module
             'fflaMonsterInsightsBridge',
             [
                 'measurementId' => $this->monsterinsights_measurement_id(),
-                // Lets the script tell this product's add-to-cart apart from
-                // buttons for other products shown on the page.
-                'productId'     => (string) $product->get_id(),
                 'currency'      => function_exists('get_woocommerce_currency') ? get_woocommerce_currency() : 'USD',
                 'value'         => wc_format_decimal($value, wc_get_price_decimals()),
                 'items'         => $items,
@@ -295,7 +325,7 @@ class Ga4_Bridge_Module extends FFLA_Module
 
         $item = [
             'item_id'   => (string) $product->get_id(),
-            'item_name' => wp_strip_all_tags($product->get_name()),
+            'item_name' => Ga4_Bridge_Payload::clean_text($product->get_name()),
             'price'     => $price,
             'quantity'  => max(1, $quantity),
         ];
@@ -304,14 +334,14 @@ class Ga4_Bridge_Module extends FFLA_Module
         if (!is_wp_error($category_names)) {
             foreach (array_slice(array_values($category_names), 0, 5) as $index => $category_name) {
                 $category_key        = 0 === $index ? 'item_category' : 'item_category' . ($index + 1);
-                $item[$category_key] = sanitize_text_field((string) $category_name);
+                $item[$category_key] = Ga4_Bridge_Payload::clean_text((string) $category_name);
             }
         }
 
         if ($product->is_type('variation')) {
             $attributes = wc_get_formatted_variation($product, true, false, false);
             if ('' !== $attributes) {
-                $item['item_variant'] = wp_strip_all_tags($attributes);
+                $item['item_variant'] = Ga4_Bridge_Payload::clean_text($attributes);
             }
         }
 
@@ -322,7 +352,7 @@ class Ga4_Bridge_Module extends FFLA_Module
 
             $brands = wp_get_post_terms($taxonomy_product_id, $brand_taxonomy, ['fields' => 'names']);
             if (!is_wp_error($brands) && !empty($brands[0])) {
-                $item['item_brand'] = sanitize_text_field((string) $brands[0]);
+                $item['item_brand'] = Ga4_Bridge_Payload::clean_text((string) $brands[0]);
                 break;
             }
         }

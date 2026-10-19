@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.55.7-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.55.8-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -24,7 +24,7 @@ FFL Funnels Addons is a modular WooCommerce plugin for FFL Funnels stores. Switc
 | Loadout | Tiered accessory packages on product pages. | [modules/loadout/README.md](modules/loadout/README.md) |
 | Media Cleaner | Finds unused, broken, orphan and duplicate media and moves it to a restorable trash. | [modules/media-cleaner/README.md](modules/media-cleaner/README.md) |
 | Customer & Order Management | Customer notes, pickup operations, serial numbers, follow-up cases and customer issue and return requests. | [modules/customer-notes/README.md](modules/customer-notes/README.md) |
-| MonsterInsights Compatibility | Fills in missing GA4 `view_item` and `add_to_cart` events on product pages. | [modules/ga4-bridge/README.md](modules/ga4-bridge/README.md) |
+| MonsterInsights Compatibility | Fills in a missing GA4 `view_item` on product pages and corrects product names and cart values in MonsterInsights eCommerce events. | [modules/ga4-bridge/README.md](modules/ga4-bridge/README.md) |
 | Google Merchant Policy | Decides which products Google for WooCommerce may send to Merchant Center. | [modules/google-merchant-policy/README.md](modules/google-merchant-policy/README.md) |
 | White Label | Branded wp-admin, client restrictions and a client dashboard. | [modules/white-label/README.md](modules/white-label/README.md) |
 | Order Badges | Colour-coded product-tag badges on WooCommerce orders. | [modules/order-badges/README.md](modules/order-badges/README.md) |
@@ -175,12 +175,12 @@ Guide: [modules/customer-notes/README.md](modules/customer-notes/README.md)
 
 ### MonsterInsights Compatibility
 
-Optional GA4 compatibility for stores that track with MonsterInsights and its eCommerce Addon but use custom Bricks product templates and AJAX side-carts such as Merchant. It has no settings page.
+Optional GA4 fixes for stores that track with MonsterInsights and its eCommerce Addon on custom Bricks product templates. It has no settings page.
 
-*   **One analytics owner:** MonsterInsights loads the Google tag, applies its excluded roles, and owns `begin_checkout`, purchases and refunds. The module never loads a Google tag and never sends purchase revenue.
-*   **Narrow coverage:** it fills in only a missing `view_item` and an AJAX `add_to_cart` of the page's own product, on single product pages only.
-*   **Deduplication:** before sending a fallback it checks the page's `dataLayer`, and an event MonsterInsights already sent is left untouched.
-*   **Opt-in:** MonsterInsights works by itself on standard WooCommerce templates, so switch this module on only where those events are actually missing. Stores still on Google Analytics for WooCommerce keep the earlier compatibility path.
+*   **One analytics owner:** MonsterInsights loads the Google tag, applies its excluded roles, and sends `add_to_cart`, `remove_from_cart`, `begin_checkout`, purchases and refunds itself, from the server. The module never loads a Google tag and never sends a cart or order event.
+*   **Product views:** it fills in a missing `view_item` on single product pages, where a custom Bricks template skips the hook MonsterInsights uses. It first checks the page's `dataLayer`, so a `view_item` MonsterInsights already sent is left untouched.
+*   **Cleaner MonsterInsights data:** it corrects MonsterInsights' server-side events before they are sent: product names without HTML entities (`H&R`, not `H&amp;R`), `add_to_cart` / `remove_from_cart` values with cents, and a value and currency on `begin_checkout`. Purchase totals are not changed.
+*   **Opt-in:** switch it on for MonsterInsights stores with custom Bricks product templates. Stores still on Google Analytics for WooCommerce keep the earlier compatibility path.
 
 Guide: [modules/ga4-bridge/README.md](modules/ga4-bridge/README.md)
 
