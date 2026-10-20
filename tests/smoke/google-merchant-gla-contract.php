@@ -115,10 +115,25 @@ expect_source('src/API/Site/Controllers/MerchantCenter/ProductVisibilityControll
 expect_source('src/API/TransportMethods.php', "/const EDITABLE\s*=\s*'POST, PUT, PATCH';/", 'Bulk visibility accepts POST, PUT and PATCH');
 
 // Google's pull proxy: product lists honour _wc_gla_visibility, variations are
-// covered by this module's own filters on the same request marker.
-expect_source('src/Integration/WPCOMProxy.php', "/get_param\(\s*'gla_syncable'\s*\)\s*===\s*'1'/", 'Proxy requests marked gla_syncable=1');
-expect_source('src/Integration/WPCOMProxy.php', "/KEY_VISIBILITY\s*=\s*'_wc_gla_visibility';/", 'Proxy filters on _wc_gla_visibility');
-expect_source('src/Integration/WPCOMProxy.php', "/'woocommerce_rest_' \. \\\$object_type \. '_object_query'/", 'Proxy uses the WooCommerce REST object query filters');
+// covered by this module's own filters on the same request marker. 3.10.0 removed
+// the API Pull code, which leaves those filters inert: a returning pull marker
+// must fail here so the filters are reviewed against it.
+if ($version !== null && version_compare($version[1], '3.10.0', '<')) {
+    expect_source('src/Integration/WPCOMProxy.php', "/get_param\(\s*'gla_syncable'\s*\)\s*===\s*'1'/", 'Proxy requests marked gla_syncable=1');
+    expect_source('src/Integration/WPCOMProxy.php', "/KEY_VISIBILITY\s*=\s*'_wc_gla_visibility';/", 'Proxy filters on _wc_gla_visibility');
+    expect_source('src/Integration/WPCOMProxy.php', "/'woocommerce_rest_' \. \\\$object_type \. '_object_query'/", 'Proxy uses the WooCommerce REST object query filters');
+} else {
+    $checks++;
+    $pull = [];
+    foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root . '/src', FilesystemIterator::SKIP_DOTS)) as $file) {
+        if ($file->getExtension() === 'php' && strpos((string) file_get_contents($file->getPathname()), 'gla_syncable') !== false) {
+            $pull[] = substr($file->getPathname(), strlen($root) + 1);
+        }
+    }
+    if ($pull) {
+        $failures[] = 'Pull marker gla_syncable is back; review the pull filters against: ' . implode(', ', $pull);
+    }
+}
 
 if ($failures) {
     fwrite(STDERR, "Google for WooCommerce contract FAILED:\n - " . implode("\n - ", $failures) . "\n");
