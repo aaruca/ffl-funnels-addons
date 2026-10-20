@@ -2,6 +2,15 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.55.9] - 2026-10-20
+
+### Fixed
+- **White Label:** the MonsterInsights tab always said "Connect Google Analytics in MonsterInsights…", even on connected sites with a valid Pro license. MonsterInsights keeps `auth` and `license` as protected properties loaded through `__get()` (no `__isset()`), so the module's `isset()` checks were always false. They now read the objects directly. Found on a live store running MonsterInsights Pro 11.1.3.
+- **White Label:** on MonsterInsights before 11.2, a connected property with no visits for the range was reported as "MonsterInsights reports could not be loaded. Check its connection…". It now shows that MonsterInsights returned no Google Analytics data and suggests checking the connected GA4 property. Demo charts are still never shown.
+
+### Changed
+- **White Label:** the offline MonsterInsights regression check now models MonsterInsights' protected, lazy-loaded `auth`/`license` properties, so this class of bug fails the test.
+
 ## [1.55.8] - 2026-10-19
 
 ### Fixed

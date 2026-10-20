@@ -226,6 +226,7 @@ They work on WordPress's own boxes, in the browser, and never replace them: the 
   - "Your role does not have permission to view MonsterInsights reports…": grant report access in MonsterInsights.
   - "Reporting is disabled in MonsterInsights settings." / "Connect Google Analytics in MonsterInsights…" / "Resolve the MonsterInsights license issue…": fix it in MonsterInsights.
   - "Select 30 days, or use MonsterInsights Pro for other date ranges.": only 30 days without Pro.
+  - "MonsterInsights returned no Google Analytics data for this period…": the connection works but MonsterInsights has no visits for the range (it would show its demo-chart overlay). If the store had traffic, check in MonsterInsights → Reports that it is connected to the GA4 property receiving it.
 - **SnapFind tab.** "SnapFind analytics is not active on this site." means the SnapFind analytics class is missing; "This SnapFind version does not expose analytics data." means the installed version lacks the expected interface.
 
 ## For developers
