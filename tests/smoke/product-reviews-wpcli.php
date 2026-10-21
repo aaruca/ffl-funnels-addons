@@ -47,15 +47,16 @@ $p_best = strpos($html, 'r5 y50 n0');
 pr_ck($p_pin !== false && $p_best !== false && $p_pin < $p_best, 'pinned first, then the most helpful review from 400 days ago');
 pr_ck(strpos($html, 'r2 y40 n39') === false, 'net score used (40 up / 39 down is not near the top)');
 
-echo "Badge uses the module's own numbers\n";
+echo "Badge uses WooCommerce's stored rating counts\n";
 $dist = Product_Reviews_Core::get_rating_distribution($pid);
-pr_ck($dist['total'] === 108, 'distribution counts approved top-level reviews (' . $dist['total'] . ')');
+pr_ck($dist['total'] === 108, 'distribution counts approved rated reviews (' . $dist['total'] . ')');
+pr_ck($dist['review_count'] === (int) wc_get_product($pid)->get_review_count(), 'review count is WooCommerce\'s');
 wp_update_comment(['comment_ID' => $mixed, 'comment_approved' => 0]);
 $dist2 = Product_Reviews_Core::get_rating_distribution($pid);
-pr_ck($dist2['total'] === 107, 'cache cleared when a review is unapproved (' . $dist2['total'] . ')');
+pr_ck($dist2['total'] === 107, 'recounted when a review is unapproved (' . $dist2['total'] . ')');
 update_comment_meta($pinned, 'rating', 5);
 $dist3 = Product_Reviews_Core::get_rating_distribution($pid);
-pr_ck($dist3['counts'][5] === 2, 'cache cleared when a rating changes');
+pr_ck($dist3['counts'][5] === 2, 'recounted when a rating is written directly');
 
 echo "Uploads setting\n";
 update_option('ffla_product_reviews_settings', array_merge(Product_Reviews_Core::get_settings(), ['allow_media_uploads' => '0']));

@@ -77,7 +77,7 @@ The **Cloudflare Turnstile** and **Bricks Elements** cards are information only.
 - Guests have no security token check: a guest token is the same for every visitor and goes stale on cached product pages. They are covered by the honeypot, Turnstile and a limit of five new reviews per IP address per hour.
 - The security token, honeypot and Turnstile are checked once per submission (a Turnstile token can only be verified once).
 - The review is saved as a normal WordPress comment of type `review`, so WordPress's own comment checks (duplicates, flooding, Discussion settings) still apply. Signed hub links skip WordPress's 15-second flood check, so a customer can review the products of an order one after another.
-- **Verified buyer** is set only when the review came through a signed link for an order that still contains the product (not refunded in full), or from a signed-in account that bought the product (WooCommerce's purchase check by account). An email address typed into a guest form never counts. WooCommerce's own *verified owner* flag on the review is set to the same answer.
+- **Verified buyer** is set only when the review came through a signed link for an order that still contains the product (not refunded in full), or from a signed-in account that bought the product (WooCommerce's purchase check by account). An email address typed into a guest form never counts. WooCommerce's own *verified owner* flag on the review is set to the same answer. Reviews written before the module was switched on have no answer from the module and show WooCommerce's own flag.
 - *Reviews can only be left by "verified owners"*: a signed hub link counts as proof of purchase; otherwise the customer must be signed in to an account that bought the product. Guests see "Only customers who bought this product can review it. Log in to your account, or use the review link from your order email." instead of the form. Staff who can moderate comments are exempt.
 - **One review per customer per product** (staff who can moderate comments are exempt): per account, per signed link (reviews from the order's account or verified reviews under its billing email), and, for guests, per typed address. A guest review someone typed an address into does not count for the address's owner: it does not block their own review or stop their request emails. The guest check never looks at verified reviews, so the form does not reveal whether an address bought the product.
 - WooCommerce's own form and anything else posting to `wp-comments-post.php` follow the same *verified owners* and one-review rules, and the honeypot. While *Replace WooCommerce reviews tab* is on, a new top-level review posted there must also pass Turnstile when the plugin is active (unless the plugin's own comment-form protection is on; it then checks the form itself). Reviews added by other code (imports, other plugins) are not affected.
@@ -100,6 +100,7 @@ These rules apply to every new product review, including ones from WooCommerce's
 - Files are only taken from the FFL form, after its security checks, and never for a review filed as spam or trash. Files sent with a comment to WordPress's own `wp-comments-post.php` are ignored and do not hold the review.
 - Before a photo is stored, its location and camera data are removed: EXIF (GPS, camera, date), XMP, IPTC and comments in JPEG; text and EXIF chunks in PNG; EXIF and XMP in WebP. The colour profile is kept, and a rotated JPEG keeps its orientation so it still displays upright. The file is not re-encoded. A photo that cannot be read this way is skipped. GIF carries no such data; videos are stored as uploaded (their metadata is not changed).
 - Files go into the Media Library, not attached to the product. Media Cleaner always treats them as in use.
+- On a review, videos play in WordPress's own video player and photos use the *Medium* size with WordPress's responsive image sizes.
 - Permanently deleting a review (not just moving it to the comments trash) also deletes its files.
 - **Allow photo and video uploads** off removes the field from every form; anything uploaded anyway is ignored and does not hold the review.
 
@@ -107,19 +108,31 @@ These rules apply to every new product review, including ones from WooCommerce's
 
 - The overall star rating is stored in WooCommerce's own `rating` comment meta.
 - A criterion's slug is what its score is stored under, so renaming a label keeps old scores; removing a line hides the scores without deleting them. *Quality* and *Value for money* keep their original meta keys.
-- The rating summary and dynamic tags count approved top-level reviews with a 1–5 rating. They are cached per product for 12 hours and refreshed whenever a review is posted, edited, approved, unapproved, deleted or pinned, or its rating changes. The Reviews Rating Badge uses the same numbers.
+- The rating summary, the Reviews Rating Badge and the dynamic tags use the numbers WooCommerce keeps on each product: the star counts and average of approved ratings, and its review count. They match the **Reviews (n)** tab title, the stars in shop loops and the structured data. WooCommerce updates them whenever a review is posted, edited, approved, unapproved or deleted; a rating written directly (custom code, imports, WP-CLI) also triggers a recount. Reading them costs no extra query, even for a badge on every product in a loop.
+- The review count can be higher than the number of ratings: WooCommerce also counts reviews left without stars. The summary bars and the 4–5 star share are worked out from the ratings.
 
 ### Lists, pinned reviews and replies
 
 - A list shows at most its *Max reviews* (product tab: 5 most recent). There is no pagination.
 - *Most helpful* sorts all of a product's approved reviews by net score (helpful minus not helpful) in the database, pinned reviews first and newest first on ties.
-- Pinned reviews always come first, labelled *Featured review*. Use the **Pin review** / **Unpin review** row action under **Products → Reviews** (needs `moderate_comments`).
+- Pinned reviews always come first, labelled *Featured review*. Use the **Pin review** / **Unpin review** row action under **Products → Reviews** (needs `moderate_comments`). Pinning refreshes the product's comment count, which tells page caches (caching plugins and hosts that purge on comment or post changes) to drop the cached product page.
 - Only approved direct replies to a review are shown. A reply is badged *Store response* when its author could moderate comments at the time of replying. Only those store replies are emailed to the reviewer.
 
 ### Helpful votes
 
-- One vote per review per IP address for 12 hours, in one direction. After voting, both buttons on that review lock until the page is reloaded.
-- A review accepts at most 200 votes per day. Votes are only counted on approved reviews.
+- One vote per review per IP address for 12 hours, in one direction. After voting, both buttons on that review lock until the page is reloaded and a short note confirms the vote.
+- Behind Cloudflare the shopper's own address is used (the `CF-Connecting-IP` header), but only when the request really comes from one of Cloudflare's published addresses. Otherwise all shoppers reaching the store through the same Cloudflare edge would share one address, and one vote would lock the review for all of them.
+- A review accepts at most 200 votes per calendar day (store time zone); the count starts over the next day. Votes are only counted on approved reviews.
+- If the page came from a page cache and its security token has expired, the vote is retried once with a fresh token. When a vote fails, the reason shows under the buttons.
+
+### Structured data (SEO)
+
+Google only accepts review markup for reviews shoppers can see on the page. WooCommerce marks up the 5 newest rated reviews of any kind, while the FFL list shows pinned reviews first, can sort by *Most helpful*, shows only product reviews and has its own *Max reviews*. When an FFL list shows a product's reviews, the `review` list in the product's structured data is therefore replaced by the rated reviews that list shows, in the same order (a review without stars is left out, as WooCommerce does). The average and review count stay WooCommerce's, which the summary and badge also show.
+
+- **WooCommerce's structured data** (printed in the footer): first matched to the list the page is expected to show, then to the reviews the lists on the page actually rendered.
+- **Rank Math's** Product schema, when Rank Math builds it: printed in the page head, before any list renders, so only the expected list is used.
+- The expected list is the **Reviews List** element in the product's Bricks template (its *Max reviews* and *Order by*), or, with *Replace WooCommerce reviews tab* on, the tab's list. A list inside a nested template or a component is not seen in advance; WooCommerce's markup still ends up matching it, Rank Math's does not (use the `ffla_product_reviews_structured_data_list_settings` filter).
+- With WooCommerce's own Reviews tab in use and no FFL list on the page, the markup is left as WooCommerce builds it.
 
 ### Review request emails
 
@@ -165,13 +178,14 @@ The link in a request email opens a confirmation page; the address is only added
 | **Comments** | The same columns, for stores that still list reviews there. |
 | Product page, **Reviews** tab | FFL list (5 most recent) and form, when *Replace WooCommerce reviews tab* is on. |
 | Bricks elements, category **FFL Funnels** | See below. |
-| Bricks dynamic tags, group **FFL Funnels - Product Reviews** | `{ffla_review_count}`, `{ffla_review_average}` (one decimal, empty with no reviews), `{ffla_review_recommend_percent}` (share of 4 and 5 star reviews, empty with no reviews). |
+| Bricks dynamic tags, group **FFL Funnels - Product Reviews** | `{ffla_review_count}` (WooCommerce's review count), `{ffla_review_average}` (one decimal, empty with no ratings), `{ffla_review_recommend_percent}` (share of 4 and 5 star ratings, empty with no ratings). |
+| Product page structured data | The `review` list matches the FFL list (see *Structured data*). |
 | Hub page | Forms for every product in the order. |
 | Customer inbox | Review request, approval and reply emails. |
 
 | Bricks element | Shows | Main controls |
 |---|---|---|
-| Reviews Rating Badge | Average, partial stars, count in brackets (the same numbers as the rating summary) | Product ID, Average number (Show / Hide), Review count (Show / Hide), Hide when no reviews, star colours and size, typography |
+| Reviews Rating Badge | Average, partial stars, review count in brackets (WooCommerce's numbers, as in the rating summary) | Product ID, Average number (Show / Hide), Review count (Show / Hide), Hide when no reviews, star colours and size, typography |
 | Reviews List | Summary and review cards | Product ID, Max reviews (1–50, default 5), Order by (Most recent / Most helpful), Rating summary (Use module setting / Show / Hide), star and card styling, typography |
 | Review Form | The FFL form | Product ID, Title (default "Write a review"), Intro text, Extra rating criteria (Show / Hide; all configured criteria), Media upload (Collapsed / Expanded), Login hint (Show / Hide); Style tab: Container, Stars, Fields, Submit button, Notices |
 | Order reviews hub | The hub | Intro title (optional), plus Bricks' own ID, classes and styles on the wrapper |
@@ -180,7 +194,7 @@ The on/off options above are selects, not checkboxes: Bricks drops an unchecked 
 
 Empty *Product ID* means the current product: the global product, the Bricks query loop item or the product page. In the Bricks editor the newest published product is used for the preview.
 
-The CSS and JavaScript load on product pages, the hub page, pages whose content contains `[ffla_order_reviews]`, and in the Bricks editor.
+The CSS and JavaScript load only where review output is printed: each Bricks element loads them when it renders (the badge loads only the CSS, so shop and archive loops get styled stars), and so do the list, form and hub themselves. They go in the page head on the hub page, on pages whose content contains `[ffla_order_reviews]`, on product pages while *Replace WooCommerce reviews tab* is on, and in the Bricks editor; anywhere else they are added at the end of the page. A product page without any FFL review output loads neither file. The script is left out when nothing on the page needs it (a list with helpful votes off, a badge).
 
 ## Data and uninstall
 
@@ -194,8 +208,8 @@ The CSS and JavaScript load on product pages, the hub page, pages whose content 
 | Review photos and videos | Media Library | Kept |
 | Request tracking (scheduled, sent, failed attempts) | order meta | Kept |
 | Queued request emails | Action Scheduler / WP-Cron | Removed (also when the module is switched off) |
-| Rating summary cache | transients `ffla_rev_dist_<product ID>` | Deleted |
-| Vote limits, guest review limit | transients | Expire on their own (12 hours / 1 day / 1 hour) |
+| Rating summary cache from versions before 1.55.10 (no longer written) | transients `ffla_rev_dist_<product ID>` | Deleted |
+| Vote limits, guest review limit | transients (`ffla_helpful_<hash>`, `ffla_helpful_daily_<review ID>_<date>`, guest limit per IP) | Expire on their own (12 hours / 1 day / 1 hour) |
 
 Uninstall cleanup runs whenever the settings option exists, even if the module was switched off first. Switching the module off keeps settings and data but removes its queued request emails; they are not sent later.
 
@@ -206,11 +220,14 @@ Uninstall cleanup runs whenever the settings option exists, even if the module w
 - **Pretty link gives a 404.** Visit **Settings → Permalinks** once, and make sure the hub page is published.
 - **"This review link is invalid or has expired."** The link is older than 90 days, the order's billing email changed, the order was refunded, cancelled or failed, or the link was cut off or altered on the way.
 - **Reviews stay pending.** A photo or video is attached, *Hold all new reviews* is on, a forbidden word matched, or a WordPress Discussion setting held it.
-- **Stars cannot be clicked, votes do nothing, the file picker looks plain.** The CSS/JS did not load on that page (for example a Bricks element outside a product page). Return `true` from `ffla_product_reviews_enqueue_assets` there.
+- **Stars cannot be clicked, votes do nothing, the file picker looks plain.** The CSS/JS did not load on that page, for example review markup printed by custom code that does not go through the module's renderers. Call `Product_Reviews_Assets::enqueue()` there, or return `true` from `ffla_product_reviews_enqueue_assets` to load them in the page head.
 - **"Security check failed."** Only signed-in users see this: the form's WordPress security token is no longer valid (the page was open for more than a day). Refresh the page.
 - **"You already submitted a review for this product."** The customer's account, signed link or (for guests) the typed address already has a review on that product, approved or pending.
 - **"Too many reviews were sent from your connection."** Five guest reviews came from that IP address within the hour (`ffla_product_reviews_guest_hourly_limit`).
 - **"Cloudflare validation failed" on WooCommerce's own form.** *Replace WooCommerce reviews tab* is on and something on the page still uses WordPress's comment form without a Turnstile widget. Turn on the Turnstile plugin's own comment-form protection, or use the FFL form there.
+- **"This page has expired. Reload it and try again." under the vote buttons.** A signed-in user's security token had expired (a long-cached page) and the automatic retry also failed. Reload the page.
+- **Every vote says "Vote already registered recently" behind a proxy.** The visitor address is wrong. Cloudflare is handled; for another proxy or load balancer, return the visitor's address from `ffla_product_reviews_client_ip`.
+- **Rich results test shows other reviews than the page.** Check which list the product page shows (see *Structured data*). A Reviews List in a nested template is only matched in WooCommerce's markup; for Rank Math's, return its settings from `ffla_product_reviews_structured_data_list_settings`.
 - **Two review forms on a product.** Turn on *Hide default Woo reviews tab* when using the Bricks elements.
 - **"Reviews are closed for this product."** WooCommerce's *Enable product reviews* is off, or the product's *Enable reviews* box (Advanced tab) is unticked.
 - **"Only customers who bought this product can review it." / "Please log in to review this product…"** WooCommerce → Settings → Products → *Reviews can only be left by "verified owners"* is on. Customers review by signing in to the account they bought with, or through the signed link in a request email.
@@ -224,11 +241,14 @@ Uninstall cleanup runs whenever the settings option exists, even if the module w
 |---|---|---|
 | `ffla_product_reviews_wc_tab_list_settings` | `array $settings`, `int $product_id` | List in the replaced tab. Keys `perPage` (1–50), `orderBy` (`recent`/`helpful`), `showSummary` (bool). Default `['perPage' => 5, 'orderBy' => 'recent']`. |
 | `ffla_product_reviews_wc_tab_form_settings` | `array $settings`, `int $product_id` | Form in the replaced tab. Keys `title`, `introText`, `showOptionalCriteria`, `collapseMedia`, `showLoginHint`. Default `[]`. |
-| `ffla_product_reviews_enqueue_assets` | `bool $force` (false) | Load the front-end CSS/JS on other pages. |
-| `ffla_helpful_daily_cap` | `int` (200) | Votes per review per day. |
+| `ffla_product_reviews_enqueue_assets` | `bool $force` (false) | Load the front-end CSS/JS in the page head on other pages. |
+| `ffla_product_reviews_structured_data_list_settings` | `array\|null $settings`, `int $product_id` | The list the product page will show (`perPage`, `orderBy`), worked out before it renders; `null` leaves the structured data alone. Default: the Bricks Reviews List element in the page content, or the replaced tab's list. |
+| `ffla_helpful_daily_cap` | `int` (200) | Votes per review per calendar day. |
 | `ffla_product_reviews_guest_hourly_limit` | `int` (5) | New guest reviews per IP address per hour through the FFL form. 0 turns the limit off. |
 | `ffla_product_reviews_request_max_order_age_days` | `int` (delay + 30), `WC_Order $order` | Oldest order, in days between order date and send time, that still gets a request email. 0 turns the limit off. |
 | `ffla_product_reviews_request_status_allowed` | `bool`, `WC_Order $order` | Whether the order's status allows its request email when it is due. Default: Completed, or a status outside WooCommerce's own list reached after completion. |
+| `ffla_product_reviews_client_ip` | `string $ip` | Visitor address used to throttle votes. |
+| `ffla_product_reviews_cloudflare_ranges` | `string[]` (Cloudflare's published IPv4/IPv6 ranges) | Proxy addresses whose `CF-Connecting-IP` header is trusted. |
 | `ffla_review_approved_email_subject`, `ffla_review_approved_email_body` | `string`, `WP_Comment $review` | Approval email. |
 | `ffla_review_reply_email_subject`, `ffla_review_reply_email_body` | `string`, `WP_Comment $reply`, `WP_Comment $review` | Reply email. |
 
@@ -239,7 +259,7 @@ Uninstall cleanup runs whenever the settings option exists, even if the module w
 | Endpoint | Notes |
 |---|---|
 | `admin-post.php`, action `ffla_submit_product_review` (POST, guests too) | Fields `comment_post_ID`, `rating`, `comment`, `author` and `email` (guests without a signed link), `ffla_review_criteria[<slug>]`, `ffla_review_media[]` (multipart), `ffla_order_review_token`, `redirect_to`, `ffla_hp` (must be empty), `ffla_review_form_nonce` (nonce action `ffla_review_form`; checked for signed-in users without a signed link only). Redirects with `ffla_review_status` (`success`/`error`) and `ffla_review_message`, anchored `#reviews`. |
-| `admin-ajax.php`, action `ffla_vote_review_helpful` (POST, guests too) | `nonce` (`ffla_product_reviews_nonce`; checked for signed-in users only), `comment_id`, `vote` (`yes`/`no`). Returns `count`, `countNo`, `throttled`, `message`. |
+| `admin-ajax.php`, action `ffla_vote_review_helpful` (POST, guests too) | `nonce` (`ffla_product_reviews_nonce`; checked for signed-in users only), `comment_id`, `vote` (`yes`/`no`). Returns `count`, `countNo`, `throttled`, `message`. A signed-in user's invalid or expired nonce gets HTTP 403 with `code` `invalid_nonce`, a fresh `nonce` and a `message`. |
 | `admin-post.php`, action `ffla_review_unsubscribe` (GET `t`), then `ffla_review_unsubscribe_confirm` (POST `t`) | Unsubscribe confirmation and opt-out. Tokens do not expire. |
 | `admin-post.php`, action `ffla_toggle_review_pin` | `comment_id`, `pin` (`1`/`0`), nonce; needs `moderate_comments`. |
 | `admin-post.php`, action `product_reviews_save_settings` | Settings form; needs `manage_woocommerce`. |
@@ -251,4 +271,7 @@ Uninstall cleanup runs whenever the settings option exists, even if the module w
 - Comment meta: `rating`, `ffla_review_quality`, `ffla_review_value`, `ffla_review_criteria_<slug>`, `ffla_helpful_yes`, `ffla_helpful_no`, `ffla_verified_purchase`, `ffla_review_media_ids` (array of attachment IDs), `ffla_is_store_reply`, `_ffla_approved_notified`, `_ffla_reply_notified`. WooCommerce's `verified` is overwritten with the same value as `ffla_verified_purchase` for every product comment posted while the module is on.
 - Order meta: `_ffla_review_request_scheduled`, `_ffla_review_bundle_sent`, `_ffla_review_sent_<product ID>`, `_ffla_review_bundle_attempts`, `_ffla_review_attempts_<product ID>` (failed sends).
 - `Product_Reviews_Core::hub_page_ready()` and `requests_ready()` say whether request emails can run; `reviewable_product_ids( $order )` lists the order's products that can still be reviewed.
-- `Product_Reviews_Core::get_rating_distribution( $product_id )` returns `counts` (per star), `total` and `average`, using the 12-hour cache.
+- `Product_Reviews_Core::get_rating_distribution( $product_id, $product = null )` returns `counts` (per star), `total` (number of ratings), `average` and `review_count`, read from WooCommerce's stored product aggregates. Pass the `WC_Product` when already loaded.
+- `Product_Reviews_Core::is_verified_purchase( $comment_id )`: the module's flag when the review has one, otherwise WooCommerce's `verified`.
+- `Product_Reviews_Frontend_Render::list_reviews( $product_id, $settings )` returns the reviews a list with those settings shows, in order; `rendered_reviews( $product_id )` what the lists on the current page showed.
+- `Product_Reviews_Assets::enqueue( $with_script = true )` loads the front-end CSS (and JS).

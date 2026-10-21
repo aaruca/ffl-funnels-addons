@@ -59,6 +59,9 @@ class Product_Reviews_Module extends FFLA_Module
         require_once $base . 'includes/class-product-reviews-assets.php';
         Product_Reviews_Assets::init();
 
+        require_once $base . 'includes/class-product-reviews-structured-data.php';
+        Product_Reviews_Structured_Data::init();
+
         require_once $base . 'includes/class-product-reviews-ajax.php';
         Product_Reviews_Ajax::init();
 

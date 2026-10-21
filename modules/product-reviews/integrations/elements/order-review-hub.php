@@ -17,6 +17,11 @@ class FFLA_Order_Review_Hub extends \Bricks\Element
         return esc_html__('Order reviews hub', 'ffl-funnels-addons');
     }
 
+    public function enqueue_scripts()
+    {
+        \Product_Reviews_Assets::enqueue();
+    }
+
     public function set_controls()
     {
         $this->controls['introTitle'] = [

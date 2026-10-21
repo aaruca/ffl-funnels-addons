@@ -17,6 +17,11 @@ class FFLA_Reviews_List extends \Bricks\Element
         return esc_html__('Reviews List', 'ffl-funnels-addons');
     }
 
+    public function enqueue_scripts()
+    {
+        \Product_Reviews_Assets::enqueue('1' === \Product_Reviews_Core::get_setting('enable_helpful_votes', '1'));
+    }
+
     public function set_controls()
     {
         $this->controls['productId'] = [

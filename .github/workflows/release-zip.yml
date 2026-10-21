@@ -100,6 +100,14 @@ jobs:
           php tests/smoke/customer-operations-smoke.php
           node tests/smoke/customer-operations-endpoints-smoke.js
 
+      - name: Validate Product Reviews before publishing
+        if: ${{ steps.tag.outputs.skip != 'true' }}
+        run: |
+          set -e
+          find modules/product-reviews -name '*.php' -print0 | xargs -0 -n1 php -l
+          php tests/smoke/product-reviews-smoke.php
+          php tests/smoke/product-reviews-display-smoke.php
+
       - name: Validate Google Merchant policy before publishing
         if: ${{ steps.tag.outputs.skip != 'true' }}
         run: |
@@ -137,7 +145,6 @@ jobs:
           node tests/smoke/monsterinsights-bridge-smoke.js
           php tests/smoke/monsterinsights-payload-smoke.php
           php tests/smoke/order-badges-smoke.php
-          php tests/smoke/product-reviews-smoke.php
 
       # This ZIP is what the built-in updater installs on every store, so it must
       # contain only runtime files. Everything below is developer tooling.

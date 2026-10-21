@@ -116,3 +116,5 @@ jobs:
           coverage: none
       - name: Check verified flags, uploads, request emails, hub and notifications
         run: php tests/smoke/product-reviews-smoke.php
+      - name: Check review media, counts, assets, structured data and votes
+        run: php tests/smoke/product-reviews-display-smoke.php

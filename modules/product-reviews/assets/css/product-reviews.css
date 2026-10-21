@@ -125,10 +125,33 @@
     height: auto;
 }
 
+/* A player needs more room than a thumbnail cell. */
+.ffla-review-card__media-item--video {
+    grid-column: 1 / -1;
+    max-width: 640px;
+}
+
+/* wp_video_shortcode() sets an inline 640px width on its wrapper. */
+.ffla-review-card__media-item .wp-video {
+    width: 100% !important;
+    max-width: 100%;
+}
+
 .ffla-review-helpful-group {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 8px;
+}
+
+.ffla-review-helpful__message {
+    margin-top: 10px;
+    font-size: 0.85em;
+    color: #4b5563;
+}
+
+.ffla-review-helpful__message.is-error {
+    color: #b42318;
 }
 
 .ffla-review-helpful {

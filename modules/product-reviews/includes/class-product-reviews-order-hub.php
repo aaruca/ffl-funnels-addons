@@ -96,6 +96,8 @@ class Product_Reviews_Order_Hub
      */
     public static function render_hub(bool $builder_preview, array $settings = []): string
     {
+        Product_Reviews_Assets::enqueue();
+
         $token = self::get_effective_token();
 
         if ($builder_preview || (self::is_bricks_preview() && $token === '')) {
