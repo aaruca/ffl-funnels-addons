@@ -35,25 +35,38 @@
         button.classList.add('is-done');
     }
 
-    function onVoteClick(event) {
-        var button = event.currentTarget;
-        var scope = scopeFor(button);
+    function i18n(key) {
+        var strings = window.fflaProductReviews.i18n || {};
+        return strings[key] || '';
+    }
 
-        // One vote per review: once either direction lands, both are spent.
-        if (button.getAttribute('aria-disabled') === 'true') {
+    function showMessage(scope, button, text, isError) {
+        var host = scope === button ? button.parentNode : scope;
+        if (!host || !text) {
             return;
         }
-
-        var commentId = button.getAttribute('data-comment-id');
-        if (!commentId) {
-            return;
+        var el = host.querySelector('.ffla-review-helpful__message');
+        if (!el) {
+            el = document.createElement('span');
+            el.className = 'ffla-review-helpful__message';
+            el.setAttribute('role', 'status');
+            host.appendChild(el);
         }
+        el.textContent = text;
+        el.classList.toggle('is-error', !!isError);
+    }
 
+    function sendVote(button, scope, retried) {
         var formData = new FormData();
         formData.append('action', 'ffla_vote_review_helpful');
         formData.append('nonce', window.fflaProductReviews.nonce);
-        formData.append('comment_id', commentId);
+        formData.append('comment_id', button.getAttribute('data-comment-id'));
         formData.append('vote', button.getAttribute('data-vote') || 'yes');
+
+        function fail(text) {
+            button.removeAttribute('data-ffla-pending');
+            showMessage(scope, button, text || i18n('voteError'), true);
+        }
 
         fetch(window.fflaProductReviews.ajaxUrl, {
             method: 'POST',
@@ -61,19 +74,51 @@
             body: formData
         })
             .then(function (response) {
-                return response.json();
+                return response.json().catch(function () {
+                    return null;
+                });
             })
             .then(function (json) {
-                if (!json || !json.success) {
+                var data = json && typeof json === 'object' && json.data ? json.data : {};
+
+                if (json && json.success) {
+                    button.removeAttribute('data-ffla-pending');
+                    paintCounts(scope, data);
+                    settle(scope, button);
+                    showMessage(scope, button, data.throttled ? data.message : i18n('voteSaved'), false);
                     return;
                 }
 
-                paintCounts(scope, json.data);
-                settle(scope, button);
+                // A cached page can carry an expired nonce; the server sends a
+                // fresh one with the refusal, so try once more with it.
+                if (!retried && data.code === 'invalid_nonce' && data.nonce) {
+                    window.fflaProductReviews.nonce = data.nonce;
+                    sendVote(button, scope, true);
+                    return;
+                }
+
+                fail(data.message);
             })
             .catch(function () {
-                // Intentionally silent to avoid disrupting checkout/product UI.
+                fail('');
             });
+    }
+
+    function onVoteClick(event) {
+        var button = event.currentTarget;
+        var scope = scopeFor(button);
+
+        // One vote per review: once either direction lands, both are spent.
+        if (button.getAttribute('aria-disabled') === 'true' || button.getAttribute('data-ffla-pending') === '1') {
+            return;
+        }
+
+        if (!button.getAttribute('data-comment-id')) {
+            return;
+        }
+
+        button.setAttribute('data-ffla-pending', '1');
+        sendVote(button, scope, false);
     }
 
     function syncStarDisplay(root) {

@@ -2,6 +2,12 @@
 /**
  * Product Reviews Assets.
  *
+ * The CSS and JavaScript are enqueued by whatever prints review markup: the
+ * Bricks elements from their enqueue_scripts(), the list, form and hub
+ * renderers when they run. Only pages known in advance to show reviews load
+ * them in <head>. A shop loop with a rating badge gets its styles; a product
+ * page without any FFL review output loads nothing.
+ *
  * @package FFL_Funnels_Addons
  */
 
@@ -11,33 +17,56 @@ if (!defined('ABSPATH')) {
 
 class Product_Reviews_Assets
 {
+    const HANDLE = 'ffla-product-reviews';
+
+    /** @var bool */
+    private static $script_enqueued = false;
+
     public static function init(): void
     {
         add_action('wp_enqueue_scripts', [__CLASS__, 'enqueue_frontend_assets']);
     }
 
-    public static function enqueue_frontend_assets(): void
+    public static function register(): void
     {
-        if (!self::should_enqueue_frontend_assets()) {
+        if (wp_style_is(self::HANDLE, 'registered')) {
             return;
         }
 
-        wp_enqueue_style(
-            'ffla-product-reviews',
+        wp_register_style(
+            self::HANDLE,
             FFLA_URL . 'modules/product-reviews/assets/css/product-reviews.css',
             [],
             FFLA_VERSION
         );
 
-        wp_enqueue_script(
-            'ffla-product-reviews',
+        wp_register_script(
+            self::HANDLE,
             FFLA_URL . 'modules/product-reviews/assets/js/product-reviews.js',
             [],
             FFLA_VERSION,
             true
         );
+    }
 
-        wp_localize_script('ffla-product-reviews', 'fflaProductReviews', [
+    /**
+     * Safe to call any number of times, before or during the page body. Styles
+     * enqueued after <head> are printed in the footer.
+     *
+     * @param bool $with_script False for output that has nothing interactive (the rating badge).
+     */
+    public static function enqueue(bool $with_script = true): void
+    {
+        self::register();
+        wp_enqueue_style(self::HANDLE);
+
+        if (!$with_script || self::$script_enqueued) {
+            return;
+        }
+
+        self::$script_enqueued = true;
+
+        wp_localize_script(self::HANDLE, 'fflaProductReviews', [
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'nonce'   => wp_create_nonce('ffla_product_reviews_nonce'),
             'i18n'    => [
@@ -51,14 +80,28 @@ class Product_Reviews_Assets
             ],
         ]);
 
+        wp_enqueue_script(self::HANDLE);
+
         // Cloudflare Turnstile assets (api.js + widget styling) are loaded
         // by the "Simple Cloudflare Turnstile" plugin when active.
     }
 
+    public static function enqueue_frontend_assets(): void
+    {
+        self::register();
+
+        if (self::should_enqueue_frontend_assets()) {
+            self::enqueue();
+        }
+    }
+
     /**
-     * Load assets on product singles, Bricks editor canvas (when building product templates), or via filter.
+     * Pages whose review output is known before the body renders, so the CSS
+     * can go in <head>: the hub page, pages with the shortcode, product pages
+     * whose Reviews tab is replaced by the FFL list and form, and the Bricks
+     * editor. Everything else is enqueued by the output itself.
      *
-     * @see 'ffla_product_reviews_enqueue_assets' Force enqueue (e.g. custom templates that are not is_product()).
+     * @see 'ffla_product_reviews_enqueue_assets' Force enqueue in <head> (e.g. custom templates).
      */
     private static function should_enqueue_frontend_assets(): bool
     {
@@ -66,16 +109,13 @@ class Product_Reviews_Assets
             return true;
         }
 
-        if (function_exists('is_product') && is_product()) {
-            return true;
-        }
-
-        if (function_exists('is_singular') && is_singular('product')) {
-            return true;
-        }
-
         // Bricks: load in the builder so Product Reviews elements preview correctly (avoid bricks_is_builder_call on frontend).
         if (function_exists('bricks_is_builder') && bricks_is_builder()) {
+            return true;
+        }
+
+        if (function_exists('is_product') && is_product()
+            && '1' === Product_Reviews_Core::get_setting('replace_default_reviews_tab', '0')) {
             return true;
         }
 

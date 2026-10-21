@@ -58,12 +58,9 @@ class Product_Reviews_Core
         add_filter('wp_is_comment_flood', [__CLASS__, 'filter_comment_flood'], 20);
         add_action('delete_comment', [__CLASS__, 'cleanup_review_media'], 10, 1);
 
-        // `delete_comment`, not `deleted_comment`: the row is already gone by
-        // the time the latter fires, so the product ID cannot be looked up.
-        add_action('delete_comment', [__CLASS__, 'flush_caches_for_comment'], 10, 1);
-        // Editing a review (rating, approval) changes the summary and badge.
-        add_action('edit_comment', [__CLASS__, 'flush_caches_for_comment'], 10, 1);
-        add_action('wp_set_comment_status', [__CLASS__, 'flush_caches_for_comment'], 10, 1);
+        // WooCommerce recounts a product's ratings itself whenever a review is
+        // posted, edited, approved or deleted (`wp_update_comment_count`). A
+        // rating written any other way is handled here.
         add_action('updated_comment_meta', [__CLASS__, 'flush_caches_for_rating_meta'], 10, 3);
         add_action('added_comment_meta', [__CLASS__, 'flush_caches_for_rating_meta'], 10, 3);
         add_action('admin_post_ffla_submit_product_review', [__CLASS__, 'handle_form_submission']);
@@ -259,23 +256,35 @@ class Product_Reviews_Core
             return;
         }
 
-        $list_defaults = [
-            'perPage' => 5,
-            'orderBy' => 'recent',
-        ];
-
-        $list_settings = apply_filters('ffla_product_reviews_wc_tab_list_settings', $list_defaults, $product_id);
         $form_settings = apply_filters('ffla_product_reviews_wc_tab_form_settings', [], $product_id);
 
         echo '<div class="ffla-wc-reviews-tab">';
 
-        Product_Reviews_Frontend_Render::render_reviews_list($product_id, is_array($list_settings) ? $list_settings : $list_defaults);
+        Product_Reviews_Frontend_Render::render_reviews_list($product_id, self::wc_tab_list_settings($product_id));
         Product_Reviews_Frontend_Render::render_review_form(
             $product_id,
             is_array($form_settings) ? $form_settings : []
         );
 
         echo '</div>';
+    }
+
+    /**
+     * List settings for the replaced Reviews tab. Shared with the structured
+     * data, which has to mark up the same reviews the tab shows.
+     *
+     * @return array<string, mixed>
+     */
+    public static function wc_tab_list_settings(int $product_id): array
+    {
+        $defaults = [
+            'perPage' => 5,
+            'orderBy' => 'recent',
+        ];
+
+        $settings = apply_filters('ffla_product_reviews_wc_tab_list_settings', $defaults, $product_id);
+
+        return is_array($settings) ? $settings : $defaults;
     }
 
     public static function maybe_hide_default_reviews_tab(array $tabs): array
@@ -912,8 +921,9 @@ class Product_Reviews_Core
      * ------------------------------------------------------------------- */
 
     /**
-     * Drop derived data for a product. Cheap and idempotent; called from every
-     * comment write hook rather than trying to guess which ones matter.
+     * Called whenever a product's reviews change. WooCommerce keeps the rating
+     * aggregates itself, so all that is left is the histogram cache that
+     * versions before 1.55.10 stored.
      */
     public static function flush_product_review_caches(int $product_id): void
     {
@@ -924,79 +934,95 @@ class Product_Reviews_Core
         delete_transient(self::RATING_DISTRIBUTION_TRANSIENT_PREFIX . $product_id);
     }
 
-    public static function flush_caches_for_comment($comment_id): void
-    {
-        $comment = get_comment((int) $comment_id);
-        if ($comment) {
-            self::flush_product_review_caches((int) $comment->comment_post_ID);
-        }
-    }
-
     /**
+     * A rating written outside WooCommerce's own review flows (custom code,
+     * imports, WP-CLI) leaves the product's stored counts stale. WooCommerce
+     * recounts by itself after a review is posted (`comment_post`) or edited
+     * (`wp_update_comment_data`), so those two paths are left to it.
+     *
      * @param int|array $meta_id
      */
     public static function flush_caches_for_rating_meta($meta_id, $comment_id, $meta_key): void
     {
-        if ('rating' === $meta_key) {
-            self::flush_caches_for_comment((int) $comment_id);
+        if ('rating' !== $meta_key || doing_action('comment_post') || doing_filter('wp_update_comment_data')) {
+            return;
+        }
+
+        $comment = get_comment((int) $comment_id);
+        if (!$comment || '1' !== (string) $comment->comment_approved) {
+            return;
+        }
+
+        if (class_exists('WC_Comments') && method_exists('WC_Comments', 'clear_transients')) {
+            \WC_Comments::clear_transients((int) $comment->comment_post_ID);
         }
     }
 
     /**
-     * Star counts for a product, e.g. [5 => 12, 4 => 3, 3 => 0, 2 => 0, 1 => 1].
+     * Star counts, average and review count for a product, e.g. counts
+     * [5 => 12, 4 => 3, 3 => 0, 2 => 0, 1 => 1].
      *
-     * @return array{counts:array<int,int>,total:int,average:float}
+     * Read from the aggregates WooCommerce stores on the product
+     * (`_wc_rating_count`, `_wc_average_rating`, `_wc_review_count`), so the
+     * summary, badge and dynamic tags show the same numbers as the Reviews tab
+     * title, the shop loop stars and the structured data. It runs no query of
+     * its own: in a product loop the product and its meta are already loaded.
+     *
+     * `total` is the number of ratings, which the bars and the 4-5 star share
+     * divide by. `review_count` is WooCommerce's review count, the number shown
+     * to shoppers; it also counts reviews left without a rating.
+     *
+     * @param \WC_Product|null $product Pass it when already loaded.
+     * @return array{counts:array<int,int>,total:int,average:float,review_count:int}
      */
-    public static function get_rating_distribution(int $product_id): array
+    public static function get_rating_distribution(int $product_id, $product = null): array
     {
-        $empty = ['counts' => [5 => 0, 4 => 0, 3 => 0, 2 => 0, 1 => 0], 'total' => 0, 'average' => 0.0];
+        $result = [
+            'counts'       => [5 => 0, 4 => 0, 3 => 0, 2 => 0, 1 => 0],
+            'total'        => 0,
+            'average'      => 0.0,
+            'review_count' => 0,
+        ];
 
-        if ($product_id <= 0) {
-            return $empty;
+        if (!$product instanceof \WC_Product) {
+            $product = ($product_id > 0 && function_exists('wc_get_product')) ? wc_get_product($product_id) : null;
         }
 
-        $key    = self::RATING_DISTRIBUTION_TRANSIENT_PREFIX . $product_id;
-        $cached = get_transient($key);
-        if (is_array($cached) && isset($cached['counts'], $cached['total'], $cached['average'])) {
-            return $cached;
+        if (!$product instanceof \WC_Product) {
+            return $result;
         }
 
-        global $wpdb;
-
-        // phpcs:ignore WordPress.DB.DirectDatabaseQuery
-        $rows = $wpdb->get_results($wpdb->prepare(
-            "SELECT cm.meta_value AS rating, COUNT(*) AS total
-             FROM {$wpdb->comments} c
-             INNER JOIN {$wpdb->commentmeta} cm
-                     ON cm.comment_id = c.comment_ID AND cm.meta_key = 'rating'
-             WHERE c.comment_post_ID = %d
-               AND c.comment_approved = '1'
-               AND c.comment_type = 'review'
-               AND c.comment_parent = 0
-             GROUP BY cm.meta_value",
-            $product_id
-        ));
-
-        $result = $empty;
-        $sum    = 0;
-
-        foreach ((array) $rows as $row) {
-            $stars = (int) $row->rating;
+        foreach ((array) $product->get_rating_counts() as $stars => $count) {
+            $stars = (int) $stars;
             if ($stars < 1 || $stars > 5) {
                 continue;
             }
 
-            $count = (int) $row->total;
-            $result['counts'][$stars] = $count;
-            $result['total'] += $count;
-            $sum += $stars * $count;
+            $result['counts'][$stars] += (int) $count;
+            $result['total'] += (int) $count;
         }
 
-        $result['average'] = $result['total'] > 0 ? round($sum / $result['total'], 2) : 0.0;
-
-        set_transient($key, $result, 12 * HOUR_IN_SECONDS);
+        $result['average']      = $result['total'] > 0 ? (float) $product->get_average_rating() : 0.0;
+        $result['review_count'] = (int) $product->get_review_count();
 
         return $result;
+    }
+
+    /**
+     * Every review saved while the module is on carries its own verdict,
+     * `ffla_verified_purchase`, and that verdict is final even when it is 0.
+     * WooCommerce's `verified` flag is only read for reviews without one,
+     * i.e. written before the module was switched on. It must never be OR-ed
+     * in: for guests WooCommerce sets it from the email they typed, so anyone
+     * entering a past buyer's address would get the label.
+     */
+    public static function is_verified_purchase(int $comment_id): bool
+    {
+        if (metadata_exists('comment', $comment_id, 'ffla_verified_purchase')) {
+            return (int) get_comment_meta($comment_id, 'ffla_verified_purchase', true) === 1;
+        }
+
+        return (int) get_comment_meta($comment_id, 'verified', true) === 1;
     }
 
     /**

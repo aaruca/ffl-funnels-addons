@@ -552,8 +552,8 @@ abstract class FFLA_Module
     }
 }
 
-// The forms load the module's CSS/JS themselves once the display fixes
-// (1.55.11) are in; asset loading is covered by its own smoke test.
+// The forms load the module's CSS/JS themselves; asset loading is covered by
+// product-reviews-display-smoke.php.
 if (!class_exists('Product_Reviews_Assets')) {
     class Product_Reviews_Assets
     {
