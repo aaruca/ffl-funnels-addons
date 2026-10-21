@@ -15,6 +15,34 @@ class Product_Reviews_Ajax
 
     const META_NO = 'ffla_helpful_no';
 
+    /**
+     * Cloudflare's published edge ranges (https://www.cloudflare.com/ips/).
+     */
+    const CLOUDFLARE_RANGES = [
+        '173.245.48.0/20',
+        '103.21.244.0/22',
+        '103.22.200.0/22',
+        '103.31.4.0/22',
+        '141.101.64.0/18',
+        '108.162.192.0/18',
+        '190.93.240.0/20',
+        '188.114.96.0/20',
+        '197.234.240.0/22',
+        '198.41.128.0/17',
+        '162.158.0.0/15',
+        '104.16.0.0/13',
+        '104.24.0.0/14',
+        '172.64.0.0/13',
+        '131.0.72.0/22',
+        '2400:cb00::/32',
+        '2606:4700::/32',
+        '2803:f800::/32',
+        '2405:b500::/32',
+        '2405:8100::/32',
+        '2a06:98c0::/29',
+        '2c0f:f248::/32',
+    ];
+
     public static function init(): void
     {
         add_action('wp_ajax_ffla_vote_review_helpful', [__CLASS__, 'vote_review_helpful']);
@@ -23,7 +51,18 @@ class Product_Reviews_Ajax
 
     public static function vote_review_helpful(): void
     {
-        check_ajax_referer('ffla_product_reviews_nonce', 'nonce');
+        // Only a signed-in user's nonce proves anything. A guest nonce is the
+        // same for every visitor and goes stale on cached product pages, which
+        // would break voting there; guests are held by the per-IP limits below.
+        // A signed-in user on a cached page whose nonce expired gets a fresh one
+        // instead of check_ajax_referer()'s bare "-1", and the script retries once.
+        if (is_user_logged_in() && false === check_ajax_referer('ffla_product_reviews_nonce', 'nonce', false)) {
+            wp_send_json_error([
+                'code'    => 'invalid_nonce',
+                'nonce'   => wp_create_nonce('ffla_product_reviews_nonce'),
+                'message' => __('This page has expired. Reload it and try again.', 'ffl-funnels-addons'),
+            ], 403);
+        }
 
         if ('1' !== Product_Reviews_Core::get_setting('enable_helpful_votes', '1')) {
             wp_send_json_error(['message' => __('Helpful votes are disabled.', 'ffl-funnels-addons')]);
@@ -50,12 +89,16 @@ class Product_Reviews_Ajax
             wp_send_json_error(['message' => __('Review not available.', 'ffl-funnels-addons')]);
         }
 
-        $ip = isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : 'unknown';
+        $ip = self::client_ip();
 
         // Keyed on the review and the voter only, never on the direction, so a
         // single visitor cannot vote a review both helpful and not helpful.
-        $rate_key  = 'ffla_helpful_' . md5($comment_id . '|' . $ip);
-        $daily_key = 'ffla_helpful_daily_' . $comment_id;
+        $rate_key = 'ffla_helpful_' . md5($comment_id . '|' . $ip);
+
+        // The date is part of the key so the cap starts over each day. With a
+        // fixed key, every vote pushed the expiry back another 24 hours and a
+        // busy review could stay capped indefinitely.
+        $daily_key = 'ffla_helpful_daily_' . $comment_id . '_' . wp_date('Ymd');
 
         if (get_transient($rate_key)) {
             self::respond($comment_id, true, __('Vote already registered recently.', 'ffl-funnels-addons'));
@@ -73,6 +116,71 @@ class Product_Reviews_Ajax
         set_transient($daily_key, $daily + 1, DAY_IN_SECONDS);
 
         self::respond($comment_id, false, __('Vote saved.', 'ffl-funnels-addons'));
+    }
+
+    /**
+     * The voter's address for throttling. Behind Cloudflare, REMOTE_ADDR is a
+     * Cloudflare edge shared by many shoppers, so one vote would lock that
+     * review for everyone on the same edge for 12 hours. CF-Connecting-IP is
+     * only believed when the request really comes from a Cloudflare edge;
+     * a client talking to the server directly could set it to anything.
+     */
+    public static function client_ip(): string
+    {
+        $remote = isset($_SERVER['REMOTE_ADDR']) ? trim(sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR']))) : '';
+        $ip     = filter_var($remote, FILTER_VALIDATE_IP) ? $remote : '';
+
+        if ($ip !== '' && !empty($_SERVER['HTTP_CF_CONNECTING_IP']) && self::is_cloudflare_edge($ip)) {
+            $visitor = trim(sanitize_text_field(wp_unslash($_SERVER['HTTP_CF_CONNECTING_IP'])));
+            if (filter_var($visitor, FILTER_VALIDATE_IP)) {
+                $ip = $visitor;
+            }
+        }
+
+        return (string) apply_filters('ffla_product_reviews_client_ip', $ip !== '' ? $ip : 'unknown');
+    }
+
+    public static function is_cloudflare_edge(string $ip): bool
+    {
+        $ranges = apply_filters('ffla_product_reviews_cloudflare_ranges', self::CLOUDFLARE_RANGES);
+
+        foreach ((array) $ranges as $cidr) {
+            if (self::ip_in_range($ip, (string) $cidr)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function ip_in_range(string $ip, string $cidr): bool
+    {
+        $parts = explode('/', $cidr, 2);
+        if (!filter_var($ip, FILTER_VALIDATE_IP) || !filter_var($parts[0], FILTER_VALIDATE_IP)) {
+            return false;
+        }
+
+        $address = inet_pton($ip);
+        $subnet  = inet_pton($parts[0]);
+        if ($address === false || $subnet === false || strlen($address) !== strlen($subnet)) {
+            return false;
+        }
+
+        $bits      = isset($parts[1]) ? max(0, min(strlen($address) * 8, (int) $parts[1])) : strlen($address) * 8;
+        $whole     = intdiv($bits, 8);
+        $remainder = $bits % 8;
+
+        if ($whole > 0 && substr($address, 0, $whole) !== substr($subnet, 0, $whole)) {
+            return false;
+        }
+
+        if ($remainder === 0) {
+            return true;
+        }
+
+        $mask = (0xFF << (8 - $remainder)) & 0xFF;
+
+        return (ord($address[$whole]) & $mask) === (ord($subnet[$whole]) & $mask);
     }
 
     /**

@@ -17,6 +17,11 @@ class FFLA_Review_Form extends \Bricks\Element
         return esc_html__('Review Form', 'ffl-funnels-addons');
     }
 
+    public function enqueue_scripts()
+    {
+        \Product_Reviews_Assets::enqueue();
+    }
+
     public function set_control_groups()
     {
         $this->control_groups['general'] = [

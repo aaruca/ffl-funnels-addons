@@ -17,6 +17,15 @@ class FFLA_Reviews_Rating_Badge extends \Bricks\Element
         return esc_html__('Reviews Rating Badge', 'ffl-funnels-addons');
     }
 
+    /**
+     * Styles only: the badge has nothing interactive. Called by Bricks for
+     * every badge it renders, so shop and archive loops get the star styles.
+     */
+    public function enqueue_scripts()
+    {
+        \Product_Reviews_Assets::enqueue(false);
+    }
+
     public function set_controls()
     {
         // Selects, not checkboxes: Bricks drops an unchecked checkbox's key,
@@ -151,11 +160,12 @@ class FFLA_Reviews_Rating_Badge extends \Bricks\Element
             return;
         }
 
-        // Same numbers as the rating summary and the dynamic tags: approved
-        // top-level reviews with a rating.
-        $data    = \Product_Reviews_Core::get_rating_distribution($product_id);
+        // WooCommerce's stored numbers, as in the rating summary, the dynamic
+        // tags, the shop loop stars and the Reviews tab title. Read from the
+        // product already loaded, so a badge in a loop costs no query.
+        $data    = \Product_Reviews_Core::get_rating_distribution($product_id, $product);
         $average = (float) $data['average'];
-        $count   = (int) $data['total'];
+        $count   = (int) $data['review_count'];
         $show_number = self::shown($settings, 'showNumber');
         $show_count  = self::shown($settings, 'showCount');
 

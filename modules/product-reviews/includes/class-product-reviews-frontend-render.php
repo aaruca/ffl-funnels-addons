@@ -12,6 +12,14 @@ if (!defined('ABSPATH')) {
 class Product_Reviews_Frontend_Render
 {
     /**
+     * Reviews the lists on this request showed, per product, in display order.
+     * Product_Reviews_Structured_Data marks up exactly these.
+     *
+     * @var array<int, array<int, \WP_Comment>>
+     */
+    private static $rendered = [];
+
+    /**
      * Bricks checkboxes: unchecked may omit the key.
      */
     public static function setting_bool(array $settings, string $key, bool $default = true): bool
@@ -78,6 +86,8 @@ class Product_Reviews_Frontend_Render
             return;
         }
 
+        Product_Reviews_Assets::enqueue();
+
         $default_title = Product_Reviews_Core::get_setting('form_title', __('Write a review', 'ffl-funnels-addons'));
         $title = isset($settings['title']) && $settings['title'] !== '' ? (string) $settings['title'] : $default_title;
         $show_login_hint = self::setting_bool($settings, 'showLoginHint', true);
@@ -112,6 +122,23 @@ class Product_Reviews_Frontend_Render
             echo '<p class="ffla-review-form__notice ffla-review-form__notice--success" role="status">' . esc_html__('Thanks! Your review was submitted.', 'ffl-funnels-addons') . '</p>';
         } elseif ($status === 'error' && $message !== '') {
             echo '<p class="ffla-review-form__notice ffla-review-form__notice--error" role="alert">' . esc_html($message) . '</p>';
+        }
+
+        // WooCommerce → Settings → Products → "Reviews can only be left by
+        // verified owners": the handler refuses everyone else, so they get the
+        // reason instead of a form they cannot send.
+        if ('yes' === get_option('woocommerce_review_rating_verification_required', 'no')
+            && !current_user_can('moderate_comments')
+            && !Product_Reviews_Core::account_bought_product(get_current_user_id(), $product_id)) {
+            $text = is_user_logged_in()
+                ? __('Only customers who bought this product can review it.', 'ffl-funnels-addons')
+                : __('Only customers who bought this product can review it. Log in to your account, or use the review link from your order email.', 'ffl-funnels-addons');
+            echo '<p class="ffla-review-form__notice ffla-review-form__notice--info">' . esc_html($text) . '</p>';
+            if ($wrap) {
+                echo '</div>';
+            }
+
+            return;
         }
 
         if (!is_user_logged_in() && get_option('comment_registration') && $show_login_hint) {
@@ -205,14 +232,17 @@ class Product_Reviews_Frontend_Render
             return;
         }
 
+        // The same count as WooCommerce's "Reviews (n)" tab and the structured data.
+        $review_count = $data['review_count'];
+
         echo '<div class="ffla-rating-summary">';
         echo '<div class="ffla-rating-summary__score">';
         echo '<span class="ffla-rating-summary__average">' . esc_html(number_format_i18n($data['average'], 1)) . '</span>';
         echo wp_kses_post(self::render_stars((float) $data['average']));
         echo '<span class="ffla-rating-summary__count">' . esc_html(sprintf(
             /* translators: %s: number of reviews */
-            _n('%s review', '%s reviews', $data['total'], 'ffl-funnels-addons'),
-            number_format_i18n($data['total'])
+            _n('%s review', '%s reviews', $review_count, 'ffl-funnels-addons'),
+            number_format_i18n($review_count)
         )) . '</span>';
         echo '</div>';
 
@@ -311,6 +341,50 @@ class Product_Reviews_Frontend_Render
     }
 
     /**
+     * The reviews a list with these settings shows, in display order.
+     *
+     * Pinned reviews lead regardless of sort. Pin state lives in the native
+     * comment_karma column, so the ordering happens in SQL rather than by
+     * re-sorting a page the query has already truncated.
+     *
+     * @param array<string, mixed> $settings perPage (1-50, default 5), orderBy (`recent`/`helpful`).
+     * @return array<int, \WP_Comment>
+     */
+    public static function list_reviews(int $product_id, array $settings = []): array
+    {
+        if ($product_id <= 0) {
+            return [];
+        }
+
+        $per_page = !empty($settings['perPage']) ? absint($settings['perPage']) : 5;
+        $per_page = max(1, min(50, $per_page));
+
+        if (($settings['orderBy'] ?? 'recent') === 'helpful') {
+            return self::most_helpful_reviews($product_id, $per_page);
+        }
+
+        return get_comments([
+            'post_id' => $product_id,
+            'status'  => 'approve',
+            'type'    => 'review',
+            'parent'  => 0,
+            'number'  => $per_page,
+            'orderby' => ['comment_karma' => 'DESC', 'comment_date_gmt' => 'DESC'],
+        ]);
+    }
+
+    /**
+     * What the lists on this request showed for a product, or null when no
+     * list has rendered for it.
+     *
+     * @return array<int, \WP_Comment>|null
+     */
+    public static function rendered_reviews(int $product_id): ?array
+    {
+        return isset(self::$rendered[$product_id]) ? array_values(self::$rendered[$product_id]) : null;
+    }
+
+    /**
      * @param array<string, mixed> $settings Optional: perPage, orderBy, showSummary.
      * @param bool                 $wrap     When false, omit outer `.ffla-reviews-list` (Bricks supplies its own root).
      */
@@ -319,10 +393,6 @@ class Product_Reviews_Frontend_Render
         if ($product_id <= 0) {
             return;
         }
-
-        $per_page = !empty($settings['perPage']) ? absint($settings['perPage']) : 5;
-        $per_page = max(1, min(50, $per_page));
-        $order_by = $settings['orderBy'] ?? 'recent';
 
         $show_summary = self::setting_bool(
             $settings,
@@ -333,20 +403,16 @@ class Product_Reviews_Frontend_Render
         $votes_enabled   = '1' === Product_Reviews_Core::get_setting('enable_helpful_votes', '1');
         $no_vote_enabled = $votes_enabled && '1' === Product_Reviews_Core::get_setting('enable_not_helpful_votes', '0');
 
-        // Pinned reviews lead regardless of sort. Pin state lives in the native
-        // comment_karma column, so the ordering happens in SQL rather than by
-        // re-sorting a page the query has already truncated.
-        if ($order_by === 'helpful') {
-            $reviews = self::most_helpful_reviews($product_id, $per_page);
-        } else {
-            $reviews = get_comments([
-                'post_id' => $product_id,
-                'status'  => 'approve',
-                'type'    => 'review',
-                'parent'  => 0,
-                'number'  => $per_page,
-                'orderby' => ['comment_karma' => 'DESC', 'comment_date_gmt' => 'DESC'],
-            ]);
+        // The script only drives the vote buttons here.
+        Product_Reviews_Assets::enqueue($votes_enabled);
+
+        $reviews = self::list_reviews($product_id, $settings);
+
+        if (!isset(self::$rendered[$product_id])) {
+            self::$rendered[$product_id] = [];
+        }
+        foreach ($reviews as $review) {
+            self::$rendered[$product_id][(int) $review->comment_ID] = $review;
         }
 
         if ($wrap) {
@@ -375,7 +441,7 @@ class Product_Reviews_Frontend_Render
             $rating    = (float) get_comment_meta($review_id, 'rating', true);
             $helpful   = (int) get_comment_meta($review_id, 'ffla_helpful_yes', true);
             $unhelpful = (int) get_comment_meta($review_id, 'ffla_helpful_no', true);
-            $verified  = (int) get_comment_meta($review_id, 'ffla_verified_purchase', true) === 1;
+            $verified  = Product_Reviews_Core::is_verified_purchase($review_id);
             $pinned    = (int) $review->comment_karma === 1;
             $criteria  = Product_Reviews_Criteria::is_enabled()
                 ? Product_Reviews_Criteria::get_review_scores($review_id)
@@ -428,18 +494,23 @@ class Product_Reviews_Frontend_Render
                         continue;
                     }
 
+                    // Both players and images are core output with every
+                    // attribute already escaped. wp_kses_post() must not run
+                    // on them: its list has no <source>, which emptied the
+                    // video player, and no srcset/sizes on <img>.
                     $mime = (string) get_post_mime_type($media_id);
                     if (strpos($mime, 'video/') === 0) {
                         $video = wp_video_shortcode([
-                            'src'      => wp_get_attachment_url($media_id),
-                            'preload'  => 'metadata',
-                            'controls' => true,
+                            'src'     => wp_get_attachment_url($media_id),
+                            'preload' => 'metadata',
                         ]);
-                        echo '<div class="ffla-review-card__media-item ffla-review-card__media-item--video">' . wp_kses_post($video) . '</div>';
+                        if (is_string($video) && $video !== '') {
+                            echo '<div class="ffla-review-card__media-item ffla-review-card__media-item--video">' . $video . '</div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                        }
                     } else {
                         $image = wp_get_attachment_image($media_id, 'medium');
                         if (!empty($image)) {
-                            echo '<div class="ffla-review-card__media-item ffla-review-card__media-item--image">' . wp_kses_post($image) . '</div>';
+                            echo '<div class="ffla-review-card__media-item ffla-review-card__media-item--image">' . $image . '</div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
                         }
                     }
                 }

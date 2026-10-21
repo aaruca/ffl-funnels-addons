@@ -17,6 +17,32 @@ class Product_Reviews_Order_Hub
     public static function init(): void
     {
         add_shortcode('ffla_order_reviews', [__CLASS__, 'shortcode_render']);
+        add_action('template_redirect', [__CLASS__, 'maybe_prevent_caching'], 0);
+    }
+
+    /**
+     * A page opened from a signed review link is personal: its forms carry
+     * the customer's token and order. Keep it out of page caches, and keep
+     * the token out of the Referer sent to other sites.
+     */
+    public static function maybe_prevent_caching(): void
+    {
+        // Signature and expiry only (no database work): a made-up ?ffla_ro=
+        // value must not switch caching off.
+        $token = self::get_effective_token();
+        if ($token === '' || null === \Product_Reviews_Core::parse_order_review_token_payload($token)) {
+            return;
+        }
+
+        if (!defined('DONOTCACHEPAGE')) {
+            define('DONOTCACHEPAGE', true);
+        }
+
+        nocache_headers();
+
+        if (!headers_sent()) {
+            header('Referrer-Policy: same-origin');
+        }
     }
 
     public static function set_context_token(string $token): void
@@ -70,6 +96,8 @@ class Product_Reviews_Order_Hub
      */
     public static function render_hub(bool $builder_preview, array $settings = []): string
     {
+        Product_Reviews_Assets::enqueue();
+
         $token = self::get_effective_token();
 
         if ($builder_preview || (self::is_bricks_preview() && $token === '')) {
@@ -97,6 +125,7 @@ class Product_Reviews_Order_Hub
         }
 
         $billing_email = strtolower(trim((string) $order->get_billing_email()));
+        $order_user_id = (int) $order->get_user_id();
         $show_criteria = '1' === \Product_Reviews_Core::get_setting('order_review_show_criteria', '0');
         $redirect_base = \Product_Reviews_Core::order_review_return_base_url();
         $redirect_to   = \Product_Reviews_Core::append_order_review_token_to_url($redirect_base, $token);
@@ -136,13 +165,13 @@ class Product_Reviews_Order_Hub
             echo '<section class="ffla-order-reviews__product" id="ffla-order-review-' . esc_attr((string) $product_id) . '">';
             echo '<h3 class="ffla-order-reviews__product-title">' . esc_html($product_name) . '</h3>';
 
-            if (\Product_Reviews_Core::customer_has_review_for_product($billing_email, $product_id)) {
+            if (\Product_Reviews_Core::customer_has_review_for_product($billing_email, $product_id, $order_user_id)) {
                 echo '<p class="ffla-order-reviews__done">' . esc_html__('You already submitted a review for this product.', 'ffl-funnels-addons') . '</p>';
                 echo '</section>';
                 continue;
             }
 
-            self::render_single_form($product_id, $token, $show_criteria, $redirect_to, $order);
+            self::render_single_form($product_id, $token, $show_criteria, $redirect_to);
             echo '</section>';
         }
 
@@ -161,50 +190,37 @@ class Product_Reviews_Order_Hub
     }
 
     /**
+     * Products the customer can still review: refunded lines and products
+     * closed to reviews are left out, as in the request email.
+     *
      * @return array<int, string> product_id => name
      */
     private static function unique_products_from_order(\WC_Order $order): array
     {
         $out = [];
-        foreach ($order->get_items() as $item) {
-            if (!$item instanceof \WC_Order_Item_Product) {
-                continue;
-            }
-            $pid = \Product_Reviews_Core::line_item_parent_product_id($item);
-            if ($pid <= 0 || 'product' !== get_post_type($pid)) {
-                continue;
-            }
-            if (isset($out[$pid])) {
-                continue;
-            }
+        foreach (\Product_Reviews_Core::reviewable_product_ids($order) as $pid) {
             $p = wc_get_product($pid);
-            $out[$pid] = $p ? $p->get_name() : (string) $item->get_name();
+            $out[$pid] = $p ? $p->get_name() : get_the_title($pid);
         }
 
         return $out;
     }
 
-    private static function render_single_form(int $product_id, string $token, bool $show_criteria, string $redirect_to, \WC_Order $order): void
+    /**
+     * No nonce and no name or email fields: the signed token is the proof,
+     * and the handler takes the reviewer's name and address from the order.
+     */
+    private static function render_single_form(int $product_id, string $token, bool $show_criteria, string $redirect_to): void
     {
         $uid = wp_unique_id('ffla-or-');
 
-        $first = trim((string) $order->get_billing_first_name());
-        $last  = trim((string) $order->get_billing_last_name());
-        $name  = trim($first . ' ' . $last);
-        if ($name === '') {
-            $name = __('Customer', 'ffl-funnels-addons');
-        }
-
         echo '<form class="ffla-review-form ffla-order-reviews__form" method="post" enctype="multipart/form-data" action="' . esc_url(admin_url('admin-post.php')) . '">';
-        wp_nonce_field('ffla_review_form', 'ffla_review_form_nonce');
         echo '<input type="text" class="ffla-review-hp-field" name="ffla_hp" value="" autocomplete="off" tabindex="-1" aria-hidden="true">';
         echo '<input type="hidden" name="action" value="ffla_submit_product_review">';
         echo '<input type="hidden" name="ffla_order_review_token" value="' . esc_attr($token) . '">';
         echo '<input type="hidden" name="comment_post_ID" value="' . esc_attr((string) $product_id) . '">';
         echo '<input type="hidden" name="comment_parent" value="0">';
         echo '<input type="hidden" name="redirect_to" value="' . esc_url($redirect_to) . '">';
-        echo '<input type="hidden" name="author" value="' . esc_attr($name) . '">';
-        echo '<input type="hidden" name="email" value="' . esc_attr((string) $order->get_billing_email()) . '">';
 
         self::render_star_fieldset('rating', $uid . '-r', __('Overall rating', 'ffl-funnels-addons'), true);
 

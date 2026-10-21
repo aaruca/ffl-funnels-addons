@@ -130,7 +130,11 @@ class Product_Reviews_Moderation
      *
      * Written with a direct query rather than wp_update_comment() because that
      * function merges and re-filters comment_content, which would run stored
-     * text back through kses on every pin toggle.
+     * text back through kses on every pin toggle. A direct query fires none of
+     * the hooks page caches purge on, so the product's comment count is
+     * refreshed afterwards: that cleans the post cache and fires
+     * `wp_update_comment_count` and `edit_post`, which caching plugins and
+     * hosts listen to.
      */
     public static function set_pinned(int $comment_id, bool $pinned): bool
     {
@@ -155,7 +159,7 @@ class Product_Reviews_Moderation
         }
 
         clean_comment_cache($comment_id);
-        Product_Reviews_Core::flush_product_review_caches((int) $comment->comment_post_ID);
+        wp_update_comment_count_now((int) $comment->comment_post_ID);
 
         return true;
     }

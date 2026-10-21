@@ -77,7 +77,7 @@ class Product_Reviews_Dynamic_Tags
 
         switch ($name) {
             case 'ffla_review_count':
-                return number_format_i18n($data['total']);
+                return number_format_i18n($data['review_count']);
 
             case 'ffla_review_average':
                 return $data['total'] > 0 ? number_format_i18n($data['average'], 1) : '';

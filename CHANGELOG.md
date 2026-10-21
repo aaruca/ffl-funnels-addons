@@ -2,7 +2,7 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
-## [1.55.9] - 2026-10-20
+## [1.55.11] - 2026-10-21
 
 ### Fixed
 - **White Label:** the MonsterInsights tab always said "Connect Google Analytics in MonsterInsights…", even on connected sites with a valid Pro license. MonsterInsights keeps `auth` and `license` as protected properties loaded through `__get()` (no `__isset()`), so the module's `isset()` checks were always false. They now read the objects directly. Found on a live store running MonsterInsights Pro 11.1.3.
@@ -10,6 +10,47 @@ All notable changes to FFL Funnels Addons are documented in this file.
 
 ### Changed
 - **White Label:** the offline MonsterInsights regression check now models MonsterInsights' protected, lazy-loaded `auth`/`license` properties, so this class of bug fails the test.
+
+## [1.55.10] - 2026-10-21
+
+Product Reviews fixes found in a pre-launch audit; no store has the module switched on yet.
+
+### Security
+- **Product Reviews:** anyone could get the *Verified buyer* label by typing a past buyer's email into a guest form, pass WooCommerce's *verified owners only* rule the same way, and post unlimited reviews. *Verified buyer* now comes only from a signed review link for an order that still contains the product, or from a signed-in account that bought it. WooCommerce's own *verified owner* flag on the review is set to the same answer (WooCommerce worked it out from the typed address too).
+- **Product Reviews:** with *verified owners only* on, guests without a signed link are asked to log in (the form shows why instead of fields they cannot use), and WooCommerce's own form and direct posts to `wp-comments-post.php` follow the rule too.
+- **Product Reviews:** one review per customer per product on every path: per account, per signed order link, and per typed address for guests. A review someone typed a customer's address into no longer stops that customer's request emails or blocks their own review, and the guest form does not reveal whether an address has a verified review.
+- **Product Reviews:** files posted to `wp-comments-post.php` with any product comment were stored as public media, with no nonce, honeypot or Turnstile check, even when the comment was spam. Files are now only taken from the FFL form after its checks pass, and never for a review filed as spam or trash.
+- **Product Reviews:** review photos kept their EXIF data, including the GPS position they were taken at. JPEG, PNG and WebP uploads are cleaned before they are stored (location, camera, XMP, IPTC and comments removed; colour profile and orientation kept). A photo that cannot be cleaned is skipped.
+- **Product Reviews:** while *Replace WooCommerce reviews tab* is on, a new top-level review posted to `wp-comments-post.php` must pass Cloudflare Turnstile when the Simple Cloudflare Turnstile plugin is active (unless that plugin already protects the comment form).
+- **Product Reviews:** the "someone replied to your review" email relayed any approved reply. It is now only sent for replies from the store.
+- **Product Reviews:** the hub forms no longer carry the order's billing name and email in hidden fields. Pages opened from a signed link are kept out of page caches (`nocache_headers()`, `DONOTCACHEPAGE`) and do not send the link in the Referer.
+- **Product Reviews:** signed review links stop working when the order is refunded, cancelled or failed.
+
+### Fixed
+- **Product Reviews:** review request emails were scheduled and sent while no hub page was selected, so their link led nowhere. Nothing is scheduled or sent until a published hub page is selected, and an admin notice says so while requests are on.
+- **Product Reviews:** switching *Enable review requests* off did not stop emails already queued. The setting and the hub page are checked again when each email is due, and switching the module off clears its queue.
+- **Product Reviews:** a failed `wp_mail()` was still recorded as sent. Request emails are only marked as sent when `wp_mail()` succeeds; a failure is logged (source `ffla-product-reviews`) and retried an hour later, three attempts in all. Request, approval and reply emails now use WooCommerce's sender name and address, and its reply-to address when set.
+- **Product Reviews:** the "your review is published" and store reply notices were marked as sent before `wp_mail()` ran, so a failed send was lost for good. They are now marked only when `wp_mail()` succeeds; a failure is logged, and the notice goes out the next time the review or reply is approved.
+- **Product Reviews:** an order moved back to Processing before its email was due never got the email after it was completed again. It is now released and scheduled again. Orders the store moves to a custom status after completing them still get their email.
+- **Product Reviews:** imported orders, old orders completed in bulk and emails left in a stalled queue went out. Orders placed more than the request delay plus 30 days before the email would go out are skipped (filter `ffla_product_reviews_request_max_order_age_days`).
+- **Product Reviews:** emails and hub forms included products refunded in full and products closed to reviews. Both are now left out.
+- **Product Reviews:** the hub refused the second product reviewed within 15 seconds as flooding, and showed "Could not submit your review" for every WordPress refusal. Signed-link submissions skip WordPress's flood check, and the real reason is shown.
+- **Product Reviews:** guests on cached product pages got "Security check failed" (and silent vote failures) once the cached nonce expired. Nonces are only checked for signed-in users; guests are covered by the honeypot, Turnstile, an hourly limit of five reviews per IP address (filter `ffla_product_reviews_guest_hourly_limit`) and the vote limits. Signed links replace the nonce on the hub.
+- **Product Reviews:** a review filed as spam or trash (by Akismet, for example) crashed the request with a `TypeError` in the review-meta handler.
+- **Product Reviews:** videos attached to reviews never played. The player markup went through `wp_kses_post()`, whose allowlist has no `<source>` element, so the player was printed without its file. Review photos also lost `srcset` and `sizes`. Both are WordPress's own output and are now printed as WordPress builds them.
+- **Product Reviews:** reviews written before the module was switched on never showed *Verified buyer*. Reviews without the module's own flag now use WooCommerce's `verified` flag. Reviews saved while the module is on keep the module's verdict, since WooCommerce's flag for guests comes from the email they typed.
+- **Product Reviews:** the Reviews Rating Badge in shop and archive loops showed bare, unstyled stars: the CSS only loaded on product pages. The Bricks elements and the list, form and hub now load the CSS/JS wherever they render (the badge loads only the CSS), instead of on every product page, so product pages without FFL review output no longer load about 19 KB of CSS and 9 KB of JavaScript.
+- **Product Reviews:** the product's structured data marked up WooCommerce's five newest rated comments of any type, which were not the reviews the FFL list shows (pinned first, *Most helpful* order, product reviews only, its own length). Google only accepts markup for visible reviews. When an FFL list shows the reviews, the `review` list in WooCommerce's JSON-LD, and in Rank Math's Product schema when present, is now the rated reviews of that list in the same order.
+- **Product Reviews:** the rating summary, badge and dynamic tags counted only rated reviews of type `review`, while the WooCommerce Reviews tab title, shop loop stars and structured data use WooCommerce's stored counts. All of them now read WooCommerce's star counts, average and review count. This also drops the module's per-product rating cache, which cost two or more database queries per product in loops without an object cache.
+- **Product Reviews:** pinning or unpinning a review did not purge page caches. It now refreshes the product's comment count, which cleans the post cache and fires the hooks caching plugins and hosts purge on.
+- **Product Reviews:** a signed-in shopper whose helpful-vote token had expired on a cached page got no answer at all. The server now answers with a fresh token and the script retries once. Any failed vote shows its reason under the buttons, and a successful one a short confirmation.
+- **Product Reviews:** a review's daily vote cap never started over while votes kept coming, because every vote pushed the counter's expiry back another day. The counter is now per calendar day.
+- **Product Reviews:** behind Cloudflare every shopper on the same edge shared one address, so one vote locked the review for all of them for 12 hours. The shopper's own address (`CF-Connecting-IP`) is now used when the request comes from one of Cloudflare's published addresses, and ignored otherwise.
+
+### Changed
+- **Product Reviews:** *One email per order* is the default request email mode.
+- **Product Reviews:** new offline regression check `tests/smoke/product-reviews-smoke.php` (verified-flag sources, one review per customer, the `wp-comments-post.php` upload guard, EXIF removal, scheduling with and without a hub page, the switched-off setting at send time, send failures, status detours, refunds, reply gating, token invalidation, hub caching, flood and Turnstile rules), run in CI and before the release ZIP is published.
+- **Product Reviews:** new offline regression check `tests/smoke/product-reviews-display-smoke.php` (review media markup, verified fallback, count consistency, asset loading, structured-data review list, pin cache purge, helpful-vote nonce, daily cap and Cloudflare address), run on PHP 7.4 and 8.3 in CI and before the release ZIP is published. New filters `ffla_product_reviews_structured_data_list_settings`, `ffla_product_reviews_client_ip` and `ffla_product_reviews_cloudflare_ranges`.
 - **Google Merchant Policy:** Google for WooCommerce 3.10.0 removed its API Pull code (the WPCOM proxy, `gla_syncable=1` requests). The contract check now runs the proxy checks only when `WPCOMProxy.php` ships, and otherwise fails if any Google for WooCommerce source file handles `gla_syncable`. The module's pull filters are unchanged: they still protect older versions and stay idle on 3.10+. Upload jobs and sync-ready lists, which carry the feed protection, pass the contract on 3.10.0.
 
 ## [1.55.8] - 2026-10-19

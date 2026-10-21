@@ -22,6 +22,9 @@ class Product_Reviews_Turnstile
     /** Form id passed to cfturnstile_field_show() to scope the widget. */
     const FORM_ID = 'ffla_product_review';
 
+    /** @var bool|null This request's result: a token can only be verified once. */
+    private static $passed = null;
+
     /**
      * The Simple Cloudflare Turnstile plugin exposes public helpers we can
      * delegate to. Both must exist before we render or validate anything.
@@ -64,11 +67,21 @@ class Product_Reviews_Turnstile
             return true;
         }
 
-        $result = cfturnstile_check();
-        if (!is_array($result)) {
-            return false;
+        if (self::$passed === null) {
+            $result       = cfturnstile_check();
+            self::$passed = is_array($result) && !empty($result['success']);
         }
 
-        return !empty($result['success']);
+        return self::$passed;
+    }
+
+    /**
+     * Whether the plugin's own "WordPress comment form" protection is on. It
+     * then checks wp-comments-post.php itself, and checking the same token a
+     * second time would fail.
+     */
+    public static function protects_native_comments(): bool
+    {
+        return (bool) get_option('cfturnstile_comment');
     }
 }
