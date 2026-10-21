@@ -22,22 +22,40 @@ class Product_Reviews_Core
 
     const RATING_DISTRIBUTION_TRANSIENT_PREFIX = 'ffla_rev_dist_';
 
+    /** Hourly count of new guest reviews per IP address. */
+    const GUEST_RATE_TRANSIENT_PREFIX = 'ffla_rev_guest_';
+
+    /** Order statuses whose signed review links stop working. */
+    const TOKEN_DEAD_STATUSES = ['refunded', 'cancelled', 'failed', 'trash'];
+
     /** @var bool */
     private static $order_review_rewrite_tag_registered = false;
 
     /**
      * Set once the FFL form handler has checked the nonce, honeypot and
      * Turnstile for this request, so preprocess_comment does not check them a
-     * second time (a Turnstile token can only be verified once).
+     * second time (a Turnstile token can only be verified once). Review media
+     * is only accepted when this is set.
      *
      * @var bool
      */
     private static $form_checks_passed = false;
 
+    /**
+     * The order behind a signed review link the FFL form handler validated
+     * for this request, if any.
+     *
+     * @var \WC_Order|null
+     */
+    private static $token_order = null;
+
     public static function init(): void
     {
         add_filter('preprocess_comment', [__CLASS__, 'validate_review_submission']);
         add_action('comment_post', [__CLASS__, 'save_review_meta'], 10, 3);
+        // A customer on the hub usually reviews several products back to back,
+        // which WordPress's 15-second flood check would refuse.
+        add_filter('wp_is_comment_flood', [__CLASS__, 'filter_comment_flood'], 20);
         add_action('delete_comment', [__CLASS__, 'cleanup_review_media'], 10, 1);
 
         // `delete_comment`, not `deleted_comment`: the row is already gone by
@@ -137,7 +155,7 @@ class Product_Reviews_Core
             'form_title'                => __('Write a review', 'ffl-funnels-addons'),
             'allow_media_uploads'       => '1',
             'moderate_all_reviews'      => '0',
-            'request_email_mode'        => 'per_product',
+            'request_email_mode'        => 'bundle',
             'order_review_page_id'      => '0',
             'order_review_show_criteria' => '0',
             'order_review_pretty_urls'  => '0',
@@ -162,6 +180,55 @@ class Product_Reviews_Core
     {
         $settings = self::get_settings();
         return $settings[$key] ?? $default;
+    }
+
+    /**
+     * The hub page every request email links to: selected, a page, and
+     * published. Without it the signed link has nowhere to land.
+     */
+    public static function hub_page_ready(): bool
+    {
+        $page_id = absint(self::get_setting('order_review_page_id', '0'));
+        if ($page_id <= 0) {
+            return false;
+        }
+
+        $page = get_post($page_id);
+
+        return $page && 'page' === $page->post_type && 'publish' === $page->post_status;
+    }
+
+    /**
+     * Review request emails are only scheduled and sent while requests are
+     * switched on and the hub page is ready. Checked again at send time, so
+     * switching requests off also stops emails already queued.
+     */
+    public static function requests_ready(): bool
+    {
+        return '1' === self::get_setting('enable_requests', '1') && self::hub_page_ready();
+    }
+
+    /**
+     * WooCommerce's "Enable product reviews" and the product's own "Enable
+     * reviews" box.
+     */
+    public static function product_reviews_open(int $product_id): bool
+    {
+        return 'yes' === get_option('woocommerce_enable_reviews', 'yes') && comments_open($product_id);
+    }
+
+    /**
+     * Purchase check behind the "Verified buyer" label and WooCommerce's
+     * "verified owners only" rule. Only a signed-in account counts: an
+     * address typed into a guest form proves nothing. WooCommerce makes the
+     * same call before it shows its own form.
+     */
+    public static function account_bought_product(int $user_id, int $product_id): bool
+    {
+        return $user_id > 0
+            && $product_id > 0
+            && function_exists('wc_customer_bought_product')
+            && (bool) wc_customer_bought_product('', $user_id, $product_id);
     }
 
     /**
@@ -346,25 +413,109 @@ class Product_Reviews_Core
             }
         }
 
-        // Only enforce nonce check for comments from the FFLA form.
-        // Native product comments and REST API don't have this nonce. The
-        // form handler already ran these checks for its own submissions.
-        if (isset($_POST['ffla_review_form_nonce']) && !self::$form_checks_passed) {
-            $nonce = sanitize_text_field(wp_unslash($_POST['ffla_review_form_nonce']));
-            if (!wp_verify_nonce($nonce, 'ffla_review_form')) {
-                wp_die(esc_html__('Security check failed. Please refresh and try again.', 'ffl-funnels-addons'));
-            }
+        // The FFL form handler already ran its checks for its own submissions.
+        if (!self::$form_checks_passed) {
+            self::check_native_submission($commentdata);
+        }
 
-            if (self::review_honeypot_triggered()) {
-                wp_die(esc_html__('Your review could not be submitted.', 'ffl-funnels-addons'));
+        return self::apply_review_comment_approval($commentdata);
+    }
+
+    /**
+     * A product comment that did not come through the FFL form handler:
+     * WooCommerce's own form, or something posting to wp-comments-post.php.
+     */
+    private static function check_native_submission(array $commentdata): void
+    {
+        if (self::review_honeypot_triggered()) {
+            wp_die(esc_html__('Your review could not be submitted.', 'ffl-funnels-addons'));
+        }
+
+        // FFL form fields posted to the native endpoint (an old cached copy of
+        // the form). Same rules as the handler: a nonce only means something
+        // for a signed-in user, and a signed order link replaces it.
+        if (isset($_POST['ffla_review_form_nonce'])) {
+            if (is_user_logged_in() && !self::request_order_token_valid()) {
+                $nonce = sanitize_text_field(wp_unslash($_POST['ffla_review_form_nonce']));
+                if (!wp_verify_nonce($nonce, 'ffla_review_form')) {
+                    wp_die(esc_html__('Security check failed. Please refresh and try again.', 'ffl-funnels-addons'));
+                }
             }
 
             if (!self::turnstile_token_valid_for_request()) {
                 wp_die(esc_html__('Cloudflare validation failed. Please try again.', 'ffl-funnels-addons'));
             }
+
+            return;
         }
 
-        return self::apply_review_comment_approval($commentdata);
+        // With the Reviews tab replaced, WooCommerce's form is not on the page,
+        // so a new top-level review arriving here was not typed into a form a
+        // shopper could see. Require the challenge when one is available,
+        // unless the Turnstile plugin already guards the comment form itself.
+        if (self::is_native_top_level_review($commentdata)
+            && '1' === self::get_setting('replace_default_reviews_tab', '0')
+            && class_exists('Product_Reviews_Turnstile')
+            && Product_Reviews_Turnstile::is_available()
+            && !Product_Reviews_Turnstile::protects_native_comments()
+            && !Product_Reviews_Turnstile::passes()) {
+            wp_die(
+                esc_html__('Cloudflare validation failed. Please try again.', 'ffl-funnels-addons'),
+                '',
+                ['response' => 403, 'back_link' => true]
+            );
+        }
+    }
+
+    /**
+     * A new top-level review sent through wp-comments-post.php. Programmatic
+     * wp_new_comment() calls (imports, other plugins) are left alone.
+     */
+    private static function is_native_top_level_review(array $commentdata): bool
+    {
+        return did_action('pre_comment_on_post') > 0 && empty($commentdata['comment_parent']);
+    }
+
+    /**
+     * WooCommerce's own form, or a direct post to wp-comments-post.php, gets
+     * the same "verified owners only" and one-review-per-customer rules as the
+     * FFL form.
+     */
+    private static function native_review_refusal(int $product_id, array $commentdata): ?\WP_Error
+    {
+        $user_id = (int) ($commentdata['user_id'] ?? 0);
+        $email   = (string) ($commentdata['comment_author_email'] ?? '');
+
+        if ('yes' === get_option('woocommerce_review_rating_verification_required', 'no')
+            && !self::account_bought_product($user_id, $product_id)) {
+            return new \WP_Error(
+                'ffla_review_unverified',
+                __('Only customers who bought this product can review it.', 'ffl-funnels-addons'),
+                403
+            );
+        }
+
+        $duplicate = $user_id > 0
+            ? self::customer_has_review_for_product($email, $product_id, $user_id)
+            : self::guest_has_review_for_product($email, $product_id);
+        if ($duplicate) {
+            return new \WP_Error(
+                'ffla_review_duplicate',
+                __('You already submitted a review for this product.', 'ffl-funnels-addons'),
+                409
+            );
+        }
+
+        return null;
+    }
+
+    /**
+     * @param bool $is_flood
+     * @return bool
+     */
+    public static function filter_comment_flood($is_flood)
+    {
+        return self::$token_order instanceof \WC_Order ? false : $is_flood;
     }
 
     /**
@@ -406,11 +557,18 @@ class Product_Reviews_Core
      * comment_approved wholesale. Any hold decided earlier in the pipeline is
      * therefore silently discarded, so every rule has to be re-applied here.
      *
-     * @param int|string $approved
-     * @return int|string
+     * Returning a WP_Error here refuses the comment: wp_new_comment() hands it
+     * back to the caller, and wp-comments-post.php shows its message.
+     *
+     * @param int|string|\WP_Error $approved
+     * @return int|string|\WP_Error
      */
     public static function filter_pre_comment_approved($approved, array $commentdata)
     {
+        if (is_wp_error($approved)) {
+            return $approved;
+        }
+
         if (($commentdata['comment_type'] ?? '') !== 'review') {
             return $approved;
         }
@@ -429,6 +587,15 @@ class Product_Reviews_Core
             $uid = get_current_user_id();
             if ($uid && user_can($uid, 'moderate_comments')) {
                 return $approved;
+            }
+        }
+
+        // The FFL form handler has already applied these rules to its own
+        // submissions (with the signed order link in mind).
+        if (!self::$form_checks_passed && self::is_native_top_level_review($commentdata)) {
+            $refusal = self::native_review_refusal($post_id, $commentdata);
+            if ($refusal) {
+                return $refusal;
             }
         }
 
@@ -589,6 +756,11 @@ class Product_Reviews_Core
             return null;
         }
 
+        // A refunded or cancelled order is no longer a purchase to review.
+        if ($order->has_status(self::TOKEN_DEAD_STATUSES)) {
+            return null;
+        }
+
         return $order;
     }
 
@@ -602,13 +774,24 @@ class Product_Reviews_Core
         return (int) $item->get_product_id();
     }
 
+    /**
+     * A line refunded in full no longer counts as a purchase.
+     */
+    public static function order_line_is_reviewable(\WC_Order $order, \WC_Order_Item_Product $item): bool
+    {
+        $refunded = abs((int) $order->get_qty_refunded_for_item($item->get_id()));
+
+        return (int) $item->get_quantity() > $refunded;
+    }
+
     public static function order_contains_reviewable_product(\WC_Order $order, int $parent_product_id): bool
     {
         foreach ($order->get_items() as $item) {
             if (!$item instanceof \WC_Order_Item_Product) {
                 continue;
             }
-            if (self::line_item_parent_product_id($item) === $parent_product_id) {
+            if (self::line_item_parent_product_id($item) === $parent_product_id
+                && self::order_line_is_reviewable($order, $item)) {
                 return true;
             }
         }
@@ -616,22 +799,112 @@ class Product_Reviews_Core
         return false;
     }
 
-    public static function customer_has_review_for_product(string $email, int $product_id): bool
+    /**
+     * Parent product IDs in the order that can still be reviewed: at least one
+     * line not refunded in full, and reviews open on the product. Used for both
+     * the request emails and the hub forms.
+     *
+     * @return array<int, int>
+     */
+    public static function reviewable_product_ids(\WC_Order $order): array
     {
-        if ($email === '' || $product_id <= 0) {
+        $ids = [];
+
+        foreach ($order->get_items() as $item) {
+            if (!$item instanceof \WC_Order_Item_Product) {
+                continue;
+            }
+
+            $product_id = self::line_item_parent_product_id($item);
+            if ($product_id <= 0 || isset($ids[$product_id]) || 'product' !== get_post_type($product_id)) {
+                continue;
+            }
+
+            // Another line of the same product (a second variation) may still
+            // qualify, so this one is skipped rather than the product.
+            if (!self::order_line_is_reviewable($order, $item) || !self::product_reviews_open($product_id)) {
+                continue;
+            }
+
+            $ids[$product_id] = $product_id;
+        }
+
+        return array_values($ids);
+    }
+
+    /**
+     * Whether the customer already has a top-level review (approved or
+     * pending) on the product.
+     *
+     * Counts reviews left from the customer's account, and reviews under the
+     * address that were verified (a signed order link or a signed-in buyer).
+     * A review someone else typed the address into does not count, so it can
+     * neither block the real customer nor stop their request emails.
+     */
+    public static function customer_has_review_for_product(string $email, int $product_id, int $user_id = 0): bool
+    {
+        if ($product_id <= 0) {
             return false;
         }
 
-        $found = get_comments([
-            'post_id'      => $product_id,
-            'type'         => 'review',
+        $args = self::top_level_review_query($product_id) + ['number' => 1];
+
+        if ($user_id > 0 && !empty(get_comments($args + ['user_id' => $user_id]))) {
+            return true;
+        }
+
+        $email = strtolower(trim($email));
+        if ($email === '') {
+            return false;
+        }
+
+        return !empty(get_comments($args + [
             'author_email' => $email,
-            'status'       => 'all',
-            'number'       => 1,
-            'fields'       => 'ids',
+            'meta_key'     => 'ffla_verified_purchase',
+            'meta_value'   => '1',
+        ]));
+    }
+
+    /**
+     * One review per address for guests without a signed link: whether a
+     * guest review that proves nothing (no account, no verified purchase)
+     * already sits under this address. Verified and account reviews are
+     * deliberately not consulted, or the guest form would tell anyone who
+     * types an address whether its owner bought the product.
+     */
+    public static function guest_has_review_for_product(string $email, int $product_id): bool
+    {
+        $email = strtolower(trim($email));
+        if ($product_id <= 0 || $email === '') {
+            return false;
+        }
+
+        $ids = get_comments(self::top_level_review_query($product_id) + [
+            'author_email' => $email,
+            'user_id'      => 0,
         ]);
 
-        return !empty($found);
+        foreach ($ids as $id) {
+            if (1 !== (int) get_comment_meta((int) $id, 'ffla_verified_purchase', true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function top_level_review_query(int $product_id): array
+    {
+        return [
+            'post_id' => $product_id,
+            'type'    => 'review',
+            'parent'  => 0,
+            'status'  => 'all',
+            'fields'  => 'ids',
+        ];
     }
 
     /* ---------------------------------------------------------------------
@@ -814,14 +1087,18 @@ class Product_Reviews_Core
             return true;
         }
 
-        if (self::order_review_token_bypasses_turnstile()) {
+        if (self::request_order_token_valid()) {
             return true;
         }
 
         return Product_Reviews_Turnstile::passes();
     }
 
-    private static function order_review_token_bypasses_turnstile(): bool
+    /**
+     * The posted signed order link is valid and the posted product is in that
+     * order.
+     */
+    private static function request_order_token_valid(): bool
     {
         if (empty($_POST['ffla_order_review_token']) || empty($_POST['comment_post_ID'])) {
             return false;
@@ -847,7 +1124,12 @@ class Product_Reviews_Core
         return $commentdata;
     }
 
-    public static function save_review_meta(int $comment_id, int $comment_approved, array $commentdata): void
+    /**
+     * @param int|string $comment_approved 1, 0, 'spam' or 'trash'. Untyped: a
+     *                                     string verdict against an int type
+     *                                     is a TypeError that kills the request.
+     */
+    public static function save_review_meta(int $comment_id, $comment_approved, array $commentdata): void
     {
         if (empty($commentdata['comment_post_ID'])) {
             return;
@@ -880,26 +1162,41 @@ class Product_Reviews_Core
             return;
         }
 
-        $email   = $comment->comment_author_email;
-        $user_id = (int) $comment->user_id;
+        $verified = self::review_proves_purchase($comment, $product_id) ? 1 : 0;
+        update_comment_meta($comment_id, 'ffla_verified_purchase', $verified);
 
-        $order_token = isset($_POST['ffla_order_review_token'])
-            ? sanitize_text_field(wp_unslash($_POST['ffla_order_review_token']))
-            : '';
-        $is_verified = false;
-        if ($order_token !== '') {
-            $ord = self::get_order_for_review_token($order_token);
-            if ($ord && self::order_contains_reviewable_product($ord, $product_id)) {
-                $is_verified = true;
-            }
+        // WooCommerce writes its own "verified owner" flag on this same hook
+        // from the typed address (the hole closed above), and its templates,
+        // REST API and blocks show it. Keep both flags on the stricter answer;
+        // either hook order ends here, since WooCommerce only adds the flag
+        // when none exists.
+        update_comment_meta($comment_id, 'verified', $verified);
+
+        // Files are only taken from the FFL form, after its nonce, honeypot and
+        // Turnstile checks, and never for a review filed as spam or trash.
+        // WooCommerce's form has no upload field, so files posted straight to
+        // wp-comments-post.php are not a shopper's photos.
+        if (self::$form_checks_passed && !in_array((string) $comment_approved, ['spam', 'trash'], true)) {
+            self::save_review_media($comment_id);
         }
-        if (!$is_verified && function_exists('wc_customer_bought_product')) {
-            $is_verified = (bool) wc_customer_bought_product($email, $user_id, $product_id);
+    }
+
+    /**
+     * "Verified buyer" comes from a signed order link (validated by the FFL
+     * form handler, for an order that still contains the product, under the
+     * order's own address) or from a signed-in account that bought the
+     * product. The address on the review is never enough: anyone can type a
+     * past buyer's email into a guest form.
+     */
+    private static function review_proves_purchase(\WP_Comment $comment, int $product_id): bool
+    {
+        if (self::$token_order instanceof \WC_Order
+            && self::order_contains_reviewable_product(self::$token_order, $product_id)
+            && strtolower(trim((string) self::$token_order->get_billing_email())) === strtolower(trim((string) $comment->comment_author_email))) {
+            return true;
         }
 
-        update_comment_meta($comment_id, 'ffla_verified_purchase', $is_verified ? 1 : 0);
-
-        self::save_review_media($comment_id);
+        return self::account_bought_product((int) $comment->user_id, $product_id);
     }
 
     private static function save_review_media(int $comment_id): void
@@ -949,6 +1246,20 @@ class Product_Reviews_Core
             $check = wp_check_filetype_and_ext($file['tmp_name'], $file['name'], $allowed_mimes);
             if (empty($check['ext']) || empty($check['type'])) {
                 continue;
+            }
+
+            // Review photos are public files, and phone photos carry the GPS
+            // position they were taken at. A photo that cannot be cleaned is
+            // skipped rather than published as it is.
+            if (strpos((string) $check['type'], 'image/') === 0) {
+                if (!Product_Reviews_Image_Privacy::strip_file((string) $file['tmp_name'], (string) $check['type'])) {
+                    continue;
+                }
+                clearstatcache(true, (string) $file['tmp_name']);
+                $size = @filesize((string) $file['tmp_name']);
+                if (false !== $size) {
+                    $file['size'] = (int) $size;
+                }
             }
 
             $_FILES['ffla_review_media_single'] = $file;
@@ -1093,9 +1404,13 @@ class Product_Reviews_Core
         </style>';
     }
 
+    /**
+     * Files the FFL form will actually store (the ones that hold a review for
+     * moderation). Anything else posted with a review is ignored.
+     */
     private static function has_review_media_upload(): bool
     {
-        if (!self::uploads_enabled()) {
+        if (!self::$form_checks_passed || !self::uploads_enabled()) {
             return false;
         }
 
@@ -1186,8 +1501,23 @@ class Product_Reviews_Core
             );
         }
 
-        if (!isset($_POST['ffla_review_form_nonce'])
-            || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['ffla_review_form_nonce'])), 'ffla_review_form')) {
+        // Expired, tampered with, or the order was refunded or cancelled.
+        if ($order_token_raw !== '' && !$order_ctx) {
+            self::redirect_with_status(
+                $redirect,
+                'error',
+                __('This review link is invalid or has expired.', 'ffl-funnels-addons'),
+                $fallback
+            );
+        }
+
+        // A signed order link is its own proof. Otherwise only a signed-in
+        // user's nonce means anything: a guest nonce is the same for every
+        // visitor and goes stale on cached product pages, so guests rely on
+        // the honeypot, Turnstile and the hourly limit below instead.
+        if (!$order_ctx && is_user_logged_in()
+            && (!isset($_POST['ffla_review_form_nonce'])
+                || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['ffla_review_form_nonce'])), 'ffla_review_form'))) {
             self::redirect_with_status(
                 $redirect,
                 'error',
@@ -1218,7 +1548,7 @@ class Product_Reviews_Core
         self::$form_checks_passed = true;
 
         // WooCommerce's own review rules apply to this form too.
-        if ('yes' !== get_option('woocommerce_enable_reviews', 'yes') || !comments_open($product_id)) {
+        if (!self::product_reviews_open($product_id)) {
             self::redirect_with_status(
                 $redirect,
                 'error',
@@ -1227,25 +1557,18 @@ class Product_Reviews_Core
             );
         }
 
-        if ($order_ctx) {
-            if (!self::order_contains_reviewable_product($order_ctx, $product_id)) {
-                self::redirect_with_status(
-                    $redirect,
-                    'error',
-                    __('That product is not part of this order.', 'ffl-funnels-addons'),
-                    $fallback
-                );
-            }
+        // Also refuses a line that was refunded in full.
+        if ($order_ctx && !self::order_contains_reviewable_product($order_ctx, $product_id)) {
+            self::redirect_with_status(
+                $redirect,
+                'error',
+                __('That product is not part of this order.', 'ffl-funnels-addons'),
+                $fallback
+            );
+        }
 
-            $billing_email = strtolower(trim((string) $order_ctx->get_billing_email()));
-            if (self::customer_has_review_for_product($billing_email, $product_id)) {
-                self::redirect_with_status(
-                    $redirect,
-                    'error',
-                    __('You already submitted a review for this product.', 'ffl-funnels-addons'),
-                    $fallback
-                );
-            }
+        if ($order_ctx) {
+            self::$token_order = $order_ctx;
         }
 
         $comment_content = isset($_POST['comment']) ? trim((string) wp_unslash($_POST['comment'])) : '';
@@ -1316,16 +1639,50 @@ class Product_Reviews_Core
         }
 
         // "Reviews can only be left by verified owners" (WooCommerce →
-        // Settings → Products). A signed order link proves the purchase.
+        // Settings → Products). A signed order link proves the purchase;
+        // otherwise it takes a signed-in account that bought the product.
         if (!$order_ctx
             && 'yes' === get_option('woocommerce_review_rating_verification_required', 'no')
-            && !$can_moderate
-            && !(function_exists('wc_customer_bought_product')
-                && wc_customer_bought_product($commentdata['comment_author_email'], (int) $commentdata['user_id'], $product_id))) {
+            && !$can_moderate) {
+            if (!is_user_logged_in()) {
+                self::redirect_with_status(
+                    $redirect,
+                    'error',
+                    __('Please log in to review this product, or use the review link from your order email.', 'ffl-funnels-addons'),
+                    $fallback
+                );
+            }
+
+            if (!self::account_bought_product(get_current_user_id(), $product_id)) {
+                self::redirect_with_status(
+                    $redirect,
+                    'error',
+                    __('Only customers who bought this product can review it.', 'ffl-funnels-addons'),
+                    $fallback
+                );
+            }
+        }
+
+        // One review per customer per product: by account, plus verified
+        // reviews under the address; for a guest, per typed address.
+        $is_guest  = !$order_ctx && !is_user_logged_in();
+        $duplicate = $is_guest
+            ? self::guest_has_review_for_product((string) $commentdata['comment_author_email'], $product_id)
+            : self::customer_has_review_for_product((string) $commentdata['comment_author_email'], $product_id, (int) $commentdata['user_id']);
+        if (!$can_moderate && $duplicate) {
             self::redirect_with_status(
                 $redirect,
                 'error',
-                __('Only customers who bought this product can review it.', 'ffl-funnels-addons'),
+                __('You already submitted a review for this product.', 'ffl-funnels-addons'),
+                $fallback
+            );
+        }
+
+        if ($is_guest && self::guest_rate_limited()) {
+            self::redirect_with_status(
+                $redirect,
+                'error',
+                __('Too many reviews were sent from your connection. Please try again later.', 'ffl-funnels-addons'),
                 $fallback
             );
         }
@@ -1333,11 +1690,52 @@ class Product_Reviews_Core
         $commentdata = self::apply_review_comment_approval($commentdata);
 
         $comment_id = wp_new_comment($commentdata, true);
-        if (is_wp_error($comment_id) || !$comment_id) {
+        if (is_wp_error($comment_id)) {
+            // WordPress's own refusals (duplicate, flooding, Discussion rules)
+            // say what went wrong; show that rather than a generic line.
+            $message = trim(wp_strip_all_tags(html_entity_decode($comment_id->get_error_message(), ENT_QUOTES, 'UTF-8')));
+            self::redirect_with_status(
+                $redirect,
+                'error',
+                $message !== '' ? $message : __('Could not submit your review. Please try again.', 'ffl-funnels-addons'),
+                $fallback
+            );
+        }
+
+        if (!$comment_id) {
             self::redirect_with_status($redirect, 'error', __('Could not submit your review. Please try again.', 'ffl-funnels-addons'), $fallback);
         }
 
+        if ($is_guest) {
+            self::count_guest_review();
+        }
+
         self::redirect_with_status($redirect, 'success', '', $fallback);
+    }
+
+    private static function guest_rate_key(): string
+    {
+        $ip = isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '';
+
+        return self::GUEST_RATE_TRANSIENT_PREFIX . md5($ip);
+    }
+
+    /**
+     * New guest reviews from one IP address within an hour of the last one.
+     * Signed-in users fall under WordPress's own flood control and signed
+     * links under one review per product in the order.
+     */
+    private static function guest_rate_limited(): bool
+    {
+        $limit = (int) apply_filters('ffla_product_reviews_guest_hourly_limit', 5);
+
+        return $limit > 0 && (int) get_transient(self::guest_rate_key()) >= $limit;
+    }
+
+    private static function count_guest_review(): void
+    {
+        $key = self::guest_rate_key();
+        set_transient($key, (int) get_transient($key) + 1, HOUR_IN_SECONDS);
     }
 
     private static function redirect_with_status(string $redirect, string $status, string $message, string $fallback = ''): void
