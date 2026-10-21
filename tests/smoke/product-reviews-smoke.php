@@ -1046,6 +1046,28 @@ check(1 === (int) get_comment_meta($reply, 'ffla_is_store_reply', true), 'a repl
 check(1 === count($GLOBALS['mails']) && 'reviewer@example.com' === $GLOBALS['mails'][0]['to'], 'a store reply is emailed to the reviewer');
 check(in_array('From: Gun & Gear LLC <shop@store.test>', $GLOBALS['mails'][0]['headers'], true), 'reply notices use the WooCommerce sender too');
 
+/* ── A failed notice is not recorded as sent ── */
+
+$GLOBALS['mails']   = [];
+$GLOBALS['log']     = [];
+$GLOBALS['mail_ok'] = false;
+new_request(9);
+$reply = wp_new_comment(['comment_post_ID' => 101, 'comment_parent' => $review, 'comment_type' => 'review', 'comment_author' => 'Store', 'comment_author_email' => 'staff@store.test', 'comment_content' => 'Second answer', 'user_id' => 9], true);
+check(1 === count($GLOBALS['mails']) && '' === get_comment_meta($reply, '_ffla_reply_notified', true) && 1 === count($GLOBALS['log']), 'a store reply notice wp_mail() refused is logged and not marked as sent');
+$GLOBALS['mail_ok'] = true;
+Product_Reviews_Notifications::on_comment_status_transition('approved', 'unapproved', get_comment($reply));
+check(2 === count($GLOBALS['mails']) && 1 === get_comment_meta($reply, '_ffla_reply_notified', true), 'approving the reply again sends the notice and marks it');
+
+$GLOBALS['mails']   = [];
+$GLOBALS['mail_ok'] = false;
+$held = add_test_comment(['comment_post_ID' => 102, 'comment_author' => 'Held', 'comment_author_email' => 'held@example.com', 'comment_approved' => '0']);
+Product_Reviews_Notifications::on_comment_status_transition('approved', 'unapproved', get_comment($held));
+check(1 === count($GLOBALS['mails']) && '' === get_comment_meta($held, '_ffla_approved_notified', true), 'an approval notice wp_mail() refused is not marked as sent');
+$GLOBALS['mail_ok'] = true;
+Product_Reviews_Notifications::on_comment_status_transition('approved', 'unapproved', get_comment($held));
+Product_Reviews_Notifications::on_comment_status_transition('approved', 'unapproved', get_comment($held));
+check(2 === count($GLOBALS['mails']) && 1 === get_comment_meta($held, '_ffla_approved_notified', true), 'the next approval sends it once and marks it');
+
 /* ═════ 9. Turnstile on wp-comments-post.php when the tab is replaced ═════ */
 
 $GLOBALS['ts_ok']    = false;

@@ -367,8 +367,7 @@ class Product_Reviews_Notifications
             $comment
         );
 
-        update_comment_meta($comment_id, self::APPROVED_NOTIFIED_META, 1);
-        wp_mail($email, $subject, $body, self::mail_headers());
+        self::send($email, $subject, $body, $comment_id, self::APPROVED_NOTIFIED_META, 'approval');
     }
 
     private static function maybe_notify_reply(\WP_Comment $reply): void
@@ -439,8 +438,29 @@ class Product_Reviews_Notifications
             $parent
         );
 
-        update_comment_meta($reply_id, self::REPLY_NOTIFIED_META, 1);
-        wp_mail($to, $subject, $body, self::mail_headers());
+        self::send($to, $subject, $body, $reply_id, self::REPLY_NOTIFIED_META, 'reply');
+    }
+
+    /**
+     * The "already notified" flag is only written when wp_mail() succeeds, so
+     * a failed send is not silently recorded as done: the next approval of
+     * the review (or reply) tries again. Failures are logged under
+     * WooCommerce → Status → Logs (source ffla-product-reviews).
+     */
+    private static function send(string $to, string $subject, string $body, int $comment_id, string $notified_meta, string $kind): void
+    {
+        if (wp_mail($to, $subject, $body, self::mail_headers())) {
+            update_comment_meta($comment_id, $notified_meta, 1);
+
+            return;
+        }
+
+        if (function_exists('wc_get_logger')) {
+            wc_get_logger()->warning(
+                sprintf('Comment #%d: review %s email could not be sent; it is tried again the next time the comment is approved.', $comment_id, $kind),
+                ['source' => 'ffla-product-reviews']
+            );
+        }
     }
 
     /**

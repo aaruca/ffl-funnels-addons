@@ -54,8 +54,8 @@ Gives WooCommerce products a richer review form and list (star rating plus optio
 | Forbidden words | One term per line or comma separated. Case-insensitive, matches inside longer words. Empty turns the filter off. | Empty |
 | When a review matches | *Hold it for moderation* or *Refuse it and ask the customer to revise*. | Hold it for moderation |
 | **Reviewer notifications** | | |
-| Email the reviewer when their review is approved | Sent once when a held review is approved. | On |
-| Email the reviewer when someone replies | Sent once per approved store reply (written by someone who could moderate comments). Other replies are never emailed. | On |
+| Email the reviewer when their review is approved | Sent once when a held review is approved. If `wp_mail()` fails, nothing is recorded and it is sent the next time the review is approved. | On |
+| Email the reviewer when someone replies | Sent once per approved store reply (written by someone who could moderate comments). Other replies are never emailed. A failed send is retried the next time the reply is approved. | On |
 | Re-subscribe an address | Not stored: enter an email and save to remove it from the unsubscribed list, when the customer asks to get review requests again. | Empty |
 | **Order review hub** | | |
 | Hub page | The page with the shortcode or Bricks element. Every request email (both modes) links here. Required: without a published page here, no request is scheduled or sent. | None |
@@ -129,7 +129,7 @@ These rules apply to every new product review, including ones from WooCommerce's
 - Checked again when the email is due: requests still enabled and the hub page still published, the order still Completed (or moved to a store-specific status after completion, such as a custom *Delivered*), still within the age limit, the address not unsubscribed and the email not already sent. Products reviewed, refunded in full or closed to reviews in the meantime are left out; if none remain, nothing is sent.
 - An order that is back in Processing, On hold or another status from before completion when its email is due is not emailed and is released: when it is completed again, the request is scheduled again. An order that is refunded or cancelled drops its queued emails; if it is completed again later it is scheduled again. An email already sent is never repeated.
 - Sent with `wp_mail()` as plain text to the billing email: heading, blank line, body. If the body has no `{unsubscribe_url}`, an unsubscribe line is added at the end. From is WooCommerce's sender name and address (**WooCommerce → Settings → Emails**); Reply-To is WooCommerce's reply-to address when that setting exists and is on, otherwise the same sender. The approval and reply notices use the same sender.
-- An email only counts as sent when `wp_mail()` succeeds. A failure is logged under **WooCommerce → Status → Logs** (source `ffla-product-reviews`) and tried again an hour later, three attempts in all.
+- An email only counts as sent when `wp_mail()` succeeds. A failure is logged under **WooCommerce → Status → Logs** (source `ffla-product-reviews`) and tried again an hour later, three attempts in all. Approval and reply notices are logged the same way, and are sent the next time the review or reply is approved.
 - Switching the module off removes its queued emails. Orders that were already scheduled are not scheduled again when it is switched back on.
 
 | Placeholder | Replaced with |
