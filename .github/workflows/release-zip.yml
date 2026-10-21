@@ -137,6 +137,7 @@ jobs:
           node tests/smoke/monsterinsights-bridge-smoke.js
           php tests/smoke/monsterinsights-payload-smoke.php
           php tests/smoke/order-badges-smoke.php
+          php tests/smoke/product-reviews-smoke.php
 
       # This ZIP is what the built-in updater installs on every store, so it must
       # contain only runtime files. Everything below is developer tooling.

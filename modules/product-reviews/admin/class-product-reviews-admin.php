@@ -14,6 +14,39 @@ class Product_Reviews_Admin
     public function init(): void
     {
         add_action('admin_post_product_reviews_save_settings', [$this, 'handle_settings_save']);
+        add_action('admin_notices', [$this, 'render_missing_hub_notice']);
+    }
+
+    private static function requests_blocked_by_hub(): bool
+    {
+        return '1' === Product_Reviews_Core::get_setting('enable_requests', '1') && !Product_Reviews_Core::hub_page_ready();
+    }
+
+    private static function missing_hub_message(): string
+    {
+        return __('Review request emails are switched on, but no published Hub page is selected, so none are being scheduled or sent. Select the page that holds the [ffla_order_reviews] shortcode or the Bricks “Order reviews hub” element under Order review hub, or switch requests off.', 'ffl-funnels-addons');
+    }
+
+    /**
+     * Shown everywhere in wp-admin except this module's settings page, which
+     * carries the same warning inline.
+     */
+    public function render_missing_hub_notice(): void
+    {
+        if (!current_user_can('manage_woocommerce') || !self::requests_blocked_by_hub()) {
+            return;
+        }
+
+        $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+        if ($screen && false !== strpos((string) $screen->id, 'ffla-product-reviews')) {
+            return;
+        }
+
+        $url = add_query_arg(['page' => 'ffla-product-reviews'], admin_url('admin.php'));
+
+        echo '<div class="notice notice-warning"><p><strong>' . esc_html__('Product Reviews:', 'ffl-funnels-addons') . '</strong> '
+            . esc_html(self::missing_hub_message())
+            . ' <a href="' . esc_url($url) . '">' . esc_html__('Open Product Reviews settings', 'ffl-funnels-addons') . '</a></p></div>';
     }
 
     public function render_settings_content(): void
@@ -23,6 +56,10 @@ class Product_Reviews_Admin
 
         if ($saved) {
             FFLA_Admin::render_notice('success', __('Settings saved.', 'ffl-funnels-addons'));
+        }
+
+        if (self::requests_blocked_by_hub()) {
+            FFLA_Admin::render_notice('warning', esc_html(self::missing_hub_message()));
         }
 
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
@@ -37,25 +74,25 @@ class Product_Reviews_Admin
             __('Enable review requests', 'ffl-funnels-addons'),
             'enable_requests',
             $settings['enable_requests'] ?? '1',
-            __('Send post-purchase emails asking customers to review purchased products.', 'ffl-funnels-addons')
+            __('Send post-purchase emails asking customers to review purchased products. Nothing is scheduled or sent until a published Hub page is selected under Order review hub.', 'ffl-funnels-addons')
         );
 
         FFLA_Admin::render_text_field(
             __('Delay after completed order (days)', 'ffl-funnels-addons'),
             'request_delay_days',
             $settings['request_delay_days'] ?? '7',
-            __('How many days to wait before sending a review request email.', 'ffl-funnels-addons')
+            __('How many days to wait before sending a review request email. Orders placed more than this many days plus 30 before the email would go out (imports, old orders completed in bulk) are not emailed.', 'ffl-funnels-addons')
         );
 
         echo '<div class="wb-field">';
         echo '<label class="wb-field__label" for="request_email_mode">' . esc_html__('Review request email', 'ffl-funnels-addons') . '</label>';
         echo '<div class="wb-field__control">';
-        $mode = $settings['request_email_mode'] ?? 'per_product';
+        $mode = $settings['request_email_mode'] ?? 'bundle';
         echo '<select class="wb-select" name="request_email_mode" id="request_email_mode">';
-        echo '<option value="per_product"' . selected($mode, 'per_product', false) . '>' . esc_html__('One email per product (scheduled separately)', 'ffl-funnels-addons') . '</option>';
         echo '<option value="bundle"' . selected($mode, 'bundle', false) . '>' . esc_html__('One email per order (all products, single link)', 'ffl-funnels-addons') . '</option>';
+        echo '<option value="per_product"' . selected($mode, 'per_product', false) . '>' . esc_html__('One email per product (all sent the same day)', 'ffl-funnels-addons') . '</option>';
         echo '</select>';
-        echo '<p class="wb-field__desc">' . esc_html__('Both modes send a signed link that opens the order review hub (Hub page below; without one, the link opens the home page with ?ffla_ro=, so put the hub on the home page or pick a Hub page). One email per order lists every product; with the default template it uses {review_order_url} and {product_names_list} automatically.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('Both modes send a signed link that opens the order review hub (Hub page below). One email per order lists every product; with the default template it uses {review_order_url} and {product_names_list} automatically. One email per product sends a separate email for each product in the order, all on the same day.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
         FFLA_Admin::render_toggle_field(
@@ -210,7 +247,7 @@ class Product_Reviews_Admin
             __('Email the reviewer when someone replies', 'ffl-funnels-addons'),
             'notify_on_reply',
             $settings['notify_on_reply'] ?? '1',
-            __('WordPress never sends this on its own — it only notifies the post author. People do not reply to themselves, so no email is sent when the reply comes from the same address.', 'ffl-funnels-addons')
+            __('Only for store replies: a reply written by someone who can moderate comments, such as the Reply link under Products → Reviews. WordPress never sends this on its own — it only notifies the post author.', 'ffl-funnels-addons')
         );
 
         $optout_count = Product_Reviews_Notifications::optout_count();
@@ -250,7 +287,7 @@ class Product_Reviews_Admin
             'option_none_value' => '0',
             'class'             => 'wb-select',
         ]);
-        echo '<p class="wb-field__desc">' . esc_html__('Page that contains the [ffla_order_reviews] shortcode or the Bricks “Order reviews hub” element.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('Page that contains the [ffla_order_reviews] shortcode or the Bricks “Order reviews hub” element. Required: review request emails are only scheduled and sent while a published page is selected here.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
         FFLA_Admin::render_toggle_field(
@@ -285,7 +322,7 @@ class Product_Reviews_Admin
 
         if ($turnstile_active) {
             echo '<p class="wb-field__desc">' . esc_html__(
-                'Detected: Simple Cloudflare Turnstile plugin is active. The widget is rendered automatically on the FFL review form and validated on submit. Manage site key, secret key, and theme inside that plugin\'s settings page.',
+                'Detected: Simple Cloudflare Turnstile plugin is active. The widget is rendered automatically on the FFL review form and validated on submit. While “Replace WooCommerce reviews tab” is on, new reviews posted to WordPress\'s own comment endpoint must pass it too. Manage site key, secret key, and theme inside that plugin\'s settings page.',
                 'ffl-funnels-addons'
             ) . '</p>';
         } else {
@@ -394,9 +431,9 @@ class Product_Reviews_Admin
             ? 'reject'
             : 'moderate';
 
-        $new['request_email_mode'] = (isset($_POST['request_email_mode']) && 'bundle' === $_POST['request_email_mode'])
-            ? 'bundle'
-            : 'per_product';
+        $new['request_email_mode'] = (isset($_POST['request_email_mode']) && 'per_product' === $_POST['request_email_mode'])
+            ? 'per_product'
+            : 'bundle';
 
         $new['order_review_page_id'] = isset($_POST['order_review_page_id'])
             ? (string) absint($_POST['order_review_page_id'])

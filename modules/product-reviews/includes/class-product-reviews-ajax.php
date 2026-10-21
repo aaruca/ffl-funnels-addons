@@ -23,7 +23,12 @@ class Product_Reviews_Ajax
 
     public static function vote_review_helpful(): void
     {
-        check_ajax_referer('ffla_product_reviews_nonce', 'nonce');
+        // Only a signed-in user's nonce proves anything. A guest nonce is the
+        // same for every visitor and goes stale on cached product pages, which
+        // would break voting there; guests are held by the per-IP limits below.
+        if (is_user_logged_in()) {
+            check_ajax_referer('ffla_product_reviews_nonce', 'nonce');
+        }
 
         if ('1' !== Product_Reviews_Core::get_setting('enable_helpful_votes', '1')) {
             wp_send_json_error(['message' => __('Helpful votes are disabled.', 'ffl-funnels-addons')]);

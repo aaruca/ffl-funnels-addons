@@ -2,6 +2,36 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.55.10] - 2026-10-21
+
+Product Reviews fixes found in a pre-launch audit; no store has the module switched on yet.
+
+### Security
+- **Product Reviews:** anyone could get the *Verified buyer* label by typing a past buyer's email into a guest form, pass WooCommerce's *verified owners only* rule the same way, and post unlimited reviews. *Verified buyer* now comes only from a signed review link for an order that still contains the product, or from a signed-in account that bought it. WooCommerce's own *verified owner* flag on the review is set to the same answer (WooCommerce worked it out from the typed address too).
+- **Product Reviews:** with *verified owners only* on, guests without a signed link are asked to log in (the form shows why instead of fields they cannot use), and WooCommerce's own form and direct posts to `wp-comments-post.php` follow the rule too.
+- **Product Reviews:** one review per customer per product on every path: per account, per signed order link, and per typed address for guests. A review someone typed a customer's address into no longer stops that customer's request emails or blocks their own review, and the guest form does not reveal whether an address has a verified review.
+- **Product Reviews:** files posted to `wp-comments-post.php` with any product comment were stored as public media, with no nonce, honeypot or Turnstile check, even when the comment was spam. Files are now only taken from the FFL form after its checks pass, and never for a review filed as spam or trash.
+- **Product Reviews:** review photos kept their EXIF data, including the GPS position they were taken at. JPEG, PNG and WebP uploads are cleaned before they are stored (location, camera, XMP, IPTC and comments removed; colour profile and orientation kept). A photo that cannot be cleaned is skipped.
+- **Product Reviews:** while *Replace WooCommerce reviews tab* is on, a new top-level review posted to `wp-comments-post.php` must pass Cloudflare Turnstile when the Simple Cloudflare Turnstile plugin is active (unless that plugin already protects the comment form).
+- **Product Reviews:** the "someone replied to your review" email relayed any approved reply. It is now only sent for replies from the store.
+- **Product Reviews:** the hub forms no longer carry the order's billing name and email in hidden fields. Pages opened from a signed link are kept out of page caches (`nocache_headers()`, `DONOTCACHEPAGE`) and do not send the link in the Referer.
+- **Product Reviews:** signed review links stop working when the order is refunded, cancelled or failed.
+
+### Fixed
+- **Product Reviews:** review request emails were scheduled and sent while no hub page was selected, so their link led nowhere. Nothing is scheduled or sent until a published hub page is selected, and an admin notice says so while requests are on.
+- **Product Reviews:** switching *Enable review requests* off did not stop emails already queued. The setting and the hub page are checked again when each email is due, and switching the module off clears its queue.
+- **Product Reviews:** a failed `wp_mail()` was still recorded as sent. Request emails are only marked as sent when `wp_mail()` succeeds; a failure is logged (source `ffla-product-reviews`) and retried an hour later, three attempts in all. Request, approval and reply emails now use WooCommerce's sender name and address, and its reply-to address when set.
+- **Product Reviews:** an order moved back to Processing before its email was due never got the email after it was completed again. It is now released and scheduled again. Orders the store moves to a custom status after completing them still get their email.
+- **Product Reviews:** imported orders, old orders completed in bulk and emails left in a stalled queue went out. Orders placed more than the request delay plus 30 days before the email would go out are skipped (filter `ffla_product_reviews_request_max_order_age_days`).
+- **Product Reviews:** emails and hub forms included products refunded in full and products closed to reviews. Both are now left out.
+- **Product Reviews:** the hub refused the second product reviewed within 15 seconds as flooding, and showed "Could not submit your review" for every WordPress refusal. Signed-link submissions skip WordPress's flood check, and the real reason is shown.
+- **Product Reviews:** guests on cached product pages got "Security check failed" (and silent vote failures) once the cached nonce expired. Nonces are only checked for signed-in users; guests are covered by the honeypot, Turnstile, an hourly limit of five reviews per IP address (filter `ffla_product_reviews_guest_hourly_limit`) and the vote limits. Signed links replace the nonce on the hub.
+- **Product Reviews:** a review filed as spam or trash (by Akismet, for example) crashed the request with a `TypeError` in the review-meta handler.
+
+### Changed
+- **Product Reviews:** *One email per order* is the default request email mode.
+- **Product Reviews:** new offline regression check `tests/smoke/product-reviews-smoke.php` (verified-flag sources, one review per customer, the `wp-comments-post.php` upload guard, EXIF removal, scheduling with and without a hub page, the switched-off setting at send time, send failures, status detours, refunds, reply gating, token invalidation, hub caching, flood and Turnstile rules), run in CI and before the release ZIP is published.
+
 ## [1.55.8] - 2026-10-19
 
 ### Fixed

@@ -368,7 +368,7 @@ class Product_Reviews_Notifications
         );
 
         update_comment_meta($comment_id, self::APPROVED_NOTIFIED_META, 1);
-        wp_mail($email, $subject, $body);
+        wp_mail($email, $subject, $body, self::mail_headers());
     }
 
     private static function maybe_notify_reply(\WP_Comment $reply): void
@@ -389,6 +389,12 @@ class Product_Reviews_Notifications
 
         $reply_id = (int) $reply->comment_ID;
         if (get_comment_meta($reply_id, self::REPLY_NOTIFIED_META, true)) {
+            return;
+        }
+
+        // Only the store's answers are relayed. Anyone else's approved reply
+        // would otherwise turn this into a way to email a reviewer any text.
+        if ((int) get_comment_meta($reply_id, self::STORE_REPLY_META, true) !== 1) {
             return;
         }
 
@@ -434,6 +440,14 @@ class Product_Reviews_Notifications
         );
 
         update_comment_meta($reply_id, self::REPLY_NOTIFIED_META, 1);
-        wp_mail($to, $subject, $body);
+        wp_mail($to, $subject, $body, self::mail_headers());
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private static function mail_headers(): array
+    {
+        return class_exists('Product_Reviews_Email') ? Product_Reviews_Email::mail_headers() : [];
     }
 }

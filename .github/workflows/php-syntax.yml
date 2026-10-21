@@ -101,3 +101,6 @@ jobs:
           node tests/smoke/monsterinsights-bridge-smoke.js
           php tests/smoke/monsterinsights-payload-smoke.php
           php tests/smoke/order-badges-smoke.php
+
+      - name: Product Reviews regression checks
+        run: php tests/smoke/product-reviews-smoke.php

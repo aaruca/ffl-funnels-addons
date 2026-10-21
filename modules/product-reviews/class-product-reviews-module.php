@@ -46,6 +46,8 @@ class Product_Reviews_Module extends FFLA_Module
         require_once $base . 'includes/class-product-reviews-core.php';
         Product_Reviews_Core::init();
 
+        require_once $base . 'includes/class-product-reviews-image-privacy.php';
+
         require_once $base . 'includes/class-product-reviews-criteria.php';
 
         require_once $base . 'includes/class-product-reviews-moderation.php';
@@ -95,7 +97,16 @@ class Product_Reviews_Module extends FFLA_Module
 
     public function deactivate(): void
     {
-        // Intentionally keep settings and data.
+        // Settings and data stay. Queued request emails go: they are not sent
+        // while the module is off, and switching it back on must not release
+        // a backlog of stale requests at once.
+        foreach (['ffla_send_product_review_request', 'ffla_send_order_review_bundle'] as $hook) {
+            wp_unschedule_hook($hook);
+
+            if (function_exists('as_unschedule_all_actions')) {
+                as_unschedule_all_actions($hook, null, 'ffla-product-reviews');
+            }
+        }
     }
 
     public function get_admin_pages(): array

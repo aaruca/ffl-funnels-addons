@@ -114,6 +114,23 @@ class Product_Reviews_Frontend_Render
             echo '<p class="ffla-review-form__notice ffla-review-form__notice--error" role="alert">' . esc_html($message) . '</p>';
         }
 
+        // WooCommerce → Settings → Products → "Reviews can only be left by
+        // verified owners": the handler refuses everyone else, so they get the
+        // reason instead of a form they cannot send.
+        if ('yes' === get_option('woocommerce_review_rating_verification_required', 'no')
+            && !current_user_can('moderate_comments')
+            && !Product_Reviews_Core::account_bought_product(get_current_user_id(), $product_id)) {
+            $text = is_user_logged_in()
+                ? __('Only customers who bought this product can review it.', 'ffl-funnels-addons')
+                : __('Only customers who bought this product can review it. Log in to your account, or use the review link from your order email.', 'ffl-funnels-addons');
+            echo '<p class="ffla-review-form__notice ffla-review-form__notice--info">' . esc_html($text) . '</p>';
+            if ($wrap) {
+                echo '</div>';
+            }
+
+            return;
+        }
+
         if (!is_user_logged_in() && get_option('comment_registration') && $show_login_hint) {
             echo '<p class="ffla-review-form__notice ffla-review-form__notice--info">' . esc_html__('You must be logged in to submit a review.', 'ffl-funnels-addons') . '</p>';
         }
