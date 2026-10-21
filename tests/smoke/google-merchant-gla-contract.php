@@ -115,13 +115,32 @@ expect_source('src/API/Site/Controllers/MerchantCenter/ProductVisibilityControll
 expect_source('src/API/TransportMethods.php', "/const EDITABLE\s*=\s*'POST, PUT, PATCH';/", 'Bulk visibility accepts POST, PUT and PATCH');
 
 // Google's pull proxy: product lists honour _wc_gla_visibility, variations are
-// covered by this module's own filters on the same request marker.
-expect_source('src/Integration/WPCOMProxy.php', "/get_param\(\s*'gla_syncable'\s*\)\s*===\s*'1'/", 'Proxy requests marked gla_syncable=1');
-expect_source('src/Integration/WPCOMProxy.php', "/KEY_VISIBILITY\s*=\s*'_wc_gla_visibility';/", 'Proxy filters on _wc_gla_visibility');
-expect_source('src/Integration/WPCOMProxy.php', "/'woocommerce_rest_' \. \\\$object_type \. '_object_query'/", 'Proxy uses the WooCommerce REST object query filters');
+// covered by this module's own filters on the same request marker. Google for
+// WooCommerce 3.10.0 removed the proxy ("Remove the remaining API Pull code"),
+// so these checks apply only to versions that still ship it. Without it, no
+// other file may answer gla_syncable requests: a pull path under a new name
+// would need the module's variation filters checked again.
+$notes = [];
+if (is_file($root . '/src/Integration/WPCOMProxy.php')) {
+    expect_source('src/Integration/WPCOMProxy.php', "/get_param\(\s*'gla_syncable'\s*\)\s*===\s*'1'/", 'Proxy requests marked gla_syncable=1');
+    expect_source('src/Integration/WPCOMProxy.php', "/KEY_VISIBILITY\s*=\s*'_wc_gla_visibility';/", 'Proxy filters on _wc_gla_visibility');
+    expect_source('src/Integration/WPCOMProxy.php', "/'woocommerce_rest_' \. \\\$object_type \. '_object_query'/", 'Proxy uses the WooCommerce REST object query filters');
+} else {
+    $checks++;
+    $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root . '/src', FilesystemIterator::SKIP_DOTS));
+    foreach ($files as $file) {
+        if ($file->getExtension() === 'php' && strpos((string) file_get_contents($file->getPathname()), 'gla_syncable') !== false) {
+            $failures[] = 'gla_syncable is handled outside the removed WPCOM proxy (' . substr($file->getPathname(), strlen($root) + 1) . '): check the module\'s proxy variation filters';
+        }
+    }
+    $notes[] = 'WPCOM pull proxy not shipped (removed in 3.10.0); proxy checks skipped, no other gla_syncable handler found';
+}
 
 if ($failures) {
     fwrite(STDERR, "Google for WooCommerce contract FAILED:\n - " . implode("\n - ", $failures) . "\n");
     exit(1);
+}
+foreach ($notes as $note) {
+    echo "Note: $note.\n";
 }
 echo 'Google for WooCommerce ' . ($version[1] ?? '?') . " contract: $checks checks passed.\n";
