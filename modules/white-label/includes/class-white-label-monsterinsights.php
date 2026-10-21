@@ -71,10 +71,14 @@ class White_Label_MonsterInsights
             return self::state('unavailable', __('Reporting is disabled in MonsterInsights settings.', 'ffl-funnels-addons'));
         }
         $mi = MonsterInsights();
-        if (!is_object($mi) || !isset($mi->auth) || !($mi->auth->is_authed() || $mi->auth->is_network_authed())) {
+        // auth/license are protected and lazy-loaded through MonsterInsights::__get()
+        // with no __isset(), so isset() is always false here: read them instead.
+        $auth = is_object($mi) ? $mi->auth : null;
+        if (!is_object($auth) || !($auth->is_authed() || $auth->is_network_authed())) {
             return self::state('unavailable', __('Connect Google Analytics in MonsterInsights to populate this dashboard.', 'ffl-funnels-addons'));
         }
-        if (monsterinsights_is_pro_version() && (!isset($mi->license) || !$mi->license->has_license() || $mi->license->license_has_error())) {
+        $license = monsterinsights_is_pro_version() ? $mi->license : null;
+        if (monsterinsights_is_pro_version() && (!is_object($license) || !$license->has_license() || $license->license_has_error())) {
             return self::state('unavailable', __('Resolve the MonsterInsights license issue to load reports.', 'ffl-funnels-addons'));
         }
         return null;
@@ -288,7 +292,12 @@ class White_Label_MonsterInsights
             throw new RuntimeException('Overview unavailable');
         }
         $args = ['start' => $dates['start'], 'end' => $dates['end'], 'compare_start' => $dates['compare_start'], 'compare_end' => $dates['compare_end'], 'included_metrics' => 'sessions,pageviews'];
-        $raw = self::unwrap($report->get_data($args));
+        $response = $report->get_data($args);
+        // A property with no data comes back as a successful report flagged with
+        // MI's demo-chart overlay: show it as no data, not as a connection failure.
+        $empty = is_array($response) && empty($response['error']) && ($response['success'] ?? true)
+            && !empty($response['data']['show_chart_overlay']) && empty($response['data']['error']);
+        $raw = $empty ? $response['data'] : self::unwrap($response);
         $data = self::normalize_legacy($raw, $dates);
         // Do not infer commerce totals from another report or WooCommerce.
         $data['ecommerce'] = self::state('unavailable', __('Open the MonsterInsights eCommerce report for commerce details on this version.', 'ffl-funnels-addons'));
@@ -298,7 +307,7 @@ class White_Label_MonsterInsights
     public static function normalize_legacy(array $raw, array $dates): array
     {
         if (!empty($raw['show_chart_overlay'])) {
-            return self::state('no_data', __('MonsterInsights is still collecting data. Demo charts are not displayed here.', 'ffl-funnels-addons'));
+            return self::state('no_data', __('MonsterInsights returned no Google Analytics data for this period. If the store had visits, check in MonsterInsights that it is connected to the GA4 property receiving them.', 'ffl-funnels-addons'));
         }
         $metrics = [];
         foreach (['sessions' => __('Sessions', 'ffl-funnels-addons'), 'pageviews' => __('Pageviews', 'ffl-funnels-addons'), 'bounce' => __('Bounce rate', 'ffl-funnels-addons')] as $key => $label) {

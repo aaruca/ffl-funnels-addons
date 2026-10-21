@@ -2,6 +2,15 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [1.55.11] - 2026-10-21
+
+### Fixed
+- **White Label:** the MonsterInsights tab always said "Connect Google Analytics in MonsterInsights…", even on connected sites with a valid Pro license. MonsterInsights keeps `auth` and `license` as protected properties loaded through `__get()` (no `__isset()`), so the module's `isset()` checks were always false. They now read the objects directly. Found on a live store running MonsterInsights Pro 11.1.3.
+- **White Label:** on MonsterInsights before 11.2, a connected property with no visits for the range was reported as "MonsterInsights reports could not be loaded. Check its connection…". It now shows that MonsterInsights returned no Google Analytics data and suggests checking the connected GA4 property. Demo charts are still never shown.
+
+### Changed
+- **White Label:** the offline MonsterInsights regression check now models MonsterInsights' protected, lazy-loaded `auth`/`license` properties, so this class of bug fails the test.
+
 ## [1.55.10] - 2026-10-21
 
 Product Reviews fixes found in a pre-launch audit; no store has the module switched on yet.
@@ -42,6 +51,7 @@ Product Reviews fixes found in a pre-launch audit; no store has the module switc
 - **Product Reviews:** *One email per order* is the default request email mode.
 - **Product Reviews:** new offline regression check `tests/smoke/product-reviews-smoke.php` (verified-flag sources, one review per customer, the `wp-comments-post.php` upload guard, EXIF removal, scheduling with and without a hub page, the switched-off setting at send time, send failures, status detours, refunds, reply gating, token invalidation, hub caching, flood and Turnstile rules), run in CI and before the release ZIP is published.
 - **Product Reviews:** new offline regression check `tests/smoke/product-reviews-display-smoke.php` (review media markup, verified fallback, count consistency, asset loading, structured-data review list, pin cache purge, helpful-vote nonce, daily cap and Cloudflare address), run on PHP 7.4 and 8.3 in CI and before the release ZIP is published. New filters `ffla_product_reviews_structured_data_list_settings`, `ffla_product_reviews_client_ip` and `ffla_product_reviews_cloudflare_ranges`.
+- **Google Merchant Policy:** Google for WooCommerce 3.10.0 removed its API Pull code (the WPCOM proxy, `gla_syncable=1` requests). The contract check now runs the proxy checks only when `WPCOMProxy.php` ships, and otherwise fails if any Google for WooCommerce source file handles `gla_syncable`. The module's pull filters are unchanged: they still protect older versions and stay idle on 3.10+. Upload jobs and sync-ready lists, which carry the feed protection, pass the contract on 3.10.0.
 
 ## [1.55.8] - 2026-10-19
 

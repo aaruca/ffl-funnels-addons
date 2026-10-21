@@ -53,7 +53,17 @@ class FixtureReport {
 class FixtureManager {
     public function get_report($name) { check($name === 'overview', 'legacy report is overview'); return new FixtureReport(); }
 }
-$mi = (object) ['auth' => new FixtureAuth(), 'license' => new FixtureLicense(), 'reporting' => new FixtureManager()];
+// Same shape as MonsterInsights(): auth/license are protected and lazy-loaded
+// through __get() with no __isset(), so isset() from outside is always false.
+class FixtureMonsterInsights {
+    protected $auth;
+    protected $license;
+    public $reporting;
+    public function __construct() { $this->auth = new FixtureAuth(); $this->license = new FixtureLicense(); $this->reporting = new FixtureManager(); }
+    public function __get($key) { return $this->$key; }
+}
+$mi = new FixtureMonsterInsights();
+check(!isset($mi->auth) && !isset($mi->license) && is_object($mi->auth), 'fixture mirrors MonsterInsights protected properties');
 if ($mode !== 'missing') {
     function MonsterInsights() { return $GLOBALS['mi']; }
     function monsterinsights_is_pro_version() { return $GLOBALS['pro']; }
@@ -140,7 +150,11 @@ if ($mode === 'legacy') {
     check($data['series'][0]['label'] === '2026-08-09', 'legacy series dates');
     check($data['ecommerce']['status'] === 'unavailable', 'legacy does not invent commerce metrics');
     $legacy_data['show_chart_overlay'] = true; $cache = [];
-    check(White_Label_MonsterInsights::get(30)['status'] === 'unavailable', 'legacy randomized demo chart rejected');
+    $empty = White_Label_MonsterInsights::get(30);
+    check($empty['status'] === 'no_data' && $empty['metrics'] === [] && $empty['series'] === [], 'legacy demo-chart overlay is no data, demo chart not shown');
+    check(strpos($empty['message'], 'no Google Analytics data') !== false, 'empty property is not reported as a connection failure');
+    $legacy_data['error'] = 'SECRET_PROVIDER_TOKEN'; $cache = [];
+    check(White_Label_MonsterInsights::get(30)['status'] === 'unavailable', 'legacy overlay with an error stays unavailable');
     echo "$checks checks passed (legacy).\n"; exit;
 }
 $data = White_Label_Dashboard_Data::analytics('google', 30);
