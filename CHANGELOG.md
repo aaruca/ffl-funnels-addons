@@ -10,7 +10,7 @@ All notable changes to FFL Funnels Addons are documented in this file.
 
 ### Changed
 - **White Label:** the offline MonsterInsights regression check now models MonsterInsights' protected, lazy-loaded `auth`/`license` properties, so this class of bug fails the test.
-- **Google Merchant Policy:** Google for WooCommerce 3.10.0 removed its API Pull code (the WPCOM proxy, `gla_syncable=1` requests). The contract check now requires the proxy only before 3.10.0, and from 3.10.0 fails if the pull marker returns. The module's pull filters are unchanged: they still protect older versions and are inert on 3.10+. Upload jobs and sync-ready lists, which carry the feed protection, pass the contract on 3.10.0.
+- **Google Merchant Policy:** Google for WooCommerce 3.10.0 removed its API Pull code (the WPCOM proxy, `gla_syncable=1` requests). The contract check now runs the proxy checks only when `WPCOMProxy.php` ships, and otherwise fails if any Google for WooCommerce source file handles `gla_syncable`. The module's pull filters are unchanged: they still protect older versions and stay idle on 3.10+. Upload jobs and sync-ready lists, which carry the feed protection, pass the contract on 3.10.0.
 
 ## [1.55.8] - 2026-10-19
 

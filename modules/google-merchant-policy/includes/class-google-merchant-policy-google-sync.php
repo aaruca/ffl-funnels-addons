@@ -40,6 +40,8 @@ class Google_Merchant_Policy_Google_Sync
         // parent, and its WPCOM proxy (Google's pull API) does not filter
         // variations at all. Hide variations that are not allowed from proxy
         // requests; list queries exclude them, single requests get Google's 403.
+        // The proxy only exists before Google for WooCommerce 3.10.0; with later
+        // versions no request carries gla_syncable and these filters stay idle.
         add_filter('woocommerce_rest_product_variation_object_query', [__CLASS__, 'filter_proxy_variation_query'], 20, 2);
         add_filter('woocommerce_rest_prepare_product_variation_object', [__CLASS__, 'filter_proxy_variation_response'], PHP_INT_MAX, 3);
     }
