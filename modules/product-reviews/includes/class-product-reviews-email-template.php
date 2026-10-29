@@ -284,28 +284,37 @@ class Product_Reviews_Email_Template
     }
 
     /**
-     * @param array<string, mixed> $data
+     * Text from the editor (filtered by wp_kses_post on save) with the
+     * placeholders filled in; plain text gets paragraphs.
+     *
+     * @param array<string, string> $placeholders Already escaped for HTML.
      */
-    private static function render_html(string $kind, string $mode, array $data): string
+    public static function text_html(string $template, array $placeholders): string
     {
-        $design   = self::design();
-        $font     = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
-        $subject  = self::subject($kind, $data);
-        $heading  = self::heading($kind, $data);
-        $template = self::body_template($kind, $mode, true);
-        $review   = (string) ($data['review_url'] ?? '');
-
-        // The store's text is HTML from the editor (filtered by wp_kses_post
-        // on save); plain text gets paragraphs.
         $text = wp_kses_post($template);
         if ($text === wp_strip_all_tags($text)) {
             $text = wpautop($text);
         }
-        $text = strtr($text, self::html_placeholders($data));
-        $text = str_replace('<p>', '<p style="margin:0 0 14px;">', $text);
+        $text = strtr($text, $placeholders);
+
+        return str_replace('<p>', '<p style="margin:0 0 14px;">', $text);
+    }
+
+    /**
+     * The HTML frame every email of the module shares: logo or store name,
+     * heading, text, a middle block (product rows, a coupon), an optional
+     * button and the footer.
+     *
+     * @param array<string, string> $parts subject, heading, text (HTML), middle (HTML), button_label,
+     *                                     button_url, unsubscribe_url (adds the link), pixel_url.
+     */
+    public static function wrap(array $parts): string
+    {
+        $design = self::design();
+        $font   = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
         $html  = '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">';
-        $html .= '<meta name="x-apple-disable-message-reformatting"><title>' . esc_html($subject) . '</title></head>';
+        $html .= '<meta name="x-apple-disable-message-reformatting"><title>' . esc_html($parts['subject'] ?? '') . '</title></head>';
         $html .= '<body style="margin:0;padding:0;background-color:' . esc_attr($design['bg']) . ';">';
         $html .= '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:' . esc_attr($design['bg']) . ';"><tr><td align="center" style="padding:24px 12px;">';
         $html .= '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background-color:#ffffff;border-radius:8px;">';
@@ -319,66 +328,90 @@ class Product_Reviews_Email_Template
         }
         $html .= '</td></tr>';
 
-        // Heading, text, products, button.
+        // Heading, text, middle, button.
         $html .= '<tr><td style="padding:28px 32px 8px;font-family:' . $font . ';font-size:16px;line-height:1.55;color:' . esc_attr($design['text']) . ';">';
-        if ($heading !== '') {
-            $html .= '<h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:' . esc_attr($design['text']) . ';">' . esc_html($heading) . '</h1>';
+        if (!empty($parts['heading'])) {
+            $html .= '<h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:' . esc_attr($design['text']) . ';">' . esc_html($parts['heading']) . '</h1>';
         }
-        $html .= $text;
+        $html .= $parts['text'] ?? '';
+        $html .= $parts['middle'] ?? '';
 
-        $products = (array) ($data['products'] ?? []);
-        if (!empty($products) && '1' === Product_Reviews_Core::get_setting('email_show_products', '1')) {
-            $html .= '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 4px;">';
-            foreach ($products as $product) {
-                $pid  = (int) ($product['id'] ?? 0);
-                $html .= '<tr><td width="72" valign="middle" style="padding:10px 12px 10px 0;border-top:1px solid #eceef1;">';
-                if (!empty($product['image'])) {
-                    $html .= '<img src="' . esc_url((string) $product['image']) . '" width="64" height="64" alt="" style="display:block;width:64px;height:64px;border-radius:6px;object-fit:cover;border:0;">';
-                }
-                $html .= '</td><td valign="middle" style="padding:10px 0;border-top:1px solid #eceef1;font-family:' . $font . ';">';
-                $html .= '<div style="font-size:15px;font-weight:600;color:' . esc_attr($design['text']) . ';">' . esc_html((string) ($product['name'] ?? '')) . '</div>';
-                if ($review !== '' && $pid > 0) {
-                    $html .= '<div style="margin-top:4px;font-size:0;line-height:1;">';
-                    for ($stars = 1; $stars <= 5; $stars++) {
-                        $html .= '<a href="' . esc_url(self::rate_url($review, $pid, $stars)) . '" title="' . esc_attr(sprintf(
-                            /* translators: %d: star rating 1-5 */
-                            _n('%d star', '%d stars', $stars, 'ffl-funnels-addons'),
-                            $stars
-                        )) . '" style="display:inline-block;padding:0 3px 0 0;font-size:26px;line-height:1;color:' . esc_attr($design['star']) . ';text-decoration:none;">&#9733;</a>';
-                    }
-                    $html .= '</div>';
-                }
-                $html .= '</td></tr>';
-            }
-            $html .= '</table>';
-        }
-
-        if ($review !== '') {
+        if (!empty($parts['button_url'])) {
             $html .= '<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:24px auto 20px;"><tr><td align="center" style="border-radius:6px;background-color:' . esc_attr($design['brand']) . ';">';
-            $html .= '<a href="' . esc_url($review) . '" style="display:inline-block;padding:14px 28px;font-family:' . $font . ';font-size:16px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:6px;">' . esc_html($design['button']) . '</a>';
+            $html .= '<a href="' . esc_url($parts['button_url']) . '" style="display:inline-block;padding:14px 28px;font-family:' . $font . ';font-size:16px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:6px;">' . esc_html($parts['button_label'] ?? '') . '</a>';
             $html .= '</td></tr></table>';
         }
         $html .= '</td></tr>';
 
-        // Footer: address and the way out.
+        // Footer: address and, for requests, the way out.
         $html .= '<tr><td align="center" style="padding:16px 32px 24px;border-top:1px solid #eceef1;font-family:' . $font . ';font-size:12px;line-height:1.5;color:#6b7280;">';
         if ($design['footer'] !== '') {
             $html .= wp_kses_post(nl2br($design['footer'])) . '<br>';
         }
-        if (strpos($template, '{unsubscribe_url}') === false && !empty($data['unsubscribe_url'])) {
-            $html .= '<a href="' . esc_url((string) $data['unsubscribe_url']) . '" style="color:#6b7280;text-decoration:underline;">'
+        if (!empty($parts['unsubscribe_url'])) {
+            $html .= '<a href="' . esc_url($parts['unsubscribe_url']) . '" style="color:#6b7280;text-decoration:underline;">'
                 . esc_html__('Unsubscribe from review requests', 'ffl-funnels-addons') . '</a>';
         }
         $html .= '</td></tr>';
 
         $html .= '</table></td></tr></table>';
 
-        if (!empty($data['pixel_url'])) {
-            $html .= '<img src="' . esc_url((string) $data['pixel_url']) . '" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0;">';
+        if (!empty($parts['pixel_url'])) {
+            $html .= '<img src="' . esc_url($parts['pixel_url']) . '" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0;">';
         }
 
         $html .= '</body></html>';
 
         return $html;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private static function render_html(string $kind, string $mode, array $data): string
+    {
+        $design   = self::design();
+        $font     = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+        $template = self::body_template($kind, $mode, true);
+        $review   = (string) ($data['review_url'] ?? '');
+
+        $middle   = '';
+        $products = (array) ($data['products'] ?? []);
+        if (!empty($products) && '1' === Product_Reviews_Core::get_setting('email_show_products', '1')) {
+            $middle .= '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 4px;">';
+            foreach ($products as $product) {
+                $pid     = (int) ($product['id'] ?? 0);
+                $middle .= '<tr><td width="72" valign="middle" style="padding:10px 12px 10px 0;border-top:1px solid #eceef1;">';
+                if (!empty($product['image'])) {
+                    $middle .= '<img src="' . esc_url((string) $product['image']) . '" width="64" height="64" alt="" style="display:block;width:64px;height:64px;border-radius:6px;object-fit:cover;border:0;">';
+                }
+                $middle .= '</td><td valign="middle" style="padding:10px 0;border-top:1px solid #eceef1;font-family:' . $font . ';">';
+                $middle .= '<div style="font-size:15px;font-weight:600;color:' . esc_attr($design['text']) . ';">' . esc_html((string) ($product['name'] ?? '')) . '</div>';
+                if ($review !== '' && $pid > 0) {
+                    $middle .= '<div style="margin-top:4px;font-size:0;line-height:1;">';
+                    for ($stars = 1; $stars <= 5; $stars++) {
+                        $middle .= '<a href="' . esc_url(self::rate_url($review, $pid, $stars)) . '" title="' . esc_attr(sprintf(
+                            /* translators: %d: star rating 1-5 */
+                            _n('%d star', '%d stars', $stars, 'ffl-funnels-addons'),
+                            $stars
+                        )) . '" style="display:inline-block;padding:0 3px 0 0;font-size:26px;line-height:1;color:' . esc_attr($design['star']) . ';text-decoration:none;">&#9733;</a>';
+                    }
+                    $middle .= '</div>';
+                }
+                $middle .= '</td></tr>';
+            }
+            $middle .= '</table>';
+        }
+
+        return self::wrap([
+            'subject'         => self::subject($kind, $data),
+            'heading'         => self::heading($kind, $data),
+            'text'            => self::text_html($template, self::html_placeholders($data)),
+            'middle'          => $middle,
+            'button_label'    => $design['button'],
+            'button_url'      => $review,
+            'unsubscribe_url' => strpos($template, '{unsubscribe_url}') === false ? (string) ($data['unsubscribe_url'] ?? '') : '',
+            'pixel_url'       => (string) ($data['pixel_url'] ?? ''),
+        ]);
     }
 }

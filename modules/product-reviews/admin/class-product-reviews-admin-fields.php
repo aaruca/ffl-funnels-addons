@@ -40,6 +40,7 @@ class Product_Reviews_Admin_Fields
             'form'     => __('Review form', 'ffl-funnels-addons'),
             'requests' => __('Review requests', 'ffl-funnels-addons'),
             'emails'   => __('Emails', 'ffl-funnels-addons'),
+            'coupons'  => __('Coupons', 'ffl-funnels-addons'),
         ];
     }
 
@@ -59,6 +60,8 @@ class Product_Reviews_Admin_Fields
                 return self::requests_cards();
             case 'emails':
                 return self::emails_cards();
+            case 'coupons':
+                return self::coupons_cards();
         }
 
         return [];
@@ -863,7 +866,6 @@ class Product_Reviews_Admin_Fields
             add_query_arg(['action' => 'ffla_review_email_preview', 'kind' => 'reminder'], admin_url('admin-post.php')),
             'ffla_review_email_preview'
         );
-        $user = wp_get_current_user();
 
         return '<div class="wb-field"><span class="wb-field__label">' . esc_html__('Preview', 'ffl-funnels-addons') . '</span><div class="wb-field__control">'
             . '<div class="ffla-pr-inline-actions">'
@@ -872,14 +874,297 @@ class Product_Reviews_Admin_Fields
             . '</div>'
             . '<p class="wb-field__desc">' . esc_html__('Shows the email with your newest order (or your newest products), as the saved settings make it.', 'ffl-funnels-addons') . '</p>'
             . '</div></div>'
-            . '<div class="wb-field"><label class="wb-field__label" for="ffla-pr-test-to">' . esc_html__('Send a test', 'ffl-funnels-addons') . '</label><div class="wb-field__control">'
+            . self::test_widget_html(['request' => __('Request', 'ffl-funnels-addons'), 'reminder' => __('Reminder', 'ffl-funnels-addons')], 'ffla-pr-test-to');
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private static function coupon_tier_fields(int $tier): array
+    {
+        $fields = [];
+
+        if ($tier > 1) {
+            $fields[] = [
+                'key'   => 'coupon_tier' . $tier . '_min_media',
+                'type'  => 'number',
+                'label' => sprintf(
+                    /* translators: %d: tier number */
+                    __('Tier %d: photos or videos at least', 'ffl-funnels-addons'),
+                    $tier
+                ),
+                'desc'  => __('Reviews with at least this many photos or videos get this tier instead of a lower one.', 'ffl-funnels-addons'),
+                'min'   => 1,
+                'max'   => 20,
+            ];
+        }
+
+        $fields[] = [
+            'key'     => 'coupon_tier' . $tier . '_type',
+            'type'    => 'select',
+            'label'   => sprintf(
+                /* translators: %d: tier number */
+                __('Tier %d coupon', 'ffl-funnels-addons'),
+                $tier
+            ),
+            'options' => [
+                'new'      => __('A new unique coupon for each review', 'ffl-funnels-addons'),
+                'existing' => __('An existing coupon code', 'ffl-funnels-addons'),
+                'off'      => 1 === $tier ? __('No coupon', 'ffl-funnels-addons') : __('Not used', 'ffl-funnels-addons'),
+            ],
+            'desc'    => 1 === $tier
+                ? __('For every rewarded review, with or without photos.', 'ffl-funnels-addons')
+                : __('Not used: reviews with this many photos get the tier below.', 'ffl-funnels-addons'),
+        ];
+
+        $fields[] = [
+            'key'     => 'coupon_tier' . $tier . '_discount_type',
+            'type'    => 'select',
+            'label'   => __('Discount type', 'ffl-funnels-addons'),
+            'options' => [
+                'percent'       => __('Percentage discount', 'ffl-funnels-addons'),
+                'fixed_cart'    => __('Fixed cart discount', 'ffl-funnels-addons'),
+                'fixed_product' => __('Fixed product discount', 'ffl-funnels-addons'),
+            ],
+            'desc'    => __('For new coupons.', 'ffl-funnels-addons'),
+        ];
+
+        $fields[] = [
+            'key'      => 'coupon_tier' . $tier . '_amount',
+            'type'     => 'text',
+            'label'    => __('Amount', 'ffl-funnels-addons'),
+            'desc'     => __('Percent or amount in the store currency, for new coupons.', 'ffl-funnels-addons'),
+            'sanitize' => static function ($raw): string {
+                $value = (float) str_replace(',', '.', (string) $raw);
+
+                return $value > 0 ? (string) $value : '0';
+            },
+        ];
+
+        $fields[] = [
+            'key'      => 'coupon_tier' . $tier . '_existing',
+            'type'     => 'text',
+            'label'    => __('Existing coupon code', 'ffl-funnels-addons'),
+            'desc'     => __('When the tier uses an existing coupon: its code from Marketing → Coupons. The same code goes to everyone, with that coupon’s own limits.', 'ffl-funnels-addons'),
+        ];
+
+        return $fields;
+    }
+
+    private static function coupons_cards(): array
+    {
+        $cards = [
+            [
+                'title'  => __('Coupons for reviews', 'ffl-funnels-addons'),
+                'desc'   => __('A coupon goes out by email when a review is published (held reviews: when you approve them), whatever its rating. One coupon per order, however many of its products are reviewed.', 'ffl-funnels-addons'),
+                'fields' => [
+                    [
+                        'key'   => 'coupon_enabled',
+                        'type'  => 'toggle',
+                        'label' => __('Send coupons for reviews', 'ffl-funnels-addons'),
+                        'desc'  => __('Reviews written before you switch this on earn nothing. With the Smart Coupons module on, its guardrails (firearms left out, minimum prices) apply to these coupons too.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'     => 'coupon_who',
+                        'type'    => 'select',
+                        'label'   => __('Which reviews', 'ffl-funnels-addons'),
+                        'options' => [
+                            'verified' => __('Verified buyers: the email link, or a signed-in account that bought the product', 'ffl-funnels-addons'),
+                            'link'     => __('Only reviews sent through the review request email link', 'ffl-funnels-addons'),
+                        ],
+                        'desc'    => __('Guest reviews typed into a product page never earn a coupon: anyone could type a buyer’s email.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'     => 'coupon_roles_mode',
+                        'type'    => 'select',
+                        'label'   => __('Customer roles', 'ffl-funnels-addons'),
+                        'options' => [
+                            'all'     => __('Every role (and guests through the email link)', 'ffl-funnels-addons'),
+                            'include' => __('Only the roles ticked below', 'ffl-funnels-addons'),
+                            'exclude' => __('Every role except those ticked below', 'ffl-funnels-addons'),
+                        ],
+                        'desc'    => '',
+                    ],
+                    [
+                        'key'     => 'coupon_roles',
+                        'type'    => 'multiselect',
+                        'label'   => __('Roles', 'ffl-funnels-addons'),
+                        'options' => self::role_options() + ['guest' => __('Guest (no account)', 'ffl-funnels-addons')],
+                        'desc'    => '',
+                    ],
+                ],
+            ],
+            [
+                'title'  => __('Tiers', 'ffl-funnels-addons'),
+                'desc'   => __('Reward reviews with photos or videos more: each review gets the highest tier whose minimum it reaches.', 'ffl-funnels-addons'),
+                'fields' => array_merge(self::coupon_tier_fields(1), self::coupon_tier_fields(2), self::coupon_tier_fields(3)),
+            ],
+            [
+                'title'  => __('New coupons', 'ffl-funnels-addons'),
+                'fields' => [
+                    [
+                        'key'      => 'coupon_prefix',
+                        'type'     => 'text',
+                        'label'    => __('Code prefix', 'ffl-funnels-addons'),
+                        'desc'     => __('Codes look like REVIEW-7KQ2M9XA. Letters, numbers and dashes.', 'ffl-funnels-addons'),
+                        'sanitize' => static function ($raw): string {
+                            return strtoupper(substr((string) preg_replace('/[^A-Za-z0-9-]/', '', (string) $raw), 0, 20));
+                        },
+                    ],
+                    [
+                        'key'   => 'coupon_expiry_days',
+                        'type'  => 'number',
+                        'label' => __('Valid for (days)', 'ffl-funnels-addons'),
+                        'desc'  => __('From the moment the coupon is made. 0 never expires.', 'ffl-funnels-addons'),
+                        'min'   => 0,
+                        'max'   => 3650,
+                    ],
+                    [
+                        'key'   => 'coupon_shareable',
+                        'type'  => 'toggle',
+                        'label' => __('Anyone may use the code', 'ffl-funnels-addons'),
+                        'desc'  => __('Off: only the reviewer’s email address can use it (WooCommerce checks the billing email). On: they can pass it to a friend.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'coupon_usage_limit',
+                        'type'  => 'number',
+                        'label' => __('Uses per coupon', 'ffl-funnels-addons'),
+                        'desc'  => __('How many orders can use one code.', 'ffl-funnels-addons'),
+                        'min'   => 1,
+                        'max'   => 100,
+                    ],
+                    [
+                        'key'      => 'coupon_minimum_spend',
+                        'type'     => 'text',
+                        'label'    => __('Minimum spend', 'ffl-funnels-addons'),
+                        'desc'     => __('Empty for none.', 'ffl-funnels-addons'),
+                        'sanitize' => static function ($raw): string {
+                            $value = (float) str_replace(',', '.', (string) $raw);
+
+                            return $value > 0 ? (string) $value : '';
+                        },
+                    ],
+                    [
+                        'key'      => 'coupon_maximum_spend',
+                        'type'     => 'text',
+                        'label'    => __('Maximum spend', 'ffl-funnels-addons'),
+                        'desc'     => __('Empty for none.', 'ffl-funnels-addons'),
+                        'sanitize' => static function ($raw): string {
+                            $value = (float) str_replace(',', '.', (string) $raw);
+
+                            return $value > 0 ? (string) $value : '';
+                        },
+                    ],
+                    [
+                        'key'   => 'coupon_individual_use',
+                        'type'  => 'toggle',
+                        'label' => __('Individual use only', 'ffl-funnels-addons'),
+                        'desc'  => __('Cannot be combined with other coupons.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'coupon_exclude_sale',
+                        'type'  => 'toggle',
+                        'label' => __('Exclude sale items', 'ffl-funnels-addons'),
+                        'desc'  => '',
+                    ],
+                    [
+                        'key'   => 'coupon_free_shipping',
+                        'type'  => 'toggle',
+                        'label' => __('Allow free shipping', 'ffl-funnels-addons'),
+                        'desc'  => __('Needs a free shipping method that accepts coupons in the shipping zone.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'     => 'coupon_categories',
+                        'type'    => 'multiselect',
+                        'label'   => __('Only for categories', 'ffl-funnels-addons'),
+                        'options' => self::category_options(),
+                        'desc'    => __('None ticked: every category.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'     => 'coupon_excluded_categories',
+                        'type'    => 'multiselect',
+                        'label'   => __('Never for categories', 'ffl-funnels-addons'),
+                        'options' => self::category_options(),
+                        'desc'    => '',
+                    ],
+                ],
+            ],
+            [
+                'title'  => __('Coupon email', 'ffl-funnels-addons'),
+                'desc'   => __('Uses the format and design from the Emails tab, with a box showing the code and a button to the shop.', 'ffl-funnels-addons'),
+                'fields' => [
+                    [
+                        'key'   => 'coupon_email_subject',
+                        'type'  => 'text',
+                        'label' => __('Subject', 'ffl-funnels-addons'),
+                        'desc'  => __('Empty uses “Thanks for your review: a coupon for you”.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'coupon_email_heading',
+                        'type'  => 'text',
+                        'label' => __('Heading', 'ffl-funnels-addons'),
+                        'desc'  => __('Empty uses “Thank you for your review”.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'coupon_email_text',
+                        'type'  => 'editor',
+                        'label' => __('Text', 'ffl-funnels-addons'),
+                        'desc'  => __('Empty uses a built-in text. Placeholders: {customer_name}, {product_name}, {coupon_code}, {coupon_amount}, {coupon_expiry}, {shop_url}, {store_name}. Plain text emails add the code when the text has no {coupon_code}.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'coupon_button_text',
+                        'type'  => 'text',
+                        'label' => __('Button text', 'ffl-funnels-addons'),
+                        'desc'  => __('Empty uses “Shop now”.', 'ffl-funnels-addons'),
+                    ],
+                    ['type' => 'html', 'html' => self::test_widget_html(['coupon' => __('Coupon email', 'ffl-funnels-addons')], 'ffla-pr-coupon-test-to')],
+                ],
+            ],
+            [
+                'title'  => __('Disclosure', 'ffl-funnels-addons'),
+                'fields' => [
+                    [
+                        'key'   => 'coupon_badge',
+                        'type'  => 'toggle',
+                        'label' => __('Mark rewarded reviews', 'ffl-funnels-addons'),
+                        'desc'  => __('Shows a badge on reviews that earned a coupon. Rules such as the FTC’s in the US expect incentives for reviews to be disclosed; keep it on unless you have checked otherwise.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'coupon_badge_text',
+                        'type'  => 'text',
+                        'label' => __('Badge text', 'ffl-funnels-addons'),
+                        'desc'  => __('Empty uses “Received a coupon for this review”.', 'ffl-funnels-addons'),
+                    ],
+                ],
+            ],
+        ];
+
+        return $cards;
+    }
+
+    /**
+     * An address field and a Send test button for the given email kinds.
+     *
+     * @param array<string, string> $kinds kind => label
+     */
+    private static function test_widget_html(array $kinds, string $input_id): string
+    {
+        $user    = wp_get_current_user();
+        $options = '';
+        foreach ($kinds as $value => $label) {
+            $options .= '<option value="' . esc_attr($value) . '">' . esc_html($label) . '</option>';
+        }
+
+        return '<div class="wb-field"><label class="wb-field__label" for="' . esc_attr($input_id) . '">' . esc_html__('Send a test', 'ffl-funnels-addons') . '</label><div class="wb-field__control">'
             . '<div class="ffla-pr-inline-actions" data-ffla-pr-test data-nonce="' . esc_attr(wp_create_nonce('ffla_review_send_test')) . '">'
-            . '<input type="email" id="ffla-pr-test-to" class="wb-input" value="' . esc_attr($user instanceof \WP_User ? (string) $user->user_email : '') . '">'
-            . '<select class="wb-select" data-ffla-pr-test-kind aria-label="' . esc_attr__('Which email', 'ffl-funnels-addons') . '"><option value="request">' . esc_html__('Request', 'ffl-funnels-addons') . '</option><option value="reminder">' . esc_html__('Reminder', 'ffl-funnels-addons') . '</option></select>'
+            . '<input type="email" id="' . esc_attr($input_id) . '" class="wb-input" value="' . esc_attr($user instanceof \WP_User ? (string) $user->user_email : '') . '">'
+            . (count($kinds) > 1
+                ? '<select class="wb-select" data-ffla-pr-test-kind aria-label="' . esc_attr__('Which email', 'ffl-funnels-addons') . '">' . $options . '</select>'
+                : '<input type="hidden" data-ffla-pr-test-kind value="' . esc_attr((string) array_key_first($kinds)) . '">')
             . '<button type="button" class="wb-btn wb-btn--subtle" data-ffla-pr-test-send>' . esc_html__('Send test', 'ffl-funnels-addons') . '</button>'
             . '<span class="ffla-pr-result" data-ffla-pr-test-result aria-live="polite"></span>'
             . '</div>'
-            . '<p class="wb-field__desc">' . esc_html__('Save your changes first: the test uses the saved settings. The subject starts with [Test]; nothing is recorded on any order.', 'ffl-funnels-addons') . '</p>'
+            . '<p class="wb-field__desc">' . esc_html__('Save your changes first: the test uses the saved settings. The subject starts with [Test]; nothing is recorded or created.', 'ffl-funnels-addons') . '</p>'
             . '</div></div>';
     }
 

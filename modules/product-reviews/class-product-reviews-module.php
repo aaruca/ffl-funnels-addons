@@ -80,6 +80,9 @@ class Product_Reviews_Module extends FFLA_Module
         require_once $base . 'includes/class-product-reviews-email.php';
         Product_Reviews_Email::init();
 
+        require_once $base . 'includes/class-product-reviews-coupons.php';
+        Product_Reviews_Coupons::init();
+
         require_once $base . 'integrations/class-product-reviews-bricks.php';
         Product_Reviews_Bricks::init();
 
@@ -120,7 +123,7 @@ class Product_Reviews_Module extends FFLA_Module
         // Settings and data stay. Queued request emails go: they are not sent
         // while the module is off, and switching it back on must not release
         // a backlog of stale requests at once.
-        foreach (['ffla_send_product_review_request', 'ffla_send_order_review_bundle', 'ffla_send_order_review_reminder', 'ffla_send_manual_review_request'] as $hook) {
+        foreach (['ffla_send_product_review_request', 'ffla_send_order_review_bundle', 'ffla_send_order_review_reminder', 'ffla_send_manual_review_request', 'ffla_send_review_coupon_email'] as $hook) {
             wp_unschedule_hook($hook);
 
             if (function_exists('as_unschedule_all_actions')) {

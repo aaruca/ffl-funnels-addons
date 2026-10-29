@@ -1,14 +1,10 @@
 /**
- * Product Reviews settings page: send a test review request email.
+ * Product Reviews settings page: send a test request, reminder or coupon email.
  */
 (function () {
     'use strict';
 
-    function boot() {
-        var box = document.querySelector('[data-ffla-pr-test]');
-        if (!box || typeof window.fflaAdmin === 'undefined') {
-            return;
-        }
+    function initTest(box) {
 
         var button = box.querySelector('[data-ffla-pr-test-send]');
         var input = box.querySelector('input[type="email"]');
@@ -43,6 +39,13 @@
                     button.disabled = false;
                 });
         });
+    }
+
+    function boot() {
+        if (typeof window.fflaAdmin === 'undefined') {
+            return;
+        }
+        document.querySelectorAll('[data-ffla-pr-test]').forEach(initTest);
     }
 
     if (document.readyState === 'loading') {

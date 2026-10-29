@@ -229,7 +229,7 @@ if (in_array('product-reviews', $ffla_active_modules, true) || false !== get_opt
     // of who asked to stop receiving review requests. Dropping it would mean a
     // reinstall silently starts emailing those people again.
 
-    foreach (['ffla_send_product_review_request', 'ffla_send_order_review_bundle', 'ffla_send_order_review_reminder', 'ffla_send_manual_review_request'] as $ffla_pr_hook) {
+    foreach (['ffla_send_product_review_request', 'ffla_send_order_review_bundle', 'ffla_send_order_review_reminder', 'ffla_send_manual_review_request', 'ffla_send_review_coupon_email'] as $ffla_pr_hook) {
         wp_unschedule_hook($ffla_pr_hook);
 
         if (function_exists('as_unschedule_all_actions')) {

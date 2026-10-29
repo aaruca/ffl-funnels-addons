@@ -14,6 +14,7 @@ Gives WooCommerce products a richer review form and list (star rating plus optio
 - **Review requests.** An email a set delay (days or hours, per country if needed) after an order reaches the trigger status (Completed, or any status such as a custom *Delivered*), at a chosen hour and on chosen weekdays, with an optional second reminder. It links to a hub page where the customer reviews every product in the order without logging in. HTML by default (logo, product photos, five clickable stars per product, a button), or plain text. Every request carries an unsubscribe link.
 - **Who and what is asked.** Guests on or off, user roles, product categories, free products left out, a product limit for large orders, excluded addresses and domains, one request per customer within a window, optional consent checkbox at checkout (classic and block checkout), the account address instead of the billing address.
 - **On the order.** A *Review request* box: status (scheduled, sent, opened, clicked, reviewed, skipped and why), *Send review request now*, *Copy review link*, a QR code (download or print), WhatsApp click-to-chat with the link, and *Cancel*. A *Send review request* bulk action on the orders list, and a **Review requests** log with 30-day totals.
+- **Coupons for reviews.** A coupon by email when a verified buyer's review is published, whatever the rating: one per order, up to three tiers by number of photos or videos, a new unique coupon (restricted to the reviewer, one use) or an existing code, and a disclosure badge on rewarded reviews.
 - **Moderation.** Hold every new review, hold reviews with photos or videos automatically, hold or refuse reviews containing forbidden words, pin reviews. One review per customer per product.
 - **Reviewer emails.** "Your review is now published" and, for store replies, "Someone replied to your review", which WordPress does not send on its own.
 - **Spam protection.** Hidden honeypot field, Cloudflare Turnstile when the Simple Cloudflare Turnstile plugin is active, an hourly limit for guests, and a security token for signed-in users.
@@ -98,6 +99,22 @@ Gives WooCommerce products a richer review form and list (star rating plus optio
 | Email the reviewer when their review is approved | Sent once when a held review is approved. If `wp_mail()` fails, nothing is recorded and it is sent the next time the review is approved. | On |
 | Email the reviewer when someone replies | Sent once per approved store reply (written by someone who could moderate comments). Other replies are never emailed. A failed send is retried the next time the reply is approved. | On |
 | Re-subscribe an address | Not stored: enter an email and save to remove it from the unsubscribed list, when the customer asks to get review requests again. | Empty |
+
+| **Coupons tab** | | |
+| Send coupons for reviews | Coupon email when a review is published (held reviews: on approval), whatever its rating. Reviews from before it was switched on earn nothing. | Off |
+| Which reviews | *Verified buyers* (the email link, or a signed-in account that bought the product) or *Only reviews sent through the review request email link*. Guest reviews typed on a product page never qualify. | Verified buyers |
+| Customer roles / Roles | *Every role*, *Only the roles ticked*, *Every role except…*; *Guest (no account)* is one of the choices. | Every role |
+| Tier 1 coupon | *A new unique coupon for each review*, *An existing coupon code* or *No coupon*, with its discount type (percentage, fixed cart, fixed product), amount and existing code. | New, 10% |
+| Tier 2 / Tier 3: photos or videos at least, coupon … | A review with at least that many photos or videos gets that tier instead (*Not used* by default; 1 and 3 photos, 15% and 20%). | Not used |
+| Code prefix | Codes look like `REVIEW-7KQ2M9XA`. | `REVIEW-` |
+| Valid for (days) | 0 never expires. | 30 |
+| Anyone may use the code | Off: only the reviewer's email address. | Off |
+| Uses per coupon | | 1 |
+| Minimum spend / Maximum spend | Empty for none. | Empty |
+| Individual use only / Exclude sale items / Allow free shipping | As on a WooCommerce coupon. | On / Off / Off |
+| Only for categories / Never for categories | Product categories the coupon applies to or never applies to. | None |
+| Subject, Heading, Text, Button text | The coupon email; `{customer_name}`, `{product_name}`, `{coupon_code}`, `{coupon_amount}`, `{coupon_expiry}`, `{shop_url}`, `{store_name}`. Format and design come from the Emails tab. *Send a test* sends it with a made-up code. | Built-in |
+| Mark rewarded reviews / Badge text | Badge on reviews that earned a coupon (disclosure rules such as the FTC's expect it). | On / Received a coupon for this review |
 
 The **Cloudflare Turnstile** card (Review form tab) and **Bricks Elements** card (Display tab) are information only. The Emails tab also shows how many addresses have unsubscribed. While requests are on and no published hub page is selected, the settings page and the rest of wp-admin (for users with `manage_woocommerce`) show a warning that links to the Review requests tab.
 
@@ -205,6 +222,16 @@ Google only accepts review markup for reviews shoppers can see on the page. WooC
 
 The installed text is written for one product ("We would love your feedback on {product_name}"). While it is left untouched (or emptied), each kind of email uses a built-in text: per order or per product, request or reminder, HTML (without the bare link, which the button carries) or plain text. Once edited, the text is used as written for requests and reminders.
 
+### Coupons for reviews
+
+- Decided once per review, when it is published: posted approved, or approved later from **Products → Reviews**. Re-approving never sends a second coupon.
+- The review must be tied to an order: the order of the signed email link it was sent through, or, for a signed-in account that bought the product (Verified buyer), that account's newest Completed or Processing order containing the product. In *Only reviews sent through the review request email link* mode only the first counts. Guest reviews typed on a product page have no verified purchase and earn nothing.
+- **One coupon per order**: the order records its code (`_ffla_review_coupon`) before the email goes out, so reviewing the order's other products earns nothing more.
+- The tier is the highest one whose photo/video minimum the review reaches; tier 1 has none. *A new unique coupon* is made with the prefix and 8 random characters, the tier's discount type and amount (a percentage is capped at 100), the expiry, the email restriction (unless shareable), the usage limits, minimum and maximum spend, individual use, sale items, free shipping and categories from *New coupons*, and a description naming the review and order. *An existing coupon code* sends that code (with its own limits) when it exists; when it does not, nothing is sent, it is logged, and the order can still earn a coupon later.
+- With the Smart Coupons module on, its guardrails (firearms left out, minimum prices, maximum discount) apply to these coupons like to any other.
+- The email uses the Emails tab's format and design: a box with the code, the amount and expiry, and a *Shop now* button. It has no unsubscribe link: it answers something the customer did. It counts as sent only when `wp_mail()` succeeds; a failure keeps the coupon, is logged and is retried an hour later, three attempts in all.
+- The review gets `ffla_incentivized` and shows the disclosure badge (**Mark rewarded reviews**, on by default). The coupon also shows in the order's *Review request* box.
+
 ### Consent at checkout
 
 With **Ask for consent** on *Unticked checkbox*, the classic checkout shows the box above *Place order* (saved as `_ffla_review_consent` `yes` / `no`) and the Checkout block gets an order field through WooCommerce's additional checkout fields (WooCommerce 8.9+; stored as `_wc_other/ffla/review-consent`). Only orders where it was ticked get requests, including requests sent by hand. Orders placed before the setting was switched on have no answer and get none.
@@ -266,6 +293,7 @@ The CSS and JavaScript load only where review output is printed: each Bricks ele
 | Review photos and videos | Media Library | Kept |
 | Request tracking (scheduled and when, sent, reminder, sent by hand, skip reason, failed attempts, opens, clicks, reviews through the link) | order meta | Kept |
 | Checkout consent | order meta `_ffla_review_consent` (classic) or `_wc_other/ffla/review-consent` (block) | Kept |
+| Coupons made for reviews | WooCommerce coupons (meta `_ffla_review_coupon_review`); the review's `ffla_review_coupon_code`, `ffla_incentivized`, `_ffla_review_coupon_checked`, `_ffla_review_coupon_emailed`, `_ffla_review_coupon_attempts`; the order's `_ffla_review_coupon` | Kept |
 | Queued request, reminder and hand-sent emails | Action Scheduler / WP-Cron | Removed (also when the module is switched off) |
 | Rating summary cache from versions before 1.55.10 (no longer written) | transients `ffla_rev_dist_<product ID>` | Deleted |
 | Store-wide and category numbers (star counts, verified share) | transients `ffla_rev_scope_*`, one hour; option `ffla_rev_cache_version`, bumped when a review changes | Deleted |
@@ -312,12 +340,13 @@ Uninstall cleanup runs whenever the settings option exists, even if the module w
 | `ffla_product_reviews_request_max_order_age_days` | `int` (delay + 30), `WC_Order $order` | Oldest order, in days between order date and send time, that still gets a request email. 0 turns the limit off. |
 | `ffla_product_reviews_request_status_allowed` | `bool`, `WC_Order $order` | Whether the order's status allows its request email when it is due. Default: the trigger status, or a status that is not a core pre-fulfilment status reached after it. |
 | `ffla_product_reviews_client_ip` | `string $ip` | Visitor address used to throttle votes. |
+| `ffla_product_reviews_before_coupon_save` (action) | `WC_Coupon $coupon`, `WP_Comment $review`, `WC_Order $order` | Change a coupon made for a review before it is saved. |
 | `ffla_product_reviews_whatsapp_phone` | `string $digits`, `WC_Order $order` | The number the WhatsApp button opens (digits with country code). |
 | `ffla_product_reviews_cloudflare_ranges` | `string[]` (Cloudflare's published IPv4/IPv6 ranges) | Proxy addresses whose `CF-Connecting-IP` header is trusted. |
 | `ffla_review_approved_email_subject`, `ffla_review_approved_email_body` | `string`, `WP_Comment $review` | Approval email. |
 | `ffla_review_reply_email_subject`, `ffla_review_reply_email_body` | `string`, `WP_Comment $reply`, `WP_Comment $review` | Reply email. |
 
-**Scheduled actions** (Action Scheduler group `ffla-product-reviews`, or single WP-Cron events): `ffla_send_product_review_request` (`$order_id`, `$product_id`, `$user_id`), `ffla_send_order_review_bundle` (`$order_id`), `ffla_send_order_review_reminder` (`$order_id`) and `ffla_send_manual_review_request` (`$order_id`, queued by the bulk action).
+**Scheduled actions** (Action Scheduler group `ffla-product-reviews`, or single WP-Cron events): `ffla_send_product_review_request` (`$order_id`, `$product_id`, `$user_id`), `ffla_send_order_review_bundle` (`$order_id`), `ffla_send_order_review_reminder` (`$order_id`) `ffla_send_manual_review_request` (`$order_id`, queued by the bulk action) and `ffla_send_review_coupon_email` (`$review_id`, a coupon email retry).
 
 **Endpoints**
 

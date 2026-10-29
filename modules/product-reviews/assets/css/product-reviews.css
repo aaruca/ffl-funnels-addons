@@ -1327,3 +1327,14 @@ a.ffla-store-badge:hover {
 .ffla-store-badge .ffla-stars {
     font-size: 18px;
 }
+
+.ffla-review-card__incentivized {
+    display: inline-block;
+    margin: 6px 0 6px 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 0.85em;
+    font-weight: 600;
+}

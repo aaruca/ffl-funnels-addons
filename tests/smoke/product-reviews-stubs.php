@@ -1563,3 +1563,55 @@ function add_meta_box($id, $title, $callback, $screen = null, $context = 'advanc
     $GLOBALS['meta_boxes'][] = ['id' => $id, 'screen' => $screen, 'callback' => $callback];
 }
 function wc_get_page_screen_id($for) { return 'woocommerce_page_wc-orders'; }
+
+/* ── Coupons ───────────────────────────────────────────────────────────── */
+
+$GLOBALS['coupons'] = [];
+class WC_Coupon
+{
+    public $id = 0;
+    public $props = ['code' => '', 'discount_type' => 'fixed_cart', 'amount' => 0, 'date_expires' => null, 'email_restrictions' => [], 'usage_limit' => 0, 'usage_limit_per_user' => 0, 'individual_use' => false, 'exclude_sale_items' => false, 'free_shipping' => false, 'minimum_amount' => '', 'maximum_amount' => '', 'product_categories' => [], 'excluded_product_categories' => [], 'description' => ''];
+    public $meta = [];
+    public function __construct($id_or_code = 0)
+    {
+        if ($id_or_code && isset($GLOBALS['coupons'][(int) $id_or_code])) {
+            $saved       = $GLOBALS['coupons'][(int) $id_or_code];
+            $this->id    = $saved->id;
+            $this->props = $saved->props;
+            $this->meta  = $saved->meta;
+        }
+    }
+    public function __call($name, $args)
+    {
+        if (strpos($name, 'set_') === 0) {
+            $key = substr($name, 4);
+            $this->props[$key] = 'date_expires' === $key && $args[0] !== null ? new WC_DateTime('@' . (int) $args[0]) : $args[0];
+            return null;
+        }
+        if (strpos($name, 'get_') === 0) {
+            return $this->props[substr($name, 4)] ?? null;
+        }
+        throw new BadMethodCallException($name);
+    }
+    public function get_id() { return $this->id; }
+    public function update_meta_data($key, $value) { $this->meta[$key] = $value; }
+    public function get_meta($key) { return $this->meta[$key] ?? ''; }
+    public function save()
+    {
+        if (!$this->id) {
+            $this->id = 7000 + count($GLOBALS['coupons']) + 1;
+        }
+        $GLOBALS['coupons'][$this->id] = $this;
+        return $this->id;
+    }
+}
+function wc_get_coupon_id_by_code($code)
+{
+    foreach ($GLOBALS['coupons'] as $id => $c) {
+        if (strtolower($c->props['code']) === strtolower((string) $code)) {
+            return $id;
+        }
+    }
+    return 0;
+}
+function wc_get_page_permalink($page) { return 'https://store.test/' . $page . '/'; }

@@ -122,6 +122,10 @@ class Product_Reviews_Order_Tools
         if ($status['reminder'] > 0) {
             $facts[] = [__('Reminder sent', 'ffl-funnels-addons'), $date($status['reminder'])];
         }
+        $coupon = (string) $order->get_meta('_ffla_review_coupon');
+        if ($coupon !== '') {
+            $facts[] = [__('Coupon for a review', 'ffl-funnels-addons'), $coupon];
+        }
         if ($status['failed'] > 0 && $status['sent'] <= 0) {
             $facts[] = [__('Failed attempts', 'ffl-funnels-addons'), number_format_i18n($status['failed'])];
         }
@@ -399,12 +403,16 @@ class Product_Reviews_Order_Tools
         }
 
         $to   = isset($_POST['to']) ? sanitize_email(wp_unslash($_POST['to'])) : '';
-        $kind = isset($_POST['kind']) && 'reminder' === $_POST['kind'] ? 'reminder' : 'request';
+        $kind = isset($_POST['kind']) ? sanitize_key(wp_unslash($_POST['kind'])) : 'request';
         if (!is_email($to)) {
             wp_send_json_error(['message' => __('Enter a valid email address.', 'ffl-funnels-addons')]);
         }
 
-        if (!Product_Reviews_Email::send_test($to, $kind)) {
+        $sent = 'coupon' === $kind && class_exists('Product_Reviews_Coupons')
+            ? Product_Reviews_Coupons::send_test($to)
+            : Product_Reviews_Email::send_test($to, 'reminder' === $kind ? 'reminder' : 'request');
+
+        if (!$sent) {
             wp_send_json_error(['message' => __('wp_mail() could not send it. Check that the site can send email.', 'ffl-funnels-addons')]);
         }
 
