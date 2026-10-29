@@ -29,6 +29,9 @@ class Product_Reviews_Request_Rules
             'no_products'    => __('Nothing to review', 'ffl-funnels-addons'),
             'too_old'        => __('Order too old', 'ffl-funnels-addons'),
             'cancelled'      => __('Cancelled by the store', 'ffl-funnels-addons'),
+            'requests_off'   => __('Requests were off when it was due', 'ffl-funnels-addons'),
+            'status_ended'   => __('Order refunded, cancelled or failed', 'ffl-funnels-addons'),
+            'no_email'       => __('No valid email address', 'ffl-funnels-addons'),
         ];
 
         return $labels[$reason] ?? $reason;
@@ -140,10 +143,11 @@ class Product_Reviews_Request_Rules
             if (!$other instanceof \WC_Order) {
                 continue;
             }
-            foreach ([Product_Reviews_Email::LAST_SENT_META, Product_Reviews_Email::SCHEDULED_FOR_META] as $key) {
-                if ((int) $other->get_meta($key) >= $since) {
-                    return true;
-                }
+            // Sent within the window, or still to be sent. A due date in the
+            // past without a send is a request that never went out.
+            if ((int) $other->get_meta(Product_Reviews_Email::LAST_SENT_META) >= $since
+                || ((int) $other->get_meta(Product_Reviews_Email::SCHEDULED_FOR_META) >= time() && $other->get_meta(Product_Reviews_Email::SCHEDULED_META))) {
+                return true;
             }
         }
 

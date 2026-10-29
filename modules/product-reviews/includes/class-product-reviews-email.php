@@ -63,8 +63,21 @@ class Product_Reviews_Email
     /** Added to the request delay to get the oldest order still mailed. */
     const ORDER_AGE_GRACE_DAYS = 30;
 
-    /** Core statuses that come before fulfilment or end the order. */
-    const PRE_TRIGGER_STATUSES = ['pending', 'processing', 'on-hold', 'cancelled', 'refunded', 'failed', 'checkout-draft', 'trash'];
+    /**
+     * The order's request state as the log shows it (request_status()'s
+     * key), kept on the order so the log can list and filter orders with one
+     * meta query that both order storages support.
+     */
+    const STATE_META = '_ffla_review_request_state';
+
+    /** Core statuses in the order a paid order moves through them. */
+    const STATUS_SEQUENCE = ['pending' => 0, 'on-hold' => 1, 'processing' => 2, 'completed' => 3];
+
+    /** Core statuses that end the order or never started it. */
+    const ENDED_STATUSES = ['cancelled', 'refunded', 'failed', 'checkout-draft', 'trash'];
+
+    /** Why order_still_eligible() last said no (a reason key), or ''. */
+    private static $refusal = '';
 
     public static function init(): void
     {
@@ -219,7 +232,7 @@ class Product_Reviews_Email
 
         if ('completed' !== $to && !$order->get_meta(self::TRIGGER_REACHED_META)) {
             $order->update_meta_data(self::TRIGGER_REACHED_META, time());
-            $order->save();
+            self::save_order($order);
         }
 
         self::schedule_requests_for_order((int) $order_id);
@@ -262,6 +275,13 @@ class Product_Reviews_Email
         $mode      = Product_Reviews_Core::get_setting('request_email_mode', 'bundle');
 
         if (self::order_too_old($order, $timestamp)) {
+            self::mark_skipped($order, 'too_old');
+            return;
+        }
+
+        // A request for the whole order (automatic, or sent by hand) already
+        // went out: never follow it with per-product emails.
+        if ($order->get_meta(self::BUNDLE_SENT_META)) {
             return;
         }
 
@@ -275,34 +295,76 @@ class Product_Reviews_Email
         }
 
         if ('bundle' === $mode) {
-            if ($order->get_meta(self::BUNDLE_SENT_META)) {
-                return;
-            }
             self::schedule_action($timestamp, self::ACTION_SEND_ORDER_REVIEW_BUNDLE, [$order_id]);
         } else {
-            $user_id = (int) $order->get_user_id();
+            // Order and product only: the customer can change (account
+            // deleted, reassigned) and Action Scheduler matches args exactly.
             foreach ($pending as $product_id) {
                 if ($order->get_meta(self::PRODUCT_SENT_META_PREFIX . $product_id)) {
                     continue;
                 }
-                self::schedule_action($timestamp, self::ACTION_SEND_REVIEW_REQUEST, [$order_id, $product_id, $user_id]);
+                self::schedule_action($timestamp, self::ACTION_SEND_REVIEW_REQUEST, [$order_id, $product_id]);
             }
         }
 
         $order->update_meta_data(self::SCHEDULED_META, 1);
         $order->update_meta_data(self::SCHEDULED_FOR_META, $timestamp);
         $order->delete_meta_data(self::SKIPPED_META);
-        $order->save();
+        self::save_order($order);
     }
 
     private static function mark_skipped(\WC_Order $order, string $reason): void
     {
-        if ($order->get_meta(self::SKIPPED_META) === $reason) {
+        if ($order->get_meta(self::SKIPPED_META) === $reason && !$order->get_meta(self::SCHEDULED_FOR_META)) {
             return;
         }
 
         $order->update_meta_data(self::SKIPPED_META, $reason);
+        // No longer due: the order box and the log stop saying "Scheduled".
+        $order->delete_meta_data(self::SCHEDULED_FOR_META);
+        self::save_order($order);
+    }
+
+    /**
+     * A first email that was due did not go out: say why on the order.
+     */
+    private static function record_refusal(\WC_Order $order): void
+    {
+        $reason = self::$refusal !== '' ? self::$refusal : 'no_products';
+        if ('status' === $reason) {
+            return; // release_order() already reopened it for the next time.
+        }
+
+        self::mark_skipped($order, $reason);
+    }
+
+    /**
+     * Save the order with its request state brought up to date.
+     */
+    public static function save_order(\WC_Order $order): void
+    {
+        self::sync_state($order);
         $order->save();
+    }
+
+    /**
+     * Store request_status()'s key on the order (not saved here). An order
+     * with no request (released when its status went back) has none, so the
+     * log does not list it.
+     */
+    public static function sync_state(\WC_Order $order): void
+    {
+        $key = self::request_status($order)['key'];
+        if ('none' === $key) {
+            if ('' !== (string) $order->get_meta(self::STATE_META)) {
+                $order->delete_meta_data(self::STATE_META);
+            }
+
+            return;
+        }
+        if ((string) $order->get_meta(self::STATE_META) !== $key) {
+            $order->update_meta_data(self::STATE_META, $key);
+        }
     }
 
     public static function cancel_requests_for_order(int $order_id): void
@@ -319,7 +381,7 @@ class Product_Reviews_Email
         // so nothing already delivered is repeated.
         $order->delete_meta_data(self::SCHEDULED_META);
         $order->delete_meta_data(self::SCHEDULED_FOR_META);
-        $order->save();
+        self::save_order($order);
     }
 
     /**
@@ -339,6 +401,8 @@ class Product_Reviews_Email
             }
             $product_id = Product_Reviews_Core::line_item_parent_product_id($item);
             if ($product_id > 0) {
+                self::unschedule_action(self::ACTION_SEND_REVIEW_REQUEST, [$order_id, $product_id]);
+                // Queued by 1.56.0 before its fixes, with the customer's ID.
                 self::unschedule_action(self::ACTION_SEND_REVIEW_REQUEST, [$order_id, $product_id, $user_id]);
             }
         }
@@ -459,18 +523,25 @@ class Product_Reviews_Email
     }
 
     /**
-     * The trigger status, or a status the store moves orders to after it (a
-     * custom "Delivered" after Completed, for example). A core status that
-     * comes before fulfilment or ends the order never qualifies, unless it
-     * is the trigger itself.
+     * The trigger status, or a status the order reaches after it: a later
+     * core status (Processing or Completed after On hold) or a custom one
+     * the store moves orders to (a "Delivered" after Completed). A core
+     * status before the trigger, or one that ends the order, never
+     * qualifies, unless it is the trigger itself.
      */
     private static function order_status_allows_request(\WC_Order $order): bool
     {
         $trigger = self::trigger_status();
+        $status  = (string) $order->get_status();
 
         if ($order->has_status($trigger)) {
             $allowed = true;
-        } elseif ($order->has_status(array_values(array_diff(self::PRE_TRIGGER_STATUSES, [$trigger])))) {
+        } elseif ($order->has_status(self::ENDED_STATUSES)) {
+            $allowed = false;
+        } elseif (isset(self::STATUS_SEQUENCE[$trigger], self::STATUS_SEQUENCE[$status])) {
+            $allowed = self::STATUS_SEQUENCE[$status] >= self::STATUS_SEQUENCE[$trigger];
+        } elseif (isset(self::STATUS_SEQUENCE[$status]) && 'completed' !== $status) {
+            // A custom trigger: pending, on hold and processing come before it.
             $allowed = false;
         } elseif ('completed' === $trigger) {
             $allowed = null !== $order->get_date_completed();
@@ -513,35 +584,49 @@ class Product_Reviews_Email
      * Deliberately untyped: wc_get_order() returns WC_Order|false, and `false`
      * does not satisfy a nullable class type hint.
      *
+     * Why it said no is kept in self::$refusal for record_refusal().
+     *
      * @param \WC_Order|false|null $order
-     * @param bool                 $manual Sent by the store: automatic requests may be off and
-     *                                     the status and age rules do not apply.
+     * @param bool                 $manual   Sent by the store: automatic requests may be off and
+     *                                       the status and age rules do not apply.
+     * @param bool                 $reminder The reminder, which follows an email that went
+     *                                       out: no age limit, and it never reopens the order.
      */
-    private static function order_still_eligible($order, bool $manual = false): string
+    private static function order_still_eligible($order, bool $manual = false, bool $reminder = false): string
     {
+        self::$refusal = '';
         if (!$order instanceof \WC_Order) {
             return '';
         }
 
         if ($manual ? !Product_Reviews_Core::hub_page_ready() : !Product_Reviews_Core::requests_ready()) {
+            self::$refusal = 'requests_off';
+
             return '';
         }
 
         if ($manual) {
             // The link dies with these, so there is nothing to send.
             if ($order->has_status(Product_Reviews_Core::TOKEN_DEAD_STATUSES)) {
+                self::$refusal = 'status_ended';
+
                 return '';
             }
         } else {
             if (!self::order_status_allows_request($order)) {
-                // Completed → Processing → Completed again: the second completion
-                // must be able to schedule the request again, or it is never sent.
-                self::release_order($order);
+                if (!$reminder) {
+                    // Completed → Processing → Completed again: the second completion
+                    // must be able to schedule the request again, or it is never sent.
+                    self::release_order($order);
+                }
+                self::$refusal = 'status';
 
                 return '';
             }
 
-            if (self::order_too_old($order, time())) {
+            if (!$reminder && self::order_too_old($order, time())) {
+                self::$refusal = 'too_old';
+
                 return '';
             }
         }
@@ -549,14 +634,21 @@ class Product_Reviews_Email
         $email     = (string) $order->get_billing_email();
         $recipient = self::recipient($order);
         if (!is_email($email) || !is_email($recipient)) {
+            self::$refusal = 'no_email';
+
             return '';
         }
 
         if (Product_Reviews_Notifications::is_opted_out($email) || Product_Reviews_Notifications::is_opted_out($recipient)) {
+            self::$refusal = 'unsubscribed';
+
             return '';
         }
 
-        if (Product_Reviews_Request_Rules::order_refusal($order, $recipient, true) !== '') {
+        $rule = Product_Reviews_Request_Rules::order_refusal($order, $recipient, true);
+        if ($rule !== '') {
+            self::$refusal = $rule;
+
             return '';
         }
 
@@ -570,7 +662,8 @@ class Product_Reviews_Email
         }
 
         $order->delete_meta_data(self::SCHEDULED_META);
-        $order->save();
+        $order->delete_meta_data(self::SCHEDULED_FOR_META);
+        self::save_order($order);
     }
 
     /* ---------------------------------------------------------------------
@@ -582,6 +675,10 @@ class Product_Reviews_Email
         $order     = wc_get_order($order_id);
         $recipient = self::order_still_eligible($order);
         if ($recipient === '') {
+            if ($order instanceof \WC_Order && !$order->get_meta(self::BUNDLE_SENT_META)) {
+                self::record_refusal($order);
+            }
+
             return;
         }
 
@@ -591,6 +688,8 @@ class Product_Reviews_Email
 
         $pending = self::pending_product_ids($order, (string) $order->get_billing_email());
         if (empty($pending)) {
+            self::mark_skipped($order, 'no_products');
+
             return;
         }
 
@@ -601,16 +700,23 @@ class Product_Reviews_Email
         }
 
         $order->update_meta_data(self::BUNDLE_SENT_META, time());
-        $order->save();
+        self::save_order($order);
 
         self::maybe_schedule_reminder($order);
     }
 
-    public static function send_review_request(int $order_id, int $product_id, int $user_id): void
+    /**
+     * @param int $user_id Unused; actions queued before 1.56.0's fixes carry it.
+     */
+    public static function send_review_request(int $order_id, int $product_id, int $user_id = 0): void
     {
         $order     = wc_get_order($order_id);
         $recipient = self::order_still_eligible($order);
         if ($recipient === '') {
+            if ($order instanceof \WC_Order && !$order->get_meta(self::LAST_SENT_META)) {
+                self::record_refusal($order);
+            }
+
             return;
         }
 
@@ -620,7 +726,8 @@ class Product_Reviews_Email
         }
 
         $sent_meta = self::PRODUCT_SENT_META_PREFIX . $product_id;
-        if ($order->get_meta($sent_meta)) {
+        // Already asked, or the whole order was asked about in one email.
+        if ($order->get_meta($sent_meta) || $order->get_meta(self::BUNDLE_SENT_META)) {
             return;
         }
 
@@ -634,7 +741,7 @@ class Product_Reviews_Email
             self::handle_send_failure(
                 $order,
                 self::ACTION_SEND_REVIEW_REQUEST,
-                [$order_id, $product_id, $user_id],
+                [$order_id, $product_id],
                 self::PRODUCT_ATTEMPTS_META_PREFIX . $product_id
             );
 
@@ -642,7 +749,7 @@ class Product_Reviews_Email
         }
 
         $order->update_meta_data($sent_meta, time());
-        $order->save();
+        self::save_order($order);
 
         self::maybe_schedule_reminder($order);
     }
@@ -662,7 +769,9 @@ class Product_Reviews_Email
             return;
         }
 
-        $recipient = self::order_still_eligible($order);
+        // After a request sent by hand, the reminder follows it at any order
+        // status, as the request itself did.
+        $recipient = self::order_still_eligible($order, (bool) $order->get_meta(self::MANUAL_SENT_META), true);
         if ($recipient === '') {
             return;
         }
@@ -679,7 +788,7 @@ class Product_Reviews_Email
         }
 
         $order->update_meta_data(self::REMINDER_SENT_META, time());
-        $order->save();
+        self::save_order($order);
     }
 
     private static function maybe_schedule_reminder(\WC_Order $order): void
@@ -740,7 +849,7 @@ class Product_Reviews_Email
         $order->update_meta_data(self::BUNDLE_SENT_META, time());
         $order->update_meta_data(self::SCHEDULED_META, 1);
         $order->delete_meta_data(self::SKIPPED_META);
-        $order->save();
+        self::save_order($order);
         $order->add_order_note(sprintf(
             /* translators: %s: email address */
             __('Review request sent to %s.', 'ffl-funnels-addons'),
@@ -796,7 +905,7 @@ class Product_Reviews_Email
 
         if ($sent) {
             $order->update_meta_data(self::LAST_SENT_META, time());
-            $order->save();
+            self::save_order($order);
         }
 
         return $sent;
@@ -855,7 +964,7 @@ class Product_Reviews_Email
     {
         $attempts = (int) $order->get_meta($attempts_meta) + 1;
         $order->update_meta_data($attempts_meta, $attempts);
-        $order->save();
+        self::save_order($order);
 
         $retry = $attempts < self::MAX_SEND_ATTEMPTS;
         if ($retry) {

@@ -21,19 +21,24 @@ class Product_Reviews_Requests_Log
     const STATS_LIMIT = 1000;
 
     /**
-     * Orders with any request activity: scheduled, sent by hand, or skipped
-     * with a reason.
+     * Orders with request activity (one state per order), optionally only
+     * those in one state. Top-level meta arguments, which both the legacy
+     * post storage and HPOS read (the post storage ignores `meta_query`).
      *
+     * @param array<string, mixed> $args wc_get_orders() arguments.
      * @return array<string, mixed>
      */
-    private static function activity_meta_query(): array
+    public static function query_args(array $args, string $state = ''): array
     {
-        return [
-            'relation' => 'OR',
-            ['key' => Product_Reviews_Email::SCHEDULED_META, 'compare' => 'EXISTS'],
-            ['key' => Product_Reviews_Email::LAST_SENT_META, 'compare' => 'EXISTS'],
-            ['key' => Product_Reviews_Email::SKIPPED_META, 'compare' => 'EXISTS'],
-        ];
+        $args['meta_key'] = Product_Reviews_Email::STATE_META; // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+        if ($state !== '') {
+            $args['meta_value']   = $state; // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+            $args['meta_compare'] = '=';
+        } else {
+            $args['meta_compare'] = 'EXISTS';
+        }
+
+        return $args;
     }
 
     /**
@@ -44,13 +49,12 @@ class Product_Reviews_Requests_Log
      */
     public static function stats(): array
     {
-        $orders = wc_get_orders([
+        $orders = wc_get_orders(self::query_args([
             'limit'        => self::STATS_LIMIT,
             'orderby'      => 'date',
             'order'        => 'DESC',
             'date_created' => '>' . (time() - 30 * DAY_IN_SECONDS),
-            'meta_query'   => self::activity_meta_query(), // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
-        ]);
+        ]));
 
         $out = ['scheduled' => 0, 'sent' => 0, 'opened' => 0, 'clicked' => 0, 'reviewed' => 0, 'skipped' => 0, 'reviews' => 0];
         foreach ((array) $orders as $order) {
@@ -128,15 +132,17 @@ class Product_Reviews_Requests_Log
         }
         echo '</div></div>';
 
-        $query = [
-            'limit'      => self::PER_PAGE,
-            'paged'      => $paged,
-            'paginate'   => true,
-            'orderby'    => 'date',
-            'order'      => 'DESC',
-            'meta_query' => self::activity_meta_query(), // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
-        ];
-        $result = wc_get_orders($query);
+        $filters_known = ['scheduled', 'sent', 'opened', 'clicked', 'reviewed', 'skipped', 'failed'];
+        $filter        = in_array($filter, $filters_known, true) ? $filter : '';
+
+        // Filtered in the query, so every page holds 25 matching orders.
+        $result = wc_get_orders(self::query_args([
+            'limit'    => self::PER_PAGE,
+            'paged'    => $paged,
+            'paginate' => true,
+            'orderby'  => 'date',
+            'order'    => 'DESC',
+        ], $filter));
         $orders = is_object($result) && isset($result->orders) ? (array) $result->orders : (array) $result;
         $pages  = is_object($result) && isset($result->max_num_pages) ? (int) $result->max_num_pages : 1;
 
@@ -165,11 +171,7 @@ class Product_Reviews_Requests_Log
             if (!$order instanceof \WC_Order) {
                 continue;
             }
-            $status = Product_Reviews_Email::request_status($order);
-            if ($filter !== '' && $status['key'] !== $filter) {
-                continue;
-            }
-            $rows[] = [$order, $status];
+            $rows[] = [$order, Product_Reviews_Email::request_status($order)];
         }
 
         if (empty($rows)) {

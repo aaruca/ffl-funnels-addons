@@ -406,7 +406,9 @@ class Product_Reviews_Coupons
         }
 
         $email = self::render_email(self::email_data($review, $code));
-        if (wp_mail($to, $email['subject'], $email['body'], Product_Reviews_Email::request_headers($email['html']))) {
+        // The store's headers only: the request emails' own Reply-To and BCC
+        // are for requests and reminders.
+        if (wp_mail($to, $email['subject'], $email['body'], Product_Reviews_Email::mail_headers($email['html'] ? 'text/html' : 'text/plain'))) {
             update_comment_meta($review_id, self::EMAIL_SENT_META, time());
 
             return;
@@ -583,7 +585,7 @@ class Product_Reviews_Coupons
         ];
         $email = self::render_email($data);
 
-        return (bool) wp_mail($to, '[' . __('Test', 'ffl-funnels-addons') . '] ' . $email['subject'], $email['body'], Product_Reviews_Email::request_headers($email['html']));
+        return (bool) wp_mail($to, '[' . __('Test', 'ffl-funnels-addons') . '] ' . $email['subject'], $email['body'], Product_Reviews_Email::mail_headers($email['html'] ? 'text/html' : 'text/plain'));
     }
 
     private static function tier_preview_amount(): string

@@ -178,7 +178,25 @@ function esc_url_raw($url) { return (string) $url; }
 function esc_js($text) { return addslashes((string) $text); }
 function wp_kses_post($html) { return (string) $html; }
 function wp_kses($html, $allowed = []) { return (string) $html; }
-function wpautop($text) { return '<p>' . $text . '</p>'; }
+function wpautop($text)
+{
+    // Like WordPress: blank lines make paragraphs, single line breaks <br />,
+    // and a block that already is one (<p>, lists…) is left as it is.
+    $text = trim(str_replace(["\r\n", "\r"], "\n", (string) $text));
+    if ($text === '') {
+        return '';
+    }
+    $out = [];
+    foreach (preg_split('/\n\s*\n/', $text) as $block) {
+        $block = trim($block);
+        if (preg_match('#^<(p|div|ul|ol|table|h[1-6]|blockquote)[\s>]#i', $block)) {
+            $out[] = $block;
+            continue;
+        }
+        $out[] = '<p>' . str_replace("\n", "<br />\n", $block) . '</p>';
+    }
+    return implode("\n", $out) . "\n";
+}
 function absint($v) { return abs((int) $v); }
 function sanitize_text_field($s) { return trim(preg_replace('/\s+/', ' ', strip_tags((string) $s))); }
 function sanitize_textarea_field($s) { return trim(strip_tags((string) $s)); }
@@ -1068,6 +1086,8 @@ class WC_Order
     public function add_meta_data($key, $value, $unique = false) { $this->meta[$key] = $value; }
     public function delete_meta_data($key) { unset($this->meta[$key]); }
     public function save() { $this->saved++; return $this->id; }
+    public $meta_saved = 0;
+    public function save_meta_data() { $this->meta_saved++; }
     public function get_status() { return $this->status; }
     public function has_status($status) { return in_array($this->status, (array) $status, true); }
     public function get_date_created() { return $this->created ? new WC_DateTime('@' . $this->created) : null; }
@@ -1122,9 +1142,20 @@ function wc_get_orders($args = [])
         }
         $out[] = $o;
     }
-    if (!empty($args['meta_query']) && is_array($args['meta_query'])) {
+    // The legacy post storage skips `meta_query` (WC_Data_Store_WP::get_wp_query_args());
+    // HPOS reads it. Both read top-level meta_key / meta_value / meta_compare.
+    if (!empty($args['meta_query']) && is_array($args['meta_query']) && empty($GLOBALS['legacy_order_storage'])) {
         $out = array_values(array_filter($out, function ($o) use ($args) {
             return stub_order_meta_matches($o, $args['meta_query']);
+        }));
+    }
+    if (!empty($args['meta_key'])) {
+        $clause = ['key' => $args['meta_key'], 'compare' => $args['meta_compare'] ?? (isset($args['meta_value']) ? '=' : 'EXISTS')];
+        if (isset($args['meta_value'])) {
+            $clause['value'] = $args['meta_value'];
+        }
+        $out = array_values(array_filter($out, function ($o) use ($clause) {
+            return stub_order_meta_matches($o, [$clause]);
         }));
     }
     usort($out, function ($a, $b) {
@@ -1659,7 +1690,7 @@ class Stub_WC_Countries
 {
     public function get_country_calling_code($cc)
     {
-        $codes = ['US' => '+1', 'CA' => '+1', 'MX' => '+52', 'GB' => '+44'];
+        $codes = ['US' => '+1', 'CA' => '+1', 'MX' => '+52', 'GB' => '+44', 'IN' => '+91'];
         return $codes[strtoupper((string) $cc)] ?? '';
     }
 }
@@ -1668,6 +1699,15 @@ class Stub_WC
     public $countries;
     public $structured_data = null;
     public function __construct() { $this->countries = new Stub_WC_Countries(); }
+    public function mailer() { return new Stub_WC_Emails(); }
+}
+class Stub_WC_Emails
+{
+    /** As WC_Emails::replace_placeholders(). */
+    public function replace_placeholders($text)
+    {
+        return str_replace(['{site_title}', '{WooCommerce}', '{woocommerce}', '{store_email}'], [get_bloginfo('name'), '<a href="https://woocommerce.com">WooCommerce</a>', '<a href="https://woocommerce.com">WooCommerce</a>', (string) get_option('woocommerce_email_from_address', '')], (string) $text);
+    }
 }
 $GLOBALS['woocommerce'] = new Stub_WC();
 if (!function_exists('WC')) {

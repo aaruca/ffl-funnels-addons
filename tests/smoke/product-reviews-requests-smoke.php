@@ -485,4 +485,137 @@ $_GET = ['page' => 'ffla-product-reviews-requests'];
 $log = capture(['Product_Reviews_Requests_Log', 'render']);
 check(strpos($log, '#5050') !== false && strpos($log, 'ffla-pr-status--reviewed') !== false, 'log lists sent and reviewed orders');
 
+/* ── Review findings ───────────────────────────────────────────────────── */
+
+// A reminder long after the first email is not stopped by the order-age limit.
+settings(['request_reminder' => '1', 'request_reminder_days' => '45']);
+$late = make_order(5100, 'late@example.com', [[101, 1]]);
+Product_Reviews_Email::schedule_requests_for_order(5100);
+run_action('ffla_send_order_review_bundle', [5100]);
+$late->created = time() - 60 * DAY_IN_SECONDS; // As it will be when the reminder is due.
+run_action('ffla_send_order_review_reminder', [5100]);
+check($late->get_meta('_ffla_review_reminder_sent') > 0, 'a reminder 45 days after the first email still goes out (no order-age limit on reminders)');
+
+// Sent by hand on a Processing order, per-product mode: the reminder follows,
+// and completing the order later sends no per-product emails on top.
+settings(['request_reminder' => '1', 'request_reminder_days' => '3', 'request_email_mode' => 'single']);
+$hand = make_order(5101, 'hand@example.com', [[101, 1], [102, 1]], ['status' => 'processing', 'completed' => null]);
+Product_Reviews_Email::send_now(5101);
+$mails_now = count($GLOBALS['mails']);
+run_action('ffla_send_order_review_reminder', [5101]);
+check(count($GLOBALS['mails']) === $mails_now + 1 && $hand->get_meta('_ffla_review_reminder_sent') > 0, 'the reminder after a hand-sent request goes out while the order is still Processing');
+check('1' === (string) $hand->get_meta('_ffla_review_request_scheduled') || 1 === $hand->get_meta('_ffla_review_request_scheduled'), 'and does not reopen the order');
+status_change($hand, 'completed');
+check([] === actions_for('ffla_send_product_review_request'), 'completing it afterwards queues no per-product emails');
+$reopened = make_order(5112, 'reopened@example.com', [[101, 1], [102, 1]], ['status' => 'processing', 'completed' => null]);
+Product_Reviews_Email::send_now(5112);
+$reopened->delete_meta_data('_ffla_review_request_scheduled'); // Reopened (status went back and forth).
+status_change($reopened, 'completed');
+check([] === actions_for('ffla_send_product_review_request'), 'even a reopened order gets no per-product emails after a request for the whole order');
+$mails_now = count($GLOBALS['mails']);
+Product_Reviews_Email::send_review_request(5112, 101);
+check(count($GLOBALS['mails']) === $mails_now, 'and a per-product email still queued from before is not sent');
+
+// Per-product actions carry the order and product only.
+$per = make_order(5102, 'per@example.com', [[101, 1], [102, 1]], ['user_id' => 7]);
+Product_Reviews_Email::schedule_requests_for_order(5102);
+check(2 === count(actions_for('ffla_send_product_review_request', [5102, 101])) + count(actions_for('ffla_send_product_review_request', [5102, 102])), 'per-product actions are queued with order and product only');
+$per->user_id = 0; // The account was deleted: WooCommerce sets the customer to 0.
+Product_Reviews_Email::cancel_requests_for_order(5102);
+check([] === actions_for('ffla_send_product_review_request'), 'cancelling still removes them after the customer changed');
+// One queued the old way (with the customer's ID) is still removed.
+$per->user_id = 7;
+as_schedule_single_action(time(), 'ffla_send_product_review_request', [5102, 101, 7], 'ffla-product-reviews');
+Product_Reviews_Email::cancel_requests_for_order(5102);
+check([] === actions_for('ffla_send_product_review_request'), 'and removes one queued the old way, with the customer\'s ID');
+settings();
+
+// A request that is due but refused is recorded, not left "Scheduled".
+$gone = make_order(5103, 'leaving@example.com', [[101, 1]]);
+Product_Reviews_Email::schedule_requests_for_order(5103);
+Product_Reviews_Notifications::opt_out('leaving@example.com');
+run_action('ffla_send_order_review_bundle', [5103]);
+$st = Product_Reviews_Email::request_status($gone);
+check('skipped' === $st['key'] && 'unsubscribed' === $st['skipped'] && 0 === $st['scheduled_for'], 'unsubscribed before the email was due: skipped with the reason, no longer scheduled');
+check('skipped' === $gone->get_meta('_ffla_review_request_state'), 'the state is stored on the order for the log');
+settings(['request_customer_window_days' => '30']);
+$next = make_order(5104, 'window@example.com', [[101, 1]]);
+$past = make_order(5105, 'window@example.com', [[101, 1]], ['meta' => ['_ffla_review_scheduled_for' => time() - DAY_IN_SECONDS, '_ffla_review_request_scheduled' => 1]]);
+Product_Reviews_Email::schedule_requests_for_order(5104);
+check(1 === count(bundle_queued(5104)), 'a past due date that never went out does not count as a recent request');
+settings();
+
+// Too old when scheduled: the reason is stored.
+$old = make_order(5106, 'old@example.com', [[101, 1]], ['created' => time() - 200 * DAY_IN_SECONDS]);
+Product_Reviews_Email::schedule_requests_for_order(5106);
+check('too_old' === $old->get_meta('_ffla_review_skipped'), 'an order too old to ask about is skipped with the reason');
+
+// On hold as the trigger: an order already Processing when the email is due gets it.
+settings(['request_trigger_status' => 'on-hold']);
+$hold = make_order(5107, 'hold@example.com', [[101, 1]], ['status' => 'pending', 'completed' => null]);
+status_change($hold, 'on-hold');
+$hold->status = 'processing';
+run_action('ffla_send_order_review_bundle', [5107]);
+check('hold@example.com' === (last_mail()['to'] ?? ''), 'trigger On hold: an order moved on to Processing still gets the email');
+$back = make_order(5108, 'holdback@example.com', [[101, 1]], ['status' => 'pending', 'completed' => null]);
+status_change($back, 'on-hold');
+$back->status = 'pending';
+$count = count($GLOBALS['mails']);
+run_action('ffla_send_order_review_bundle', [5108]);
+check(count($GLOBALS['mails']) === $count, 'but one back to Pending does not');
+settings();
+
+// HTML text with a link keeps its paragraphs; plain text shows characters, not entities.
+$html_text = Product_Reviews_Email_Template::text_html("Hi {customer_name},\n\nTell us about it <a href=\"{review_url}\">here</a>.\n\nQ&amp;A welcome.", ['{customer_name}' => 'Ann', '{review_url}' => 'https://store.test/r']);
+check(2 <= substr_count($html_text, '<p style=') && strpos($html_text, 'Tell us about it <a href="https://store.test/r">here</a>.') !== false, 'paragraphs kept when the text has a link: ' . $html_text);
+settings(['email_format' => 'plain', 'email_template' => "Hi {customer_name},\n\nQ&amp;A and&nbsp;more."]);
+$plain = Product_Reviews_Email_Template::render('request', Product_Reviews_Email::sample_data('t@example.com'));
+check(strpos($plain['body'], 'Q&A and more.') !== false && strpos($plain['body'], '&amp;') === false, 'plain text decodes entities');
+settings(['email_footer_text' => '{site_title} — Built with {WooCommerce}']);
+$fancy = Product_Reviews_Email_Template::render('request', Product_Reviews_Email::sample_data('t@example.com'));
+check(strpos($fancy['body'], '{WooCommerce}') === false && strpos($fancy['body'], 'woocommerce.com') !== false, 'WooCommerce\'s footer placeholders are filled in');
+settings();
+
+// Consent: the box stays ticked when WooCommerce redraws the payment part.
+reset_request();
+$_POST = ['post_data' => 'billing_email=a%40b.test&ffla_review_consent=1&payment_method=cod'];
+$redrawn = capture(['Product_Reviews_Consent', 'render_classic_field']);
+check(strpos($redrawn, 'value="1" checked') !== false, 'a ticked consent box is drawn ticked again after a checkout refresh');
+$_POST = ['post_data' => 'billing_email=a%40b.test'];
+check(strpos(capture(['Product_Reviews_Consent', 'render_classic_field']), 'checked') === false, 'an unticked one stays unticked');
+$_POST = [];
+
+// Tracking saves only meta (no order update hooks), and the redirect after a review is not a click.
+$tr = make_order(5109, 'track@example.com', [[101, 1]]);
+$saves = $tr->saved;
+parse_str((string) parse_url(Product_Reviews_Tracking::pixel_url(5109), PHP_URL_QUERY), $px);
+Product_Reviews_Tracking::record_open(5109, (string) $px['s']);
+check($saves === $tr->saved && $tr->meta_saved > 0, 'an open saves only the order\'s meta, not the whole order');
+reset_request();
+$_GET = ['ffla_review_status' => 'success'];
+set_static('Product_Reviews_Tracking', 'clicked', []);
+Product_Reviews_Tracking::record_click($tr);
+check('' === (string) $tr->get_meta('_ffla_review_click_count'), 'the page shown after a review is sent is not counted as a click');
+$_GET = [];
+
+// WhatsApp: a national number that starts with the calling code's digits.
+check('919123456789' === Product_Reviews_Order_Tools::whatsapp_phone(make_order(5110, 'in@example.com', [], ['phone' => '91234 56789', 'country' => 'IN'])), 'an Indian mobile starting with 91 gets the country code');
+check('15125550142' === Product_Reviews_Order_Tools::whatsapp_phone(make_order(5111, 'us@example.com', [], ['phone' => '1 512 555 0142', 'country' => 'US'])), 'a US number written with its leading 1 is not doubled');
+
+// Request log on the legacy post storage, which ignores meta_query; the filter pages correctly.
+$GLOBALS['legacy_order_storage'] = true;
+for ($i = 0; $i < 30; $i++) {
+    make_order(5200 + $i, "quiet$i@example.com", [[101, 1]], ['created' => time() - 3 * DAY_IN_SECONDS - $i]);
+}
+reset_request(1);
+$_GET = ['page' => 'ffla-product-reviews-requests'];
+$log = capture(['Product_Reviews_Requests_Log', 'render']);
+check(strpos($log, '#5200') === false && strpos($log, 'No request') === false, 'legacy storage: orders without a request are not listed');
+$stats = Product_Reviews_Requests_Log::stats();
+check($stats['sent'] >= 10, 'legacy storage: totals still count only orders with requests: ' . json_encode($stats));
+$_GET = ['page' => 'ffla-product-reviews-requests', 'request_status' => 'skipped'];
+$log = capture(['Product_Reviews_Requests_Log', 'render']);
+check(strpos($log, '#5020') !== false && strpos($log, '#5103') !== false && strpos($log, 'ffla-pr-status--sent') === false, 'the Skipped view lists skipped orders, on the first page');
+unset($GLOBALS['legacy_order_storage']);
+
 echo "OK: {$checks} product-reviews request checks passed\n";

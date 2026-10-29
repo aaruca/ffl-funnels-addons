@@ -98,7 +98,7 @@ class Product_Reviews_Tracking
             $order->update_meta_data(self::OPENED_META, time());
         }
         $order->update_meta_data(self::OPEN_COUNT_META, (int) $order->get_meta(self::OPEN_COUNT_META) + 1);
-        $order->save();
+        self::save($order);
 
         return true;
     }
@@ -110,7 +110,9 @@ class Product_Reviews_Tracking
     public static function record_click(\WC_Order $order): void
     {
         $order_id = (int) $order->get_id();
-        if (isset(self::$clicked[$order_id]) || !self::enabled()) {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- the redirect after a review, read only.
+        $after_review = isset($_GET['ffla_review_status']);
+        if (isset(self::$clicked[$order_id]) || !self::enabled() || $after_review) {
             return;
         }
         self::$clicked[$order_id] = true;
@@ -119,7 +121,7 @@ class Product_Reviews_Tracking
             $order->update_meta_data(self::CLICKED_META, time());
         }
         $order->update_meta_data(self::CLICK_COUNT_META, (int) $order->get_meta(self::CLICK_COUNT_META) + 1);
-        $order->save();
+        self::save($order);
     }
 
     /**
@@ -131,6 +133,20 @@ class Product_Reviews_Tracking
             $order->update_meta_data(self::FIRST_REVIEW_META, time());
         }
         $order->update_meta_data(self::REVIEWED_META, (int) $order->get_meta(self::REVIEWED_META) + 1);
-        $order->save();
+        self::save($order);
+    }
+
+    /**
+     * Only the order's meta: these come from anonymous requests (an image
+     * proxy, the review page), and a full save() would fire
+     * woocommerce_update_order (webhooks, syncs) and change its modified
+     * date each time.
+     */
+    private static function save(\WC_Order $order): void
+    {
+        if (class_exists('Product_Reviews_Email')) {
+            Product_Reviews_Email::sync_state($order);
+        }
+        $order->save_meta_data();
     }
 }

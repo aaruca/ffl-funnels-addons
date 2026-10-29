@@ -43,13 +43,35 @@ class Product_Reviews_Consent
         return $text !== '' ? $text : __('Email me a link to review my purchase', 'ffl-funnels-addons');
     }
 
+    /**
+     * The box sits in the payment part of the checkout, which WooCommerce
+     * redraws whenever the totals refresh (address, shipping method). It is
+     * drawn ticked when the form it replaces had it ticked: that form comes
+     * with the refresh as `post_data`.
+     */
     public static function render_classic_field(): void
     {
         echo '<p class="form-row ffla-review-consent">';
         echo '<label class="woocommerce-form__label woocommerce-form__label-for-checkbox checkbox">';
-        echo '<input type="checkbox" class="woocommerce-form__input woocommerce-form__input-checkbox input-checkbox" name="ffla_review_consent" value="1"> ';
+        echo '<input type="checkbox" class="woocommerce-form__input woocommerce-form__input-checkbox input-checkbox" name="ffla_review_consent" value="1"' . (self::was_ticked() ? ' checked' : '') . '> ';
         echo '<span>' . esc_html(self::label()) . '</span>';
         echo '</label></p>';
+    }
+
+    private static function was_ticked(): bool
+    {
+        // phpcs:disable WordPress.Security.NonceVerification.Missing -- display only; WooCommerce checks its own nonce.
+        if (isset($_POST['ffla_review_consent'])) {
+            return '1' === (string) wp_unslash($_POST['ffla_review_consent']);
+        }
+        if (isset($_POST['post_data']) && is_string($_POST['post_data'])) {
+            $form = [];
+            parse_str(wp_unslash($_POST['post_data']), $form); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- one field compared below.
+            return isset($form['ffla_review_consent']) && '1' === (string) $form['ffla_review_consent'];
+        }
+        // phpcs:enable WordPress.Security.NonceVerification.Missing
+
+        return false;
     }
 
     /**

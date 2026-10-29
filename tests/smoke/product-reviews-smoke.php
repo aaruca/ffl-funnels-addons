@@ -457,6 +457,7 @@ class WC_Order
     public function update_meta_data($key, $value) { $this->meta[$key] = $value; }
     public function delete_meta_data($key) { unset($this->meta[$key]); }
     public function save() { return $this->id; }
+    public function save_meta_data() {}
     public function get_status() { return $this->status; }
     public function has_status($status) { return in_array($this->status, (array) $status, true); }
     public function get_date_created() { return $this->created ? new WC_DateTime('@' . $this->created) : null; }
@@ -897,7 +898,7 @@ check(1 === count(actions_for('ffla_send_order_review_bundle', [3001])), 'comple
 set_setting('request_email_mode', 'per_product');
 make_order(3002, 'pp@example.com', [[101, 1], [102, 1]]);
 Product_Reviews_Email::schedule_requests_for_order(3002);
-check(1 === count(actions_for('ffla_send_product_review_request', [3002, 101, 0])) && 1 === count(actions_for('ffla_send_product_review_request', [3002, 102, 0])), 'per-product mode still queues one email per product');
+check(1 === count(actions_for('ffla_send_product_review_request', [3002, 101])) && 1 === count(actions_for('ffla_send_product_review_request', [3002, 102])), 'per-product mode still queues one email per product (order and product only)');
 set_setting('request_email_mode', 'bundle');
 
 make_order(3003, 'old@example.com', [[101, 1]], ['created' => time() - 60 * DAY_IN_SECONDS]);
@@ -1003,9 +1004,9 @@ $p = make_order(3011, 'pp2@example.com', [[101, 1], [104, 1]]);
 Product_Reviews_Email::schedule_requests_for_order(3011);
 $p->refunded[30111] = 1;
 $count = count($GLOBALS['mails']);
-run_action('ffla_send_product_review_request', [3011, 104, 0]);
+run_action('ffla_send_product_review_request', [3011, 104]);
 check(count($GLOBALS['mails']) === $count, 'per-product: a line refunded after queueing is not emailed');
-run_action('ffla_send_product_review_request', [3011, 101, 0]);
+run_action('ffla_send_product_review_request', [3011, 101]);
 check(count($GLOBALS['mails']) === $count + 1 && $p->get_meta('_ffla_review_sent_101') > 0, 'per-product: the other product is emailed and marked');
 set_setting('request_email_mode', 'bundle');
 $GLOBALS['closed'] = [];

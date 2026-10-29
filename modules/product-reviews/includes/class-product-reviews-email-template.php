@@ -168,6 +168,8 @@ class Product_Reviews_Email_Template
     {
         $template = self::body_template($kind, $mode, false);
         $text     = wp_strip_all_tags(str_replace(['<br>', '<br />', '<br/>', '</p>'], ["\n", "\n", "\n", "\n\n"], $template));
+        // The editor stores & as &amp; (and &nbsp;): plain text shows characters.
+        $text = str_replace("\xC2\xA0", ' ', html_entity_decode($text, ENT_QUOTES, 'UTF-8'));
 
         $body = strtr($text, self::placeholders($data));
         $body = trim(self::heading($kind, $data) . "\n\n" . $body);
@@ -246,13 +248,24 @@ class Product_Reviews_Email_Template
             $footer = self::store_name() . ($address !== '' ? ' · ' . $address : '');
         }
 
-        return strtr($footer, [
+        $footer = strtr($footer, [
             '{site_title}'    => self::store_name(),
             '{site_url}'      => home_url('/'),
             '{store_address}' => $address,
             '{site_address}'  => $address,
             '{store_name}'    => self::store_name(),
         ]);
+
+        // WooCommerce's own placeholders ({WooCommerce}, {store_email}…):
+        // its default footer is "{site_title} — Built with {WooCommerce}".
+        if (strpos($footer, '{') !== false && function_exists('WC')) {
+            $mailer = WC()->mailer();
+            if (is_object($mailer) && method_exists($mailer, 'replace_placeholders')) {
+                $footer = (string) $mailer->replace_placeholders($footer);
+            }
+        }
+
+        return $footer;
     }
 
     /**
@@ -291,10 +304,9 @@ class Product_Reviews_Email_Template
      */
     public static function text_html(string $template, array $placeholders): string
     {
-        $text = wp_kses_post($template);
-        if ($text === wp_strip_all_tags($text)) {
-            $text = wpautop($text);
-        }
+        // Always: the editor saves paragraphs as blank lines, also around a
+        // link or a bold word, and wpautop() leaves existing <p> alone.
+        $text = wpautop(wp_kses_post($template));
         $text = strtr($text, $placeholders);
 
         return str_replace('<p>', '<p style="margin:0 0 14px;">', $text);

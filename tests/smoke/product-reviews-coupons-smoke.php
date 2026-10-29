@@ -279,4 +279,12 @@ $fresh = hub_review($fresh_order, 101);
 check('' !== (string) get_comment_meta($fresh, 'ffla_review_coupon_code', true), 'a review written after it earns one as usual');
 delete_option(Product_Reviews_Coupons::SINCE_OPTION);
 
+// The request emails' own Reply-To and BCC are not used for coupon emails.
+settings(['email_bcc' => 'copies@store.test', 'email_reply_to' => 'reviews@store.test']);
+$hdr_order = make_order(6042, 'headers@example.com', [[101, 1]]);
+hub_review($hdr_order, 101);
+$coupon_mail = last_mail_to('headers@example.com');
+check($coupon_mail && false === stripos(implode("\n", (array) $coupon_mail['headers']), 'copies@store.test') && false === stripos(implode("\n", (array) $coupon_mail['headers']), 'reviews@store.test'), 'coupon emails carry the store\'s headers, not the request BCC and Reply-To');
+settings();
+
 echo "OK: {$checks} product-reviews coupon checks passed\n";

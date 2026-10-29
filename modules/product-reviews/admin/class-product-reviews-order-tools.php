@@ -236,7 +236,7 @@ class Product_Reviews_Order_Tools
         }
 
         $international = strpos($raw, '+') === 0 || strpos($raw, '00') === 0;
-        $digits        = preg_replace('/\D+/', '', $raw);
+        $digits        = (string) preg_replace('/\D+/', '', $raw);
         if (strpos($raw, '00') === 0) {
             $digits = substr($digits, 2);
         }
@@ -247,8 +247,13 @@ class Product_Reviews_Order_Tools
                 $code = WC()->countries->get_country_calling_code((string) $order->get_billing_country());
                 $code = is_array($code) ? (string) reset($code) : (string) $code;
             }
-            $code = preg_replace('/\D+/', '', $code);
-            if ($code !== '' && strpos($digits, $code) !== 0) {
+            $code = (string) preg_replace('/\D+/', '', $code);
+            // Without + or 00 the number is national, unless it already
+            // starts with the calling code and is as long as an international
+            // number (11+ digits: 1 555 123 4567, 44 7700 900123). A trunk 0
+            // always means national. An Indian 91234 56789 is national.
+            $has_code = $code !== '' && strpos($digits, '0') !== 0 && strpos($digits, $code) === 0 && strlen($digits) >= 11;
+            if ($code !== '' && !$has_code) {
                 $digits = $code . ltrim($digits, '0');
             }
         }
@@ -328,7 +333,7 @@ class Product_Reviews_Order_Tools
             // queue the email again. Send now still works.
             $order->delete_meta_data(Product_Reviews_Email::SCHEDULED_FOR_META);
             $order->update_meta_data(Product_Reviews_Email::SKIPPED_META, 'cancelled');
-            $order->save();
+            Product_Reviews_Email::save_order($order);
             $order->add_order_note(__('Scheduled review request cancelled.', 'ffl-funnels-addons'));
             self::store_notice('success', __('The scheduled review request was cancelled.', 'ffl-funnels-addons'));
         }
