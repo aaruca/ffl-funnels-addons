@@ -333,6 +333,86 @@ class Product_Reviews_Admin_Fields
         ];
     }
 
+    /**
+     * WooCommerce's order statuses (custom ones included), without `wc-`.
+     *
+     * @return array<string, string>
+     */
+    private static function order_status_options(): array
+    {
+        $out = [];
+        if (function_exists('wc_get_order_statuses')) {
+            foreach (wc_get_order_statuses() as $key => $label) {
+                $out[preg_replace('/^wc-/', '', (string) $key)] = (string) $label;
+            }
+        }
+        foreach (['pending', 'cancelled', 'refunded', 'failed', 'checkout-draft'] as $never) {
+            unset($out[$never]);
+        }
+
+        return $out ?: ['completed' => __('Completed', 'ffl-funnels-addons')];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function role_options(): array
+    {
+        return function_exists('wp_roles') ? (array) wp_roles()->get_names() : [];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private static function category_options(): array
+    {
+        $terms = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false, 'number' => 500]);
+        if (!is_array($terms)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($terms as $term) {
+            if ($term instanceof \WP_Term) {
+                $out[(int) $term->term_id] = $term->name;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function hour_options(): array
+    {
+        $out = ['' => __('Any time (right after the delay)', 'ffl-funnels-addons')];
+        for ($h = 0; $h < 24; $h++) {
+            $out[(string) $h] = sprintf('%02d:00', $h);
+        }
+
+        return $out;
+    }
+
+    /**
+     * A colour that may be left empty (to fall back to WooCommerce's email
+     * colours), which an <input type="color"> cannot express.
+     */
+    private static function optional_color(string $key, string $label, string $desc): array
+    {
+        return [
+            'key'      => $key,
+            'type'     => 'text',
+            'label'    => $label,
+            'desc'     => $desc,
+            'sanitize' => static function ($raw): string {
+                $color = sanitize_hex_color(trim((string) $raw));
+
+                return $color ? $color : '';
+            },
+        ];
+    }
+
     private static function requests_cards(): array
     {
         return [
@@ -343,14 +423,7 @@ class Product_Reviews_Admin_Fields
                         'key'   => 'enable_requests',
                         'type'  => 'toggle',
                         'label' => __('Enable review requests', 'ffl-funnels-addons'),
-                        'desc'  => __('Send post-purchase emails asking customers to review purchased products. Nothing is scheduled or sent until a published Hub page is selected under Order review hub.', 'ffl-funnels-addons'),
-                    ],
-                    [
-                        'key'   => 'request_delay_days',
-                        'type'  => 'number',
-                        'label' => __('Delay after completed order (days)', 'ffl-funnels-addons'),
-                        'desc'  => __('How many days to wait before sending a review request email. Orders placed more than this many days plus 30 before the email would go out (imports, old orders completed in bulk) are not emailed.', 'ffl-funnels-addons'),
-                        'min'   => 0,
+                        'desc'  => __('Send post-purchase emails asking customers to review purchased products. Nothing is scheduled or sent until a published Hub page is selected under Order review hub. Requests sent by hand from an order work while this is off.', 'ffl-funnels-addons'),
                     ],
                     [
                         'key'     => 'request_email_mode',
@@ -360,7 +433,194 @@ class Product_Reviews_Admin_Fields
                             'bundle'      => __('One email per order (all products, single link)', 'ffl-funnels-addons'),
                             'per_product' => __('One email per product (all sent the same day)', 'ffl-funnels-addons'),
                         ],
-                        'desc'    => __('Both modes send a signed link that opens the order review hub (Hub page below). One email per order lists every product; with the default template it uses {review_order_url} and {product_names_list} automatically. One email per product sends a separate email for each product in the order, all on the same day.', 'ffl-funnels-addons'),
+                        'desc'    => __('Both modes send a signed link that opens the order review hub (Hub page below). Reminders and requests sent by hand are always one email per order.', 'ffl-funnels-addons'),
+                    ],
+                ],
+            ],
+            [
+                'title'  => __('When to send', 'ffl-funnels-addons'),
+                'fields' => [
+                    [
+                        'key'     => 'request_trigger_status',
+                        'type'    => 'select',
+                        'label'   => __('Start when the order is', 'ffl-funnels-addons'),
+                        'options' => self::order_status_options(),
+                        'desc'    => __('The delay starts when an order reaches this status. Custom statuses (for example Delivered or Shipped) are listed too. Statuses the order moves to afterwards still get the email; going back to Processing or On hold does not.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'request_delay_days',
+                        'type'  => 'number',
+                        'label' => __('Delay', 'ffl-funnels-addons'),
+                        'desc'  => __('How long after that status the first email goes out. 0 sends at the next queue run. Orders placed more than the delay plus 30 days before the email would go out (imports, old orders changed in bulk) are not emailed.', 'ffl-funnels-addons'),
+                        'min'   => 0,
+                        'max'   => 365,
+                    ],
+                    [
+                        'key'     => 'request_delay_unit',
+                        'type'    => 'select',
+                        'label'   => __('Delay in', 'ffl-funnels-addons'),
+                        'options' => [
+                            'days'  => __('Days', 'ffl-funnels-addons'),
+                            'hours' => __('Hours', 'ffl-funnels-addons'),
+                        ],
+                        'desc'    => __('Also the unit of the per-country delays below.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'request_country_delays',
+                        'type'  => 'textarea',
+                        'label' => __('Delay per country', 'ffl-funnels-addons'),
+                        'desc'  => __('One per line as country code|delay, for example CA|14 for slower shipping to Canada. Uses the shipping country, else the billing country. Countries not listed use the delay above.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'     => 'request_send_hour',
+                        'type'    => 'select',
+                        'label'   => __('Send at', 'ffl-funnels-addons'),
+                        'options' => self::hour_options(),
+                        'desc'    => __('Hold each email until this time of day (store time zone), for example 10:00 so it lands while customers read their mail. Applies to reminders too.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'     => 'request_send_days',
+                        'type'    => 'multiselect',
+                        'label'   => __('Send on', 'ffl-funnels-addons'),
+                        'options' => [
+                            '1' => __('Monday', 'ffl-funnels-addons'),
+                            '2' => __('Tuesday', 'ffl-funnels-addons'),
+                            '3' => __('Wednesday', 'ffl-funnels-addons'),
+                            '4' => __('Thursday', 'ffl-funnels-addons'),
+                            '5' => __('Friday', 'ffl-funnels-addons'),
+                            '6' => __('Saturday', 'ffl-funnels-addons'),
+                            '7' => __('Sunday', 'ffl-funnels-addons'),
+                        ],
+                        'desc'    => __('Leave all unticked (or all ticked) to send any day. An email due on another day waits for the next allowed one.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'review_link_days',
+                        'type'  => 'number',
+                        'label' => __('Review link valid for (days)', 'ffl-funnels-addons'),
+                        'desc'  => __('How long the signed link in each email works. Applies to links sent from now on.', 'ffl-funnels-addons'),
+                        'min'   => 1,
+                        'max'   => 365,
+                    ],
+                ],
+            ],
+            [
+                'title'  => __('Second reminder', 'ffl-funnels-addons'),
+                'fields' => [
+                    [
+                        'key'   => 'request_reminder',
+                        'type'  => 'toggle',
+                        'label' => __('Send a reminder', 'ffl-funnels-addons'),
+                        'desc'  => __('One more email, for the whole order, when some products are still not reviewed. Its subject and heading are set on the Emails tab.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'request_reminder_days',
+                        'type'  => 'number',
+                        'label' => __('Days after the first email', 'ffl-funnels-addons'),
+                        'desc'  => __('Then held for the sending hour and days above.', 'ffl-funnels-addons'),
+                        'min'   => 1,
+                        'max'   => 90,
+                    ],
+                ],
+            ],
+            [
+                'title'  => __('Who gets requests', 'ffl-funnels-addons'),
+                'fields' => [
+                    [
+                        'key'   => 'request_guests',
+                        'type'  => 'toggle',
+                        'label' => __('Guest orders', 'ffl-funnels-addons'),
+                        'desc'  => __('Send requests for orders placed without an account.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'     => 'request_roles_mode',
+                        'type'    => 'select',
+                        'label'   => __('Customer roles', 'ffl-funnels-addons'),
+                        'options' => [
+                            'all'     => __('Every role', 'ffl-funnels-addons'),
+                            'include' => __('Only the roles ticked below', 'ffl-funnels-addons'),
+                            'exclude' => __('Every role except those ticked below', 'ffl-funnels-addons'),
+                        ],
+                        'desc'    => __('For orders placed from an account. For example, leave out wholesale or staff accounts.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'     => 'request_roles',
+                        'type'    => 'multiselect',
+                        'label'   => __('Roles', 'ffl-funnels-addons'),
+                        'options' => self::role_options(),
+                        'desc'    => '',
+                    ],
+                    [
+                        'key'     => 'request_categories_mode',
+                        'type'    => 'select',
+                        'label'   => __('Product categories', 'ffl-funnels-addons'),
+                        'options' => [
+                            'all'     => __('Every category', 'ffl-funnels-addons'),
+                            'include' => __('Only products in the categories ticked below', 'ffl-funnels-addons'),
+                            'exclude' => __('Every product except those in the categories ticked below', 'ffl-funnels-addons'),
+                        ],
+                        'desc'    => __('Products left out are not listed in the email; an order with nothing left gets no email. Subcategories count. The hub page still lets the customer review everything in the order.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'     => 'request_categories',
+                        'type'    => 'multiselect',
+                        'label'   => __('Categories', 'ffl-funnels-addons'),
+                        'options' => self::category_options(),
+                        'desc'    => '',
+                    ],
+                    [
+                        'key'   => 'request_skip_free',
+                        'type'  => 'toggle',
+                        'label' => __('Leave out free products', 'ffl-funnels-addons'),
+                        'desc'  => __('Products whose order lines cost nothing (samples, gifts, free add-ons) are not listed.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'request_max_products',
+                        'type'  => 'number',
+                        'label' => __('Most products per email', 'ffl-funnels-addons'),
+                        'desc'  => __('For large orders: list at most this many, the most expensive lines first. 0 lists them all.', 'ffl-funnels-addons'),
+                        'min'   => 0,
+                        'max'   => 50,
+                    ],
+                    [
+                        'key'   => 'request_excluded_emails',
+                        'type'  => 'textarea',
+                        'label' => __('Never email', 'ffl-funnels-addons'),
+                        'desc'  => __('Addresses, one per line, or whole domains as @example.com (for example your own staff or marketplace relay addresses). Also blocks requests sent by hand.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'request_customer_window_days',
+                        'type'  => 'number',
+                        'label' => __('One request per customer every (days)', 'ffl-funnels-addons'),
+                        'desc'  => __('Skip an order when the same billing email got a request for another order within this many days. 0 asks about every order.', 'ffl-funnels-addons'),
+                        'min'   => 0,
+                        'max'   => 365,
+                    ],
+                    [
+                        'key'   => 'request_use_account_email',
+                        'type'  => 'toggle',
+                        'label' => __('Send to the account email', 'ffl-funnels-addons'),
+                        'desc'  => __('For orders placed from an account, email the account’s address instead of the billing address.', 'ffl-funnels-addons'),
+                    ],
+                ],
+            ],
+            [
+                'title'  => __('Consent at checkout', 'ffl-funnels-addons'),
+                'fields' => [
+                    [
+                        'key'     => 'request_consent',
+                        'type'    => 'select',
+                        'label'   => __('Ask for consent', 'ffl-funnels-addons'),
+                        'options' => [
+                            'none'  => __('No checkbox: every order can get a request', 'ffl-funnels-addons'),
+                            'optin' => __('Unticked checkbox: only customers who tick it get a request', 'ffl-funnels-addons'),
+                        ],
+                        'desc'    => __('Shown above the Place order button on the classic checkout and as an order field on the Checkout block (WooCommerce 8.9 or later). Orders placed before you switch this on have no answer and get no request. Requests sent by hand respect it too.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'      => 'request_consent_text',
+                        'type'     => 'text',
+                        'label'    => __('Checkbox text', 'ffl-funnels-addons'),
+                        'desc'     => __('Empty uses “Email me a link to review my purchase”.', 'ffl-funnels-addons'),
                     ],
                 ],
             ],
@@ -405,15 +665,27 @@ class Product_Reviews_Admin_Fields
     {
         $optout_count = Product_Reviews_Notifications::optout_count();
 
+        $placeholders = __('Placeholders: {customer_name}, {product_name} (the list in one-email-per-order mode), {product_names_list}, {review_url}, {review_order_url}, {order_id}, {order_number}, {user_id}, {store_name}, {review_link_days}, {unsubscribe_url}.', 'ffl-funnels-addons');
+
         return [
             [
                 'title'  => __('Review request email', 'ffl-funnels-addons'),
                 'fields' => [
                     [
+                        'key'     => 'email_format',
+                        'type'    => 'select',
+                        'label'   => __('Format', 'ffl-funnels-addons'),
+                        'options' => [
+                            'html'  => __('HTML: logo, product photos, clickable stars and a button', 'ffl-funnels-addons'),
+                            'plain' => __('Plain text', 'ffl-funnels-addons'),
+                        ],
+                        'desc'    => __('In HTML emails each product has five stars: a click opens the review page with that rating already picked. Plain text emails list the products and the link.', 'ffl-funnels-addons'),
+                    ],
+                    [
                         'key'   => 'email_subject',
                         'type'  => 'text',
                         'label' => __('Email subject', 'ffl-funnels-addons'),
-                        'desc'  => __('Example: How was your purchase?', 'ffl-funnels-addons'),
+                        'desc'  => __('Example: How was your purchase? Placeholders work here too.', 'ffl-funnels-addons'),
                     ],
                     [
                         'key'   => 'email_heading',
@@ -423,9 +695,104 @@ class Product_Reviews_Admin_Fields
                     ],
                     [
                         'key'   => 'email_template',
+                        'type'  => 'editor',
+                        'label' => __('Email text', 'ffl-funnels-addons'),
+                        'desc'  => $placeholders . ' ' . __('Leave it as it is (or empty) to use the built-in text for each kind of email. HTML emails add the products and the button after this text; plain text emails need {review_url} in it. If you do not place {unsubscribe_url} yourself, an unsubscribe link is added at the end.', 'ffl-funnels-addons'),
+                    ],
+                ],
+            ],
+            [
+                'title'  => __('Reminder email', 'ffl-funnels-addons'),
+                'fields' => [
+                    [
+                        'key'   => 'email_reminder_subject',
+                        'type'  => 'text',
+                        'label' => __('Reminder subject', 'ffl-funnels-addons'),
+                        'desc'  => __('Empty uses “A quick reminder: how was your order?”. Switch reminders on under Review requests.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'email_reminder_heading',
+                        'type'  => 'text',
+                        'label' => __('Reminder heading', 'ffl-funnels-addons'),
+                        'desc'  => __('Empty uses the request email’s heading. The text is the request email’s text (or a built-in reminder text while that is not changed).', 'ffl-funnels-addons'),
+                    ],
+                ],
+            ],
+            [
+                'title'  => __('Design (HTML emails)', 'ffl-funnels-addons'),
+                'desc'   => __('Empty fields use WooCommerce → Settings → Emails (header image, base, background and text colours, footer text), so review emails match your order emails.', 'ffl-funnels-addons'),
+                'fields' => [
+                    [
+                        'key'   => 'email_logo_id',
+                        'type'  => 'media',
+                        'label' => __('Logo', 'ffl-funnels-addons'),
+                        'desc'  => __('Shown at the top, at most 200 × 80 pixels. Without one, WooCommerce’s email header image, else the store name.', 'ffl-funnels-addons'),
+                    ],
+                    self::optional_color('email_brand_color', __('Button colour', 'ffl-funnels-addons'), __('Hex colour such as #1f2937. Empty uses WooCommerce’s base colour.', 'ffl-funnels-addons')),
+                    self::optional_color('email_background_color', __('Background colour', 'ffl-funnels-addons'), __('Around the email. Empty uses WooCommerce’s background colour.', 'ffl-funnels-addons')),
+                    self::optional_color('email_text_color', __('Text colour', 'ffl-funnels-addons'), __('Empty uses WooCommerce’s body text colour.', 'ffl-funnels-addons')),
+                    self::optional_color('email_star_color', __('Star colour', 'ffl-funnels-addons'), __('The clickable stars. Empty uses gold (#d4a017).', 'ffl-funnels-addons')),
+                    [
+                        'key'   => 'email_button_text',
+                        'type'  => 'text',
+                        'label' => __('Button text', 'ffl-funnels-addons'),
+                        'desc'  => __('Empty uses “Leave a review”.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'email_show_products',
+                        'type'  => 'toggle',
+                        'label' => __('Product rows with clickable stars', 'ffl-funnels-addons'),
+                        'desc'  => __('Photo, name and five stars for each product. Off leaves only your text and the button.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'email_footer_text',
                         'type'  => 'textarea',
-                        'label' => __('Email body template', 'ffl-funnels-addons'),
-                        'desc'  => __('Placeholders: {customer_name}, {product_name}, {product_names_list}, {review_url}, {review_order_url}, {order_id}, {user_id}, {unsubscribe_url}. Per-product mode uses {review_url}; bundle mode uses {review_order_url} and {product_names_list}. If you do not place {unsubscribe_url} yourself, an unsubscribe line is appended to the end of every request email.', 'ffl-funnels-addons'),
+                        'label' => __('Footer', 'ffl-funnels-addons'),
+                        'desc'  => __('Small print above the unsubscribe link: your business name and postal address. {site_title}, {store_address} and {site_url} work. Empty uses WooCommerce’s email footer, else the store name and the address from WooCommerce → Settings → General.', 'ffl-funnels-addons'),
+                    ],
+                ],
+            ],
+            [
+                'title'  => __('Sender and tracking', 'ffl-funnels-addons'),
+                'fields' => [
+                    [
+                        'type' => 'html',
+                        'html' => '<p class="wb-field__desc">' . esc_html__('Request emails come from the sender name and address under WooCommerce → Settings → Emails.', 'ffl-funnels-addons') . '</p>',
+                    ],
+                    [
+                        'key'   => 'email_reply_to',
+                        'type'  => 'email',
+                        'label' => __('Reply-To address', 'ffl-funnels-addons'),
+                        'desc'  => __('Where customers’ replies to request emails go. Empty uses WooCommerce’s reply-to address, else the sender.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'email_bcc',
+                        'type'  => 'email',
+                        'label' => __('BCC copy to', 'ffl-funnels-addons'),
+                        'desc'  => __('Receive a copy of every request and reminder, for example while you check how they look.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'email_tracking',
+                        'type'  => 'toggle',
+                        'label' => __('Track opens and clicks', 'ffl-funnels-addons'),
+                        'desc'  => __('Records on the order when the HTML email is opened (a 1×1 image) and when the review page is opened from it, shown on the order screen and in the request log. Approximate: some mail apps block images, and company mail scanners open links on their own. Reviews sent through the link are always counted.', 'ffl-funnels-addons'),
+                    ],
+                ],
+            ],
+            [
+                'title'  => __('Preview and test', 'ffl-funnels-addons'),
+                'fields' => [
+                    ['type' => 'html', 'html' => self::test_email_html()],
+                ],
+            ],
+            [
+                'title'  => __('WhatsApp message', 'ffl-funnels-addons'),
+                'fields' => [
+                    [
+                        'key'   => 'whatsapp_template',
+                        'type'  => 'textarea',
+                        'label' => __('Message', 'ffl-funnels-addons'),
+                        'desc'  => __('Used by the WhatsApp button in the Review request box on the order screen: it opens a chat with the customer’s billing phone with this text filled in, and you press send. Placeholders: {customer_name}, {store_name}, {order_number}, {review_url}.', 'ffl-funnels-addons'),
                     ],
                 ],
             ],
@@ -480,6 +847,40 @@ class Product_Reviews_Admin_Fields
                 ],
             ],
         ];
+    }
+
+    /**
+     * Preview link and a test send. The test uses the saved settings, so
+     * the description asks to save first.
+     */
+    private static function test_email_html(): string
+    {
+        $preview = wp_nonce_url(
+            add_query_arg(['action' => 'ffla_review_email_preview'], admin_url('admin-post.php')),
+            'ffla_review_email_preview'
+        );
+        $reminder = wp_nonce_url(
+            add_query_arg(['action' => 'ffla_review_email_preview', 'kind' => 'reminder'], admin_url('admin-post.php')),
+            'ffla_review_email_preview'
+        );
+        $user = wp_get_current_user();
+
+        return '<div class="wb-field"><span class="wb-field__label">' . esc_html__('Preview', 'ffl-funnels-addons') . '</span><div class="wb-field__control">'
+            . '<div class="ffla-pr-inline-actions">'
+            . '<a class="wb-btn wb-btn--subtle" href="' . esc_url($preview) . '" target="_blank" rel="noopener">' . esc_html__('Preview request email', 'ffl-funnels-addons') . '</a>'
+            . '<a class="wb-btn wb-btn--subtle" href="' . esc_url($reminder) . '" target="_blank" rel="noopener">' . esc_html__('Preview reminder', 'ffl-funnels-addons') . '</a>'
+            . '</div>'
+            . '<p class="wb-field__desc">' . esc_html__('Shows the email with your newest order (or your newest products), as the saved settings make it.', 'ffl-funnels-addons') . '</p>'
+            . '</div></div>'
+            . '<div class="wb-field"><label class="wb-field__label" for="ffla-pr-test-to">' . esc_html__('Send a test', 'ffl-funnels-addons') . '</label><div class="wb-field__control">'
+            . '<div class="ffla-pr-inline-actions" data-ffla-pr-test data-nonce="' . esc_attr(wp_create_nonce('ffla_review_send_test')) . '">'
+            . '<input type="email" id="ffla-pr-test-to" class="wb-input" value="' . esc_attr($user instanceof \WP_User ? (string) $user->user_email : '') . '">'
+            . '<select class="wb-select" data-ffla-pr-test-kind aria-label="' . esc_attr__('Which email', 'ffl-funnels-addons') . '"><option value="request">' . esc_html__('Request', 'ffl-funnels-addons') . '</option><option value="reminder">' . esc_html__('Reminder', 'ffl-funnels-addons') . '</option></select>'
+            . '<button type="button" class="wb-btn wb-btn--subtle" data-ffla-pr-test-send>' . esc_html__('Send test', 'ffl-funnels-addons') . '</button>'
+            . '<span class="ffla-pr-result" data-ffla-pr-test-result aria-live="polite"></span>'
+            . '</div>'
+            . '<p class="wb-field__desc">' . esc_html__('Save your changes first: the test uses the saved settings. The subject starts with [Test]; nothing is recorded on any order.', 'ffl-funnels-addons') . '</p>'
+            . '</div></div>';
     }
 
     private static function turnstile_status_html(): string

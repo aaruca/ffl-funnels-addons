@@ -68,6 +68,15 @@ class Product_Reviews_Module extends FFLA_Module
         require_once $base . 'includes/class-product-reviews-ajax.php';
         Product_Reviews_Ajax::init();
 
+        require_once $base . 'includes/class-product-reviews-email-template.php';
+        require_once $base . 'includes/class-product-reviews-request-rules.php';
+
+        require_once $base . 'includes/class-product-reviews-consent.php';
+        Product_Reviews_Consent::init();
+
+        require_once $base . 'includes/class-product-reviews-tracking.php';
+        Product_Reviews_Tracking::init();
+
         require_once $base . 'includes/class-product-reviews-email.php';
         Product_Reviews_Email::init();
 
@@ -84,6 +93,11 @@ class Product_Reviews_Module extends FFLA_Module
             require_once $base . 'admin/class-product-reviews-admin.php';
             $this->admin = new Product_Reviews_Admin();
             $this->admin->init();
+
+            require_once $base . 'admin/class-product-reviews-order-tools.php';
+            (new Product_Reviews_Order_Tools())->init();
+
+            require_once $base . 'admin/class-product-reviews-requests-log.php';
         }
     }
 
@@ -106,7 +120,7 @@ class Product_Reviews_Module extends FFLA_Module
         // Settings and data stay. Queued request emails go: they are not sent
         // while the module is off, and switching it back on must not release
         // a backlog of stale requests at once.
-        foreach (['ffla_send_product_review_request', 'ffla_send_order_review_bundle'] as $hook) {
+        foreach (['ffla_send_product_review_request', 'ffla_send_order_review_bundle', 'ffla_send_order_review_reminder', 'ffla_send_manual_review_request'] as $hook) {
             wp_unschedule_hook($hook);
 
             if (function_exists('as_unschedule_all_actions')) {
@@ -120,14 +134,24 @@ class Product_Reviews_Module extends FFLA_Module
         return [
             [
                 'slug'  => 'ffla-product-reviews',
-                'title' => __('Product Reviews', 'ffl-funnels-addons'),
+                'title' => __('Settings', 'ffl-funnels-addons'),
                 'icon'  => '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+            ],
+            [
+                'slug'  => 'ffla-product-reviews-requests',
+                'title' => __('Review requests', 'ffl-funnels-addons'),
+                'icon'  => '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M4 7l8 6 8-6"/></svg>',
             ],
         ];
     }
 
     public function render_admin_page(string $page_slug): void
     {
+        if ('ffla-product-reviews-requests' === $page_slug && class_exists('Product_Reviews_Requests_Log')) {
+            Product_Reviews_Requests_Log::render();
+            return;
+        }
+
         if ($this->admin) {
             $this->admin->render_settings_content();
         }

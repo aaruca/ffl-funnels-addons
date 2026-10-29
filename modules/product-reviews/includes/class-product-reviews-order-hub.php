@@ -117,6 +117,10 @@ class Product_Reviews_Order_Hub
                 . '</p></div>';
         }
 
+        if (class_exists('\\Product_Reviews_Tracking')) {
+            \Product_Reviews_Tracking::record_click($order);
+        }
+
         $products = self::unique_products_from_order($order);
         if (empty($products)) {
             return '<div class="ffla-order-reviews ffla-order-reviews--error"><p>'
@@ -132,6 +136,17 @@ class Product_Reviews_Order_Hub
 
         $status = isset($_GET['ffla_review_status']) ? sanitize_text_field(wp_unslash($_GET['ffla_review_status'])) : '';
         $msg    = isset($_GET['ffla_review_message']) ? sanitize_text_field(wp_unslash($_GET['ffla_review_message'])) : '';
+
+        // A star clicked in the email: that rating is picked on that product's form.
+        $preset = [];
+        if (isset($_GET['ffla_rate']) && is_array($_GET['ffla_rate'])) {
+            foreach (wp_unslash($_GET['ffla_rate']) as $pid => $stars) {
+                $stars = absint($stars);
+                if ($stars >= 1 && $stars <= 5) {
+                    $preset[absint($pid)] = $stars;
+                }
+            }
+        }
 
         ob_start();
 
@@ -171,7 +186,7 @@ class Product_Reviews_Order_Hub
                 continue;
             }
 
-            self::render_single_form($product_id, $token, $show_criteria, $redirect_to);
+            self::render_single_form($product_id, $token, $show_criteria, $redirect_to, $preset[$product_id] ?? 0);
             echo '</section>';
         }
 
@@ -210,7 +225,7 @@ class Product_Reviews_Order_Hub
      * No nonce and no name or email fields: the signed token is the proof,
      * and the handler takes the reviewer's name and address from the order.
      */
-    private static function render_single_form(int $product_id, string $token, bool $show_criteria, string $redirect_to): void
+    private static function render_single_form(int $product_id, string $token, bool $show_criteria, string $redirect_to, int $preset_rating = 0): void
     {
         $uid = wp_unique_id('ffla-or-');
 
@@ -222,7 +237,7 @@ class Product_Reviews_Order_Hub
         echo '<input type="hidden" name="comment_parent" value="0">';
         echo '<input type="hidden" name="redirect_to" value="' . esc_url($redirect_to) . '">';
 
-        self::render_star_fieldset('rating', $uid . '-r', __('Overall rating', 'ffl-funnels-addons'), true);
+        self::render_star_fieldset('rating', $uid . '-r', __('Overall rating', 'ffl-funnels-addons'), true, $preset_rating);
 
         if ($show_criteria && \Product_Reviews_Criteria::is_enabled()) {
             foreach (\Product_Reviews_Criteria::get_criteria() as $index => $criterion) {
@@ -261,7 +276,7 @@ class Product_Reviews_Order_Hub
         echo '</form>';
     }
 
-    private static function render_star_fieldset(string $name, string $id_prefix, string $legend, bool $required): void
+    private static function render_star_fieldset(string $name, string $id_prefix, string $legend, bool $required, int $checked = 0): void
     {
         echo '<fieldset class="ffla-review-form__fieldset ffla-star-rating-fieldset">';
         echo '<legend class="ffla-review-form__legend">' . esc_html($legend) . '</legend>';
@@ -270,7 +285,8 @@ class Product_Reviews_Order_Hub
             $id = $id_prefix . '-s' . $i;
             $req = ($required && 1 === $i) ? ' required' : '';
             echo '<span class="ffla-star-rating-input__item">';
-            echo '<input class="ffla-star-rating-input__radio" type="radio" id="' . esc_attr($id) . '" name="' . esc_attr($name) . '" value="' . esc_attr((string) $i) . '"' . $req . '>';
+            $on  = $checked === $i ? ' checked' : '';
+            echo '<input class="ffla-star-rating-input__radio" type="radio" id="' . esc_attr($id) . '" name="' . esc_attr($name) . '" value="' . esc_attr((string) $i) . '"' . $req . $on . '>';
             echo '<label class="ffla-star-rating-input__label" for="' . esc_attr($id) . '">';
             echo '<span class="screen-reader-text">' . esc_html(sprintf(__('%d out of 5 stars', 'ffl-funnels-addons'), $i)) . '</span>';
             echo '<span class="ffla-star-rating-input__glyph" aria-hidden="true">&#9733;</span>';

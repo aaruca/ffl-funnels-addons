@@ -1006,15 +1006,56 @@ function wc_get_orders($args = [])
         }
         $out[] = $o;
     }
-    usort($out, function ($a, $b) {
-        return $b->created <=> $a->created;
-    });
-    if (!empty($args['limit']) && (int) $args['limit'] > 0) {
-        $out = array_slice($out, 0, (int) $args['limit']);
+    if (!empty($args['meta_query']) && is_array($args['meta_query'])) {
+        $out = array_values(array_filter($out, function ($o) use ($args) {
+            return stub_order_meta_matches($o, $args['meta_query']);
+        }));
     }
-    return ('ids' === ($args['return'] ?? '')) ? array_map(function ($o) {
+    usort($out, function ($a, $b) {
+        return [$b->created, $b->id] <=> [$a->created, $a->id];
+    });
+    $total = count($out);
+    $limit = (int) ($args['limit'] ?? -1);
+    if ($limit > 0) {
+        $page = max(1, (int) ($args['paged'] ?? 1));
+        $out  = array_slice($out, ($page - 1) * $limit, $limit);
+    }
+    $out = ('ids' === ($args['return'] ?? '')) ? array_map(function ($o) {
         return $o->id;
     }, $out) : $out;
+    if (!empty($args['paginate'])) {
+        return (object) ['orders' => $out, 'total' => $total, 'max_num_pages' => $limit > 0 ? (int) ceil($total / $limit) : 1];
+    }
+    return $out;
+}
+
+/**
+ * EXISTS / = clauses on order meta, with AND or OR.
+ *
+ * @param array<int|string, mixed> $query
+ */
+function stub_order_meta_matches(WC_Order $order, array $query): bool
+{
+    $relation = strtoupper((string) ($query['relation'] ?? 'AND'));
+    $results  = [];
+    foreach ($query as $k => $clause) {
+        if ('relation' === $k || !is_array($clause) || !isset($clause['key'])) {
+            continue;
+        }
+        $exists = array_key_exists($clause['key'], $order->meta) && '' !== $order->meta[$clause['key']];
+        $compare = strtoupper((string) ($clause['compare'] ?? '='));
+        if ('EXISTS' === $compare) {
+            $results[] = $exists;
+        } elseif ('NOT EXISTS' === $compare) {
+            $results[] = !$exists;
+        } else {
+            $results[] = $exists && (string) $order->meta[$clause['key']] === (string) ($clause['value'] ?? '');
+        }
+    }
+    if (empty($results)) {
+        return true;
+    }
+    return 'OR' === $relation ? in_array(true, $results, true) : !in_array(false, $results, true);
 }
 
 /**
@@ -1494,3 +1535,31 @@ function is_singular($type = '') { return false; }
 function get_queried_object_id() { return (int) ($GLOBALS['queried'] ?? 0); }
 function get_the_ID() { return (int) ($GLOBALS['queried'] ?? 0); }
 function is_checkout() { return !empty($GLOBALS['is_checkout']); }
+
+/* ── WooCommerce globals, meta boxes ───────────────────────────────────── */
+
+class Stub_WC_Countries
+{
+    public function get_country_calling_code($cc)
+    {
+        $codes = ['US' => '+1', 'CA' => '+1', 'MX' => '+52', 'GB' => '+44'];
+        return $codes[strtoupper((string) $cc)] ?? '';
+    }
+}
+class Stub_WC
+{
+    public $countries;
+    public $structured_data = null;
+    public function __construct() { $this->countries = new Stub_WC_Countries(); }
+}
+$GLOBALS['woocommerce'] = new Stub_WC();
+if (!function_exists('WC')) {
+    function WC() { return $GLOBALS['woocommerce']; }
+}
+
+$GLOBALS['meta_boxes'] = [];
+function add_meta_box($id, $title, $callback, $screen = null, $context = 'advanced', $priority = 'default')
+{
+    $GLOBALS['meta_boxes'][] = ['id' => $id, 'screen' => $screen, 'callback' => $callback];
+}
+function wc_get_page_screen_id($for) { return 'woocommerce_page_wc-orders'; }

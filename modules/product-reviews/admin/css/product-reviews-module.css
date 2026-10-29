@@ -69,3 +69,71 @@
 .ffla-pr-result.is-success {
   color: var(--wb-color-success-foreground, #067647);
 }
+
+.ffla-pr-tabs--small {
+  margin: 0;
+}
+
+.ffla-pr-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.ffla-pr-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--wb-color-neutral-stroke-1, #e4e7ec);
+  border-radius: var(--wb-radius-md, 8px);
+}
+
+.ffla-pr-stat__label {
+  font-size: var(--wb-font-size-xs, 11px);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--wb-color-neutral-foreground-3, #667085);
+}
+
+.ffla-pr-stat__value {
+  font-size: var(--wb-font-size-xl, 20px);
+  font-weight: var(--wb-font-weight-semibold, 600);
+}
+
+.ffla-pr-stat__rate {
+  font-size: var(--wb-font-size-xs, 11px);
+  color: var(--wb-color-neutral-foreground-3, #667085);
+}
+
+.ffla-pr-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--wb-color-neutral-background-3, #eff1f4);
+  font-size: var(--wb-font-size-xs, 11px);
+  font-weight: var(--wb-font-weight-semibold, 600);
+  white-space: nowrap;
+}
+
+.ffla-pr-status--reviewed {
+  background: var(--wb-color-success-background, #ecfdf3);
+  color: var(--wb-color-success-foreground, #067647);
+}
+
+.ffla-pr-status--clicked,
+.ffla-pr-status--opened,
+.ffla-pr-status--sent {
+  background: var(--wb-color-info-background, #ebf8ff);
+  color: var(--wb-color-info-foreground, #2c5282);
+}
+
+.ffla-pr-status--failed {
+  background: var(--wb-color-danger-background, #fed7d7);
+  color: var(--wb-color-danger-foreground, #742a2a);
+}
+
+.ffla-pr-status--skipped {
+  background: var(--wb-color-warning-background, #fefcbf);
+  color: var(--wb-color-warning-foreground, #744210);
+}

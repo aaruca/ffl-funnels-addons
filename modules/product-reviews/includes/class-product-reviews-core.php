@@ -164,6 +164,41 @@ class Product_Reviews_Core
             'order_review_show_criteria' => '0',
             'order_review_pretty_urls'  => '0',
             'order_review_rewrite_slug' => 'order-review',
+            'request_trigger_status'    => 'completed',
+            'request_delay_unit'        => 'days',
+            'request_country_delays'    => '',
+            'request_send_hour'         => '',
+            'request_send_days'         => [],
+            'review_link_days'          => '90',
+            'request_reminder'          => '0',
+            'request_reminder_days'     => '7',
+            'request_guests'            => '1',
+            'request_roles_mode'        => 'all',
+            'request_roles'             => [],
+            'request_categories_mode'   => 'all',
+            'request_categories'        => [],
+            'request_skip_free'         => '0',
+            'request_max_products'      => '0',
+            'request_excluded_emails'   => '',
+            'request_customer_window_days' => '0',
+            'request_use_account_email' => '0',
+            'request_consent'           => 'none',
+            'request_consent_text'      => '',
+            'email_format'              => 'html',
+            'email_reminder_subject'    => '',
+            'email_reminder_heading'    => '',
+            'email_logo_id'             => '0',
+            'email_brand_color'         => '',
+            'email_background_color'    => '',
+            'email_text_color'          => '',
+            'email_star_color'          => '',
+            'email_button_text'         => '',
+            'email_show_products'       => '1',
+            'email_footer_text'         => '',
+            'email_reply_to'            => '',
+            'email_bcc'                 => '',
+            'email_tracking'            => '1',
+            'whatsapp_template'         => __('Hi {customer_name}, thank you for your order from {store_name}! Would you take a minute to review it? {review_url}', 'ffl-funnels-addons'),
             'email_subject'             => __('How was your purchase?', 'ffl-funnels-addons'),
             'email_heading'             => __('Leave a review for your recent order', 'ffl-funnels-addons'),
             'email_template'            => __("Hi {customer_name},\n\nWe would love your feedback on {product_name}.\n\nLeave your review here:\n{review_url}\n\nThank you!", 'ffl-funnels-addons'),
@@ -697,9 +732,17 @@ class Product_Reviews_Core
         return wp_salt('ffla_product_reviews_order');
     }
 
+    /**
+     * How long a signed review link works (Review requests → Link valid for).
+     */
+    public static function review_link_days(): int
+    {
+        return max(1, min(365, absint(self::get_setting('review_link_days', '90')) ?: 90));
+    }
+
     public static function build_order_review_token(int $order_id, string $billing_email): string
     {
-        $exp = time() + (90 * DAY_IN_SECONDS);
+        $exp = time() + (self::review_link_days() * DAY_IN_SECONDS);
         $eh  = md5(strtolower(trim($billing_email)));
         $payload = $order_id . '|' . $exp . '|' . $eh;
         $sig     = hash_hmac('sha256', $payload, self::order_review_token_secret());
@@ -1197,6 +1240,13 @@ class Product_Reviews_Core
 
         $verified = self::review_proves_purchase($comment, $product_id) ? 1 : 0;
         update_comment_meta($comment_id, 'ffla_verified_purchase', $verified);
+
+        // A review through the order's signed link: the request worked.
+        if (self::$token_order instanceof \WC_Order && class_exists('Product_Reviews_Tracking')
+            && !in_array((string) $comment_approved, ['spam', 'trash'], true)) {
+            update_comment_meta($comment_id, 'ffla_review_order_id', (int) self::$token_order->get_id());
+            Product_Reviews_Tracking::record_review(self::$token_order);
+        }
 
         // WooCommerce writes its own "verified owner" flag on this same hook
         // from the typed address (the hole closed above), and its templates,

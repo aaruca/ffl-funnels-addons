@@ -11,7 +11,9 @@ Gives WooCommerce products a richer review form and list (star rating plus optio
 - **Filters and paging.** Star chips (and clickable summary bars), a *With photos* chip, a sort menu (most recent, most helpful, highest, lowest), a search box and *Show more reviews*, all without reloading the page.
 - **Store-wide lists.** A Bricks Reviews List can show one product, some product categories or the whole store, as a list, a grid or a slider. The **Store Rating Badge** shows the store's average, review count and share of verified buyers.
 - **Three places to show them.** Inside WooCommerce's own product **Reviews** tab, with five Bricks elements, or on the order review hub page.
-- **Review requests.** An email a set number of days after an order is marked Completed (one per order, or one per product) with a signed link to a hub page where the customer reviews every product in the order without logging in. Every request carries an unsubscribe link.
+- **Review requests.** An email a set delay (days or hours, per country if needed) after an order reaches the trigger status (Completed, or any status such as a custom *Delivered*), at a chosen hour and on chosen weekdays, with an optional second reminder. It links to a hub page where the customer reviews every product in the order without logging in. HTML by default (logo, product photos, five clickable stars per product, a button), or plain text. Every request carries an unsubscribe link.
+- **Who and what is asked.** Guests on or off, user roles, product categories, free products left out, a product limit for large orders, excluded addresses and domains, one request per customer within a window, optional consent checkbox at checkout (classic and block checkout), the account address instead of the billing address.
+- **On the order.** A *Review request* box: status (scheduled, sent, opened, clicked, reviewed, skipped and why), *Send review request now*, *Copy review link*, a QR code (download or print), WhatsApp click-to-chat with the link, and *Cancel*. A *Send review request* bulk action on the orders list, and a **Review requests** log with 30-day totals.
 - **Moderation.** Hold every new review, hold reviews with photos or videos automatically, hold or refuse reviews containing forbidden words, pin reviews. One review per customer per product.
 - **Reviewer emails.** "Your review is now published" and, for store replies, "Someone replied to your review", which WordPress does not send on its own.
 - **Spam protection.** Hidden honeypot field, Cloudflare Turnstile when the Simple Cloudflare Turnstile plugin is active, an hourly limit for guests, and a security token for signed-in users.
@@ -24,10 +26,10 @@ Gives WooCommerce products a richer review form and list (star rating plus optio
    - Standard WooCommerce product pages: turn on **Replace WooCommerce reviews tab with FFL form**.
    - A Bricks single-product template: add the **Reviews List** and **Review Form** elements (and **Reviews Rating Badge** if wanted), then turn on **Hide default Woo reviews tab** so shoppers do not get a second form.
 3. Create the hub page: a normal page containing the `[ffla_order_reviews]` shortcode or the Bricks **Order reviews hub** element. Publish it and select it under **Review requests → Hub page**. Request emails do not run without it.
-4. Check the **Review requests** and **Emails** tabs: delay, one email per order or per product, subject and text. Check that **WooCommerce → Settings → Emails** has the sender name and address the emails should come from.
+4. Check the **Review requests** tab (trigger status, delay, sending hour and days, who gets requests) and the **Emails** tab (format, subject, text, design). Use **Preview** and **Send a test** at the bottom of the Emails tab. Check that **WooCommerce → Settings → Emails** has the sender name and address the emails should come from; its header image, colours and footer are used until you set your own.
 5. Optional: turn on **Pretty URLs for review links** (Review requests tab). If a link from a test email gives a 404, visit **Settings → Permalinks** once.
 6. Optional: install and configure Simple Cloudflare Turnstile. There is nothing to set here; the **Cloudflare Turnstile** card shows when it is detected.
-7. Test: set the delay to 0, mark a test order with your own billing email as Completed, and look for the scheduled action (group `ffla-product-reviews`) under **WooCommerce → Status → Scheduled Actions**. Set the delay back afterwards.
+7. Test: open a test order with your own billing email and use **Send review request now** in its *Review request* box; or set the delay to 0, move the order to the trigger status and look for the scheduled action (group `ffla-product-reviews`) under **WooCommerce → Status → Scheduled Actions** and in **Product Reviews → Review requests**. Set the delay back afterwards.
 
 ## Settings
 
@@ -59,17 +61,40 @@ Gives WooCommerce products a richer review form and list (star rating plus optio
 | Enable secondary rating criteria | Shows the extra star groups on the form and the scores on reviews. | On |
 | Criteria | One per line, `slug\|Label`, up to 6. Malformed lines are dropped on save. | `quality\|Quality` and `value\|Value for money` |
 | **Review requests tab** | | |
-| Enable review requests | Schedules the review request email when an order is completed. Does nothing until a published **Hub page** is selected. Switching it off also stops emails already queued. | On |
-| Delay after completed order (days) | Days between Completed and the email. 0 sends at the next queue run. Orders placed more than this many days plus 30 before the email would go out are not emailed. | 7 |
-| Review request email | *One email per order (all products, single link)* or *One email per product (all sent the same day)*. | One email per order |
+| Enable review requests | Schedules request emails automatically. Does nothing until a published **Hub page** is selected. Switching it off also stops emails already queued. Requests sent by hand still work. | On |
+| Review request email | *One email per order (all products, single link)* or *One email per product (all sent the same day)*. Reminders and requests sent by hand are always one per order. | One email per order |
+| Start when the order is | The order status that starts the delay: any WooCommerce status, custom ones included (Pending, Cancelled, Refunded and Failed are not offered). | Completed |
+| Delay / Delay in | How long after that status the first email goes out, in *Days* or *Hours* (0–365). 0 sends at the next queue run. | 7 days |
+| Delay per country | `CA\|14` per line, in the same unit; shipping country, else billing country. | Empty |
+| Send at | Hold each email (and the reminder) until this hour, store time zone. | Any time |
+| Send on | Weekdays emails may go out on; none or all ticked means any day. | Any day |
+| Review link valid for (days) | Lifetime of the signed link in each email (1–365). | 90 |
+| Send a reminder / Days after the first email | One more email for the whole order when something is still not reviewed (1–90 days later, then held for the sending hour and days). | Off / 7 |
+| Guest orders | Requests for orders without an account. | On |
+| Customer roles / Roles | *Every role*, *Only the roles ticked*, *Every role except those ticked* (account orders). | Every role |
+| Product categories / Categories | *Every category*, *Only products in…*, *Every product except those in…* (subcategories count). Leaves products out of the email; the hub still shows the whole order. | Every category |
+| Leave out free products | Products whose lines cost nothing are not listed. | Off |
+| Most products per email | 0 lists all; otherwise the most expensive lines first. | 0 |
+| Never email | Addresses or `@domain` per line. Also blocks requests sent by hand. | Empty |
+| One request per customer every (days) | Skip an order when the billing email got a request for another order in this window. 0 is off. | 0 |
+| Send to the account email | Account orders go to the account's address. | Off |
+| Ask for consent / Checkbox text | *No checkbox*, or an unticked checkbox at checkout (classic checkout, and the Checkout block on WooCommerce 8.9+): only orders where it was ticked get a request, sent by hand too. | No checkbox |
 | Hub page | The page with the shortcode or Bricks element. Every request email (both modes) links here. Required: without a published page here, no request is scheduled or sent. | None |
 | Pretty URLs for review links | `/order-review/{token}/` instead of `?ffla_ro={token}`. Rewrite rules are refreshed when this or the slug changes. | Off |
 | Pretty URL slug | The part before the token. Empty falls back to `order-review`. | `order-review` |
 | Show extra rating criteria on hub forms | Adds the configured criteria (not only Quality and Value) to each hub form. Needs secondary criteria on. | Off |
 | **Emails tab** | | |
-| Email subject | Empty sends "How was your purchase?". | How was your purchase? |
-| Email heading | First line of the email. | Leave a review for your recent order |
-| Email body template | Plain text with placeholders (below); HTML tags are stripped on save. Empty, or the untouched default while *One email per order* is chosen, uses a built-in text for the chosen mode. | Hi {customer_name}, … {review_url} … Thank you! |
+| Format | *HTML* (logo, product rows with photos and five clickable stars, button) or *Plain text*. | HTML |
+| Email subject / Email heading | Placeholders work in both. Empty subject sends "How was your purchase?". | How was your purchase? / Leave a review for your recent order |
+| Email text | Editor; placeholders below. Left as installed (or empty) it uses a built-in text for each kind of email: HTML emails add the products and button after it, plain text emails list products and the link. If `{unsubscribe_url}` is not in it, an unsubscribe link is added. | Built-in |
+| Reminder subject / heading | Empty uses “A quick reminder: how was your order?” and the request heading. | Empty |
+| Logo, Button / Background / Text / Star colour, Button text | HTML design. Empty uses WooCommerce → Settings → Emails (header image, base, background and text colour); star colour gold; button “Leave a review”. Colours as hex. | Empty |
+| Product rows with clickable stars | Off leaves only the text and the button. | On |
+| Footer | Business name and postal address above the unsubscribe link; `{site_title}`, `{store_address}`, `{site_url}`. Empty uses WooCommerce's email footer, else the store name and WooCommerce's store address. | Empty |
+| Reply-To address / BCC copy to | For request and reminder emails only. | Empty |
+| Track opens and clicks | Open pixel in HTML emails and the hub visit, recorded on the order. Reviews through the link are always counted. | On |
+| Preview / Send a test | Preview the request or reminder in a new tab, or send it to an address, with the newest order (or newest products). Uses the saved settings; nothing is recorded on any order. | |
+| WhatsApp message | Text for the WhatsApp button on the order screen; `{customer_name}`, `{store_name}`, `{order_number}`, `{review_url}`. | Hi {customer_name}, thank you for your order… |
 | Email the reviewer when their review is approved | Sent once when a held review is approved. If `wp_mail()` fails, nothing is recorded and it is sent the next time the review is approved. | On |
 | Email the reviewer when someone replies | Sent once per approved store reply (written by someone who could moderate comments). Other replies are never emailed. A failed send is retried the next time the reply is approved. | On |
 | Re-subscribe an address | Not stored: enter an email and save to remove it from the unsubscribed list, when the customer asks to get review requests again. | Empty |
@@ -149,14 +174,22 @@ Google only accepts review markup for reviews shoppers can see on the page. WooC
 
 ### Review request emails
 
-- Scheduled when an order changes to **Completed**, if requests are enabled, a published hub page is selected, the billing email is valid and not unsubscribed, the order has not been scheduled before, the order was placed no more than the request delay plus 30 days before the email would go out (imports and old orders completed in bulk are skipped), and at least one product in it can still be reviewed: not refunded in full, reviews open, and not yet reviewed by the customer (from their account, or a verified review under the billing email). Orders completed before the module was switched on are not picked up.
+- Scheduled when an order reaches the trigger status (**Start when the order is**, Completed by default), if requests are enabled, a published hub page is selected, the email address is valid and not unsubscribed, the order has not been scheduled before, the order was placed no more than the request delay plus 30 days before the email would go out (imports and old orders changed in bulk are skipped), the **Who gets requests** rules and the consent setting allow it, and at least one product in it can still be reviewed: not refunded in full, reviews open, not yet reviewed by the customer (from their account, or a verified review under the billing email), and not left out by the category or free-product rules. Orders that reached the status before the module was switched on are not picked up.
+- Why an order got no request is stored on it (*No consent at checkout*, *Guest order*, *Customer role not included*, *Excluded address*, *Customer had a request recently*, *Unsubscribed*, *Nothing to review*, *Cancelled by the store*) and shown in the order box and the log.
+- The send time is the trigger time plus the delay (the country's own delay when listed), then moved forward to the **Send at** hour and an allowed **Send on** weekday, in the store's time zone.
 - Queued through Action Scheduler (group `ffla-product-reviews`) when available, otherwise WP-Cron.
-- **One email per order** (the default): one email listing the products still to review. **One email per product**: one email per such product, all on the same day. Both link to the hub page.
-- Checked again when the email is due: requests still enabled and the hub page still published, the order still Completed (or moved to a store-specific status after completion, such as a custom *Delivered*), still within the age limit, the address not unsubscribed and the email not already sent. Products reviewed, refunded in full or closed to reviews in the meantime are left out; if none remain, nothing is sent.
-- An order that is back in Processing, On hold or another status from before completion when its email is due is not emailed and is released: when it is completed again, the request is scheduled again. An order that is refunded or cancelled drops its queued emails; if it is completed again later it is scheduled again. An email already sent is never repeated.
-- Sent with `wp_mail()` as plain text to the billing email: heading, blank line, body. If the body has no `{unsubscribe_url}`, an unsubscribe line is added at the end. From is WooCommerce's sender name and address (**WooCommerce → Settings → Emails**); Reply-To is WooCommerce's reply-to address when that setting exists and is on, otherwise the same sender. The approval and reply notices use the same sender.
-- An email only counts as sent when `wp_mail()` succeeds. A failure is logged under **WooCommerce → Status → Logs** (source `ffla-product-reviews`) and tried again an hour later, three attempts in all. Approval and reply notices are logged the same way, and are sent the next time the review or reply is approved.
-- Switching the module off removes its queued emails. Orders that were already scheduled are not scheduled again when it is switched back on.
+- **One email per order** (the default): one email listing the products still to review (at most **Most products per email**, most expensive first). **One email per product**: one email per such product, all on the same day. Both link to the hub page.
+- Checked again when the email is due: requests still enabled and the hub page still published, the order still at the trigger status (or moved to a store-specific status after it, such as a custom *Delivered*), still within the age limit, the address not unsubscribed or excluded, consent still given and the email not already sent. Products reviewed, refunded in full, closed to reviews or left out by the rules in the meantime are left out; if none remain, nothing is sent.
+- An order that is back at a core status from before the trigger (Pending, Processing, On hold) when its email is due is not emailed and is released: when it reaches the trigger again, the request is scheduled again. With Processing as the trigger, Processing itself qualifies. An order that is refunded or cancelled drops its queued emails (reminder included); if it reaches the trigger again later it is scheduled again. An email already sent is never repeated.
+- **Second reminder** (off by default): queued when the first email (or the first per-product email) is sent, for **Days after the first email** later, held for the sending hour and days. One email for the whole order, listing what is still not reviewed; nothing when everything is reviewed. Only one per order.
+- Sent with `wp_mail()` to the billing email (or the account email, with **Send to the account email**). HTML emails are one 600px table that works in Gmail, Outlook and Apple Mail: logo or store name, heading, the store's text, a row per product with its photo and five star links, a button, and a footer with the store address and the unsubscribe link. A star link opens the hub with that rating already picked on that product's form, scrolled to it. Plain text emails are the heading, a blank line and the text, with an unsubscribe line added at the end when the text has no `{unsubscribe_url}`. From is WooCommerce's sender name and address (**WooCommerce → Settings → Emails**); Reply-To is the module's **Reply-To address**, else WooCommerce's reply-to address when that setting is on, else the sender. **BCC copy to** gets a copy. The approval and reply notices are plain text from the same sender.
+- An email only counts as sent when `wp_mail()` succeeds. A failure is logged under **WooCommerce → Status → Logs** (source `ffla-product-reviews`) and tried again an hour later, three attempts in all (the reminder too). Approval and reply notices are logged the same way, and are sent the next time the review or reply is approved.
+- Switching the module off removes its queued emails (requests, reminders and requests queued by hand). Orders that were already scheduled are not scheduled again when it is switched back on.
+- **Tracking** (on by default): an HTML email carries a 1×1 image whose signed URL records the first open and an open count on the order; opening the hub with the order's valid link records the first click and a count (once per page load). Both are approximate: mail apps that block images miss opens, and company mail scanners that fetch every image and link add them. Reviews sent through the link are always counted on the order (`_ffla_review_reviewed`) and the review remembers its order (`ffla_review_order_id`).
+
+**Requests sent by hand.** **Send review request now** in the order's *Review request* box, or the **Send review request** bulk action on the orders list (queued, out within minutes). One email for every product still to review, sent even while automatic requests are off and whatever the order's status, except refunded, cancelled and failed orders. The customer's own choices still count: unsubscribed, excluded addresses and, with consent on, an unticked box. Any automatic email still queued for the order is dropped and the order is not scheduled again, so the customer does not get the same request twice; with reminders on, the reminder follows. An order note records it. **Cancel the scheduled email** drops a queued request (the order is not scheduled again; Send now still works).
+
+**Copy review link, QR code and WhatsApp.** The box makes a fresh signed link (valid for **Review link valid for** days) for this order: *Copy review link*, a QR code drawn in the browser (no outside service; *Download* as SVG or *Print*), and *WhatsApp*, which opens `wa.me` with the billing phone (the billing country's calling code is added when the number has none) and the **WhatsApp message** filled in, for you to press send. Share these only with that customer.
 
 | Placeholder | Replaced with |
 |---|---|
@@ -164,15 +197,22 @@ Google only accepts review markup for reviews shoppers can see on the page. WooC
 | `{product_name}` | The product name; in per-order mode the comma-separated list |
 | `{product_names_list}` | The comma-separated list (per-order) or the product name |
 | `{review_url}`, `{review_order_url}` | The signed hub link (both give the same link) |
-| `{order_id}` | The internal order ID |
+| `{order_id}`, `{order_number}` | The internal order ID, and the order number customers see |
 | `{user_id}` | The customer's user ID (0 for guests) |
+| `{store_name}` | The site title |
+| `{review_link_days}` | How many days the link works |
 | `{unsubscribe_url}` | The unsubscribe link |
 
-The default body is written for one product ("We would love your feedback on {product_name}"). While it is left untouched, *One email per order* uses a built-in text that lists the products instead. Once edited, the text is used as written in both modes; in per-order mode `{product_name}` becomes the list.
+The installed text is written for one product ("We would love your feedback on {product_name}"). While it is left untouched (or emptied), each kind of email uses a built-in text: per order or per product, request or reminder, HTML (without the bare link, which the button carries) or plain text. Once edited, the text is used as written for requests and reminders.
+
+### Consent at checkout
+
+With **Ask for consent** on *Unticked checkbox*, the classic checkout shows the box above *Place order* (saved as `_ffla_review_consent` `yes` / `no`) and the Checkout block gets an order field through WooCommerce's additional checkout fields (WooCommerce 8.9+; stored as `_wc_other/ffla/review-consent`). Only orders where it was ticked get requests, including requests sent by hand. Orders placed before the setting was switched on have no answer and get none.
 
 ### The order review hub
 
-- The signed link is valid for 90 days from when the email was sent and is tied to the order and its billing email. Changing the order's billing email invalidates it, and so does refunding, cancelling or failing the order.
+- The signed link is valid for **Review link valid for** days (90 by default) from when it was made and is tied to the order and its billing email. Changing the order's billing email invalidates it, and so does refunding, cancelling or failing the order.
+- A star clicked in an HTML email arrives as `ffla_rate[<product ID>]=<1–5>`: that rating is picked on that product's form.
 - The page shows "Thank you for order #…", then one form per product in the order that can still be reviewed (products refunded in full and products closed to reviews are left out). Products the customer already reviewed show "You already submitted a review for this product."
 - No login and no security token are needed: the signed link is the proof. Name and email come from the order on the server (the forms carry neither), the review is marked *Verified buyer*, and Turnstile is not shown.
 - A page opened with a valid signed link is sent with no-cache headers and `DONOTCACHEPAGE`, so page caches never store it, and with `Referrer-Policy: same-origin`, so the link is not passed to other sites.
@@ -194,6 +234,10 @@ The link in a request email opens a confirmation page; the address is only added
 | Bricks dynamic tags, group **FFL Funnels - Product Reviews** | `{ffla_review_count}` (WooCommerce's review count), `{ffla_review_average}` (one decimal, empty with no ratings), `{ffla_review_recommend_percent}` (share of 4 and 5 star ratings, empty with no ratings); store-wide `{ffla_store_review_average}`, `{ffla_store_review_count}`, `{ffla_store_review_verified}` (percent of verified buyers). |
 | Product page structured data | The `review` list matches the FFL list (see *Structured data*). |
 | Hub page | Forms for every product in the order. |
+| **WooCommerce → Orders** → an order | *Review request* box (side): status, Send now, Cancel, Copy review link, QR code, WhatsApp. |
+| **WooCommerce → Orders** list | Bulk action *Send review request* (while a hub page is ready). |
+| **FFL Funnels → Product Reviews → Review requests** | 30-day totals (sent, opened, review page opened, reviewed, reviews written, scheduled, skipped) and every order with request activity, filterable by status. |
+| Checkout | The consent checkbox, when switched on. |
 | Customer inbox | Review request, approval and reply emails. |
 
 | Bricks element | Shows | Main controls |
@@ -220,8 +264,9 @@ The CSS and JavaScript load only where review output is printed: each Bricks ele
 | Rating, criteria scores, votes, verified flag (the module's and WooCommerce's `verified`), media IDs, notification flags | comment meta | Kept |
 | Pinned flag | `comment_karma` = 1 on the comment | Kept |
 | Review photos and videos | Media Library | Kept |
-| Request tracking (scheduled, sent, failed attempts) | order meta | Kept |
-| Queued request emails | Action Scheduler / WP-Cron | Removed (also when the module is switched off) |
+| Request tracking (scheduled and when, sent, reminder, sent by hand, skip reason, failed attempts, opens, clicks, reviews through the link) | order meta | Kept |
+| Checkout consent | order meta `_ffla_review_consent` (classic) or `_wc_other/ffla/review-consent` (block) | Kept |
+| Queued request, reminder and hand-sent emails | Action Scheduler / WP-Cron | Removed (also when the module is switched off) |
 | Rating summary cache from versions before 1.55.10 (no longer written) | transients `ffla_rev_dist_<product ID>` | Deleted |
 | Store-wide and category numbers (star counts, verified share) | transients `ffla_rev_scope_*`, one hour; option `ffla_rev_cache_version`, bumped when a review changes | Deleted |
 | Vote limits, guest review limit | transients (`ffla_helpful_<hash>`, `ffla_helpful_daily_<review ID>_<date>`, guest limit per IP) | Expire on their own (12 hours / 1 day / 1 hour) |
@@ -230,7 +275,9 @@ Uninstall cleanup runs whenever the settings option exists, even if the module w
 
 ## Troubleshooting
 
-- **No request emails.** Check *Enable review requests* and that a published **Hub page** is selected (wp-admin warns when it is not); that the order reached Completed while the module was on; that it was placed no more than the delay plus 30 days before the email was due; the billing email; whether the address unsubscribed; whether every product in the order was already reviewed, refunded in full or closed to reviews; the action in **WooCommerce → Status → Scheduled Actions** (group `ffla-product-reviews`); and the `ffla-product-reviews` log under **WooCommerce → Status → Logs**, where failed sends are recorded.
+- **No request emails.** Look at the order's *Review request* box or **Review requests** log first: a skipped order says why (no consent, guest, role, excluded address, recent request, unsubscribed, nothing to review). Then check *Enable review requests* and that a published **Hub page** is selected (wp-admin warns when it is not); that the order reached the trigger status (**Start when the order is**) while the module was on; the **Send at** hour and **Send on** days; that it was placed no more than the delay plus 30 days before the email was due; the billing email; whether the address unsubscribed; whether every product in the order was already reviewed, refunded in full or closed to reviews; the action in **WooCommerce → Status → Scheduled Actions** (group `ffla-product-reviews`); and the `ffla-product-reviews` log under **WooCommerce → Status → Logs**, where failed sends are recorded.
+- **The email went out but shows no photos or stars.** The mail app blocks images or shows plain text; the button and link still work. Check **Format** and *Product rows with clickable stars*.
+- **Opens or clicks look too high.** Company mail scanners open links and images on delivery. Reviews through the link are the reliable number.
 - **The link shows "missing a review key".** The hub page does not contain the shortcode or element.
 - **Pretty link gives a 404.** Visit **Settings → Permalinks** once, and make sure the hub page is published.
 - **"This review link is invalid or has expired."** The link is older than 90 days, the order's billing email changed, the order was refunded, cancelled or failed, or the link was cut off or altered on the way.
@@ -263,13 +310,14 @@ Uninstall cleanup runs whenever the settings option exists, even if the module w
 | `ffla_helpful_daily_cap` | `int` (200) | Votes per review per calendar day. |
 | `ffla_product_reviews_guest_hourly_limit` | `int` (5) | New guest reviews per IP address per hour through the FFL form. 0 turns the limit off. |
 | `ffla_product_reviews_request_max_order_age_days` | `int` (delay + 30), `WC_Order $order` | Oldest order, in days between order date and send time, that still gets a request email. 0 turns the limit off. |
-| `ffla_product_reviews_request_status_allowed` | `bool`, `WC_Order $order` | Whether the order's status allows its request email when it is due. Default: Completed, or a status outside WooCommerce's own list reached after completion. |
+| `ffla_product_reviews_request_status_allowed` | `bool`, `WC_Order $order` | Whether the order's status allows its request email when it is due. Default: the trigger status, or a status that is not a core pre-fulfilment status reached after it. |
 | `ffla_product_reviews_client_ip` | `string $ip` | Visitor address used to throttle votes. |
+| `ffla_product_reviews_whatsapp_phone` | `string $digits`, `WC_Order $order` | The number the WhatsApp button opens (digits with country code). |
 | `ffla_product_reviews_cloudflare_ranges` | `string[]` (Cloudflare's published IPv4/IPv6 ranges) | Proxy addresses whose `CF-Connecting-IP` header is trusted. |
 | `ffla_review_approved_email_subject`, `ffla_review_approved_email_body` | `string`, `WP_Comment $review` | Approval email. |
 | `ffla_review_reply_email_subject`, `ffla_review_reply_email_body` | `string`, `WP_Comment $reply`, `WP_Comment $review` | Reply email. |
 
-**Scheduled actions** (Action Scheduler group `ffla-product-reviews`, or single WP-Cron events): `ffla_send_product_review_request` (`$order_id`, `$product_id`, `$user_id`) and `ffla_send_order_review_bundle` (`$order_id`).
+**Scheduled actions** (Action Scheduler group `ffla-product-reviews`, or single WP-Cron events): `ffla_send_product_review_request` (`$order_id`, `$product_id`, `$user_id`), `ffla_send_order_review_bundle` (`$order_id`), `ffla_send_order_review_reminder` (`$order_id`) and `ffla_send_manual_review_request` (`$order_id`, queued by the bulk action).
 
 **Endpoints**
 
@@ -279,6 +327,9 @@ Uninstall cleanup runs whenever the settings option exists, even if the module w
 | `admin-ajax.php`, action `ffla_load_reviews` (POST, guests too, no nonce) | `products[]`, `categories[]`, `rating` (1–5), `minRating`, `withMedia` (`1`), `search` (100 characters at most), `orderBy` (`recent` / `helpful` / `highest` / `lowest`), `page`, `perPage` (≤ 50), `showProduct` (`1`). Returns `html` (the cards), `total`, `count` (shown so far), `hasMore`, `status`. Only approved top-level reviews of published products. |
 | `admin-ajax.php`, action `ffla_vote_review_helpful` (POST, guests too) | `nonce` (`ffla_product_reviews_nonce`; checked for signed-in users only), `comment_id`, `vote` (`yes`/`no`). Returns `count`, `countNo`, `throttled`, `message`. A signed-in user's invalid or expired nonce gets HTTP 403 with `code` `invalid_nonce`, a fresh `nonce` and a `message`. |
 | `admin-post.php`, action `ffla_review_unsubscribe` (GET `t`), then `ffla_review_unsubscribe_confirm` (POST `t`) | Unsubscribe confirmation and opt-out. Tokens do not expire. |
+| `admin-post.php`, action `ffla_review_open` (GET `o`, `s`, guests too) | Open pixel: records the open when the signature matches; always answers with a transparent GIF. |
+| `admin-post.php`, actions `ffla_review_send_now` and `ffla_review_cancel` (GET `order_id`, nonce) | Order box; need `manage_woocommerce` or `edit_shop_orders`. |
+| `admin-ajax.php`, action `ffla_review_send_test` (POST `to`, `kind`, nonce) and `admin-post.php`, action `ffla_review_email_preview` (GET `kind`, nonce) | Test email and preview; need `manage_woocommerce`. |
 | `admin-post.php`, action `ffla_toggle_review_pin` | `comment_id`, `pin` (`1`/`0`), nonce; needs `moderate_comments`. |
 | `admin-post.php`, action `product_reviews_save_settings` | Settings form, one tab per post (`tab` field); only that tab's keys are written. Needs `manage_woocommerce`. Fires `ffla_product_reviews_settings_saved` (`$tab`, `$new`, `$old`). |
 
@@ -287,7 +338,8 @@ Uninstall cleanup runs whenever the settings option exists, even if the module w
 - Shortcode `[ffla_order_reviews]` (no attributes). The token arrives as `?ffla_ro=` or through the rewrite `/<slug>/<token>/` (query var `ffla_order_review_token`).
 - Bricks element names: `ffla-reviews-rating-badge`, `ffla-reviews-list`, `ffla-review-form`, `ffla-order-review-hub`.
 - Comment meta: `rating`, `ffla_review_quality`, `ffla_review_value`, `ffla_review_criteria_<slug>`, `ffla_helpful_yes`, `ffla_helpful_no`, `ffla_verified_purchase`, `ffla_review_media_ids` (array of attachment IDs), `ffla_is_store_reply`, `_ffla_approved_notified`, `_ffla_reply_notified`. WooCommerce's `verified` is overwritten with the same value as `ffla_verified_purchase` for every product comment posted while the module is on.
-- Order meta: `_ffla_review_request_scheduled`, `_ffla_review_bundle_sent`, `_ffla_review_sent_<product ID>`, `_ffla_review_bundle_attempts`, `_ffla_review_attempts_<product ID>` (failed sends).
+- Order meta: `_ffla_review_request_scheduled`, `_ffla_review_scheduled_for`, `_ffla_review_bundle_sent`, `_ffla_review_sent_<product ID>`, `_ffla_review_last_sent`, `_ffla_review_reminder_sent`, `_ffla_review_manual_sent`, `_ffla_review_trigger_reached`, `_ffla_review_skipped`, `_ffla_review_bundle_attempts`, `_ffla_review_attempts_<product ID>`, `_ffla_review_reminder_attempts` (failed sends), `_ffla_review_opened`, `_ffla_review_open_count`, `_ffla_review_clicked`, `_ffla_review_click_count`, `_ffla_review_reviewed`, `_ffla_review_first_review`.
+- `Product_Reviews_Email::send_now( $order_id )` sends a request by hand and returns `sent` and `message`; `request_status( $order )` the status shown in the box and the log; `first_send_time( $order )` when the first email would go out.
 - `Product_Reviews_Core::hub_page_ready()` and `requests_ready()` say whether request emails can run; `reviewable_product_ids( $order )` lists the order's products that can still be reviewed.
 - `Product_Reviews_Core::get_rating_distribution( $product_id, $product = null )` returns `counts` (per star), `total` (number of ratings), `average` and `review_count`, read from WooCommerce's stored product aggregates. Pass the `WC_Product` when already loaded.
 - `Product_Reviews_Core::is_verified_purchase( $comment_id )`: the module's flag when the review has one, otherwise WooCommerce's `verified`.

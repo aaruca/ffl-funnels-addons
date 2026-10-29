@@ -122,3 +122,5 @@ jobs:
         run: php tests/smoke/product-reviews-admin-smoke.php
       - name: Check review lists, filters, paging, layouts and the store badge
         run: php tests/smoke/product-reviews-list-smoke.php
+      - name: Check request timing, rules, consent, HTML email, tracking and order tools
+        run: php tests/smoke/product-reviews-requests-smoke.php

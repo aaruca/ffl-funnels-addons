@@ -116,7 +116,8 @@ $GLOBALS['options'] = [
     'woocommerce_review_rating_verification_required' => 'no',
     'woocommerce_email_from_address'                   => 'shop@store.test',
     'woocommerce_email_from_name'                      => 'Gun &amp; Gear, LLC',
-    'ffla_product_reviews_settings'                    => ['order_review_page_id' => '0'],
+    // Plain text: the checks below read the email body as text.
+    'ffla_product_reviews_settings'                    => ['order_review_page_id' => '0', 'email_format' => 'plain'],
 ];
 $GLOBALS['transients'] = [];
 $GLOBALS['query_vars'] = [];
@@ -137,6 +138,7 @@ function absint($v) { return abs((int) $v); }
 function sanitize_text_field($s) { return trim(strip_tags((string) $s)); }
 function sanitize_email($s) { return trim((string) $s); }
 function sanitize_title($s) { return strtolower(trim(preg_replace('/[^a-z0-9]+/i', '-', (string) $s), '-')); }
+function sanitize_key($s) { return preg_replace('/[^a-z0-9_\-]/', '', strtolower((string) $s)); }
 function wp_unslash($s) { return $s; }
 function wp_parse_args($args, $defaults) { return array_merge($defaults, (array) $args); }
 function is_email($email) { return (bool) filter_var($email, FILTER_VALIDATE_EMAIL); }
@@ -569,6 +571,10 @@ require $module_dir . 'includes/class-product-reviews-order-hub.php';
 require $module_dir . 'includes/class-product-reviews-core.php';
 require $module_dir . 'includes/class-product-reviews-image-privacy.php';
 require $module_dir . 'includes/class-product-reviews-notifications.php';
+require $module_dir . 'includes/class-product-reviews-email-template.php';
+require $module_dir . 'includes/class-product-reviews-request-rules.php';
+require $module_dir . 'includes/class-product-reviews-consent.php';
+require $module_dir . 'includes/class-product-reviews-tracking.php';
 require $module_dir . 'includes/class-product-reviews-email.php';
 require $module_dir . 'integrations/class-product-reviews-turnstile.php';
 require $module_dir . 'class-product-reviews-module.php';
