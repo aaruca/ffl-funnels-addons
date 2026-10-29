@@ -2,6 +2,9 @@
 /**
  * Product Reviews Admin.
  *
+ * Settings live on one page split into tabs (Product_Reviews_Admin_Fields).
+ * Each tab is its own form and saves only its own keys.
+ *
  * @package FFL_Funnels_Addons
  */
 
@@ -9,12 +12,17 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+require_once __DIR__ . '/class-product-reviews-admin-fields.php';
+
 class Product_Reviews_Admin
 {
+    const PAGE = 'ffla-product-reviews';
+
     public function init(): void
     {
         add_action('admin_post_product_reviews_save_settings', [$this, 'handle_settings_save']);
         add_action('admin_notices', [$this, 'render_missing_hub_notice']);
+        add_action('admin_enqueue_scripts', [$this, 'enqueue_media_library']);
     }
 
     private static function requests_blocked_by_hub(): bool
@@ -25,6 +33,37 @@ class Product_Reviews_Admin
     private static function missing_hub_message(): string
     {
         return __('Review request emails are switched on, but no published Hub page is selected, so none are being scheduled or sent. Select the page that holds the [ffla_order_reviews] shortcode or the Bricks “Order reviews hub” element under Order review hub, or switch requests off.', 'ffl-funnels-addons');
+    }
+
+    public static function settings_url(string $tab = ''): string
+    {
+        $args = ['page' => self::PAGE];
+        if ($tab !== '') {
+            $args['tab'] = $tab;
+        }
+
+        return add_query_arg($args, admin_url('admin.php'));
+    }
+
+    private static function current_tab(): string
+    {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $tab  = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : '';
+        $tabs = Product_Reviews_Admin_Fields::tabs();
+
+        return isset($tabs[$tab]) ? $tab : (string) array_key_first($tabs);
+    }
+
+    /**
+     * Media pickers (email logo) need the media frame on the settings page.
+     */
+    public function enqueue_media_library(): void
+    {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $page = isset($_GET['page']) ? sanitize_key(wp_unslash($_GET['page'])) : '';
+        if (self::PAGE === $page && function_exists('wp_enqueue_media')) {
+            wp_enqueue_media();
+        }
     }
 
     /**
@@ -38,20 +77,20 @@ class Product_Reviews_Admin
         }
 
         $screen = function_exists('get_current_screen') ? get_current_screen() : null;
-        if ($screen && false !== strpos((string) $screen->id, 'ffla-product-reviews')) {
+        if ($screen && false !== strpos((string) $screen->id, self::PAGE)) {
             return;
         }
 
-        $url = add_query_arg(['page' => 'ffla-product-reviews'], admin_url('admin.php'));
-
         echo '<div class="notice notice-warning"><p><strong>' . esc_html__('Product Reviews:', 'ffl-funnels-addons') . '</strong> '
             . esc_html(self::missing_hub_message())
-            . ' <a href="' . esc_url($url) . '">' . esc_html__('Open Product Reviews settings', 'ffl-funnels-addons') . '</a></p></div>';
+            . ' <a href="' . esc_url(self::settings_url('requests')) . '">' . esc_html__('Open Product Reviews settings', 'ffl-funnels-addons') . '</a></p></div>';
     }
 
     public function render_settings_content(): void
     {
         $settings = Product_Reviews_Core::get_settings();
+        $tab      = self::current_tab();
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $saved    = isset($_GET['settings-updated']) && '1' === sanitize_text_field(wp_unslash($_GET['settings-updated']));
 
         if ($saved) {
@@ -62,312 +101,32 @@ class Product_Reviews_Admin
             FFLA_Admin::render_notice('warning', esc_html(self::missing_hub_message()));
         }
 
+        echo '<nav class="ffla-pr-tabs" aria-label="' . esc_attr__('Product Reviews settings', 'ffl-funnels-addons') . '">';
+        foreach (Product_Reviews_Admin_Fields::tabs() as $slug => $label) {
+            $current = $slug === $tab;
+            echo '<a class="ffla-pr-tabs__tab' . ($current ? ' is-current' : '') . '" href="' . esc_url(self::settings_url($slug)) . '"'
+                . ($current ? ' aria-current="page"' : '') . '>' . esc_html($label) . '</a>';
+        }
+        echo '</nav>';
+
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
         echo '<input type="hidden" name="action" value="product_reviews_save_settings">';
+        echo '<input type="hidden" name="tab" value="' . esc_attr($tab) . '">';
         wp_nonce_field('product_reviews_save_settings_nonce', '_product_reviews_nonce');
 
-        echo '<div class="wb-card">';
-        echo '<div class="wb-card__header"><h3>' . esc_html__('Review Collection', 'ffl-funnels-addons') . '</h3></div>';
-        echo '<div class="wb-card__body">';
-
-        FFLA_Admin::render_toggle_field(
-            __('Enable review requests', 'ffl-funnels-addons'),
-            'enable_requests',
-            $settings['enable_requests'] ?? '1',
-            __('Send post-purchase emails asking customers to review purchased products. Nothing is scheduled or sent until a published Hub page is selected under Order review hub.', 'ffl-funnels-addons')
-        );
-
-        FFLA_Admin::render_text_field(
-            __('Delay after completed order (days)', 'ffl-funnels-addons'),
-            'request_delay_days',
-            $settings['request_delay_days'] ?? '7',
-            __('How many days to wait before sending a review request email. Orders placed more than this many days plus 30 before the email would go out (imports, old orders completed in bulk) are not emailed.', 'ffl-funnels-addons')
-        );
-
-        echo '<div class="wb-field">';
-        echo '<label class="wb-field__label" for="request_email_mode">' . esc_html__('Review request email', 'ffl-funnels-addons') . '</label>';
-        echo '<div class="wb-field__control">';
-        $mode = $settings['request_email_mode'] ?? 'bundle';
-        echo '<select class="wb-select" name="request_email_mode" id="request_email_mode">';
-        echo '<option value="bundle"' . selected($mode, 'bundle', false) . '>' . esc_html__('One email per order (all products, single link)', 'ffl-funnels-addons') . '</option>';
-        echo '<option value="per_product"' . selected($mode, 'per_product', false) . '>' . esc_html__('One email per product (all sent the same day)', 'ffl-funnels-addons') . '</option>';
-        echo '</select>';
-        echo '<p class="wb-field__desc">' . esc_html__('Both modes send a signed link that opens the order review hub (Hub page below). One email per order lists every product; with the default template it uses {review_order_url} and {product_names_list} automatically. One email per product sends a separate email for each product in the order, all on the same day.', 'ffl-funnels-addons') . '</p>';
-        echo '</div></div>';
-
-        FFLA_Admin::render_toggle_field(
-            __('Enable helpful votes', 'ffl-funnels-addons'),
-            'enable_helpful_votes',
-            $settings['enable_helpful_votes'] ?? '1',
-            __('Allow customers to mark a review as helpful. Each visitor (by IP address) can vote on a review once every 12 hours.', 'ffl-funnels-addons')
-        );
-
-        FFLA_Admin::render_toggle_field(
-            __('Also allow “Not helpful” votes', 'ffl-funnels-addons'),
-            'enable_not_helpful_votes',
-            $settings['enable_not_helpful_votes'] ?? '0',
-            __('Adds a downvote button next to “Helpful”. A visitor’s vote on a review counts in one direction only, under the same 12-hour limit. Off by default: a negative button invites brigading, and the sort order already accounts for net score.', 'ffl-funnels-addons')
-        );
-
-        FFLA_Admin::render_toggle_field(
-            __('Replace WooCommerce reviews tab with FFL form', 'ffl-funnels-addons'),
-            'replace_default_reviews_tab',
-            $settings['replace_default_reviews_tab'] ?? '0',
-            __('Show the FFL reviews list and review form inside the standard “Reviews” product tab (no Bricks block needed). “Hide default tab” is ignored while this is on. Use filters ffla_product_reviews_wc_tab_list_settings and ffla_product_reviews_wc_tab_form_settings to customize.', 'ffl-funnels-addons')
-        );
-
-        FFLA_Admin::render_toggle_field(
-            __('Hide default Woo reviews tab', 'ffl-funnels-addons'),
-            'hide_default_reviews_tab',
-            $settings['hide_default_reviews_tab'] ?? '0',
-            __('Turn on when you use only the Bricks Review Form / list / badge so shoppers do not see WooCommerce’s second, built-in reviews tab. Ignored if “Replace WooCommerce reviews tab” is enabled.', 'ffl-funnels-addons')
-        );
-
-        FFLA_Admin::render_toggle_field(
-            __('Hold all new reviews for moderation', 'ffl-funnels-addons'),
-            'moderate_all_reviews',
-            $settings['moderate_all_reviews'] ?? '0',
-            __('When enabled, every product review stays pending until an administrator approves it. Useful with or without media uploads.', 'ffl-funnels-addons')
-        );
-
-        FFLA_Admin::render_toggle_field(
-            __('Allow photo and video uploads', 'ffl-funnels-addons'),
-            'allow_media_uploads',
-            $settings['allow_media_uploads'] ?? '1',
-            __('Shows the upload field on review forms (up to 3 files, 5 MB each). Reviews with uploads are always held for moderation. Turn off to hide the field everywhere.', 'ffl-funnels-addons')
-        );
-
-        FFLA_Admin::render_text_field(
-            __('Review form title', 'ffl-funnels-addons'),
-            'form_title',
-            $settings['form_title'] ?? __('Write a review', 'ffl-funnels-addons'),
-            __('Heading of the review form in the WooCommerce Reviews tab. The Bricks Review Form element has its own Title.', 'ffl-funnels-addons')
-        );
-
-        $mod_url = Product_Reviews_Core::reviews_admin_url('moderated');
-        echo '<p class="wb-field__desc">';
-        echo wp_kses(
-            sprintf(
-                /* translators: %s: URL to the pending product reviews screen */
-                __('Pending reviews appear under Products → Reviews → Pending. <a href="%s">Open the pending queue</a>.', 'ffl-funnels-addons'),
-                esc_url($mod_url)
-            ),
-            [
-                'a' => [
-                    'href' => [],
-                ],
-            ]
-        );
-        echo '</p>';
-
-        echo '</div></div>';
-
-        echo '<div class="wb-card">';
-        echo '<div class="wb-card__header"><h3>' . esc_html__('Rating criteria', 'ffl-funnels-addons') . '</h3></div>';
-        echo '<div class="wb-card__body">';
-
-        FFLA_Admin::render_toggle_field(
-            __('Enable secondary rating criteria', 'ffl-funnels-addons'),
-            'enable_criteria',
-            $settings['enable_criteria'] ?? '1',
-            __('Adds optional star groups below the overall rating, such as Quality or Value for money.', 'ffl-funnels-addons')
-        );
-
-        FFLA_Admin::render_textarea_field(
-            __('Criteria', 'ffl-funnels-addons'),
-            'review_criteria',
-            $settings['review_criteria'] ?? Product_Reviews_Core::DEFAULT_CRITERIA,
-            sprintf(
-                /* translators: %d: maximum number of criteria */
-                __('One per line, written as slug|Label — for example: fit|Fit and finish. The slug is what the score is stored under, so renaming a label keeps existing scores. Removing a criterion hides it without deleting anything; add it back and the old scores reappear. Maximum %d.', 'ffl-funnels-addons'),
-                Product_Reviews_Criteria::MAX_CRITERIA
-            )
-        );
-
-        echo '</div></div>';
-
-        echo '<div class="wb-card">';
-        echo '<div class="wb-card__header"><h3>' . esc_html__('Review display', 'ffl-funnels-addons') . '</h3></div>';
-        echo '<div class="wb-card__body">';
-
-        FFLA_Admin::render_toggle_field(
-            __('Show rating summary', 'ffl-funnels-addons'),
-            'show_rating_summary',
-            $settings['show_rating_summary'] ?? '1',
-            __('Displays the average score and a star-by-star breakdown above the review list.', 'ffl-funnels-addons')
-        );
-
-        FFLA_Admin::render_toggle_field(
-            __('Show replies under reviews', 'ffl-funnels-addons'),
-            'show_replies',
-            $settings['show_replies'] ?? '1',
-            __('Replies you leave from Products → Reviews (Reply) are shown beneath the review, badged as a store response.', 'ffl-funnels-addons')
-        );
-
-        echo '<p class="wb-field__desc">' . esc_html__('To feature a review at the top of the list, open Products → Reviews and use the “Pin review” row action.', 'ffl-funnels-addons') . '</p>';
-
-        echo '</div></div>';
-
-        echo '<div class="wb-card">';
-        echo '<div class="wb-card__header"><h3>' . esc_html__('Content filter', 'ffl-funnels-addons') . '</h3></div>';
-        echo '<div class="wb-card__body">';
-
-        FFLA_Admin::render_textarea_field(
-            __('Forbidden words', 'ffl-funnels-addons'),
-            'forbidden_words',
-            $settings['forbidden_words'] ?? '',
-            __('One term per line, or comma separated. Matching is case-insensitive and matches inside longer words, exactly like WordPress\'s own disallowed comment keys. Leave empty to disable.', 'ffl-funnels-addons')
-        );
-
-        FFLA_Admin::render_select_field(
-            __('When a review matches', 'ffl-funnels-addons'),
-            'forbidden_action',
-            $settings['forbidden_action'] ?? 'moderate',
-            [
-                'moderate' => __('Hold it for moderation', 'ffl-funnels-addons'),
-                'reject'   => __('Refuse it and ask the customer to revise', 'ffl-funnels-addons'),
-            ],
-            __('Reviews submitted by users who can moderate comments are never filtered.', 'ffl-funnels-addons')
-        );
-
-        echo '</div></div>';
-
-        echo '<div class="wb-card">';
-        echo '<div class="wb-card__header"><h3>' . esc_html__('Reviewer notifications', 'ffl-funnels-addons') . '</h3></div>';
-        echo '<div class="wb-card__body">';
-
-        FFLA_Admin::render_toggle_field(
-            __('Email the reviewer when their review is approved', 'ffl-funnels-addons'),
-            'notify_on_approved',
-            $settings['notify_on_approved'] ?? '1',
-            __('Only fires when a held review is approved. Reviews published immediately do not trigger it.', 'ffl-funnels-addons')
-        );
-
-        FFLA_Admin::render_toggle_field(
-            __('Email the reviewer when someone replies', 'ffl-funnels-addons'),
-            'notify_on_reply',
-            $settings['notify_on_reply'] ?? '1',
-            __('Only for store replies: a reply written by someone who can moderate comments, such as the Reply link under Products → Reviews. WordPress never sends this on its own — it only notifies the post author.', 'ffl-funnels-addons')
-        );
-
-        $optout_count = Product_Reviews_Notifications::optout_count();
-        echo '<p class="wb-field__desc">' . esc_html(sprintf(
-            /* translators: %s: number of unsubscribed addresses */
-            _n(
-                '%s address has unsubscribed from review request emails.',
-                '%s addresses have unsubscribed from review request emails.',
-                $optout_count,
-                'ffl-funnels-addons'
-            ),
-            number_format_i18n($optout_count)
-        )) . ' ' . esc_html__('Approval and reply notices are answers to something the customer did, so they ignore this list.', 'ffl-funnels-addons') . '</p>';
-
-        FFLA_Admin::render_text_field(
-            __('Re-subscribe an address', 'ffl-funnels-addons'),
-            'resubscribe_email',
-            '',
-            __('Only when the customer asks for review requests again: enter their email and save to remove it from the unsubscribed list.', 'ffl-funnels-addons')
-        );
-
-        echo '</div></div>';
-
-        echo '<div class="wb-card">';
-        echo '<div class="wb-card__header"><h3>' . esc_html__('Order review hub', 'ffl-funnels-addons') . '</h3></div>';
-        echo '<div class="wb-card__body">';
-
-        $hub_page = absint($settings['order_review_page_id'] ?? 0);
-        echo '<div class="wb-field">';
-        echo '<label class="wb-field__label" for="order_review_page_id">' . esc_html__('Hub page', 'ffl-funnels-addons') . '</label>';
-        echo '<div class="wb-field__control">';
-        wp_dropdown_pages([
-            'name'              => 'order_review_page_id',
-            'id'                => 'order_review_page_id',
-            'selected'          => $hub_page,
-            'show_option_none'  => __('-- Select Page --', 'ffl-funnels-addons'),
-            'option_none_value' => '0',
-            'class'             => 'wb-select',
-        ]);
-        echo '<p class="wb-field__desc">' . esc_html__('Page that contains the [ffla_order_reviews] shortcode or the Bricks “Order reviews hub” element. Required: review request emails are only scheduled and sent while a published page is selected here.', 'ffl-funnels-addons') . '</p>';
-        echo '</div></div>';
-
-        FFLA_Admin::render_toggle_field(
-            __('Pretty URLs for review links', 'ffl-funnels-addons'),
-            'order_review_pretty_urls',
-            $settings['order_review_pretty_urls'] ?? '0',
-            __('Use /your-slug/{token}/ instead of ?ffla_ro= on the hub URL. Save settings once, then visit Settings → Permalinks if links 404.', 'ffl-funnels-addons')
-        );
-
-        FFLA_Admin::render_text_field(
-            __('Pretty URL slug', 'ffl-funnels-addons'),
-            'order_review_rewrite_slug',
-            $settings['order_review_rewrite_slug'] ?? 'order-review',
-            __('Segment before the signed token, e.g. order-review → /order-review/{token}/.', 'ffl-funnels-addons')
-        );
-
-        FFLA_Admin::render_toggle_field(
-            __('Show extra rating criteria on hub forms', 'ffl-funnels-addons'),
-            'order_review_show_criteria',
-            $settings['order_review_show_criteria'] ?? '0',
-            __('Adds the optional star groups from Rating criteria (above) to each product form on the hub page.', 'ffl-funnels-addons')
-        );
-
-        echo '</div></div>';
-
-        echo '<div class="wb-card">';
-        echo '<div class="wb-card__header"><h3>' . esc_html__('Cloudflare Turnstile', 'ffl-funnels-addons') . '</h3></div>';
-        echo '<div class="wb-card__body">';
-
-        $turnstile_active = class_exists('Product_Reviews_Turnstile')
-            && Product_Reviews_Turnstile::is_available();
-
-        if ($turnstile_active) {
-            echo '<p class="wb-field__desc">' . esc_html__(
-                'Detected: Simple Cloudflare Turnstile plugin is active. The widget is rendered automatically on the FFL review form and validated on submit. While “Replace WooCommerce reviews tab” is on, new reviews posted to WordPress\'s own comment endpoint must pass it too. Manage site key, secret key, and theme inside that plugin\'s settings page.',
-                'ffl-funnels-addons'
-            ) . '</p>';
-        } else {
-            echo '<p class="wb-field__desc">' . wp_kses_post(sprintf(
-                /* translators: %s: link to the Simple Cloudflare Turnstile plugin page on wordpress.org */
-                __('Cloudflare Turnstile on the FFL review form is provided by the %s plugin. Install and configure it; protection is added automatically once it is active. No keys live in this module anymore.', 'ffl-funnels-addons'),
-                '<a href="https://wordpress.org/plugins/simple-cloudflare-turnstile/" target="_blank" rel="noopener noreferrer"><strong>Simple Cloudflare Turnstile</strong></a>'
-            )) . '</p>';
+        foreach (Product_Reviews_Admin_Fields::cards($tab) as $card) {
+            echo '<div class="wb-card">';
+            echo '<div class="wb-card__header"><h3>' . esc_html($card['title']) . '</h3>';
+            if (!empty($card['desc'])) {
+                echo '<p>' . esc_html($card['desc']) . '</p>';
+            }
+            echo '</div>';
+            echo '<div class="wb-card__body">';
+            foreach ($card['fields'] as $field) {
+                Product_Reviews_Admin_Fields::render_field($field, $settings);
+            }
+            echo '</div></div>';
         }
-
-        echo '</div></div>';
-
-        echo '<div class="wb-card">';
-        echo '<div class="wb-card__header"><h3>' . esc_html__('Email Template', 'ffl-funnels-addons') . '</h3></div>';
-        echo '<div class="wb-card__body">';
-
-        FFLA_Admin::render_text_field(
-            __('Email subject', 'ffl-funnels-addons'),
-            'email_subject',
-            $settings['email_subject'] ?? '',
-            __('Example: How was your purchase?', 'ffl-funnels-addons')
-        );
-
-        FFLA_Admin::render_text_field(
-            __('Email heading', 'ffl-funnels-addons'),
-            'email_heading',
-            $settings['email_heading'] ?? '',
-            __('Appears as the first line in the email body.', 'ffl-funnels-addons')
-        );
-
-        FFLA_Admin::render_textarea_field(
-            __('Email body template', 'ffl-funnels-addons'),
-            'email_template',
-            $settings['email_template'] ?? '',
-            __('Placeholders: {customer_name}, {product_name}, {product_names_list}, {review_url}, {review_order_url}, {order_id}, {user_id}, {unsubscribe_url}. Per-product mode uses {review_url}; bundle mode uses {review_order_url} and {product_names_list}. If you do not place {unsubscribe_url} yourself, an unsubscribe line is appended to the end of every request email.', 'ffl-funnels-addons')
-        );
-
-        echo '</div></div>';
-
-        echo '<div class="wb-card">';
-        echo '<div class="wb-card__header"><h3>' . esc_html__('Bricks Elements', 'ffl-funnels-addons') . '</h3></div>';
-        echo '<div class="wb-card__body">';
-        echo '<p class="wb-field__desc">' . esc_html__('The module registers Bricks elements: Reviews Rating Badge, Reviews List, Review Form, and Order reviews hub.', 'ffl-funnels-addons') . '</p>';
-        echo '<p class="wb-field__desc">' . esc_html__('In the Bricks element panel they are under "FFL Funnels". Their dynamic data tags are grouped under "FFL Funnels - Product Reviews".', 'ffl-funnels-addons') . '</p>';
-        echo '</div></div>';
 
         echo '<div class="wb-actions-bar">';
         echo '<button type="submit" class="wb-btn wb-btn--primary">' . esc_html__('Save Settings', 'ffl-funnels-addons') . '</button>';
@@ -384,80 +143,22 @@ class Product_Reviews_Admin
 
         check_admin_referer('product_reviews_save_settings_nonce', '_product_reviews_nonce');
 
+        $tab  = isset($_POST['tab']) ? sanitize_key(wp_unslash($_POST['tab'])) : '';
+        $tabs = Product_Reviews_Admin_Fields::tabs();
+        if (!isset($tabs[$tab])) {
+            wp_die(esc_html__('Unknown settings tab.', 'ffl-funnels-addons'));
+        }
+
         $current = Product_Reviews_Core::get_settings();
         $new     = $current;
 
-        $new['enable_requests'] = isset($_POST['enable_requests']) ? '1' : '0';
-        $new['enable_helpful_votes'] = isset($_POST['enable_helpful_votes']) ? '1' : '0';
-        $new['enable_not_helpful_votes'] = isset($_POST['enable_not_helpful_votes']) ? '1' : '0';
-        $new['replace_default_reviews_tab'] = isset($_POST['replace_default_reviews_tab']) ? '1' : '0';
-        $new['hide_default_reviews_tab'] = isset($_POST['hide_default_reviews_tab']) ? '1' : '0';
-        $new['moderate_all_reviews'] = isset($_POST['moderate_all_reviews']) ? '1' : '0';
-        $new['allow_media_uploads'] = isset($_POST['allow_media_uploads']) ? '1' : '0';
-        $form_title = isset($_POST['form_title']) ? sanitize_text_field(wp_unslash($_POST['form_title'])) : '';
-        $new['form_title'] = $form_title !== '' ? $form_title : __('Write a review', 'ffl-funnels-addons');
-
-        $resubscribe = isset($_POST['resubscribe_email']) ? sanitize_email(wp_unslash($_POST['resubscribe_email'])) : '';
-        if ($resubscribe !== '' && is_email($resubscribe)) {
-            Product_Reviews_Notifications::opt_in($resubscribe);
-        }
-        $new['request_delay_days'] = isset($_POST['request_delay_days'])
-            ? (string) max(0, absint($_POST['request_delay_days']))
-            : '7';
-
-        $new['enable_criteria'] = isset($_POST['enable_criteria']) ? '1' : '0';
-        $new['show_rating_summary'] = isset($_POST['show_rating_summary']) ? '1' : '0';
-        $new['show_replies'] = isset($_POST['show_replies']) ? '1' : '0';
-        $new['notify_on_approved'] = isset($_POST['notify_on_approved']) ? '1' : '0';
-        $new['notify_on_reply'] = isset($_POST['notify_on_reply']) ? '1' : '0';
-
-        // Re-serialise from the parsed form so a malformed line is dropped at
-        // save time rather than silently ignored on every page render.
-        $raw_criteria = isset($_POST['review_criteria'])
-            ? sanitize_textarea_field(wp_unslash($_POST['review_criteria']))
-            : '';
-        $parsed = Product_Reviews_Criteria::parse_definition($raw_criteria);
-        $new['review_criteria'] = implode("\n", array_map(
-            static function (array $c): string {
-                return $c['slug'] . '|' . $c['label'];
-            },
-            $parsed
-        ));
-
-        $new['forbidden_words'] = isset($_POST['forbidden_words'])
-            ? sanitize_textarea_field(wp_unslash($_POST['forbidden_words']))
-            : '';
-        $new['forbidden_action'] = (isset($_POST['forbidden_action']) && 'reject' === $_POST['forbidden_action'])
-            ? 'reject'
-            : 'moderate';
-
-        $new['request_email_mode'] = (isset($_POST['request_email_mode']) && 'per_product' === $_POST['request_email_mode'])
-            ? 'per_product'
-            : 'bundle';
-
-        $new['order_review_page_id'] = isset($_POST['order_review_page_id'])
-            ? (string) absint($_POST['order_review_page_id'])
-            : '0';
-
-        $new['order_review_show_criteria'] = isset($_POST['order_review_show_criteria']) ? '1' : '0';
-        $new['order_review_pretty_urls'] = isset($_POST['order_review_pretty_urls']) ? '1' : '0';
-
-        $new['order_review_rewrite_slug'] = isset($_POST['order_review_rewrite_slug'])
-            ? sanitize_title(wp_unslash($_POST['order_review_rewrite_slug']))
-            : 'order-review';
-        if ($new['order_review_rewrite_slug'] === '') {
-            $new['order_review_rewrite_slug'] = 'order-review';
+        foreach (Product_Reviews_Admin_Fields::fields($tab) as $field) {
+            $value = Product_Reviews_Admin_Fields::sanitize_field($field, $current);
+            if ($field['store'] ?? true) {
+                $new[(string) $field['key']] = $value;
+            }
         }
 
-        $new['email_subject'] = isset($_POST['email_subject'])
-            ? sanitize_text_field(wp_unslash($_POST['email_subject']))
-            : '';
-        $new['email_heading'] = isset($_POST['email_heading'])
-            ? sanitize_text_field(wp_unslash($_POST['email_heading']))
-            : '';
-        $new['email_template'] = isset($_POST['email_template'])
-            ? sanitize_textarea_field(wp_unslash($_POST['email_template']))
-            : '';
         $rewrite_changed = ($current['order_review_pretty_urls'] ?? '') !== ($new['order_review_pretty_urls'] ?? '')
             || ($current['order_review_rewrite_slug'] ?? '') !== ($new['order_review_rewrite_slug'] ?? '');
 
@@ -473,10 +174,16 @@ class Product_Reviews_Admin
             flush_rewrite_rules(false);
         }
 
-        wp_safe_redirect(add_query_arg(
-            ['page' => 'ffla-product-reviews', 'settings-updated' => '1'],
-            admin_url('admin.php')
-        ));
+        /**
+         * After a settings tab was saved.
+         *
+         * @param string               $tab
+         * @param array<string, mixed> $new
+         * @param array<string, mixed> $current Settings before the save.
+         */
+        do_action('ffla_product_reviews_settings_saved', $tab, $new, $current);
+
+        wp_safe_redirect(add_query_arg('settings-updated', '1', self::settings_url($tab)));
         exit;
     }
 }

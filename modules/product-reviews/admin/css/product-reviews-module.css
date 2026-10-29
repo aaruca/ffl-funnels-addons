@@ -1,0 +1,71 @@
+/* Product Reviews admin: settings tabs and the field types the shared
+   design system has no styles for. */
+
+.ffla-pr-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 20px;
+  padding: 4px;
+  background: var(--wb-color-neutral-background-3, #eff1f4);
+  border-radius: var(--wb-radius-md, 8px);
+  width: fit-content;
+  max-width: 100%;
+}
+
+.ffla-pr-tabs__tab {
+  display: inline-block;
+  padding: 7px 14px;
+  border-radius: var(--wb-radius-sm, 6px);
+  color: var(--wb-color-neutral-foreground-2, #475467);
+  font-size: var(--wb-font-size-sm, 13px);
+  font-weight: var(--wb-font-weight-medium, 500);
+  text-decoration: none;
+}
+
+.ffla-pr-tabs__tab:hover,
+.ffla-pr-tabs__tab:focus-visible {
+  color: var(--wb-color-neutral-foreground-1, #101828);
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.ffla-pr-tabs__tab.is-current {
+  background: var(--wb-color-neutral-background-1, #fff);
+  color: var(--wb-color-neutral-foreground-1, #101828);
+  box-shadow: var(--wb-shadow-1);
+}
+
+.ffla-pr-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--wb-color-neutral-stroke-1, #e4e7ec);
+  border-radius: var(--wb-radius-md, 8px);
+  background: var(--wb-color-neutral-background-1, #fff);
+}
+
+.ffla-pr-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ffla-pr-inline-actions .wb-input {
+  max-width: 280px;
+}
+
+.ffla-pr-result {
+  font-size: var(--wb-font-size-sm, 13px);
+}
+
+.ffla-pr-result.is-error {
+  color: var(--wb-color-danger-foreground, #742a2a);
+}
+
+.ffla-pr-result.is-success {
+  color: var(--wb-color-success-foreground, #067647);
+}

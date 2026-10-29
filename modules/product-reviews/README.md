@@ -18,56 +18,54 @@ Gives WooCommerce products a richer review form and list (star rating plus optio
 ## Setup
 
 1. Switch the module on in **FFL Funnels → Dashboard**, then open **FFL Funnels → Product Reviews**.
-2. Choose where reviews appear on product pages:
+2. Choose where reviews appear on product pages (**Reviews** tab):
    - Standard WooCommerce product pages: turn on **Replace WooCommerce reviews tab with FFL form**.
    - A Bricks single-product template: add the **Reviews List** and **Review Form** elements (and **Reviews Rating Badge** if wanted), then turn on **Hide default Woo reviews tab** so shoppers do not get a second form.
-3. Create the hub page: a normal page containing the `[ffla_order_reviews]` shortcode or the Bricks **Order reviews hub** element. Publish it and select it under **Hub page**. Request emails do not run without it.
-4. Check **Review Collection** and **Email Template**: delay, one email per order or per product, subject and text. Check that **WooCommerce → Settings → Emails** has the sender name and address the emails should come from.
-5. Optional: turn on **Pretty URLs for review links**. If a link from a test email gives a 404, visit **Settings → Permalinks** once.
+3. Create the hub page: a normal page containing the `[ffla_order_reviews]` shortcode or the Bricks **Order reviews hub** element. Publish it and select it under **Review requests → Hub page**. Request emails do not run without it.
+4. Check the **Review requests** and **Emails** tabs: delay, one email per order or per product, subject and text. Check that **WooCommerce → Settings → Emails** has the sender name and address the emails should come from.
+5. Optional: turn on **Pretty URLs for review links** (Review requests tab). If a link from a test email gives a 404, visit **Settings → Permalinks** once.
 6. Optional: install and configure Simple Cloudflare Turnstile. There is nothing to set here; the **Cloudflare Turnstile** card shows when it is detected.
 7. Test: set the delay to 0, mark a test order with your own billing email as Completed, and look for the scheduled action (group `ffla-product-reviews`) under **WooCommerce → Status → Scheduled Actions**. Set the delay back afterwards.
 
 ## Settings
 
-**FFL Funnels → Product Reviews**, saved with **Save Settings** (needs the `manage_woocommerce` capability).
+**FFL Funnels → Product Reviews**, split into tabs. Each tab is its own form: **Save Settings** stores that tab only and leaves the others as they are (needs the `manage_woocommerce` capability).
 
 | Setting | What it does | Default |
 |---|---|---|
-| **Review Collection** | | |
-| Enable review requests | Schedules the review request email when an order is completed. Does nothing until a published **Hub page** is selected. Switching it off also stops emails already queued. | On |
-| Delay after completed order (days) | Days between Completed and the email. 0 sends at the next queue run. Orders placed more than this many days plus 30 before the email would go out are not emailed. | 7 |
-| Review request email | *One email per order (all products, single link)* or *One email per product (all sent the same day)*. | One email per order |
-| Enable helpful votes | Shows the *Helpful* button on each review. | On |
-| Also allow “Not helpful” votes | Adds a *Not helpful* button. Needs helpful votes on. | Off |
+| **Reviews tab** | | |
 | Replace WooCommerce reviews tab with FFL form | The product **Reviews** tab shows the FFL list and form instead of WooCommerce's. | Off |
 | Hide default Woo reviews tab | Removes the **Reviews** tab. Ignored while the setting above is on. | Off |
 | Hold all new reviews for moderation | Every new product review waits for approval. | Off |
-| Allow photo and video uploads | Shows the upload field on every FFL form. Off hides it and ignores uploaded files. | On |
-| Review form title | Heading of the form in the WooCommerce Reviews tab (the Bricks Review Form has its own Title). | Write a review |
-| **Rating criteria** | | |
-| Enable secondary rating criteria | Shows the extra star groups on the form and the scores on reviews. | On |
-| Criteria | One per line, `slug\|Label`, up to 6. Malformed lines are dropped on save. | `quality\|Quality` and `value\|Value for money` |
-| **Review display** | | |
-| Show rating summary | Average and star-by-star bars above every list. A Bricks Reviews List can override it. | On |
-| Show replies under reviews | Shows approved replies beneath the review. | On |
-| **Content filter** | | |
 | Forbidden words | One term per line or comma separated. Case-insensitive, matches inside longer words. Empty turns the filter off. | Empty |
 | When a review matches | *Hold it for moderation* or *Refuse it and ask the customer to revise*. | Hold it for moderation |
-| **Reviewer notifications** | | |
-| Email the reviewer when their review is approved | Sent once when a held review is approved. If `wp_mail()` fails, nothing is recorded and it is sent the next time the review is approved. | On |
-| Email the reviewer when someone replies | Sent once per approved store reply (written by someone who could moderate comments). Other replies are never emailed. A failed send is retried the next time the reply is approved. | On |
-| Re-subscribe an address | Not stored: enter an email and save to remove it from the unsubscribed list, when the customer asks to get review requests again. | Empty |
-| **Order review hub** | | |
+| **Display tab** | | |
+| Show rating summary | Average and star-by-star bars above every list. A Bricks Reviews List can override it. | On |
+| Show replies under reviews | Shows approved replies beneath the review. | On |
+| Enable helpful votes | Shows the *Helpful* button on each review. | On |
+| Also allow “Not helpful” votes | Adds a *Not helpful* button. Needs helpful votes on. | Off |
+| **Review form tab** | | |
+| Review form title | Heading of the form in the WooCommerce Reviews tab (the Bricks Review Form has its own Title). | Write a review |
+| Allow photo and video uploads | Shows the upload field on every FFL form. Off hides it and ignores uploaded files. | On |
+| Enable secondary rating criteria | Shows the extra star groups on the form and the scores on reviews. | On |
+| Criteria | One per line, `slug\|Label`, up to 6. Malformed lines are dropped on save. | `quality\|Quality` and `value\|Value for money` |
+| **Review requests tab** | | |
+| Enable review requests | Schedules the review request email when an order is completed. Does nothing until a published **Hub page** is selected. Switching it off also stops emails already queued. | On |
+| Delay after completed order (days) | Days between Completed and the email. 0 sends at the next queue run. Orders placed more than this many days plus 30 before the email would go out are not emailed. | 7 |
+| Review request email | *One email per order (all products, single link)* or *One email per product (all sent the same day)*. | One email per order |
 | Hub page | The page with the shortcode or Bricks element. Every request email (both modes) links here. Required: without a published page here, no request is scheduled or sent. | None |
 | Pretty URLs for review links | `/order-review/{token}/` instead of `?ffla_ro={token}`. Rewrite rules are refreshed when this or the slug changes. | Off |
 | Pretty URL slug | The part before the token. Empty falls back to `order-review`. | `order-review` |
 | Show extra rating criteria on hub forms | Adds the configured criteria (not only Quality and Value) to each hub form. Needs secondary criteria on. | Off |
-| **Email Template** | | |
+| **Emails tab** | | |
 | Email subject | Empty sends "How was your purchase?". | How was your purchase? |
 | Email heading | First line of the email. | Leave a review for your recent order |
 | Email body template | Plain text with placeholders (below); HTML tags are stripped on save. Empty, or the untouched default while *One email per order* is chosen, uses a built-in text for the chosen mode. | Hi {customer_name}, … {review_url} … Thank you! |
+| Email the reviewer when their review is approved | Sent once when a held review is approved. If `wp_mail()` fails, nothing is recorded and it is sent the next time the review is approved. | On |
+| Email the reviewer when someone replies | Sent once per approved store reply (written by someone who could moderate comments). Other replies are never emailed. A failed send is retried the next time the reply is approved. | On |
+| Re-subscribe an address | Not stored: enter an email and save to remove it from the unsubscribed list, when the customer asks to get review requests again. | Empty |
 
-The **Cloudflare Turnstile** and **Bricks Elements** cards are information only. The **Reviewer notifications** card also shows how many addresses have unsubscribed. While requests are on and no published hub page is selected, the settings page and the rest of wp-admin (for users with `manage_woocommerce`) show a warning.
+The **Cloudflare Turnstile** card (Review form tab) and **Bricks Elements** card (Display tab) are information only. The Emails tab also shows how many addresses have unsubscribed. While requests are on and no published hub page is selected, the settings page and the rest of wp-admin (for users with `manage_woocommerce`) show a warning that links to the Review requests tab.
 
 ## How it works
 
@@ -262,7 +260,7 @@ Uninstall cleanup runs whenever the settings option exists, even if the module w
 | `admin-ajax.php`, action `ffla_vote_review_helpful` (POST, guests too) | `nonce` (`ffla_product_reviews_nonce`; checked for signed-in users only), `comment_id`, `vote` (`yes`/`no`). Returns `count`, `countNo`, `throttled`, `message`. A signed-in user's invalid or expired nonce gets HTTP 403 with `code` `invalid_nonce`, a fresh `nonce` and a `message`. |
 | `admin-post.php`, action `ffla_review_unsubscribe` (GET `t`), then `ffla_review_unsubscribe_confirm` (POST `t`) | Unsubscribe confirmation and opt-out. Tokens do not expire. |
 | `admin-post.php`, action `ffla_toggle_review_pin` | `comment_id`, `pin` (`1`/`0`), nonce; needs `moderate_comments`. |
-| `admin-post.php`, action `product_reviews_save_settings` | Settings form; needs `manage_woocommerce`. |
+| `admin-post.php`, action `product_reviews_save_settings` | Settings form, one tab per post (`tab` field); only that tab's keys are written. Needs `manage_woocommerce`. Fires `ffla_product_reviews_settings_saved` (`$tab`, `$new`, `$old`). |
 
 **Other**
 

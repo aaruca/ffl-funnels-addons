@@ -2,6 +2,11 @@
 
 All notable changes to FFL Funnels Addons are documented in this file.
 
+## [Unreleased]
+
+### Changed
+- **Product Reviews:** the settings page is split into tabs (Reviews, Display, Review form, Review requests, Emails). Each tab saves only its own settings, so saving one tab can no longer switch off a toggle that lives on another. Setting keys and defaults are unchanged. New action `ffla_product_reviews_settings_saved` (`$tab`, `$new`, `$old`). New offline check `tests/smoke/product-reviews-admin-smoke.php`, run in CI on PHP 7.4 and 8.3 and before the release ZIP is published.
+
 ## [1.55.11] - 2026-10-21
 
 ### Fixed
