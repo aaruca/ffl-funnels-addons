@@ -120,3 +120,5 @@ jobs:
         run: php tests/smoke/product-reviews-display-smoke.php
       - name: Check the tabbed settings screen
         run: php tests/smoke/product-reviews-admin-smoke.php
+      - name: Check review lists, filters, paging, layouts and the store badge
+        run: php tests/smoke/product-reviews-list-smoke.php

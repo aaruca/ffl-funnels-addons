@@ -1233,3 +1233,264 @@ function load_module(array $files): void
         require_once FFLA_PATH . 'modules/product-reviews/' . $file;
     }
 }
+
+/* ── $wpdb over SQLite ─────────────────────────────────────────────────── */
+
+if (!defined('ARRAY_A')) {
+    define('ARRAY_A', 'ARRAY_A');
+}
+if (!defined('OBJECT')) {
+    define('OBJECT', 'OBJECT');
+}
+
+/**
+ * Runs the module's own SQL for real. Before every statement the in-memory
+ * comments, comment meta, posts and product categories are copied into
+ * SQLite tables named like WordPress's; after a write they are copied back.
+ * MySQL-isms the module uses (CAST AS SIGNED/UNSIGNED, LIMIT/OFFSET, GROUP
+ * BY with MAX()) behave the same in SQLite for these checks.
+ */
+class Stub_Wpdb
+{
+    public $prefix = 'wp_';
+    public $comments = 'wp_comments';
+    public $commentmeta = 'wp_commentmeta';
+    public $posts = 'wp_posts';
+    public $postmeta = 'wp_postmeta';
+    public $options = 'wp_options';
+    public $terms = 'wp_terms';
+    public $term_taxonomy = 'wp_term_taxonomy';
+    public $term_relationships = 'wp_term_relationships';
+    public $last_query = '';
+    public $queries = [];
+    public $insert_id = 0;
+    /** @var SQLite3 */
+    private $db;
+
+    public function __construct()
+    {
+        $this->db = new SQLite3(':memory:');
+        $this->db->exec('CREATE TABLE wp_comments (comment_ID INTEGER PRIMARY KEY, comment_post_ID INTEGER, comment_author TEXT, comment_author_email TEXT, comment_content TEXT, comment_type TEXT, comment_parent INTEGER, user_id INTEGER, comment_approved TEXT, comment_karma INTEGER, comment_date_gmt TEXT)');
+        $this->db->exec('CREATE TABLE wp_commentmeta (meta_id INTEGER PRIMARY KEY AUTOINCREMENT, comment_id INTEGER, meta_key TEXT, meta_value TEXT)');
+        $this->db->exec('CREATE TABLE wp_posts (ID INTEGER PRIMARY KEY, post_type TEXT, post_status TEXT, post_title TEXT)');
+        $this->db->exec('CREATE TABLE wp_term_taxonomy (term_taxonomy_id INTEGER PRIMARY KEY, term_id INTEGER, taxonomy TEXT, parent INTEGER)');
+        $this->db->exec('CREATE TABLE wp_term_relationships (object_id INTEGER, term_taxonomy_id INTEGER)');
+    }
+
+    private function sync_in(): void
+    {
+        foreach (['wp_comments', 'wp_commentmeta', 'wp_posts', 'wp_term_taxonomy', 'wp_term_relationships'] as $t) {
+            $this->db->exec("DELETE FROM $t");
+        }
+        $c = $this->db->prepare('INSERT INTO wp_comments VALUES (:id, :post, :author, :email, :content, :type, :parent, :user, :approved, :karma, :date)');
+        foreach ($GLOBALS['comments'] as $comment) {
+            $c->bindValue(':id', (int) $comment->comment_ID);
+            $c->bindValue(':post', (int) $comment->comment_post_ID);
+            $c->bindValue(':author', (string) $comment->comment_author);
+            $c->bindValue(':email', (string) $comment->comment_author_email);
+            $c->bindValue(':content', (string) $comment->comment_content);
+            $c->bindValue(':type', (string) $comment->comment_type);
+            $c->bindValue(':parent', (int) $comment->comment_parent);
+            $c->bindValue(':user', (int) $comment->user_id);
+            $c->bindValue(':approved', (string) $comment->comment_approved);
+            $c->bindValue(':karma', (int) $comment->comment_karma);
+            $c->bindValue(':date', (string) $comment->comment_date_gmt);
+            $c->execute();
+        }
+        $m = $this->db->prepare('INSERT INTO wp_commentmeta (comment_id, meta_key, meta_value) VALUES (:id, :key, :value)');
+        foreach ($GLOBALS['cmeta'] as $comment_id => $meta) {
+            foreach ($meta as $key => $value) {
+                $m->bindValue(':id', (int) $comment_id);
+                $m->bindValue(':key', (string) $key);
+                $m->bindValue(':value', is_array($value) || is_object($value) ? serialize($value) : (string) $value);
+                $m->execute();
+            }
+        }
+        $p = $this->db->prepare('INSERT INTO wp_posts VALUES (:id, :type, :status, :title)');
+        foreach ($GLOBALS['posts'] as $id => $post) {
+            $p->bindValue(':id', (int) $id);
+            $p->bindValue(':type', (string) $post[0]);
+            $p->bindValue(':status', (string) $post[1]);
+            $p->bindValue(':title', (string) ($post[2] ?? ''));
+            $p->execute();
+        }
+        foreach ($GLOBALS['terms'] as $term_id => $term) {
+            $this->db->exec(sprintf("INSERT INTO wp_term_taxonomy VALUES (%d, %d, '%s', %d)", $term_id, $term_id, SQLite3::escapeString($term[0]), (int) $term[3]));
+        }
+        foreach ($GLOBALS['product_props'] as $product_id => $props) {
+            foreach ($props['cats'] ?? [] as $term_id) {
+                $this->db->exec(sprintf('INSERT INTO wp_term_relationships VALUES (%d, %d)', $product_id, $term_id));
+            }
+        }
+    }
+
+    /** Copy writes back: comment columns the module updates, and comment meta. */
+    private function sync_out(): void
+    {
+        $rows = $this->db->query('SELECT comment_ID, comment_karma, comment_approved FROM wp_comments');
+        while ($row = $rows->fetchArray(SQLITE3_ASSOC)) {
+            if (isset($GLOBALS['comments'][(int) $row['comment_ID']])) {
+                $GLOBALS['comments'][(int) $row['comment_ID']]->comment_karma    = (int) $row['comment_karma'];
+                $GLOBALS['comments'][(int) $row['comment_ID']]->comment_approved = (string) $row['comment_approved'];
+            }
+        }
+        $meta = [];
+        $rows = $this->db->query('SELECT comment_id, meta_key, meta_value FROM wp_commentmeta');
+        while ($row = $rows->fetchArray(SQLITE3_ASSOC)) {
+            $value = $row['meta_value'];
+            $un    = @unserialize((string) $value);
+            $meta[(int) $row['comment_id']][$row['meta_key']] = (false !== $un || 'b:0;' === $value) ? $un : $value;
+        }
+        $GLOBALS['cmeta'] = $meta;
+    }
+
+    public function prepare($query, ...$args)
+    {
+        if (count($args) === 1 && is_array($args[0])) {
+            $args = $args[0];
+        }
+        $i = 0;
+        return preg_replace_callback('/%(%|d|s|f)/', function ($m) use (&$i, $args) {
+            if ('%' === $m[1]) {
+                return '%';
+            }
+            $v = $args[$i++] ?? '';
+            if ('d' === $m[1]) {
+                return (string) (int) $v;
+            }
+            if ('f' === $m[1]) {
+                return (string) (float) $v;
+            }
+            return "'" . SQLite3::escapeString((string) $v) . "'";
+        }, $query);
+    }
+
+    public function esc_like($text) { return addcslashes((string) $text, '_%\\'); }
+
+    private function run(string $sql)
+    {
+        $this->last_query = $sql;
+        $this->queries[]  = $sql;
+        $this->sync_in();
+        $result = @$this->db->query($sql);
+        if (false === $result) {
+            throw new RuntimeException('SQL error: ' . $this->db->lastErrorMsg() . "\n" . $sql);
+        }
+        return $result;
+    }
+
+    public function get_col($sql, $x = 0)
+    {
+        $result = $this->run($sql);
+        $out    = [];
+        while ($row = $result->fetchArray(SQLITE3_NUM)) {
+            $out[] = $row[$x];
+        }
+        return $out;
+    }
+
+    public function get_var($sql)
+    {
+        $row = $this->run($sql)->fetchArray(SQLITE3_NUM);
+        return $row ? $row[0] : null;
+    }
+
+    public function get_results($sql, $output = 'OBJECT')
+    {
+        $result = $this->run($sql);
+        $out    = [];
+        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+            $out[] = 'ARRAY_A' === $output ? $row : (object) $row;
+        }
+        return $out;
+    }
+
+    public function get_row($sql, $output = 'OBJECT')
+    {
+        $rows = $this->get_results($sql, $output);
+        return $rows[0] ?? null;
+    }
+
+    public function query($sql)
+    {
+        $this->run($sql);
+        $this->sync_out();
+        return $this->db->changes();
+    }
+
+    public function update($table, $data, $where, $format = null, $where_format = null)
+    {
+        $set = [];
+        foreach ($data as $k => $v) {
+            $set[] = $k . " = '" . SQLite3::escapeString((string) $v) . "'";
+        }
+        $cond = [];
+        foreach ($where as $k => $v) {
+            $cond[] = $k . " = '" . SQLite3::escapeString((string) $v) . "'";
+        }
+        return $this->query("UPDATE $table SET " . implode(', ', $set) . ' WHERE ' . implode(' AND ', $cond));
+    }
+}
+$GLOBALS['wpdb'] = new Stub_Wpdb();
+
+function get_term_children($term_id, $taxonomy)
+{
+    $out = [];
+    foreach ($GLOBALS['terms'] as $id => $t) {
+        if ((int) $t[3] === (int) $term_id && $t[0] === $taxonomy) {
+            $out[] = $id;
+            $out   = array_merge($out, get_term_children($id, $taxonomy));
+        }
+    }
+    return $out;
+}
+function wp_list_pluck($list, $field)
+{
+    return array_map(function ($o) use ($field) {
+        return is_array($o) ? $o[$field] : $o->$field;
+    }, $list);
+}
+
+/* ── Bricks ────────────────────────────────────────────────────────────── */
+
+function load_bricks_stubs(): void
+{
+    if (class_exists('\Bricks\Element')) {
+        return;
+    }
+    eval('namespace Bricks;
+    class Element
+    {
+        public $settings = [];
+        public $control_groups = [];
+        public $controls = [];
+        private $attributes = [];
+        public function __construct($settings = []) { $this->settings = $settings; }
+        public function set_attribute($key, $attr, $value) { $this->attributes[$key][$attr][] = $value; }
+        public function set_link_attributes($key, $link) { $this->attributes[$key]["href"][] = $link["url"] ?? ""; }
+        public function render_attributes($key)
+        {
+            $out = [];
+            foreach ($this->attributes[$key] ?? [] as $attr => $values) {
+                $out[] = $attr . "=\"" . implode(" ", $values) . "\"";
+            }
+            return implode(" ", $out);
+        }
+        public function render_element_placeholder($args) { return "<div class=\"placeholder\">" . $args["title"] . "</div>"; }
+    }
+    class Helpers
+    {
+        public static function get_bricks_data($post_id, $type) { return $GLOBALS["bricks_data"] ?? false; }
+    }');
+}
+
+/* ── Context ───────────────────────────────────────────────────────────── */
+
+$GLOBALS['is_product'] = false;
+$GLOBALS['queried']    = 0;
+function is_product() { return !empty($GLOBALS['is_product']); }
+function is_page($id = 0) { return false; }
+function is_singular($type = '') { return false; }
+function get_queried_object_id() { return (int) ($GLOBALS['queried'] ?? 0); }
+function get_the_ID() { return (int) ($GLOBALS['queried'] ?? 0); }
+function is_checkout() { return !empty($GLOBALS['is_checkout']); }

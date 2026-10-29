@@ -25,6 +25,9 @@ class Product_Reviews_Dynamic_Tags
             'ffla_review_count'             => __('Review count', 'ffl-funnels-addons'),
             'ffla_review_average'           => __('Review average rating', 'ffl-funnels-addons'),
             'ffla_review_recommend_percent' => __('Recommended (4-5 star) percent', 'ffl-funnels-addons'),
+            'ffla_store_review_average'     => __('Store-wide review average', 'ffl-funnels-addons'),
+            'ffla_store_review_count'       => __('Store-wide review count', 'ffl-funnels-addons'),
+            'ffla_store_review_verified'    => __('Store-wide verified buyers percent', 'ffl-funnels-addons'),
         ];
     }
 
@@ -69,6 +72,21 @@ class Product_Reviews_Dynamic_Tags
 
     private static function value_for(string $name, int $product_id): string
     {
+        // Store-wide numbers do not depend on the product in context.
+        if (strpos($name, 'ffla_store_review_') === 0) {
+            $stats = Product_Reviews_Query::store_stats();
+            switch ($name) {
+                case 'ffla_store_review_average':
+                    return $stats['total'] > 0 ? number_format_i18n($stats['average'], 1) : '';
+                case 'ffla_store_review_count':
+                    return number_format_i18n($stats['review_count']);
+                case 'ffla_store_review_verified':
+                    return $stats['review_count'] > 0 ? number_format_i18n($stats['verified_percent']) : '';
+            }
+
+            return '';
+        }
+
         if ($product_id <= 0) {
             return '';
         }
@@ -125,11 +143,11 @@ class Product_Reviews_Dynamic_Tags
      */
     public static function render_content($content, $post = null, $context = 'text')
     {
-        if (!is_string($content) || strpos($content, '{ffla_review_') === false) {
+        if (!is_string($content) || (strpos($content, '{ffla_review_') === false && strpos($content, '{ffla_store_review_') === false)) {
             return $content;
         }
 
-        $product_id = self::resolve_product_id($post);
+        $product_id = strpos($content, '{ffla_review_') !== false ? self::resolve_product_id($post) : 0;
 
         foreach (array_keys(self::tags()) as $name) {
             $needle = '{' . $name . '}';

@@ -70,8 +70,17 @@ class Product_Reviews_Assets
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'nonce'   => wp_create_nonce('ffla_product_reviews_nonce'),
             'i18n'    => [
-                'voteSaved' => __('Thanks for your feedback!', 'ffl-funnels-addons'),
-                'voteError' => __('Unable to register your vote.', 'ffl-funnels-addons'),
+                'voteSaved'     => __('Thanks for your feedback!', 'ffl-funnels-addons'),
+                'voteError'     => __('Unable to register your vote.', 'ffl-funnels-addons'),
+                'loading'       => __('Loading reviews…', 'ffl-funnels-addons'),
+                'loadError'     => __('Reviews could not be loaded. Please try again.', 'ffl-funnels-addons'),
+                'clearFilters'  => __('Clear filters', 'ffl-funnels-addons'),
+                'lightboxLabel' => __('Review photo', 'ffl-funnels-addons'),
+                'close'         => __('Close', 'ffl-funnels-addons'),
+                'previous'      => __('Previous photo', 'ffl-funnels-addons'),
+                'next'          => __('Next photo', 'ffl-funnels-addons'),
+                /* translators: 1: photo number, 2: photos in the review */
+                'photoOf'       => __('Photo %1$s of %2$s', 'ffl-funnels-addons'),
             ],
             'fileUpload' => [
                 'removeLabel'  => __('Remove file', 'ffl-funnels-addons'),

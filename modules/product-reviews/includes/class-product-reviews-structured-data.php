@@ -225,7 +225,8 @@ class Product_Reviews_Structured_Data
             ],
             'author'        => [
                 '@type' => 'Person',
-                'name'  => get_comment_author($review),
+                // As the card shows it (Display → Reviewer name).
+                'name'  => Product_Reviews_Frontend_Render::display_name($review),
             ],
             'reviewBody'    => get_comment_text($review),
             'datePublished' => get_comment_date('c', $review),
@@ -286,15 +287,21 @@ class Product_Reviews_Structured_Data
                 continue;
             }
 
-            // A fixed Product ID shows another product's reviews.
+            // A fixed Product ID shows another product's reviews, and a
+            // store-wide or category list is not this product's list.
             if (!empty($settings['productId']) && is_numeric($settings['productId'])
                 && Product_Reviews_Core::resolve_context_product_id(absint($settings['productId'])) !== $product_id) {
                 continue;
             }
+            if (!empty($settings['source']) && 'product' !== $settings['source']) {
+                continue;
+            }
 
             return [
-                'perPage' => $settings['perPage'] ?? 5,
-                'orderBy' => $settings['orderBy'] ?? 'recent',
+                'perPage'   => $settings['perPage'] ?? 5,
+                'orderBy'   => $settings['orderBy'] ?? 'recent',
+                'minRating' => $settings['minRating'] ?? 0,
+                'withMedia' => $settings['withMedia'] ?? false,
             ];
         }
 

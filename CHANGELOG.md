@@ -4,7 +4,17 @@ All notable changes to FFL Funnels Addons are documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Product Reviews:** filters and paging on review lists: star chips (the summary bars filter too), a *With photos* chip, a sort menu (most recent, most helpful, highest, lowest rating), a search box and *Show more reviews*, without reloading the page. New settings under **Display**: *Reviews per page* (5), *Filters, sort and search above lists* (on), *“Show more reviews” button* (on). Filtering and paging use the new public `admin-ajax.php` action `ffla_load_reviews`, which only returns approved reviews of published products.
+- **Product Reviews:** the Bricks **Reviews List** can show one product, some product categories (subcategories included) or the whole store, as a list, a grid (1–6 columns) or a slider, with a minimum rating, photos-only, the product on each card, and every toolbar part switchable per element. Store-wide lists never show reviews of draft or private products.
+- **Product Reviews:** new Bricks element **Store Rating Badge** (store-wide average, review count, share of verified buyers; card or compact, light or dark, optional link) and dynamic tags `{ffla_store_review_average}`, `{ffla_store_review_count}`, `{ffla_store_review_verified}`.
+- **Product Reviews:** review photos open in a lightbox (keyboard and buttons between a review's photos); *Open review photos in a lightbox* under **Display**.
+- **Product Reviews:** reviewer avatars (initials on a colour by default, Gravatar, or none) and a custom *Verified buyer label*.
+- **Product Reviews:** new offline check `tests/smoke/product-reviews-list-smoke.php`, which runs the review SQL for real against SQLite, in CI on PHP 7.4 and 8.3 and before the release ZIP; and a browser check `tests/smoke/product-reviews-list-ui-smoke.js` (Playwright, no site needed) for the toolbar, paging, lightbox, slider and grid.
+
 ### Changed
+- **Product Reviews:** reviewer names are shown as first name and last initial (*Ann B.*) on cards and in the structured data. **Display → Reviewer name** switches back to the name as entered, or to first name only, initials or *Customer*. The stored name is not changed.
+- **Product Reviews:** *Most helpful* lists now come from the same query as the filters, and exclude reviews of unpublished products.
 - **Product Reviews:** the settings page is split into tabs (Reviews, Display, Review form, Review requests, Emails). Each tab saves only its own settings, so saving one tab can no longer switch off a toggle that lives on another. Setting keys and defaults are unchanged. New action `ffla_product_reviews_settings_saved` (`$tab`, `$new`, `$old`). New offline check `tests/smoke/product-reviews-admin-smoke.php`, run in CI on PHP 7.4 and 8.3 and before the release ZIP is published.
 
 ## [1.55.11] - 2026-10-21

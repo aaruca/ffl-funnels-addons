@@ -7,8 +7,10 @@ Gives WooCommerce products a richer review form and list (star rating plus optio
 ## What it does
 
 - **Review form.** Overall rating (required), optional extra star ratings (*Quality* and *Value for money* out of the box, up to six of your own), review text, and up to three photos or videos. Guests enter name and email; signed-in customers post under their account.
-- **Reviews list.** Rating summary (average plus a bar per star level), *Verified buyer* label, criteria scores, photos and videos, *Helpful* and optional *Not helpful* buttons, store replies nested under the review, pinned reviews first as *Featured review*.
-- **Three places to show them.** Inside WooCommerce's own product **Reviews** tab, with four Bricks elements, or on the order review hub page.
+- **Reviews list.** Rating summary (average plus a bar per star level), *Verified buyer* label, criteria scores, photos and videos (photos open in a lightbox), *Helpful* and optional *Not helpful* buttons, store replies nested under the review, pinned reviews first as *Featured review*. Reviewer names are shortened to *Ann B.* by default, with an initials avatar.
+- **Filters and paging.** Star chips (and clickable summary bars), a *With photos* chip, a sort menu (most recent, most helpful, highest, lowest), a search box and *Show more reviews*, all without reloading the page.
+- **Store-wide lists.** A Bricks Reviews List can show one product, some product categories or the whole store, as a list, a grid or a slider. The **Store Rating Badge** shows the store's average, review count and share of verified buyers.
+- **Three places to show them.** Inside WooCommerce's own product **Reviews** tab, with five Bricks elements, or on the order review hub page.
 - **Review requests.** An email a set number of days after an order is marked Completed (one per order, or one per product) with a signed link to a hub page where the customer reviews every product in the order without logging in. Every request carries an unsubscribe link.
 - **Moderation.** Hold every new review, hold reviews with photos or videos automatically, hold or refuse reviews containing forbidden words, pin reviews. One review per customer per product.
 - **Reviewer emails.** "Your review is now published" and, for store replies, "Someone replied to your review", which WordPress does not send on its own.
@@ -42,6 +44,13 @@ Gives WooCommerce products a richer review form and list (star rating plus optio
 | **Display tab** | | |
 | Show rating summary | Average and star-by-star bars above every list. A Bricks Reviews List can override it. | On |
 | Show replies under reviews | Shows approved replies beneath the review. | On |
+| Reviews per page | First page of the WooCommerce Reviews tab, and each *Show more* (1–50). A Bricks Reviews List uses its own *Max reviews*. | 5 |
+| Filters, sort and search above lists | Star chips and clickable summary bars, *With photos*, the sort menu and the search box. A Bricks Reviews List can switch each part on or off. Not in the slider layout unless the element asks for it. | On |
+| “Show more reviews” button | Loads the next page under the list. | On |
+| Reviewer name | *First name and last initial (Ann B.)*, *Name as entered*, *First name only*, *Initials only (A. B.)* or *Anonymous (Customer)*. Cards and structured data; the stored name is not changed. | First name and last initial |
+| Avatars | *Initials on a colour*, *WordPress avatar (Gravatar)* or *No avatar*. | Initials |
+| Verified buyer label | Text of the badge. Empty uses “Verified buyer”. | Verified buyer |
+| Open review photos in a lightbox | Photos open full size over the page, with previous / next. Off for themes that put every image in their own lightbox. | On |
 | Enable helpful votes | Shows the *Helpful* button on each review. | On |
 | Also allow “Not helpful” votes | Adds a *Not helpful* button. Needs helpful votes on. | Off |
 | **Review form tab** | | |
@@ -111,10 +120,16 @@ These rules apply to every new product review, including ones from WooCommerce's
 
 ### Lists, pinned reviews and replies
 
-- A list shows at most its *Max reviews* (product tab: 5 most recent). There is no pagination.
-- *Most helpful* sorts all of a product's approved reviews by net score (helpful minus not helpful) in the database, pinned reviews first and newest first on ties.
-- Pinned reviews always come first, labelled *Featured review*. Use the **Pin review** / **Unpin review** row action under **Products → Reviews** (needs `moderate_comments`). Pinning refreshes the product's comment count, which tells page caches (caching plugins and hosts that purge on comment or post changes) to drop the cached product page.
+- A list first shows its *Max reviews* (product tab: **Reviews per page**, 5 by default). *Show more reviews* loads the next page of the same size under it; the status line says how many are shown (“Showing 10 of 23 reviews”).
+- Pinned reviews always come first, labelled *Featured review*, whatever the sort or filter. Use the **Pin review** / **Unpin review** row action under **Products → Reviews** (needs `moderate_comments`). Pinning refreshes the product's comment count, which tells page caches (caching plugins and hosts that purge on comment or post changes) to drop the cached product page.
+- Sorts: *Most recent*; *Most helpful* (net score, helpful minus not helpful, newest first on ties); *Highest* and *Lowest rating* (reviews without stars last). Every sort ends on the review ID, so pages never repeat or skip a review.
+- Filters: one star level (chips, or click a summary bar; click it again to clear), *With photos*, and search in the review text and reviewer name. They combine. With nothing matching, the list says so and offers *Clear filters*. The chip counts are the scope's star counts.
+- The toolbar and *Show more* need JavaScript and are hidden until the script has set them up; without it the first page shows as a plain list. Filtering and paging go to `admin-ajax.php` (action `ffla_load_reviews`), which only ever returns approved top-level reviews of published products, so there is no nonce to expire on cached pages.
+- Store-wide and category lists (Bricks **Reviews List** → *Reviews of*) show the product's name and thumbnail on each card and a summary of the whole scope. Their numbers are counted once and cached until a review changes. Reviews of draft or private products never appear. A category includes its subcategories.
+- Layouts: *List*; *Grid* (1–6 columns, at most 2 on tablets and 1 on phones); *Slider* (cards per view, 2 on tablets, one and a bit on phones, with arrows). The slider has no toolbar or *Show more* unless the element asks for them (*Show more* never applies to it).
 - Only approved direct replies to a review are shown. A reply is badged *Store response* when its author could moderate comments at the time of replying. Only those store replies are emailed to the reviewer.
+- Reviewer names: **Display → Reviewer name** decides how the stored name is shown on cards and in the structured data. Store replies keep their author's name. Avatars are initials on a colour picked from the address by default; *WordPress avatar* loads Gravatar pictures.
+- Review photos open in a lightbox (a native `<dialog>`): arrow keys and buttons move between a review's photos, Escape or a click outside closes it, focus returns to the photo. Ctrl/Cmd-click still opens the photo in a new tab.
 
 ### Helpful votes
 
@@ -174,9 +189,9 @@ The link in a request email opens a confirmation page; the address is only added
 | **FFL Funnels → Product Reviews** | Settings. |
 | **Products → Reviews** (WooCommerce's reviews screen) | *Review Media* and *Helpful* columns (with a *Pinned* label), and the **Pin review** / **Unpin review** row action. |
 | **Comments** | The same columns, for stores that still list reviews there. |
-| Product page, **Reviews** tab | FFL list (5 most recent) and form, when *Replace WooCommerce reviews tab* is on. |
+| Product page, **Reviews** tab | FFL list (first **Reviews per page**, with filters and *Show more*) and form, when *Replace WooCommerce reviews tab* is on. |
 | Bricks elements, category **FFL Funnels** | See below. |
-| Bricks dynamic tags, group **FFL Funnels - Product Reviews** | `{ffla_review_count}` (WooCommerce's review count), `{ffla_review_average}` (one decimal, empty with no ratings), `{ffla_review_recommend_percent}` (share of 4 and 5 star ratings, empty with no ratings). |
+| Bricks dynamic tags, group **FFL Funnels - Product Reviews** | `{ffla_review_count}` (WooCommerce's review count), `{ffla_review_average}` (one decimal, empty with no ratings), `{ffla_review_recommend_percent}` (share of 4 and 5 star ratings, empty with no ratings); store-wide `{ffla_store_review_average}`, `{ffla_store_review_count}`, `{ffla_store_review_verified}` (percent of verified buyers). |
 | Product page structured data | The `review` list matches the FFL list (see *Structured data*). |
 | Hub page | Forms for every product in the order. |
 | Customer inbox | Review request, approval and reply emails. |
@@ -184,7 +199,8 @@ The link in a request email opens a confirmation page; the address is only added
 | Bricks element | Shows | Main controls |
 |---|---|---|
 | Reviews Rating Badge | Average, partial stars, review count in brackets (WooCommerce's numbers, as in the rating summary) | Product ID, Average number (Show / Hide), Review count (Show / Hide), Hide when no reviews, star colours and size, typography |
-| Reviews List | Summary and review cards | Product ID, Max reviews (1–50, default 5), Order by (Most recent / Most helpful), Rating summary (Use module setting / Show / Hide), star and card styling, typography |
+| Reviews List | Summary, toolbar and review cards | *Which reviews*: Reviews of (This product / All products / Product categories), Categories, Product ID, Minimum rating, Only reviews with photos. Max reviews (1–50, default 5), Order by (Most recent / Most helpful / Highest / Lowest rating), Rating summary. *Layout*: List / Grid / Slider, Columns / cards per view, Product on each card. *Filters and paging*: Star filter, “With photos” filter, Sort menu, Search box, “Show more” button (each Use module setting / Show / Hide). Star and card styling, typography |
+| Store Rating Badge | Store-wide average, stars, review count and share of verified buyers | Style (Card / Compact), Theme (Light / Dark), Label, Review count, Verified buyers share, With no reviews yet (Show 0.0 / Hide), Link; star, background and text colours, average typography |
 | Review Form | The FFL form | Product ID, Title (default "Write a review"), Intro text, Extra rating criteria (Show / Hide; all configured criteria), Media upload (Collapsed / Expanded), Login hint (Show / Hide); Style tab: Container, Stars, Fields, Submit button, Notices |
 | Order reviews hub | The hub | Intro title (optional), plus Bricks' own ID, classes and styles on the wrapper |
 
@@ -192,7 +208,7 @@ The on/off options above are selects, not checkboxes: Bricks drops an unchecked 
 
 Empty *Product ID* means the current product: the global product, the Bricks query loop item or the product page. In the Bricks editor the newest published product is used for the preview.
 
-The CSS and JavaScript load only where review output is printed: each Bricks element loads them when it renders (the badge loads only the CSS, so shop and archive loops get styled stars), and so do the list, form and hub themselves. They go in the page head on the hub page, on pages whose content contains `[ffla_order_reviews]`, on product pages while *Replace WooCommerce reviews tab* is on, and in the Bricks editor; anywhere else they are added at the end of the page. A product page without any FFL review output loads neither file. The script is left out when nothing on the page needs it (a list with helpful votes off, a badge).
+The CSS and JavaScript load only where review output is printed: each Bricks element loads them when it renders (the badges load only the CSS, so shop and archive loops get styled stars), and so do the list, form and hub themselves. They go in the page head on the hub page, on pages whose content contains `[ffla_order_reviews]`, on product pages while *Replace WooCommerce reviews tab* is on, and in the Bricks editor; anywhere else they are added at the end of the page. A product page without any FFL review output loads neither file. The script is left out when nothing on the page needs it: a badge, or a list with votes, filters, *Show more*, the lightbox and the slider all off or unused.
 
 ## Data and uninstall
 
@@ -207,6 +223,7 @@ The CSS and JavaScript load only where review output is printed: each Bricks ele
 | Request tracking (scheduled, sent, failed attempts) | order meta | Kept |
 | Queued request emails | Action Scheduler / WP-Cron | Removed (also when the module is switched off) |
 | Rating summary cache from versions before 1.55.10 (no longer written) | transients `ffla_rev_dist_<product ID>` | Deleted |
+| Store-wide and category numbers (star counts, verified share) | transients `ffla_rev_scope_*`, one hour; option `ffla_rev_cache_version`, bumped when a review changes | Deleted |
 | Vote limits, guest review limit | transients (`ffla_helpful_<hash>`, `ffla_helpful_daily_<review ID>_<date>`, guest limit per IP) | Expire on their own (12 hours / 1 day / 1 hour) |
 
 Uninstall cleanup runs whenever the settings option exists, even if the module was switched off first. Switching the module off keeps settings and data but removes its queued request emails; they are not sent later.
@@ -217,6 +234,7 @@ Uninstall cleanup runs whenever the settings option exists, even if the module w
 - **The link shows "missing a review key".** The hub page does not contain the shortcode or element.
 - **Pretty link gives a 404.** Visit **Settings → Permalinks** once, and make sure the hub page is published.
 - **"This review link is invalid or has expired."** The link is older than 90 days, the order's billing email changed, the order was refunded, cancelled or failed, or the link was cut off or altered on the way.
+- **Filters or Show more do nothing.** The page must load the module's script; it loads with the list itself. If review markup is printed some other way, see the next item. A page cache that rewrites `admin-ajax.php` POSTs breaks it too.
 - **Reviews stay pending.** A photo or video is attached, *Hold all new reviews* is on, a forbidden word matched, or a WordPress Discussion setting held it.
 - **Stars cannot be clicked, votes do nothing, the file picker looks plain.** The CSS/JS did not load on that page, for example review markup printed by custom code that does not go through the module's renderers. Call `Product_Reviews_Assets::enqueue()` there, or return `true` from `ffla_product_reviews_enqueue_assets` to load them in the page head.
 - **"Security check failed."** Only signed-in users see this: the form's WordPress security token is no longer valid (the page was open for more than a day). Refresh the page.
@@ -241,6 +259,7 @@ Uninstall cleanup runs whenever the settings option exists, even if the module w
 | `ffla_product_reviews_wc_tab_form_settings` | `array $settings`, `int $product_id` | Form in the replaced tab. Keys `title`, `introText`, `showOptionalCriteria`, `collapseMedia`, `showLoginHint`. Default `[]`. |
 | `ffla_product_reviews_enqueue_assets` | `bool $force` (false) | Load the front-end CSS/JS in the page head on other pages. |
 | `ffla_product_reviews_structured_data_list_settings` | `array\|null $settings`, `int $product_id` | The list the product page will show (`perPage`, `orderBy`), worked out before it renders; `null` leaves the structured data alone. Default: the Bricks Reviews List element in the page content, or the replaced tab's list. |
+| `ffla_product_reviews_card_badges` | `string $html` (''), `WP_Comment $review` | Extra badges printed after *Verified buyer* on a card. Return escaped HTML. |
 | `ffla_helpful_daily_cap` | `int` (200) | Votes per review per calendar day. |
 | `ffla_product_reviews_guest_hourly_limit` | `int` (5) | New guest reviews per IP address per hour through the FFL form. 0 turns the limit off. |
 | `ffla_product_reviews_request_max_order_age_days` | `int` (delay + 30), `WC_Order $order` | Oldest order, in days between order date and send time, that still gets a request email. 0 turns the limit off. |
@@ -257,6 +276,7 @@ Uninstall cleanup runs whenever the settings option exists, even if the module w
 | Endpoint | Notes |
 |---|---|
 | `admin-post.php`, action `ffla_submit_product_review` (POST, guests too) | Fields `comment_post_ID`, `rating`, `comment`, `author` and `email` (guests without a signed link), `ffla_review_criteria[<slug>]`, `ffla_review_media[]` (multipart), `ffla_order_review_token`, `redirect_to`, `ffla_hp` (must be empty), `ffla_review_form_nonce` (nonce action `ffla_review_form`; checked for signed-in users without a signed link only). Redirects with `ffla_review_status` (`success`/`error`) and `ffla_review_message`, anchored `#reviews`. |
+| `admin-ajax.php`, action `ffla_load_reviews` (POST, guests too, no nonce) | `products[]`, `categories[]`, `rating` (1–5), `minRating`, `withMedia` (`1`), `search` (100 characters at most), `orderBy` (`recent` / `helpful` / `highest` / `lowest`), `page`, `perPage` (≤ 50), `showProduct` (`1`). Returns `html` (the cards), `total`, `count` (shown so far), `hasMore`, `status`. Only approved top-level reviews of published products. |
 | `admin-ajax.php`, action `ffla_vote_review_helpful` (POST, guests too) | `nonce` (`ffla_product_reviews_nonce`; checked for signed-in users only), `comment_id`, `vote` (`yes`/`no`). Returns `count`, `countNo`, `throttled`, `message`. A signed-in user's invalid or expired nonce gets HTTP 403 with `code` `invalid_nonce`, a fresh `nonce` and a `message`. |
 | `admin-post.php`, action `ffla_review_unsubscribe` (GET `t`), then `ffla_review_unsubscribe_confirm` (POST `t`) | Unsubscribe confirmation and opt-out. Tokens do not expire. |
 | `admin-post.php`, action `ffla_toggle_review_pin` | `comment_id`, `pin` (`1`/`0`), nonce; needs `moderate_comments`. |
@@ -271,5 +291,7 @@ Uninstall cleanup runs whenever the settings option exists, even if the module w
 - `Product_Reviews_Core::hub_page_ready()` and `requests_ready()` say whether request emails can run; `reviewable_product_ids( $order )` lists the order's products that can still be reviewed.
 - `Product_Reviews_Core::get_rating_distribution( $product_id, $product = null )` returns `counts` (per star), `total` (number of ratings), `average` and `review_count`, read from WooCommerce's stored product aggregates. Pass the `WC_Product` when already loaded.
 - `Product_Reviews_Core::is_verified_purchase( $comment_id )`: the module's flag when the review has one, otherwise WooCommerce's `verified`.
-- `Product_Reviews_Frontend_Render::list_reviews( $product_id, $settings )` returns the reviews a list with those settings shows, in order; `rendered_reviews( $product_id )` what the lists on the current page showed.
+- `Product_Reviews_Frontend_Render::list_reviews( $product_id, $settings )` returns the reviews a list with those settings shows, in order; `rendered_reviews( $product_id )` what the lists on the current page showed; `display_name( $review )` the reviewer's name as shown.
+- `Product_Reviews_Query::find( $args )` returns `ids` (one page, in display order) and `total` for `products`, `categories`, `rating`, `minRating`, `withMedia`, `search`, `orderBy`, `page`, `perPage`; `distribution( $args )` a scope's star counts, average and review count; `store_stats()` the store-wide numbers with `verified` and `verified_percent`.
+- Bricks element names also include `ffla-store-rating-badge`.
 - `Product_Reviews_Assets::enqueue( $with_script = true )` loads the front-end CSS (and JS).

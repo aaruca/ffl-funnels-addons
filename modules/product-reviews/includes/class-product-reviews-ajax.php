@@ -47,6 +47,46 @@ class Product_Reviews_Ajax
     {
         add_action('wp_ajax_ffla_vote_review_helpful', [__CLASS__, 'vote_review_helpful']);
         add_action('wp_ajax_nopriv_ffla_vote_review_helpful', [__CLASS__, 'vote_review_helpful']);
+        add_action('wp_ajax_ffla_load_reviews', [__CLASS__, 'load_reviews']);
+        add_action('wp_ajax_nopriv_ffla_load_reviews', [__CLASS__, 'load_reviews']);
+    }
+
+    /**
+     * A page of review cards for a list's filters, sort, search and "Show
+     * more". Public and read-only: the query only ever returns approved
+     * reviews of published products, whatever the request asks for, so there
+     * is no nonce to go stale on cached pages.
+     */
+    public static function load_reviews(): void
+    {
+        // phpcs:disable WordPress.Security.NonceVerification.Missing -- public, read-only.
+        $raw = static function (string $key) {
+            return isset($_POST[$key]) ? wp_unslash($_POST[$key]) : null;
+        };
+
+        $args = [
+            'products'    => (array) ($raw('products') ?? []),
+            'categories'  => (array) ($raw('categories') ?? []),
+            'rating'      => $raw('rating') ?? 0,
+            'minRating'   => $raw('minRating') ?? 0,
+            'withMedia'   => '1' === (string) ($raw('withMedia') ?? ''),
+            'search'      => is_scalar($raw('search')) ? (string) $raw('search') : '',
+            'orderBy'     => is_scalar($raw('orderBy')) ? (string) $raw('orderBy') : 'recent',
+            'page'        => $raw('page') ?? 1,
+            'perPage'     => $raw('perPage') ?? 5,
+            'showProduct' => '1' === (string) ($raw('showProduct') ?? ''),
+        ];
+        // phpcs:enable WordPress.Security.NonceVerification.Missing
+
+        $page = Product_Reviews_Frontend_Render::render_page($args);
+
+        wp_send_json_success([
+            'html'    => $page['html'],
+            'total'   => $page['total'],
+            'count'   => $page['count'],
+            'hasMore' => $page['hasMore'],
+            'status'  => Product_Reviews_Frontend_Render::status_text($page['count'], $page['total']),
+        ]);
     }
 
     public static function vote_review_helpful(): void

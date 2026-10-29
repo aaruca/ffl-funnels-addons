@@ -237,13 +237,18 @@ if (in_array('product-reviews', $ffla_active_modules, true) || false !== get_opt
         as_unschedule_all_actions('ffla_send_order_review_bundle', null, 'ffla-product-reviews');
     }
 
-    // Cached rating histograms — one transient per product, so they cannot be
-    // enumerated by name.
+    delete_option('ffla_rev_cache_version');
+
+    // Cached rating histograms (one transient per product, from before
+    // 1.55.10) and store-wide / category numbers (one per scope and cache
+    // version), so they cannot be enumerated by name.
     // phpcs:ignore WordPress.DB.DirectDatabaseQuery
     $wpdb->query(
         "DELETE FROM {$wpdb->options}
          WHERE option_name LIKE '\_transient\_ffla\_rev\_dist\_%'
-            OR option_name LIKE '\_transient\_timeout\_ffla\_rev\_dist\_%'"
+            OR option_name LIKE '\_transient\_timeout\_ffla\_rev\_dist\_%'
+            OR option_name LIKE '\_transient\_ffla\_rev\_scope\_%'
+            OR option_name LIKE '\_transient\_timeout\_ffla\_rev\_scope\_%'"
     );
 }
 

@@ -172,8 +172,70 @@ class Product_Reviews_Admin_Fields
                         'desc'  => __('Replies you leave from Products → Reviews (Reply) are shown beneath the review, badged as a store response.', 'ffl-funnels-addons'),
                     ],
                     [
+                        'key'   => 'list_per_page',
+                        'type'  => 'number',
+                        'label' => __('Reviews per page', 'ffl-funnels-addons'),
+                        'desc'  => __('How many reviews the WooCommerce Reviews tab shows at first, and loads with each “Show more”. A Bricks Reviews List uses its own Max reviews.', 'ffl-funnels-addons'),
+                        'min'   => 1,
+                        'max'   => 50,
+                    ],
+                    [
+                        'key'   => 'list_toolbar',
+                        'type'  => 'toggle',
+                        'label' => __('Filters, sort and search above lists', 'ffl-funnels-addons'),
+                        'desc'  => __('Star chips (and clickable summary bars), a “With photos” chip, a sort menu (most recent, most helpful, highest, lowest) and a search box. A Bricks Reviews List can switch each one on or off. Never shown in the slider layout unless the element asks for it.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'list_show_more',
+                        'type'  => 'toggle',
+                        'label' => __('“Show more reviews” button', 'ffl-funnels-addons'),
+                        'desc'  => __('Loads the next page of reviews under the list without reloading the page.', 'ffl-funnels-addons'),
+                    ],
+                    [
                         'type' => 'html',
                         'html' => '<p class="wb-field__desc">' . esc_html__('To feature a review at the top of the list, open Products → Reviews and use the “Pin review” row action.', 'ffl-funnels-addons') . '</p>',
+                    ],
+                ],
+            ],
+            [
+                'title'  => __('Reviewer details', 'ffl-funnels-addons'),
+                'fields' => [
+                    [
+                        'key'     => 'review_name_format',
+                        'type'    => 'select',
+                        'label'   => __('Reviewer name', 'ffl-funnels-addons'),
+                        'options' => [
+                            'first_initial' => __('First name and last initial (Ann B.)', 'ffl-funnels-addons'),
+                            'full'          => __('Name as entered (Ann Buyer)', 'ffl-funnels-addons'),
+                            'first'         => __('First name only (Ann)', 'ffl-funnels-addons'),
+                            'initials'      => __('Initials only (A. B.)', 'ffl-funnels-addons'),
+                            'anonymous'     => __('Anonymous (Customer)', 'ffl-funnels-addons'),
+                        ],
+                        'desc'    => __('How reviewers are named on review cards and in the product’s structured data. The stored name is not changed, so you can switch at any time.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'     => 'review_avatars',
+                        'type'    => 'select',
+                        'label'   => __('Avatars', 'ffl-funnels-addons'),
+                        'options' => [
+                            'initials' => __('Initials on a colour', 'ffl-funnels-addons'),
+                            'gravatar' => __('WordPress avatar (Gravatar)', 'ffl-funnels-addons'),
+                            'none'     => __('No avatar', 'ffl-funnels-addons'),
+                        ],
+                        'desc'    => __('Initials need no outside service. The WordPress avatar loads each picture from Gravatar, which receives a hash of the reviewer’s email.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'      => 'verified_label',
+                        'type'     => 'text',
+                        'label'    => __('Verified buyer label', 'ffl-funnels-addons'),
+                        'desc'     => __('Text of the badge on reviews from customers who bought the product. Empty uses “Verified buyer”.', 'ffl-funnels-addons'),
+                        'fallback' => __('Verified buyer', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'review_lightbox',
+                        'type'  => 'toggle',
+                        'label' => __('Open review photos in a lightbox', 'ffl-funnels-addons'),
+                        'desc'  => __('Clicking a photo opens it full size over the page, with previous / next for reviews with several photos. Turn off if your theme already opens every image in its own lightbox.', 'ffl-funnels-addons'),
                     ],
                 ],
             ],
@@ -199,7 +261,7 @@ class Product_Reviews_Admin_Fields
                 'fields' => [
                     [
                         'type' => 'html',
-                        'html' => '<p class="wb-field__desc">' . esc_html__('The module registers Bricks elements: Reviews Rating Badge, Reviews List, Review Form, and Order reviews hub.', 'ffl-funnels-addons') . '</p>'
+                        'html' => '<p class="wb-field__desc">' . esc_html__('The module registers Bricks elements: Reviews Rating Badge, Reviews List (one product, a category or the whole store; list, grid or slider), Review Form, Order reviews hub and Store Rating Badge.', 'ffl-funnels-addons') . '</p>'
                             . '<p class="wb-field__desc">' . esc_html__('In the Bricks element panel they are under "FFL Funnels". Their dynamic data tags are grouped under "FFL Funnels - Product Reviews".', 'ffl-funnels-addons') . '</p>',
                     ],
                 ],

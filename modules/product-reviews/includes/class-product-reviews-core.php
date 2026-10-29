@@ -143,6 +143,13 @@ class Product_Reviews_Core
             'review_criteria'           => self::DEFAULT_CRITERIA,
             'show_rating_summary'       => '1',
             'show_replies'              => '1',
+            'list_per_page'             => '5',
+            'list_toolbar'              => '1',
+            'list_show_more'            => '1',
+            'review_name_format'        => 'first_initial',
+            'review_avatars'            => 'initials',
+            'verified_label'            => __('Verified buyer', 'ffl-funnels-addons'),
+            'review_lightbox'           => '1',
             'forbidden_words'           => '',
             'forbidden_action'          => 'moderate',
             'notify_on_approved'        => '1',
@@ -278,7 +285,7 @@ class Product_Reviews_Core
     public static function wc_tab_list_settings(int $product_id): array
     {
         $defaults = [
-            'perPage' => 5,
+            'perPage' => max(1, min(50, absint(self::get_setting('list_per_page', '5')) ?: 5)),
             'orderBy' => 'recent',
         ];
 
