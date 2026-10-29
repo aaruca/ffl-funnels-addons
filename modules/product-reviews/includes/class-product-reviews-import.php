@@ -869,12 +869,13 @@ class Product_Reviews_Import
             if (preg_match('#^(\d{1,2})/(\d{1,2})/(\d{4})(.*)$#', $local, $m) && (int) $m[1] > 12) {
                 $local = sprintf('%04d-%02d-%02d%s', (int) $m[3], (int) $m[2], (int) $m[1], $m[4]);
             }
-            try {
-                $date = new \DateTimeImmutable($local, wp_timezone());
-
+            // date_create_immutable() returns false for a date it cannot read;
+            // the constructor throws, and with Xdebug loaded that exception
+            // itself fails (PHP 8.3's DateMalformedStringException takes no
+            // dynamic properties), which no catch (\Exception) stops.
+            $date = date_create_immutable($local, wp_timezone());
+            if ($date instanceof \DateTimeImmutable) {
                 return ['date' => $date->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s'), 'known' => true, 'note' => ''];
-            } catch (\Exception $e) {
-                // Falls through to now, with a note.
             }
         }
 

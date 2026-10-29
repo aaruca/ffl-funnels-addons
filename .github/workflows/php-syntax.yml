@@ -116,7 +116,10 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          coverage: none
+          # The release job runs these checks on the runner's own PHP, which
+          # loads Xdebug; Xdebug changes how some exceptions behave (1.56.0's
+          # first release build failed on it), so the PR checks load it too.
+          coverage: xdebug
       - name: Check verified flags, uploads, request emails, hub and notifications
         run: php tests/smoke/product-reviews-smoke.php
       - name: Check review media, counts, assets, structured data and votes

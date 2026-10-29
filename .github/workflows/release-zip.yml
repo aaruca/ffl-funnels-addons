@@ -15,6 +15,8 @@ on:
       - 'modules/pickup-shipping/**'
       - 'modules/google-merchant-policy/**'
       - 'modules/customer-notes/**'
+      - 'modules/product-reviews/**'
+      - 'modules/smart-coupons/**'
       - '.github/workflows/release-zip.yml'
   workflow_dispatch:
     inputs:
