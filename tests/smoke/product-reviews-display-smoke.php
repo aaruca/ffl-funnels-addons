@@ -73,6 +73,8 @@ class WP_Comment
     public $comment_ID;
     public $comment_post_ID;
     public $comment_author = '';
+    public $comment_author_email = '';
+    public $user_id = 0;
     public $comment_content = '';
     public $comment_date_gmt = '2026-01-01 00:00:00';
     public $comment_approved = '1';
@@ -184,6 +186,7 @@ function sanitize_key($s) { return strtolower(preg_replace('/[^a-z0-9_\-]/i', ''
 function wp_unslash($s) { return $s; }
 function wp_parse_args($args, $defaults) { return array_merge($defaults, (array) $args); }
 function get_option($key, $default = false) { return $GLOBALS['options'][$key] ?? $default; }
+function update_option($key, $value, $autoload = null) { $GLOBALS['options'][$key] = $value; return true; }
 function add_filter(...$a) {}
 function add_action(...$a) {}
 function apply_filters($tag, $value, ...$args)
@@ -264,6 +267,11 @@ function get_comment_author($c) { return get_comment($c)->comment_author; }
 function get_comment_text($c) { return get_comment($c)->comment_content; }
 function get_comment_date($format, $c) { return gmdate($format, strtotime(get_comment($c)->comment_date_gmt . ' UTC')); }
 function wp_list_pluck($list, $field) { return array_map(function ($o) use ($field) { return $o->$field; }, $list); }
+function wp_json_encode($data, $flags = 0) { return json_encode($data, $flags); }
+function wp_unique_id($prefix = '') { static $n = 0; return $prefix . (++$n); }
+function selected($a, $b, $echo = true) { $r = (string) $a === (string) $b ? ' selected="selected"' : ''; if ($echo) { echo $r; } return $r; }
+function esc_attr__($t, $d = '') { return htmlspecialchars($t, ENT_QUOTES); }
+function wp_get_attachment_image_url($id, $size = 'thumbnail') { return 'https://shop.test/uploads/' . $id . '-' . $size . '.jpg'; }
 /** Supports what list_reviews() asks for: approved top-level reviews, pinned then newest. */
 function get_comments(array $args)
 {
@@ -318,6 +326,7 @@ class Helpers
 
 $base = dirname(__DIR__, 2) . '/modules/product-reviews/';
 require $base . 'includes/class-product-reviews-core.php';
+require $base . 'includes/class-product-reviews-query.php';
 require $base . 'includes/class-product-reviews-criteria.php';
 require $base . 'includes/class-product-reviews-frontend-render.php';
 require $base . 'includes/class-product-reviews-assets.php';
@@ -329,10 +338,12 @@ require $base . 'integrations/elements/reviews-rating-badge.php';
 
 function settings(array $overrides = [])
 {
+    // Names as entered: the checks below find cards by author.
     $GLOBALS['options']['ffla_product_reviews_settings'] = array_merge([
         'enable_criteria'      => '0',
         'show_replies'         => '0',
         'enable_helpful_votes' => '1',
+        'review_name_format'   => 'full',
     ], $overrides);
 }
 
@@ -446,9 +457,13 @@ check(isset($GLOBALS['styles']['enqueued']['ffla-product-reviews'], $GLOBALS['sc
 render_list(30, ['perPage' => 1]);
 check($GLOBALS['scripts']['localized'] === 1, 'script data localized once per page');
 reset_assets();
-settings(['enable_helpful_votes' => '0']);
+settings(['enable_helpful_votes' => '0', 'list_toolbar' => '0', 'list_show_more' => '0', 'review_lightbox' => '0']);
 render_list(30, ['perPage' => 1]);
-check(isset($GLOBALS['styles']['enqueued']['ffla-product-reviews']) && empty($GLOBALS['scripts']['enqueued']), 'votes off: list loads CSS only');
+check(isset($GLOBALS['styles']['enqueued']['ffla-product-reviews']) && empty($GLOBALS['scripts']['enqueued']), 'nothing interactive (votes, toolbar, Show more, lightbox off): list loads CSS only');
+reset_assets();
+settings(['enable_helpful_votes' => '0', 'list_show_more' => '0', 'review_lightbox' => '0']);
+render_list(30, ['perPage' => 1]);
+check(isset($GLOBALS['scripts']['enqueued']['ffla-product-reviews']), 'votes off but the filter toolbar on: the list loads the script');
 settings();
 reset_assets();
 reset_page();

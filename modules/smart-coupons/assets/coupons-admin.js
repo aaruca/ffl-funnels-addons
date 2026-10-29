@@ -12,6 +12,18 @@
 	$(document).on('change', '#discount_type', sync);
 	$(sync);
 
+	// Schedule: the rows for one time / recurring and for each frequency.
+	function syncSchedule() {
+		var recurring = $('#ffla_schedule').val() === 'recurring';
+		var frequency = $('#ffla_frequency').val();
+		$('.ffla-show-recurring').toggle(recurring);
+		$('.ffla-show-weekly').toggle(recurring && frequency === 'weekly');
+		$('.ffla-show-monthly').toggle(recurring && frequency === 'monthly');
+		$('.ffla-show-yearly').toggle(recurring && frequency === 'yearly');
+	}
+	$(document).on('change', '#ffla_schedule, #ffla_frequency', syncSchedule);
+	$(syncSchedule);
+
 	$(document).on('click', '[data-ffla-copy]', function () {
 		var button = $(this);
 		var value = button.attr('data-ffla-copy');

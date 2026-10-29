@@ -70,13 +70,32 @@ class Product_Reviews_Assets
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'nonce'   => wp_create_nonce('ffla_product_reviews_nonce'),
             'i18n'    => [
-                'voteSaved' => __('Thanks for your feedback!', 'ffl-funnels-addons'),
-                'voteError' => __('Unable to register your vote.', 'ffl-funnels-addons'),
+                'voteSaved'     => __('Thanks for your feedback!', 'ffl-funnels-addons'),
+                'voteError'     => __('Unable to register your vote.', 'ffl-funnels-addons'),
+                'loading'       => __('Loading reviews…', 'ffl-funnels-addons'),
+                'loadError'     => __('Reviews could not be loaded. Please try again.', 'ffl-funnels-addons'),
+                'clearFilters'  => __('Clear filters', 'ffl-funnels-addons'),
+                'lightboxLabel' => __('Review photo', 'ffl-funnels-addons'),
+                'close'         => __('Close', 'ffl-funnels-addons'),
+                'previous'      => __('Previous photo', 'ffl-funnels-addons'),
+                'next'          => __('Next photo', 'ffl-funnels-addons'),
+                /* translators: 1: photo number, 2: photos in the review */
+                'photoOf'       => __('Photo %1$s of %2$s', 'ffl-funnels-addons'),
             ],
             'fileUpload' => [
                 'removeLabel'  => __('Remove file', 'ffl-funnels-addons'),
-                'maxFiles'     => __('You can attach up to 3 files.', 'ffl-funnels-addons'),
-                'fileTooLarge' => __('Each file must be 5 MB or less.', 'ffl-funnels-addons'),
+                'maxCount'     => Product_Reviews_Core::media_max_files(),
+                'maxBytes'     => Product_Reviews_Core::media_max_mb() * 1024 * 1024,
+                'maxFiles'     => sprintf(
+                    /* translators: %d: number of files */
+                    _n('You can attach up to %d file.', 'You can attach up to %d files.', Product_Reviews_Core::media_max_files(), 'ffl-funnels-addons'),
+                    Product_Reviews_Core::media_max_files()
+                ),
+                'fileTooLarge' => sprintf(
+                    /* translators: %d: size in megabytes */
+                    __('Each file must be %d MB or less.', 'ffl-funnels-addons'),
+                    Product_Reviews_Core::media_max_mb()
+                ),
             ],
         ]);
 

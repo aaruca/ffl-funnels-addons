@@ -28,6 +28,9 @@ class Product_Reviews_Core
     /** Order statuses whose signed review links stop working. */
     const TOKEN_DEAD_STATUSES = ['refunded', 'cancelled', 'failed', 'trash'];
 
+    /** Product Q&A comment types; the review rules never touch them. */
+    const QNA_TYPES = ['ffla_question', 'ffla_answer'];
+
     /** @var bool */
     private static $order_review_rewrite_tag_registered = false;
 
@@ -132,6 +135,22 @@ class Product_Reviews_Core
         return '1' === self::get_setting('allow_media_uploads', '1');
     }
 
+    /**
+     * Photos and videos per review (Review form → Most files per review).
+     */
+    public static function media_max_files(): int
+    {
+        return max(1, min(10, absint(self::get_setting('media_max_files', (string) self::MAX_MEDIA_FILES)) ?: self::MAX_MEDIA_FILES));
+    }
+
+    /**
+     * Largest file accepted, in megabytes (Review form → Largest file).
+     */
+    public static function media_max_mb(): int
+    {
+        return max(1, min(50, absint(self::get_setting('media_max_mb', '5')) ?: 5));
+    }
+
     public static function get_default_settings(): array
     {
         return [
@@ -143,6 +162,13 @@ class Product_Reviews_Core
             'review_criteria'           => self::DEFAULT_CRITERIA,
             'show_rating_summary'       => '1',
             'show_replies'              => '1',
+            'list_per_page'             => '5',
+            'list_toolbar'              => '1',
+            'list_show_more'            => '1',
+            'review_name_format'        => 'first_initial',
+            'review_avatars'            => 'initials',
+            'verified_label'            => __('Verified buyer', 'ffl-funnels-addons'),
+            'review_lightbox'           => '1',
             'forbidden_words'           => '',
             'forbidden_action'          => 'moderate',
             'notify_on_approved'        => '1',
@@ -151,12 +177,113 @@ class Product_Reviews_Core
             'replace_default_reviews_tab' => '0',
             'form_title'                => __('Write a review', 'ffl-funnels-addons'),
             'allow_media_uploads'       => '1',
+            'media_max_files'           => '3',
+            'media_max_mb'              => '5',
             'moderate_all_reviews'      => '0',
             'request_email_mode'        => 'bundle',
             'order_review_page_id'      => '0',
             'order_review_show_criteria' => '0',
             'order_review_pretty_urls'  => '0',
             'order_review_rewrite_slug' => 'order-review',
+            'request_trigger_status'    => 'completed',
+            'request_delay_unit'        => 'days',
+            'request_country_delays'    => '',
+            'request_send_hour'         => '',
+            'request_send_days'         => [],
+            'review_link_days'          => '90',
+            'request_reminder'          => '0',
+            'request_reminder_days'     => '7',
+            'request_guests'            => '1',
+            'request_roles_mode'        => 'all',
+            'request_roles'             => [],
+            'request_categories_mode'   => 'all',
+            'request_categories'        => [],
+            'request_skip_free'         => '0',
+            'request_max_products'      => '0',
+            'request_excluded_emails'   => '',
+            'request_customer_window_days' => '0',
+            'request_use_account_email' => '0',
+            'request_consent'           => 'none',
+            'request_consent_text'      => '',
+            'email_format'              => 'html',
+            'email_reminder_subject'    => '',
+            'email_reminder_heading'    => '',
+            'email_logo_id'             => '0',
+            'email_brand_color'         => '',
+            'email_background_color'    => '',
+            'email_text_color'          => '',
+            'email_star_color'          => '',
+            'email_button_text'         => '',
+            'email_show_products'       => '1',
+            'email_footer_text'         => '',
+            'email_reply_to'            => '',
+            'email_bcc'                 => '',
+            'email_tracking'            => '1',
+            'coupon_enabled'            => '0',
+            'coupon_who'                => 'verified',
+            'coupon_roles_mode'         => 'all',
+            'coupon_roles'              => [],
+            'coupon_tier1_type'         => 'new',
+            'coupon_tier1_discount_type' => 'percent',
+            'coupon_tier1_amount'       => '10',
+            'coupon_tier1_existing'     => '',
+            'coupon_tier2_type'         => 'off',
+            'coupon_tier2_min_media'    => '1',
+            'coupon_tier2_discount_type' => 'percent',
+            'coupon_tier2_amount'       => '15',
+            'coupon_tier2_existing'     => '',
+            'coupon_tier3_type'         => 'off',
+            'coupon_tier3_min_media'    => '3',
+            'coupon_tier3_discount_type' => 'percent',
+            'coupon_tier3_amount'       => '20',
+            'coupon_tier3_existing'     => '',
+            'coupon_prefix'             => 'REVIEW-',
+            'coupon_expiry_days'        => '30',
+            'coupon_minimum_spend'      => '',
+            'coupon_maximum_spend'      => '',
+            'coupon_individual_use'     => '1',
+            'coupon_exclude_sale'       => '0',
+            'coupon_free_shipping'      => '0',
+            'coupon_usage_limit'        => '1',
+            'coupon_shareable'          => '0',
+            'coupon_categories'         => [],
+            'coupon_excluded_categories' => [],
+            'coupon_email_subject'      => '',
+            'coupon_email_heading'      => '',
+            'coupon_email_text'         => '',
+            'coupon_button_text'        => '',
+            'coupon_badge'              => '1',
+            'coupon_badge_text'         => '',
+            'qna_enabled'               => '0',
+            'qna_tab'                   => '1',
+            'qna_tab_title'             => '',
+            'qna_who_asks'              => 'anyone',
+            'qna_who_answers'           => 'store',
+            'qna_moderate_questions'    => '1',
+            'qna_moderate_answers'      => '1',
+            'qna_per_page'              => '5',
+            'qna_search'                => '1',
+            'qna_votes'                 => '1',
+            'qna_notify_store'          => '1',
+            'qna_notify_email'          => '',
+            'qna_notify_asker'          => '1',
+            'review_questions'          => '',
+            'terms_on_reviews'          => '0',
+            'terms_on_qna'              => '0',
+            'terms_text'                => '',
+            'terms_page_id'             => '0',
+            'captcha_provider'          => 'plugin',
+            'captcha_site_key'          => '',
+            'captcha_secret_key'        => '',
+            'captcha_v3_threshold'      => '0.5',
+            'login_url'                 => '',
+            'notify_store_new_review'   => '0',
+            'notify_store_email'        => '',
+            'notify_store_max_rating'   => '5',
+            'seo_identifiers'           => '1',
+            'seo_default_brand'         => '',
+            'seo_review_images'         => '1',
+            'whatsapp_template'         => __('Hi {customer_name}, thank you for your order from {store_name}! Would you take a minute to review it? {review_url}', 'ffl-funnels-addons'),
             'email_subject'             => __('How was your purchase?', 'ffl-funnels-addons'),
             'email_heading'             => __('Leave a review for your recent order', 'ffl-funnels-addons'),
             'email_template'            => __("Hi {customer_name},\n\nWe would love your feedback on {product_name}.\n\nLeave your review here:\n{review_url}\n\nThank you!", 'ffl-funnels-addons'),
@@ -278,7 +405,7 @@ class Product_Reviews_Core
     public static function wc_tab_list_settings(int $product_id): array
     {
         $defaults = [
-            'perPage' => 5,
+            'perPage' => max(1, min(50, absint(self::get_setting('list_per_page', '5')) ?: 5)),
             'orderBy' => 'recent',
         ];
 
@@ -413,6 +540,11 @@ class Product_Reviews_Core
             return $commentdata;
         }
 
+        // Questions and answers have their own handler and rules.
+        if (in_array((string) ($commentdata['comment_type'] ?? ''), self::QNA_TYPES, true)) {
+            return $commentdata;
+        }
+
         // Allow admins with moderate_comments capability to bypass checks
         // (e.g., replies from the comments table, REST API submissions).
         if (is_user_logged_in()) {
@@ -464,10 +596,10 @@ class Product_Reviews_Core
         // unless the Turnstile plugin already guards the comment form itself.
         if (self::is_native_top_level_review($commentdata)
             && '1' === self::get_setting('replace_default_reviews_tab', '0')
-            && class_exists('Product_Reviews_Turnstile')
-            && Product_Reviews_Turnstile::is_available()
-            && !Product_Reviews_Turnstile::protects_native_comments()
-            && !Product_Reviews_Turnstile::passes()) {
+            && class_exists('Product_Reviews_Captcha')
+            && Product_Reviews_Captcha::is_available()
+            && !Product_Reviews_Captcha::protects_native_comments()
+            && !Product_Reviews_Captcha::passes()) {
             wp_die(
                 esc_html__('Cloudflare validation failed. Please try again.', 'ffl-funnels-addons'),
                 '',
@@ -690,9 +822,17 @@ class Product_Reviews_Core
         return wp_salt('ffla_product_reviews_order');
     }
 
+    /**
+     * How long a signed review link works (Review requests → Link valid for).
+     */
+    public static function review_link_days(): int
+    {
+        return max(1, min(365, absint(self::get_setting('review_link_days', '90')) ?: 90));
+    }
+
     public static function build_order_review_token(int $order_id, string $billing_email): string
     {
-        $exp = time() + (90 * DAY_IN_SECONDS);
+        $exp = time() + (self::review_link_days() * DAY_IN_SECONDS);
         $eh  = md5(strtolower(trim($billing_email)));
         $payload = $order_id . '|' . $exp . '|' . $eh;
         $sig     = hash_hmac('sha256', $payload, self::order_review_token_secret());
@@ -956,6 +1096,10 @@ class Product_Reviews_Core
         if (class_exists('WC_Comments') && method_exists('WC_Comments', 'clear_transients')) {
             \WC_Comments::clear_transients((int) $comment->comment_post_ID);
         }
+        // Store-wide and category numbers (summary, chips, badge) too.
+        if (class_exists('Product_Reviews_Query')) {
+            Product_Reviews_Query::bump_cache_version((int) $comment->comment_post_ID);
+        }
     }
 
     /**
@@ -1103,13 +1247,14 @@ class Product_Reviews_Core
     }
 
     /**
-     * Validate the Turnstile response (when the Simple Cloudflare Turnstile
-     * plugin is active). Signed order-review links bypass the challenge
-     * because the token already proves the request comes from the customer.
+     * Validate the CAPTCHA response (Review form → CAPTCHA; by default the
+     * Simple Cloudflare Turnstile plugin when it is active). Signed
+     * order-review links bypass the challenge because the token already
+     * proves the request comes from the customer.
      */
     private static function turnstile_token_valid_for_request(): bool
     {
-        if (!class_exists('Product_Reviews_Turnstile') || !Product_Reviews_Turnstile::is_available()) {
+        if (!class_exists('Product_Reviews_Captcha') || !Product_Reviews_Captcha::is_available()) {
             return true;
         }
 
@@ -1117,7 +1262,7 @@ class Product_Reviews_Core
             return true;
         }
 
-        return Product_Reviews_Turnstile::passes();
+        return Product_Reviews_Captcha::passes();
     }
 
     /**
@@ -1166,6 +1311,10 @@ class Product_Reviews_Core
             return;
         }
 
+        if (in_array((string) ($commentdata['comment_type'] ?? ''), self::QNA_TYPES, true)) {
+            return;
+        }
+
         $rating = isset($_POST['rating']) ? absint($_POST['rating']) : 0;
         if ($rating > 0) {
             update_comment_meta($comment_id, 'rating', min(5, $rating));
@@ -1190,6 +1339,13 @@ class Product_Reviews_Core
 
         $verified = self::review_proves_purchase($comment, $product_id) ? 1 : 0;
         update_comment_meta($comment_id, 'ffla_verified_purchase', $verified);
+
+        // A review through the order's signed link: the request worked.
+        if (self::$token_order instanceof \WC_Order && class_exists('Product_Reviews_Tracking')
+            && !in_array((string) $comment_approved, ['spam', 'trash'], true)) {
+            update_comment_meta($comment_id, 'ffla_review_order_id', (int) self::$token_order->get_id());
+            Product_Reviews_Tracking::record_review(self::$token_order);
+        }
 
         // WooCommerce writes its own "verified owner" flag on this same hook
         // from the typed address (the hole closed above), and its templates,
@@ -1257,7 +1413,7 @@ class Product_Reviews_Core
         $processed = 0;
 
         foreach ($files as $file) {
-            if ($processed >= self::MAX_MEDIA_FILES) {
+            if ($processed >= self::media_max_files()) {
                 break;
             }
 
@@ -1265,7 +1421,7 @@ class Product_Reviews_Core
                 continue;
             }
 
-            if (!empty($file['size']) && (int) $file['size'] > (5 * 1024 * 1024)) {
+            if (!empty($file['size']) && (int) $file['size'] > (self::media_max_mb() * 1024 * 1024)) {
                 continue;
             }
 
@@ -1302,6 +1458,7 @@ class Product_Reviews_Core
 
             if (!is_wp_error($attachment_id) && $attachment_id > 0) {
                 $attachment_ids[] = (int) $attachment_id;
+                self::mark_review_upload((int) $attachment_id, $comment_id);
                 $processed++;
             }
         }
@@ -1311,6 +1468,26 @@ class Product_Reviews_Core
         }
     }
 
+    /** Post meta on an attachment the module saved for a review: that review's ID. */
+    const UPLOAD_OWNER_META = '_ffla_review_upload';
+
+    /**
+     * Remember which review a file was uploaded or imported for, so deleting
+     * that review deletes the file and nothing else.
+     */
+    public static function mark_review_upload(int $attachment_id, int $comment_id): void
+    {
+        if ($attachment_id > 0 && $comment_id > 0) {
+            update_post_meta($attachment_id, self::UPLOAD_OWNER_META, $comment_id);
+        }
+    }
+
+    /**
+     * When a review is deleted for good, delete the files that were uploaded
+     * or imported for it. Files picked from the Media Library on the review's
+     * edit screen (a product photo, another review's photo) are only taken
+     * off it.
+     */
     public static function cleanup_review_media(int $comment_id): void
     {
         $comment = get_comment($comment_id);
@@ -1330,7 +1507,7 @@ class Product_Reviews_Core
 
         foreach ($media_ids as $media_id) {
             $media_id = absint($media_id);
-            if ($media_id > 0) {
+            if ($media_id > 0 && $comment_id === (int) get_post_meta($media_id, self::UPLOAD_OWNER_META, true)) {
                 wp_delete_attachment($media_id, true);
             }
         }
@@ -1570,6 +1747,19 @@ class Product_Reviews_Core
             );
         }
 
+        /**
+         * Extra checks on the FFL review form (terms checkbox, customer
+         * questions). Return a message to refuse the review.
+         *
+         * @param string             $error    ''
+         * @param int                $product_id
+         * @param \WC_Order|null     $order    The signed link's order, if any.
+         */
+        $extra = (string) apply_filters('ffla_product_reviews_form_check', '', $product_id, $order_ctx);
+        if ($extra !== '') {
+            self::redirect_with_status($redirect, 'error', $extra, $fallback);
+        }
+
         // These three checks are done; preprocess_comment must not repeat them.
         self::$form_checks_passed = true;
 
@@ -1715,7 +1905,9 @@ class Product_Reviews_Core
 
         $commentdata = self::apply_review_comment_approval($commentdata);
 
-        $comment_id = wp_new_comment($commentdata, true);
+        // Slashed, as wp_new_comment() expects (wp_insert_comment() unslashes):
+        // unslashed text lost every backslash the customer typed.
+        $comment_id = wp_new_comment(wp_slash($commentdata), true);
         if (is_wp_error($comment_id)) {
             // WordPress's own refusals (duplicate, flooding, Discussion rules)
             // say what went wrong; show that rather than a generic line.

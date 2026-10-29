@@ -116,7 +116,8 @@ $GLOBALS['options'] = [
     'woocommerce_review_rating_verification_required' => 'no',
     'woocommerce_email_from_address'                   => 'shop@store.test',
     'woocommerce_email_from_name'                      => 'Gun &amp; Gear, LLC',
-    'ffla_product_reviews_settings'                    => ['order_review_page_id' => '0'],
+    // Plain text: the checks below read the email body as text.
+    'ffla_product_reviews_settings'                    => ['order_review_page_id' => '0', 'email_format' => 'plain'],
 ];
 $GLOBALS['transients'] = [];
 $GLOBALS['query_vars'] = [];
@@ -124,6 +125,7 @@ $GLOBALS['nocache']    = 0;
 $GLOBALS['log']        = [];
 
 function __($text, $domain = null) { return $text; }
+function _n($single, $plural, $n, $domain = null) { return 1 === (int) $n ? $single : $plural; }
 function esc_html__($text, $domain = null) { return htmlspecialchars($text, ENT_QUOTES); }
 function esc_attr__($text, $domain = null) { return htmlspecialchars($text, ENT_QUOTES); }
 function esc_html($text) { return htmlspecialchars((string) $text, ENT_QUOTES); }
@@ -137,7 +139,10 @@ function absint($v) { return abs((int) $v); }
 function sanitize_text_field($s) { return trim(strip_tags((string) $s)); }
 function sanitize_email($s) { return trim((string) $s); }
 function sanitize_title($s) { return strtolower(trim(preg_replace('/[^a-z0-9]+/i', '-', (string) $s), '-')); }
+function sanitize_key($s) { return preg_replace('/[^a-z0-9_\-]/', '', strtolower((string) $s)); }
 function wp_unslash($s) { return $s; }
+function wp_slash($s) { return $s; }
+function wp_login_url($redirect = '') { return 'https://store.test/wp-login.php?redirect_to=' . rawurlencode((string) $redirect); }
 function wp_parse_args($args, $defaults) { return array_merge($defaults, (array) $args); }
 function is_email($email) { return (bool) filter_var($email, FILTER_VALIDATE_EMAIL); }
 function wp_strip_all_tags($s) { return trim(strip_tags((string) $s)); }
@@ -164,6 +169,8 @@ function nocache_headers() { $GLOBALS['nocache']++; }
 function wp_verify_nonce($nonce, $action) { return 'good-nonce' === $nonce ? 1 : false; }
 function get_option($key, $default = false) { return array_key_exists($key, $GLOBALS['options']) ? $GLOBALS['options'][$key] : $default; }
 function update_option($key, $value) { $GLOBALS['options'][$key] = $value; return true; }
+function update_post_meta($id, $key, $value) { $GLOBALS['post_meta'][(int) $id][$key] = $value; return true; }
+function get_post_meta($id, $key = '', $single = false) { return $GLOBALS['post_meta'][(int) $id][$key] ?? ''; }
 function get_transient($key) { return $GLOBALS['transients'][$key] ?? false; }
 function set_transient($key, $value, $ttl = 0) { $GLOBALS['transients'][$key] = $value; return true; }
 function delete_transient($key) { unset($GLOBALS['transients'][$key]); return true; }
@@ -450,6 +457,7 @@ class WC_Order
     public function update_meta_data($key, $value) { $this->meta[$key] = $value; }
     public function delete_meta_data($key) { unset($this->meta[$key]); }
     public function save() { return $this->id; }
+    public function save_meta_data() {}
     public function get_status() { return $this->status; }
     public function has_status($status) { return in_array($this->status, (array) $status, true); }
     public function get_date_created() { return $this->created ? new WC_DateTime('@' . $this->created) : null; }
@@ -569,8 +577,13 @@ require $module_dir . 'includes/class-product-reviews-order-hub.php';
 require $module_dir . 'includes/class-product-reviews-core.php';
 require $module_dir . 'includes/class-product-reviews-image-privacy.php';
 require $module_dir . 'includes/class-product-reviews-notifications.php';
+require $module_dir . 'includes/class-product-reviews-email-template.php';
+require $module_dir . 'includes/class-product-reviews-request-rules.php';
+require $module_dir . 'includes/class-product-reviews-consent.php';
+require $module_dir . 'includes/class-product-reviews-tracking.php';
 require $module_dir . 'includes/class-product-reviews-email.php';
 require $module_dir . 'integrations/class-product-reviews-turnstile.php';
+require $module_dir . 'includes/class-product-reviews-captcha.php';
 require $module_dir . 'class-product-reviews-module.php';
 
 Product_Reviews_Order_Hub::init();
@@ -885,7 +898,7 @@ check(1 === count(actions_for('ffla_send_order_review_bundle', [3001])), 'comple
 set_setting('request_email_mode', 'per_product');
 make_order(3002, 'pp@example.com', [[101, 1], [102, 1]]);
 Product_Reviews_Email::schedule_requests_for_order(3002);
-check(1 === count(actions_for('ffla_send_product_review_request', [3002, 101, 0])) && 1 === count(actions_for('ffla_send_product_review_request', [3002, 102, 0])), 'per-product mode still queues one email per product');
+check(1 === count(actions_for('ffla_send_product_review_request', [3002, 101])) && 1 === count(actions_for('ffla_send_product_review_request', [3002, 102])), 'per-product mode still queues one email per product (order and product only)');
 set_setting('request_email_mode', 'bundle');
 
 make_order(3003, 'old@example.com', [[101, 1]], ['created' => time() - 60 * DAY_IN_SECONDS]);
@@ -991,9 +1004,9 @@ $p = make_order(3011, 'pp2@example.com', [[101, 1], [104, 1]]);
 Product_Reviews_Email::schedule_requests_for_order(3011);
 $p->refunded[30111] = 1;
 $count = count($GLOBALS['mails']);
-run_action('ffla_send_product_review_request', [3011, 104, 0]);
+run_action('ffla_send_product_review_request', [3011, 104]);
 check(count($GLOBALS['mails']) === $count, 'per-product: a line refunded after queueing is not emailed');
-run_action('ffla_send_product_review_request', [3011, 101, 0]);
+run_action('ffla_send_product_review_request', [3011, 101]);
 check(count($GLOBALS['mails']) === $count + 1 && $p->get_meta('_ffla_review_sent_101') > 0, 'per-product: the other product is emailed and marked');
 set_setting('request_email_mode', 'bundle');
 $GLOBALS['closed'] = [];

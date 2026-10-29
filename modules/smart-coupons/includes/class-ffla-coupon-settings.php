@@ -71,7 +71,7 @@ class FFLA_Coupon_Settings
 
     public static function coupon_defaults(): array
     {
-        return [
+        return FFLA_Coupon_Schedule::defaults() + [
             'allow_protected' => false,
             // Which products: categories and tags, each matched "any" (OR) or "all"
             // (AND), joined by `join` when both are set. Exclusions always win.
@@ -83,6 +83,8 @@ class FFLA_Coupon_Settings
             'exclude_cats'    => [],      // Products in any of these categories are left out.
             'exclude_tags'    => [],      // Products with any of these tags are left out.
             'starts'          => '',      // Y-m-d, store time.
+            // One time, or recurring (FFLA_Coupon_Schedule): schedule, frequency,
+            // weekdays, month_from / month_to, year_from / year_to.
             'first_order'     => false,
             'roles'           => [],      // WP roles, plus "guest".
             'per_customer'    => 0,       // Max uses per person (email / phone / address); 0 = no limit.
@@ -146,7 +148,7 @@ class FFLA_Coupon_Settings
         $starts = (string) ($in['starts'] ?? '');
         $in = self::upgrade($in);
 
-        return [
+        return FFLA_Coupon_Schedule::sanitize($in) + [
             'allow_protected' => !empty($in['allow_protected']),
             'cats'            => $ids($in['cats'] ?? []),
             'cats_match'      => 'all' === ($in['cats_match'] ?? '') ? 'all' : 'any',

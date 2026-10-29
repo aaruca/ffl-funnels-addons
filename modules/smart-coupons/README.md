@@ -50,7 +50,9 @@ One rule, read top to bottom:
 
 | Option | Behaviour |
 |---|---|
+| Schedule | **One time** (default): from *Starts on* until WooCommerce's expiry date. **Recurring**: only on the days set below, again and again, still from *Starts on* until the expiry date (empty = no end). |
 | Starts on | Not usable before this date (store time). The end is WooCommerce's expiry date. |
+| Repeats (recurring) | **Every week** on the days ticked (e.g. Saturday and Sunday); **Every month** from one day to another (the 1st to the 7th; 25th to 5th runs over the turn of the month; the 31st means the last day of shorter months); **Every year** from a start date to an end date, of which only day and month count (November 25 to December 2; December 20 to January 5 runs over the new year; February 29 means February 28 in other years). Whole days in the store's time zone. On another day the customer sees "This coupon only works on Saturdays and Sundays." / "…from the 1st to the 7th of each month." / "…from November 25 to December 2 each year." A recurring schedule with no day or no end date chosen does not limit the coupon. |
 | First order only | No previous paid order by account or billing email. |
 | Only for | Customer roles; "Guests" is a choice. Guests are asked to sign in. |
 | Uses per person | Counted across orders by **email** (Gmail dots and `+tags` ignored), **phone** (last 10 digits) and **shipping address** (address line + 5-digit ZIP), so a new account does not get it again. Checked in the cart once the customer is known and again when the order is placed. |

@@ -31,6 +31,8 @@ class Product_Reviews_Bricks
             $elements_dir . 'reviews-list.php',
             $elements_dir . 'review-form.php',
             $elements_dir . 'order-review-hub.php',
+            $elements_dir . 'store-rating-badge.php',
+            $elements_dir . 'product-qna.php',
         ];
 
         foreach ($element_files as $file) {

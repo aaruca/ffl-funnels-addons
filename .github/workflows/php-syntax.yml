@@ -102,6 +102,9 @@ jobs:
           php tests/smoke/monsterinsights-payload-smoke.php
           php tests/smoke/order-badges-smoke.php
 
+      - name: Smart Coupons recurring schedule checks
+        run: php tests/smoke/smart-coupons-schedule-smoke.php
+
   product-reviews:
     name: Product Reviews (PHP ${{ matrix.php }})
     runs-on: ubuntu-latest
@@ -118,3 +121,19 @@ jobs:
         run: php tests/smoke/product-reviews-smoke.php
       - name: Check review media, counts, assets, structured data and votes
         run: php tests/smoke/product-reviews-display-smoke.php
+      - name: Check the tabbed settings screen
+        run: php tests/smoke/product-reviews-admin-smoke.php
+      - name: Check review lists, filters, paging, layouts and the store badge
+        run: php tests/smoke/product-reviews-list-smoke.php
+      - name: Check request timing, rules, consent, HTML email, tracking and order tools
+        run: php tests/smoke/product-reviews-requests-smoke.php
+      - name: Check coupons for reviews
+        run: php tests/smoke/product-reviews-coupons-smoke.php
+      - name: Check product questions and answers
+        run: php tests/smoke/product-reviews-qna-smoke.php
+      - name: Check CSV import and export
+        run: php tests/smoke/product-reviews-tools-smoke.php
+      - name: Check form extras, CAPTCHA and admin tools
+        run: php tests/smoke/product-reviews-form-smoke.php
+      - name: Check product identifiers and review photos in the structured data
+        run: php tests/smoke/product-reviews-seo-smoke.php
