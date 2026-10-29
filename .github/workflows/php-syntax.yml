@@ -120,7 +120,6 @@ jobs:
           # loads Xdebug; Xdebug changes how some exceptions behave (1.56.0's
           # first release build failed on it), so the PR checks load it too.
           coverage: xdebug
-          coverage: none
       - name: Check verified flags, uploads, request emails, hub and notifications
         run: php tests/smoke/product-reviews-smoke.php
       - name: Check review media, counts, assets, structured data and votes
