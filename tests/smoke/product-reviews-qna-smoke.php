@@ -90,6 +90,23 @@ check('' === (string) get_comment_meta($q1->comment_ID, 'rating', true) && '' ==
 $store_mail = end($GLOBALS['mails']);
 check('admin@store.test' === $store_mail['to'] && strpos($store_mail['subject'], 'New question about Hunting Rifle Scope') === 0, 'the store hears about it');
 check(strpos($store_mail['body'], 'waits for approval') !== false && strpos($store_mail['body'], 'page=ffla-product-reviews-questions') !== false, 'with its status and a link to answer it');
+check(strpos($store_mail['body'], 'view=pending') !== false && strpos($store_mail['body'], '#ffla-question-' . $q1->comment_ID) !== false, 'the link opens the view where the held question is');
+
+// Spam (Akismet, disallowed words) is saved but never emailed to the store.
+$mails_before_spam = count($GLOBALS['mails']);
+$GLOBALS['wp_verdict'] = 'spam';
+ask(['author' => 'Spam Bot', 'email' => 'spam@example.com', 'question' => 'Cheap pills here, click now']);
+$GLOBALS['wp_verdict'] = 1;
+check('spam' === (string) last_comment()->comment_approved && $mails_before_spam === count($GLOBALS['mails']), 'a question filed as spam does not email the store');
+
+// WordPress refuses (duplicate, flooding): its reason is shown.
+$refuse = function () {
+    return new WP_Error('comment_duplicate', 'Duplicate comment detected; it looks as though you’ve already said that!');
+};
+add_filter('pre_comment_approved', $refuse, 99);
+$r = ask(['author' => 'Twice', 'email' => 'twice@example.com', 'question' => 'Same question again?']);
+remove_filter('pre_comment_approved', $refuse, 99);
+check('error' === $r['ffla_qna_status'] && 0 === strpos($r['ffla_qna_message'], 'Duplicate comment detected'), 'WordPress\'s reason for refusing is shown');
 
 $count = count($GLOBALS['comments']);
 $r = ask(['author' => 'Bot', 'email' => 'bot@example.com', 'ffla_hp' => 'spam']);
@@ -115,9 +132,12 @@ check('asked' === $r['ffla_qna_status'] && 7 === (int) $q2->user_id && 'buyer@ex
 settings();
 
 settings(['qna_moderate_questions' => '0']);
+$GLOBALS['options']['comment_moderation'] = 1; // Settings → Discussion: blog comments must be approved.
 ask(['author' => 'Pat Public', 'email' => 'pat@example.com', 'question' => 'What is the eye relief?']);
 $q3 = last_comment();
-check('1' === (string) $q3->comment_approved, 'moderation off: published at once');
+check('1' === (string) $q3->comment_approved, 'moderation off: published at once, whatever Settings → Discussion says about blog comments');
+check(1 === get_option('comment_moderation'), 'and the Discussion setting itself is untouched');
+unset($GLOBALS['options']['comment_moderation']);
 settings(['qna_moderate_questions' => '0', 'forbidden_words' => 'scam']);
 ask(['author' => 'Rude Ron', 'email' => 'ron@example.com', 'question' => 'Is this a scam product?']);
 check('0' === (string) last_comment()->comment_approved, 'a forbidden word holds it anyway');
@@ -168,6 +188,8 @@ settings(['qna_who_answers' => 'anyone', 'qna_moderate_answers' => '0']);
 $r = answer((int) $q1->comment_ID, ['author' => 'Ann Other', 'email' => 'gail@example.com', 'answer' => 'I asked this too.']);
 check('1' === (string) last_comment()->comment_approved, 'anyone may answer; moderation off publishes it');
 check($sent_before + 1 === count($GLOBALS['mails']), 'the asker is not emailed about their own answer');
+$r = answer((int) $q1->comment_ID, ['author' => 'Stranger', 'email' => 'stranger@example.com', 'answer' => 'Visit my site for a better deal!']);
+check('1' === (string) last_comment()->comment_approved && $sent_before + 1 === count($GLOBALS['mails']), 'a stranger\'s answer published without moderation is not emailed to the asker (no relaying any text from the store\'s address)');
 $r = answer((int) $q2->comment_ID, ['author' => 'Early', 'email' => 'early@example.com']);
 check('error' === $r['ffla_qna_status'], 'no answers to a question that is not published');
 settings();
@@ -226,6 +248,19 @@ check(2 === substr_count($page2['html'], '<article') && !$page2['hasMore'], 'sec
 $_POST = ['product' => '102', 'search' => 'zipper'];
 [$ok, $found] = expect_json(['Product_Reviews_Qna', 'ajax_load']);
 check(1 === substr_count($found['html'], '<article') && strpos($found['html'], 'about the zipper') !== false, 'search');
+$private = add_test_comment(['comment_post_ID' => 102, 'comment_type' => 'ffla_question', 'comment_author' => 'Quiet', 'comment_author_email' => 'private.person@example.com', 'comment_author_IP' => '203.0.113.9', 'comment_content' => 'Does the strap detach?', 'comment_date_gmt' => '2026-03-01 10:00:00']);
+add_test_comment(['comment_post_ID' => 102, 'comment_type' => 'ffla_answer', 'comment_parent' => $private, 'comment_author' => 'Store', 'comment_content' => 'Yes, with two metal clips.', 'comment_date_gmt' => '2026-03-02 10:00:00']);
+foreach (['private.person', '203.0.113'] as $probe) {
+    $_POST = ['product' => '102', 'search' => $probe];
+    [$ok, $leak] = expect_json(['Product_Reviews_Qna', 'ajax_load']);
+    check(0 === $leak['total'], "the public search never matches an asker's email or IP ($probe)");
+}
+$_POST = ['product' => '102', 'search' => 'metal clips'];
+[$ok, $by_answer] = expect_json(['Product_Reviews_Qna', 'ajax_load']);
+check(1 === $by_answer['total'] && strpos($by_answer['html'], 'Does the strap detach?') !== false, 'search finds a question by its answer\'s text');
+$_POST = ['product' => '102', 'search' => str_repeat('щ', 150)];
+[$ok, $long] = expect_json(['Product_Reviews_Qna', 'ajax_load']);
+check($ok && 0 === $long['total'], 'a long non-ASCII search is cut by characters and still runs');
 $_POST = ['product' => '102', 'search' => 'nothing-like-this'];
 [$ok, $none] = expect_json(['Product_Reviews_Qna', 'ajax_load']);
 check('' === $none['html'] && 'No questions match your search.' === $none['status'], 'no match');
@@ -296,6 +331,41 @@ $_GET = ['action' => 'ffla_qna_admin_status', 'comment_id' => (string) $q3->comm
 $_REQUEST = $_GET;
 $back = expect_redirect([$admin, 'handle_status']);
 check('trashed' === $back['qna_notice'] && 'trash' === $q3->comment_approved, 'trash from the Questions page');
+check('1' === (string) get_comment_meta($q3->comment_ID, '_wp_trash_meta_status', true), 'with WordPress\'s trash, which remembers the old status and empties itself on schedule');
+$_GET = ['page' => 'ffla-product-reviews-questions', 'view' => 'trash'];
+$page = capture(['Product_Reviews_Qna_Admin', 'render']);
+check(strpos($page, 'What is the eye relief?') !== false && strpos($page, 'to=untrash') !== false && strpos($page, 'to=delete') !== false, 'the Trash view lists it with Restore and Delete for good');
+check(Product_Reviews_Qna_Admin::counts()['trash'] >= 1 && Product_Reviews_Qna_Admin::counts()['spam'] >= 1, 'Spam and Trash views are counted');
+reset_request(9);
+$_GET = ['action' => 'ffla_qna_admin_status', 'comment_id' => (string) $q3->comment_ID, 'to' => 'untrash', '_wpnonce' => 'nonce-ffla_qna_admin_status_' . $q3->comment_ID];
+$_REQUEST = $_GET;
+$back = expect_redirect([$admin, 'handle_status']);
+check('restored' === $back['qna_notice'] && '1' === (string) $q3->comment_approved, 'Restore brings it back published, as it was');
+reset_request(9);
+$_GET = ['action' => 'ffla_qna_admin_status', 'comment_id' => (string) $q3->comment_ID, 'to' => 'delete', '_wpnonce' => 'nonce-ffla_qna_admin_status_' . $q3->comment_ID];
+$_REQUEST = $_GET;
+expect_redirect([$admin, 'handle_status']);
+check(null !== get_comment($q3->comment_ID), 'Delete for good does nothing outside Spam and Trash');
+$spammy = null;
+foreach ($GLOBALS['comments'] as $c) {
+    $spammy = 'spam' === (string) $c->comment_approved && 'ffla_question' === $c->comment_type ? $c : $spammy;
+}
+$_GET = ['page' => 'ffla-product-reviews-questions', 'view' => 'spam'];
+check(strpos(capture(['Product_Reviews_Qna_Admin', 'render']), 'Cheap pills here') !== false, 'the Spam view lists spam questions');
+reset_request(9);
+$_GET = ['action' => 'ffla_qna_admin_status', 'comment_id' => (string) $spammy->comment_ID, 'to' => 'delete', '_wpnonce' => 'nonce-ffla_qna_admin_status_' . $spammy->comment_ID];
+$_REQUEST = $_GET;
+$back = expect_redirect([$admin, 'handle_status']);
+check('deleted' === $back['qna_notice'] && !get_comment($spammy->comment_ID), 'Delete for good from the Spam view');
+
+// The admin answer box says when WordPress refused the answer.
+add_filter('pre_comment_approved', $refuse, 99);
+reset_request(9);
+$_POST = ['action' => 'ffla_qna_admin_answer', 'question_id' => (string) $q1->comment_ID, 'answer' => 'Refused one.', 'view' => 'all', '_wpnonce' => 'nonce-ffla_qna_admin_answer_' . $q1->comment_ID];
+$_REQUEST = $_POST;
+$back = expect_redirect([$admin, 'handle_answer']);
+remove_filter('pre_comment_approved', $refuse, 99);
+check(!isset($back['qna_notice']) && 0 === strpos(rawurldecode($back['qna_error']), 'Duplicate comment detected'), 'a refused admin answer is reported, not "Answer published"');
 
 reset_request(7);
 $_GET = ['comment_id' => (string) $q1->comment_ID, 'to' => 'trash', '_wpnonce' => 'nonce-ffla_qna_admin_status_' . $q1->comment_ID];
@@ -319,10 +389,16 @@ try {
 /* ── Bricks element ────────────────────────────────────────────────────── */
 
 $element = new \Bricks\FFLA_Product_Qna(['productId' => '101', 'title' => 'Ask us', 'showForm' => 'hide', 'showSearch' => 'hide']);
+set_static('Product_Reviews_Qna', 'anchored', false);
 $html = capture(function () use ($element) {
     $element->render();
 });
-check(strpos($html, 'class="ffla-qna" id="qna"') !== false && strpos($html, '<h3 class="ffla-qna__title">Ask us</h3>') !== false, 'element with its title');
+check(strpos($html, 'class="ffla-qna"') !== false && strpos($html, '<h3 class="ffla-qna__title">Ask us</h3>') !== false, 'element with its title');
+check(strpos($html, 'class="ffla-qna" id=') === false && 1 === substr_count($html, 'id="qna"'), 'the #qna anchor is inside, not an id on the element\'s root');
+$again = capture(function () use ($element) {
+    $element->render();
+});
+check(0 === substr_count($again, 'id="qna"'), 'a second Q&A block on the page does not repeat the anchor');
 check(strpos($html, 'Ask a question') === false && strpos($html, 'data-ffla-qna-search') === false, 'form and search can be hidden');
 settings(['qna_enabled' => '0']);
 $html = $element->render();

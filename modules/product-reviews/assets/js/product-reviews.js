@@ -271,6 +271,44 @@
      * Review lists: star filter, photos filter, sort, search, Show more
      * ---------------------------------------------------------------- */
 
+    /**
+     * CAPTCHA widgets in HTML added after the page loaded (answer forms from
+     * "Show more" or a search): the providers only draw the widgets that
+     * were on the page at load, and inline scripts in inserted HTML do not
+     * run.
+     */
+    function renderCaptchas(root) {
+        if (!root || !root.querySelectorAll) {
+            return;
+        }
+        var providers = [
+            ['.cf-turnstile', window.turnstile],
+            ['.h-captcha', window.hcaptcha],
+            ['.g-recaptcha', window.grecaptcha]
+        ];
+        providers.forEach(function (provider) {
+            var api = provider[1];
+            if (!api || typeof api.render !== 'function') {
+                return;
+            }
+            Array.prototype.forEach.call(root.querySelectorAll(provider[0]), function (el) {
+                if (el.childElementCount > 0 || el.getAttribute('data-ffla-rendered') === '1') {
+                    return;
+                }
+                el.setAttribute('data-ffla-rendered', '1');
+                var params = { sitekey: el.getAttribute('data-sitekey') || '' };
+                if (el.getAttribute('data-action')) {
+                    params.action = el.getAttribute('data-action');
+                }
+                try {
+                    api.render(el, params);
+                } catch (e) {
+                    // The provider refused (already drawn, bad key): leave it.
+                }
+            });
+        });
+    }
+
     function post(params) {
         var formData = new FormData();
         Object.keys(params).forEach(function (key) {
@@ -600,10 +638,12 @@
                     if (append) {
                         state.page += 1;
                         items.insertAdjacentHTML('beforeend', data.html || '');
+                        renderCaptchas(items);
                     } else {
                         state.page = 1;
                         if (data.html) {
                             items.innerHTML = data.html;
+                            renderCaptchas(items);
                         } else {
                             items.innerHTML = '';
                             var p = document.createElement('p');

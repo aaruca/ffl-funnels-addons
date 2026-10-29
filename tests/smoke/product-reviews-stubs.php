@@ -93,6 +93,25 @@ function remove_all_filters($tag)
 {
     unset($GLOBALS['hooks'][$tag]);
 }
+function remove_filter($tag, $cb, $priority = 10)
+{
+    foreach ($GLOBALS['hooks'][$tag][$priority] ?? [] as $i => $entry) {
+        if ($entry[0] === $cb) {
+            unset($GLOBALS['hooks'][$tag][$priority][$i]);
+        }
+    }
+    if (empty($GLOBALS['hooks'][$tag][$priority])) {
+        unset($GLOBALS['hooks'][$tag][$priority]);
+    }
+    if (empty($GLOBALS['hooks'][$tag])) {
+        unset($GLOBALS['hooks'][$tag]);
+    }
+    return true;
+}
+function remove_action($tag, $cb, $priority = 10) { return remove_filter($tag, $cb, $priority); }
+if (!function_exists('__return_zero')) {
+    function __return_zero() { return 0; }
+}
 function has_filter($tag)
 {
     return !empty($GLOBALS['hooks'][$tag]);
@@ -373,7 +392,15 @@ $GLOBALS['options'] = [
 ];
 $GLOBALS['transients'] = [];
 
-function get_option($key, $default = false) { return array_key_exists($key, $GLOBALS['options']) ? $GLOBALS['options'][$key] : $default; }
+function get_option($key, $default = false)
+{
+    // Like WordPress: pre_option_{$key} can short-circuit.
+    $pre = apply_filters('pre_option_' . $key, false, $key, $default);
+    if (false !== $pre) {
+        return $pre;
+    }
+    return array_key_exists($key, $GLOBALS['options']) ? $GLOBALS['options'][$key] : $default;
+}
 function update_option($key, $value, $autoload = null) { $GLOBALS['options'][$key] = $value; return true; }
 function add_option($key, $value = '', $deprecated = '', $autoload = 'yes') { if (!array_key_exists($key, $GLOBALS['options'])) { $GLOBALS['options'][$key] = $value; return true; } return false; }
 function delete_option($key) { unset($GLOBALS['options'][$key]); return true; }
@@ -723,7 +750,8 @@ function get_comments($args = [])
         if (!empty($args['comment__in']) && !in_array((int) $c->comment_ID, array_map('intval', $args['comment__in']), true)) {
             continue;
         }
-        if (!empty($args['search']) && stripos($c->comment_content . ' ' . $c->comment_author, (string) $args['search']) === false) {
+        // Like WP_Comment_Query: author, email, URL, IP and content.
+        if (!empty($args['search']) && stripos($c->comment_author . ' ' . $c->comment_author_email . ' ' . ($c->comment_author_url ?? '') . ' ' . ($c->comment_author_IP ?? '') . ' ' . $c->comment_content, (string) $args['search']) === false) {
             continue;
         }
         if (isset($args['meta_key']) && !isset($args['meta_query'])
@@ -882,6 +910,34 @@ function wp_set_comment_status($id, $status)
     do_action('transition_comment_status', $names[$c->comment_approved] ?? $c->comment_approved, $names[$old] ?? $old, $c);
     return true;
 }
+// Like WordPress: the previous status is kept for Restore / Not spam.
+function wp_trash_comment($id)
+{
+    $c = get_comment($id);
+    if (!$c) {
+        return false;
+    }
+    update_comment_meta($id, '_wp_trash_meta_status', $c->comment_approved);
+    update_comment_meta($id, '_wp_trash_meta_time', time());
+    return wp_set_comment_status($id, 'trash');
+}
+function wp_spam_comment($id)
+{
+    $c = get_comment($id);
+    if (!$c) {
+        return false;
+    }
+    update_comment_meta($id, '_wp_trash_meta_status', $c->comment_approved);
+    update_comment_meta($id, '_wp_trash_meta_time', time());
+    return wp_set_comment_status($id, 'spam');
+}
+function wp_untrash_comment($id)
+{
+    $status = (string) ($GLOBALS['cmeta'][(int) $id]['_wp_trash_meta_status'] ?? '0');
+    unset($GLOBALS['cmeta'][(int) $id]['_wp_trash_meta_status'], $GLOBALS['cmeta'][(int) $id]['_wp_trash_meta_time']);
+    return wp_set_comment_status($id, in_array($status, ['1', '0'], true) ? $status : '0');
+}
+function wp_unspam_comment($id) { return wp_untrash_comment($id); }
 function wp_update_comment_count_now($post_id) { $GLOBALS['comment_count_refreshed'][] = (int) $post_id; return true; }
 function clean_comment_cache($ids) {}
 
@@ -893,7 +949,13 @@ function wp_new_comment($data, $wp_error = false)
     $data['comment_parent'] = absint($data['comment_parent'] ?? 0);
     $data['user_id']        = (int) ($data['user_id'] ?? 0);
 
-    $approved = apply_filters('pre_comment_approved', $data['comment_approved'] ?? $GLOBALS['wp_verdict'], $data);
+    $verdict = $data['comment_approved'] ?? $GLOBALS['wp_verdict'];
+    // Settings → Discussion "Comment must be manually approved", as
+    // check_comment() applies it (moderators are approved anyway).
+    if (1 === $verdict && 1 === (int) get_option('comment_moderation', 0) && !user_can((int) $data['user_id'], 'moderate_comments')) {
+        $verdict = 0;
+    }
+    $approved = apply_filters('pre_comment_approved', $verdict, $data);
     if (is_wp_error($approved)) {
         return $approved;
     }

@@ -240,6 +240,7 @@ if (in_array('product-reviews', $ffla_active_modules, true) || false !== get_opt
     delete_option('ffla_rev_cache_version');
     delete_option('ffla_review_import_job');
     delete_option('ffla_review_migrate_cusrev');
+    delete_option('ffla_review_coupons_since');
 
     // CSV files waiting to be imported (customer names and emails).
     $ffla_pr_uploads = wp_upload_dir();

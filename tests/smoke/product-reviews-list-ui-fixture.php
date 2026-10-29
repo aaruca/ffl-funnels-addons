@@ -25,9 +25,16 @@ load_module([
     'includes/class-product-reviews-email-template.php',
     'includes/class-product-reviews-email.php',
     'includes/class-product-reviews-qna.php',
+    'integrations/class-product-reviews-turnstile.php',
+    'includes/class-product-reviews-captcha.php',
 ]);
 
 $GLOBALS['options']['ffla_product_reviews_settings'] = ['enable_criteria' => '0', 'enable_not_helpful_votes' => '1', 'qna_enabled' => '1', 'qna_per_page' => '3'];
+// Extra settings for one test, the same for the page and its AJAX calls.
+$extra = json_decode((string) getenv('FFLA_UI_SETTINGS'), true);
+if (is_array($extra)) {
+    $GLOBALS['options']['ffla_product_reviews_settings'] = array_merge($GLOBALS['options']['ffla_product_reviews_settings'], $extra);
+}
 
 $photos = [];
 for ($n = 1; $n <= 3; $n++) {

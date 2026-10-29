@@ -47,6 +47,12 @@ class Product_Reviews_Qna
     /** @var bool Hold the question or answer insert() is saving. */
     private static $hold_next = false;
 
+    /** @var string */
+    private static $last_error = '';
+
+    /** Whether the #qna anchor is on the page already. */
+    private static $anchored = false;
+
     public static function init(): void
     {
         add_action('admin_post_' . self::ASK_ACTION, [__CLASS__, 'handle_ask']);
@@ -126,7 +132,13 @@ class Product_Reviews_Qna
             'status'  => 'approve',
         ];
         if ($search !== '') {
-            $args['search'] = $search;
+            // Not WP_Comment_Query's `search`: it also matches the asker's
+            // email, URL and IP address, which a public search must not reveal.
+            $ids = self::search_ids($product_id, $search);
+            if (empty($ids)) {
+                return ['questions' => [], 'total' => 0];
+            }
+            $args['comment__in'] = $ids;
         }
 
         $total     = (int) get_comments($args + ['count' => true]);
@@ -301,7 +313,13 @@ class Product_Reviews_Qna
         $title    = isset($settings['title']) ? trim((string) $settings['title']) : '';
 
         if ($wrap) {
-            echo '<div class="ffla-qna" id="qna">';
+            echo '<div class="ffla-qna">';
+        }
+        // The anchor the form redirects to; once, even with the product tab
+        // and a Bricks Product Q&A element on the same page.
+        if (!self::$anchored) {
+            self::$anchored = true;
+            echo '<span id="qna" class="ffla-qna__anchor"></span>';
         }
 
         if ($title !== '') {
@@ -504,6 +522,36 @@ class Product_Reviews_Qna
         echo '</form></details>';
     }
 
+    /**
+     * Approved questions of a product whose text, or the text of one of its
+     * approved answers, contains $search.
+     *
+     * @return array<int, int>
+     */
+    private static function search_ids(int $product_id, string $search): array
+    {
+        global $wpdb;
+
+        $like = '%' . $wpdb->esc_like($search) . '%';
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- a live search.
+        $ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT q.comment_ID FROM {$wpdb->comments} q
+            WHERE q.comment_post_ID = %d AND q.comment_type = %s AND q.comment_parent = 0 AND q.comment_approved = '1'
+            AND (q.comment_content LIKE %s OR EXISTS (
+                SELECT 1 FROM {$wpdb->comments} a
+                WHERE a.comment_parent = q.comment_ID AND a.comment_type = %s AND a.comment_approved = '1' AND a.comment_content LIKE %s
+            ))
+            LIMIT 500",
+            $product_id,
+            self::QUESTION,
+            $like,
+            self::ANSWER,
+            $like
+        ));
+
+        return array_values(array_map('intval', (array) $ids));
+    }
+
     /* ---------------------------------------------------------------------
      * AJAX paging and search
      * ------------------------------------------------------------------- */
@@ -514,7 +562,10 @@ class Product_Reviews_Qna
         $product_id = isset($_POST['product']) ? absint($_POST['product']) : 0;
         $page       = isset($_POST['page']) ? max(1, (int) $_POST['page']) : 1;
         $per_page   = isset($_POST['perPage']) ? max(1, min(50, (int) $_POST['perPage'])) : self::per_page();
-        $search     = isset($_POST['search']) ? substr(trim(sanitize_text_field(wp_unslash($_POST['search']))), 0, 100) : '';
+        $search     = isset($_POST['search']) ? trim(sanitize_text_field(wp_unslash($_POST['search']))) : '';
+        // Characters, not bytes: a cut through a multibyte character makes
+        // the query invalid.
+        $search = function_exists('mb_substr') ? mb_substr($search, 0, 100) : substr($search, 0, 100);
         // phpcs:enable WordPress.Security.NonceVerification.Missing
 
         if (!self::enabled() || $product_id <= 0 || 'product' !== get_post_type($product_id) || 'publish' !== get_post_status($product_id)) {
@@ -660,7 +711,7 @@ class Product_Reviews_Qna
 
         $id = self::insert(self::QUESTION, $product_id, 0, $text, $author);
         if (!$id) {
-            self::back($redirect, $fallback, 'error', __('Your question could not be sent. Please try again.', 'ffl-funnels-addons'));
+            self::back($redirect, $fallback, 'error', self::$last_error !== '' ? self::$last_error : __('Your question could not be sent. Please try again.', 'ffl-funnels-addons'));
         }
 
         self::count_guest();
@@ -696,7 +747,7 @@ class Product_Reviews_Qna
 
         $id = self::insert(self::ANSWER, $product_id, $question_id, $text, $author);
         if (!$id) {
-            self::back($redirect, $fallback, 'error', __('Your answer could not be sent. Please try again.', 'ffl-funnels-addons'));
+            self::back($redirect, $fallback, 'error', self::$last_error !== '' ? self::$last_error : __('Your answer could not be sent. Please try again.', 'ffl-funnels-addons'));
         }
 
         self::count_guest();
@@ -711,6 +762,12 @@ class Product_Reviews_Qna
      * @param array{name:string,email:string,user_id:int} $author
      * @return int Comment ID, 0 when refused.
      */
+    /** Why the last insert() was refused (WordPress's message: duplicate, too fast…), or ''. */
+    public static function last_error(): string
+    {
+        return self::$last_error;
+    }
+
     public static function insert(string $type, int $product_id, int $parent, string $text, array $author): int
     {
         $store = self::is_store($author['user_id']);
@@ -738,11 +795,31 @@ class Product_Reviews_Qna
         // wp_allow_comment() overwrites any comment_approved passed in, so
         // the decision is made on pre_comment_approved, before comment_post
         // (and the asker's email) runs.
-        self::$hold_next = $hold && !$store;
-        $id              = wp_new_comment(wp_slash($data), true);
+        self::$hold_next  = $hold && !$store;
+        self::$last_error = '';
+
+        // With holding off, publish as the Q&A settings say: Settings →
+        // Discussion's "manually approved" and "previously approved author"
+        // are about blog comments. Its moderation words and link limit
+        // still hold a message.
+        $open = !self::$hold_next;
+        if ($open) {
+            add_filter('pre_option_comment_moderation', '__return_zero');
+            add_filter('pre_option_comment_previously_approved', '__return_zero');
+        }
+        $id = wp_new_comment(wp_slash($data), true);
+        if ($open) {
+            remove_filter('pre_option_comment_moderation', '__return_zero');
+            remove_filter('pre_option_comment_previously_approved', '__return_zero');
+        }
         self::$hold_next = false;
 
-        if (is_wp_error($id) || !$id) {
+        if (is_wp_error($id)) {
+            self::$last_error = wp_strip_all_tags($id->get_error_message());
+
+            return 0;
+        }
+        if (!$id) {
             return 0;
         }
 
@@ -788,9 +865,18 @@ class Product_Reviews_Qna
             return;
         }
 
+        if (in_array((string) $approved, ['spam', 'trash'], true)) {
+            return;
+        }
+
         if (self::QUESTION === $comment->comment_type) {
             self::notify_store($comment);
-        } elseif (self::ANSWER === $comment->comment_type && '1' === (string) $approved) {
+        } elseif (self::ANSWER === $comment->comment_type && '1' === (string) $approved
+            && self::is_store((int) $comment->user_id)) {
+            // Store answers go out at once. A customer's answer published
+            // without moderation is not emailed: anyone could otherwise send
+            // any text from the store's address. Once a moderator approves
+            // one, it is (on_status_transition()).
             self::notify_asker($comment);
         }
     }
@@ -829,7 +915,10 @@ class Product_Reviews_Qna
 
         $product = wc_get_product((int) $question->comment_post_ID);
         $name    = $product ? $product->get_name() : get_the_title((int) $question->comment_post_ID);
-        $admin   = add_query_arg(['page' => 'ffla-product-reviews-questions'], admin_url('admin.php'));
+        $admin   = add_query_arg(array_filter([
+            'page' => 'ffla-product-reviews-questions',
+            'view' => '1' === (string) $question->comment_approved ? '' : 'pending',
+        ]), admin_url('admin.php')) . '#ffla-question-' . (int) $question->comment_ID;
 
         $subject = sprintf(
             /* translators: %s: product name */

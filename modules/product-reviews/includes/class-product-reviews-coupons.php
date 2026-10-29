@@ -55,6 +55,9 @@ class Product_Reviews_Coupons
 
     const TIERS = 3;
 
+    /** When coupons were last switched on (Unix time): older reviews earn none. */
+    const SINCE_OPTION = 'ffla_review_coupons_since';
+
     const MAX_EMAIL_ATTEMPTS = 3;
 
     public static function init(): void
@@ -63,6 +66,24 @@ class Product_Reviews_Coupons
         add_action('transition_comment_status', [__CLASS__, 'on_status_transition'], 30, 3);
         add_action(self::ACTION_SEND_EMAIL, [__CLASS__, 'send_email'], 10, 1);
         add_filter('ffla_product_reviews_card_badges', [__CLASS__, 'card_badge'], 10, 2);
+        add_action('ffla_product_reviews_settings_saved', [__CLASS__, 'on_settings_saved'], 10, 3);
+    }
+
+    /**
+     * Remember when coupons were switched on, so a backlog of held reviews
+     * approved afterwards (or an old review approved again) earns nothing.
+     *
+     * @param string|mixed               $tab
+     * @param array<string, mixed>|mixed $new
+     * @param array<string, mixed>|mixed $old
+     */
+    public static function on_settings_saved($tab, $new, $old): void
+    {
+        $now = is_array($new) && '1' === (string) ($new['coupon_enabled'] ?? '');
+        $was = is_array($old) && '1' === (string) ($old['coupon_enabled'] ?? '');
+        if ($now && !$was) {
+            update_option(self::SINCE_OPTION, time(), false);
+        }
     }
 
     public static function enabled(): bool
@@ -115,6 +136,13 @@ class Product_Reviews_Coupons
 
         if (get_comment_meta($review_id, self::REVIEW_CHECKED_META, true)) {
             return (string) get_comment_meta($review_id, self::REVIEW_CODE_META, true);
+        }
+
+        $since = (int) get_option(self::SINCE_OPTION, 0);
+        if ($since > 0 && strtotime((string) $review->comment_date_gmt . ' UTC') < $since) {
+            update_comment_meta($review_id, self::REVIEW_CHECKED_META, 'before_enabled');
+
+            return '';
         }
 
         $order = self::reward_order($review);

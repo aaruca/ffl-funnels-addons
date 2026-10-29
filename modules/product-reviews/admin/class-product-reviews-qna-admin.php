@@ -1,8 +1,10 @@
 <?php
 /**
  * FFL Funnels → Product Reviews → Questions: every product question, with
- * its answers, an inline answer box, and approve / hold / trash. Questions
- * and answers are comments, so they also show under Comments.
+ * its answers, an inline answer box, and approve / hold / spam / trash, and
+ * Spam and Trash views to restore or delete them. This is the only screen
+ * for them: WooCommerce keeps comments on products off the Comments screen,
+ * and the module keeps them off Products → Reviews.
  *
  * @package FFL_Funnels_Addons
  */
@@ -33,7 +35,7 @@ class Product_Reviews_Qna_Admin
     }
 
     /**
-     * @return array<string, int> unanswered / pending / answered / all
+     * @return array<string, int> unanswered / pending / answered / all / spam / trash
      */
     public static function counts(): array
     {
@@ -57,11 +59,15 @@ class Product_Reviews_Qna_Admin
             }
         }
 
+        $types = ['type__in' => Product_Reviews_Core::QNA_TYPES, 'count' => true];
+
         return [
             'unanswered' => max(0, $approved - $answered),
             'pending'    => $pending,
             'answered'   => $answered,
             'all'        => $approved + $pending,
+            'spam'       => (int) get_comments($types + ['status' => 'spam']),
+            'trash'      => (int) get_comments($types + ['status' => 'trash']),
         ];
     }
 
@@ -87,10 +93,22 @@ class Product_Reviews_Qna_Admin
             'approved' => __('Approved.', 'ffl-funnels-addons'),
             'held'     => __('Moved back to pending.', 'ffl-funnels-addons'),
             'trashed'  => __('Moved to the trash.', 'ffl-funnels-addons'),
+            'spammed'  => __('Marked as spam.', 'ffl-funnels-addons'),
+            'restored' => __('Restored.', 'ffl-funnels-addons'),
+            'deleted'  => __('Deleted for good.', 'ffl-funnels-addons'),
             'empty'    => __('Write an answer first.', 'ffl-funnels-addons'),
         ];
         if (isset($messages[$notice])) {
             FFLA_Admin::render_notice('empty' === $notice ? 'warning' : 'success', esc_html($messages[$notice]));
+        }
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- a notice only.
+        $refused = isset($_GET['qna_error']) ? sanitize_text_field(wp_unslash($_GET['qna_error'])) : '';
+        if ($refused !== '') {
+            FFLA_Admin::render_notice('error', esc_html(sprintf(
+                /* translators: %s: WordPress's reason, e.g. "Duplicate comment detected" */
+                __('The answer was not saved: %s', 'ffl-funnels-addons'),
+                $refused
+            )));
         }
 
         $counts = self::counts();
@@ -99,6 +117,8 @@ class Product_Reviews_Qna_Admin
             'pending'    => __('Waiting for approval', 'ffl-funnels-addons'),
             'answered'   => __('Answered', 'ffl-funnels-addons'),
             'all'        => __('All', 'ffl-funnels-addons'),
+            'spam'       => __('Spam', 'ffl-funnels-addons'),
+            'trash'      => __('Trash', 'ffl-funnels-addons'),
         ];
         if (!isset($views[$view])) {
             $view = 'unanswered';
@@ -112,6 +132,13 @@ class Product_Reviews_Qna_Admin
         }
         echo '</nav></div>';
         echo '<div class="wb-card__body">';
+
+        if ('spam' === $view || 'trash' === $view) {
+            self::render_bin($view, $paged);
+            echo '</div></div>';
+
+            return;
+        }
 
         $args = [
             'type'    => Product_Reviews_Qna::QUESTION,
@@ -156,6 +183,52 @@ class Product_Reviews_Qna_Admin
             echo '</div>';
         }
         echo '</div>';
+    }
+
+    /**
+     * Questions and answers in the spam or the trash, newest first, with
+     * Restore / Not spam and Delete for good.
+     */
+    private static function render_bin(string $view, int $paged): void
+    {
+        $items = (array) get_comments([
+            'type__in' => Product_Reviews_Core::QNA_TYPES,
+            'status'   => $view,
+            'orderby'  => 'comment_date_gmt',
+            'order'    => 'DESC',
+            'number'   => self::PER_PAGE,
+            'offset'   => ($paged - 1) * self::PER_PAGE,
+        ]);
+        if (empty($items)) {
+            echo '<div class="wb-empty-state"><p>' . esc_html('spam' === $view ? __('No spam.', 'ffl-funnels-addons') : __('The trash is empty.', 'ffl-funnels-addons')) . '</p></div>';
+
+            return;
+        }
+
+        foreach ($items as $item) {
+            if (!$item instanceof \WP_Comment) {
+                continue;
+            }
+            $product = wc_get_product((int) $item->comment_post_ID);
+            $name    = $product ? $product->get_name() : get_the_title((int) $item->comment_post_ID);
+            $answer  = Product_Reviews_Qna::ANSWER === $item->comment_type;
+
+            echo '<div class="ffla-pr-qna" id="ffla-question-' . esc_attr((string) (int) $item->comment_ID) . '">';
+            echo '<div class="ffla-pr-qna__head"><strong>' . esc_html($name) . '</strong> · ' . esc_html($answer ? __('Answer', 'ffl-funnels-addons') : __('Question', 'ffl-funnels-addons')) . '</div>';
+            echo '<p class="ffla-pr-qna__question">' . esc_html(wp_strip_all_tags((string) $item->comment_content)) . '</p>';
+            echo '<p class="wb-text--muted">' . esc_html(sprintf(
+                /* translators: 1: name, 2: email, 3: date */
+                __('%1$s (%2$s) · %3$s', 'ffl-funnels-addons'),
+                (string) $item->comment_author,
+                (string) $item->comment_author_email,
+                wp_date(get_option('date_format') . ' ' . get_option('time_format'), strtotime($item->comment_date_gmt . ' UTC'))
+            )) . '</p>';
+            echo '<p class="wb-row-actions">'
+                . self::status_link($item, 'spam' === $view ? 'unspam' : 'untrash', 'spam' === $view ? __('Not spam', 'ffl-funnels-addons') : __('Restore', 'ffl-funnels-addons'), $view) . ' · '
+                . self::status_link($item, 'delete', __('Delete for good', 'ffl-funnels-addons'), $view)
+                . '</p>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built from escaped parts.
+            echo '</div>';
+        }
     }
 
     /**
@@ -220,6 +293,7 @@ class Product_Reviews_Qna_Admin
         } else {
             $actions[] = self::status_link($question, 'hold', __('Unapprove', 'ffl-funnels-addons'), $view);
         }
+        $actions[] = self::status_link($question, 'spam', __('Spam', 'ffl-funnels-addons'), $view);
         $actions[] = self::status_link($question, 'trash', __('Trash', 'ffl-funnels-addons'), $view);
         $html     .= '<p class="wb-row-actions">' . implode(' · ', $actions) . '</p>';
 
@@ -231,6 +305,7 @@ class Product_Reviews_Qna_Admin
             $html    .= '<p class="wb-text--muted">' . esc_html($store ? __('Store answer', 'ffl-funnels-addons') : (string) $answer->comment_author)
                 . ($held ? ' · ' . esc_html__('waiting for approval', 'ffl-funnels-addons') : '') . '</p>';
             $a_actions = [$held ? self::status_link($answer, 'approve', __('Approve', 'ffl-funnels-addons'), $view) : self::status_link($answer, 'hold', __('Unapprove', 'ffl-funnels-addons'), $view)];
+            $a_actions[] = self::status_link($answer, 'spam', __('Spam', 'ffl-funnels-addons'), $view);
             $a_actions[] = self::status_link($answer, 'trash', __('Trash', 'ffl-funnels-addons'), $view);
             $html      .= '<p class="wb-row-actions">' . implode(' · ', $a_actions) . '</p>';
             $html      .= '</div>';
@@ -279,11 +354,17 @@ class Product_Reviews_Qna_Admin
         }
 
         $user = wp_get_current_user();
-        Product_Reviews_Qna::insert(Product_Reviews_Qna::ANSWER, (int) $question->comment_post_ID, $question_id, $text, [
+        $id   = Product_Reviews_Qna::insert(Product_Reviews_Qna::ANSWER, (int) $question->comment_post_ID, $question_id, $text, [
             'name'    => $user instanceof \WP_User ? (string) $user->display_name : '',
             'email'   => $user instanceof \WP_User ? (string) $user->user_email : '',
             'user_id' => get_current_user_id(),
         ]);
+
+        if ($id <= 0) {
+            $reason = Product_Reviews_Qna::last_error();
+            wp_safe_redirect(self::page_url(['view' => $view, 'qna_error' => rawurlencode($reason !== '' ? $reason : __('WordPress refused it.', 'ffl-funnels-addons'))]) . '#ffla-question-' . $question_id);
+            exit;
+        }
 
         wp_safe_redirect(self::page_url(['view' => $view, 'qna_notice' => 'answered']));
         exit;
@@ -304,10 +385,33 @@ class Product_Reviews_Qna_Admin
 
         $to   = isset($_GET['to']) ? sanitize_key(wp_unslash($_GET['to'])) : '';
         $view = isset($_GET['view']) ? sanitize_key(wp_unslash($_GET['view'])) : 'unanswered';
-        $map  = ['approve' => 'approved', 'hold' => 'held', 'trash' => 'trashed'];
+        $map  = ['approve' => 'approved', 'hold' => 'held', 'trash' => 'trashed', 'spam' => 'spammed', 'untrash' => 'restored', 'unspam' => 'restored', 'delete' => 'deleted'];
 
-        if (isset($map[$to])) {
-            wp_set_comment_status($comment_id, $to);
+        // WordPress's own functions, so trashed items keep their old status
+        // for Restore and are emptied from the trash on schedule.
+        switch ($to) {
+            case 'approve':
+            case 'hold':
+                wp_set_comment_status($comment_id, $to);
+                break;
+            case 'trash':
+                wp_trash_comment($comment_id);
+                break;
+            case 'spam':
+                wp_spam_comment($comment_id);
+                break;
+            case 'untrash':
+                wp_untrash_comment($comment_id);
+                break;
+            case 'unspam':
+                wp_unspam_comment($comment_id);
+                break;
+            case 'delete':
+                // Only from the Spam and Trash views, like WordPress.
+                if (in_array((string) $comment->comment_approved, ['spam', 'trash'], true)) {
+                    wp_delete_comment($comment_id, true);
+                }
+                break;
         }
 
         wp_safe_redirect(self::page_url(['view' => $view, 'qna_notice' => $map[$to] ?? '']));

@@ -127,8 +127,9 @@ class FFLA_Product_Qna extends \Bricks\Element
             $args['showSearch'] = 'show' === $settings['showSearch'];
         }
 
+        // No id here: Bricks gives the root its own. The #qna anchor is
+        // printed inside, once per page.
         $this->set_attribute('_root', 'class', 'ffla-qna');
-        $this->set_attribute('_root', 'id', 'qna');
 
         echo '<div ' . $this->render_attributes('_root') . '>';
         \Product_Reviews_Qna::render($product_id, $args, false);

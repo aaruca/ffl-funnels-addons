@@ -256,4 +256,27 @@ check('[Test] Gun & Gear: 10% for Customer' === $mail['subject'] && strpos($mail
 check(count($GLOBALS['coupons']) === count(array_unique(array_map(function ($c) { return $c->props['code']; }, $GLOBALS['coupons']))), 'every coupon code is unique');
 settings();
 
+/* ── Reviews written before coupons were switched on ──────────────────── */
+
+// A held review from before, approved after coupons are switched on, earns none.
+$backlog_order = make_order(6040, 'backlog@example.com', [[101, 1]]);
+$backlog = add_test_comment(['comment_post_ID' => 101, 'comment_type' => 'review', 'comment_author' => 'Backlog', 'comment_author_email' => 'backlog@example.com', 'comment_approved' => '0', 'comment_date_gmt' => gmdate('Y-m-d H:i:s', time() - 3 * DAY_IN_SECONDS), 'meta' => ['rating' => 5, 'ffla_verified_purchase' => 1, 'ffla_review_order_id' => 6040]]);
+$off = Product_Reviews_Core::get_settings();
+$off['coupon_enabled'] = '0';
+$on = $off;
+$on['coupon_enabled'] = '1';
+do_action('ffla_product_reviews_settings_saved', 'coupons', $on, $off);
+check((int) get_option(Product_Reviews_Coupons::SINCE_OPTION) >= time() - 5, 'switching coupons on remembers when');
+wp_set_comment_status($backlog, 'approve');
+check('before_enabled' === get_comment_meta($backlog, '_ffla_review_coupon_checked', true) && '' === (string) $backlog_order->get_meta('_ffla_review_coupon'), 'a review written before that earns no coupon when approved later');
+$since = time() - 4 * DAY_IN_SECONDS;
+update_option(Product_Reviews_Coupons::SINCE_OPTION, $since);
+do_action('ffla_product_reviews_settings_saved', 'coupons', $on, $on);
+check($since === (int) get_option(Product_Reviews_Coupons::SINCE_OPTION), 'saving the tab again (coupons already on) does not move the date');
+update_option(Product_Reviews_Coupons::SINCE_OPTION, time() - 60);
+$fresh_order = make_order(6041, 'fresh@example.com', [[101, 1]]);
+$fresh = hub_review($fresh_order, 101);
+check('' !== (string) get_comment_meta($fresh, 'ffla_review_coupon_code', true), 'a review written after it earns one as usual');
+delete_option(Product_Reviews_Coupons::SINCE_OPTION);
+
 echo "OK: {$checks} product-reviews coupon checks passed\n";

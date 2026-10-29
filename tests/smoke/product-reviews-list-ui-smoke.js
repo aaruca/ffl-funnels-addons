@@ -35,17 +35,18 @@ function php(mode, args) {
     return execFileSync('php', [FIXTURE, mode, JSON.stringify(args)], {encoding: 'utf8'});
 }
 
-function pageHtml(settings, mode) {
+function pageHtml(settings, mode, head) {
     return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
         + '<style>html{font-size:62.5%}body{margin:0;padding:16px;font-family:system-ui,sans-serif}'
         + '.screen-reader-text{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}' + STYLES + '</style></head><body>'
+        + (head || '')
         + '<main style="max-width:900px;margin:0 auto">' + php(mode || 'page', settings) + '</main>'
         + '<script>' + SCRIPT + '</script></body></html>';
 }
 
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><rect width="800" height="600" fill="#3b5b92"/></svg>';
 
-async function openList(browser, settings, viewport, mode) {
+async function openList(browser, settings, viewport, mode, head) {
     const page = await browser.newPage({viewport: viewport || {width: 1000, height: 900}});
     const ajax = [];
     await page.route('https://store.test/**', async (route) => {
@@ -78,7 +79,7 @@ async function openList(browser, settings, viewport, mode) {
             }
             return route.fulfill({status: 200, contentType: 'application/json', body: answer});
         }
-        return route.fulfill({status: 200, contentType: 'text/html', body: pageHtml(settings, mode)});
+        return route.fulfill({status: 200, contentType: 'text/html', body: pageHtml(settings, mode, head)});
     });
     await page.goto('https://store.test/product/scope/');
     page.ajax = ajax;
@@ -294,6 +295,24 @@ async function settle(page) {
         if (SHOTS) {
             await page.screenshot({path: path.join(SHOTS, 'qna.png'), fullPage: true});
         }
+        await page.close();
+
+        /* ── CAPTCHA in answer forms loaded later ───────────────────────── */
+        // Guests may answer, with Turnstile: answer forms that arrive with
+        // "Show more" must get their widget drawn too.
+        process.env.FFLA_UI_SETTINGS = JSON.stringify({qna_who_answers: 'anyone', captcha_provider: 'turnstile', captcha_site_key: 'ts-site', captcha_secret_key: 'ts-secret'});
+        const fakeTurnstile = '<script>window.drawn = []; window.turnstile = {render: function (el, params) {'
+            + 'window.drawn.push(params.sitekey); el.appendChild(document.createElement("iframe")); }};'
+            + 'document.addEventListener("DOMContentLoaded", function () { document.querySelectorAll(".cf-turnstile").forEach(function (el) { window.turnstile.render(el, {sitekey: el.getAttribute("data-sitekey")}); }); });</script>';
+        page = await openList(browser, {}, {width: 1000, height: 900}, 'qna', fakeTurnstile);
+        const atLoad = await page.evaluate(() => window.drawn.length);
+        check(atLoad >= 3, 'widgets on the page at load are drawn by the provider (' + atLoad + ')');
+        await page.click('[data-ffla-qna-more]');
+        await page.waitForFunction(() => document.querySelectorAll('.ffla-qna-item').length === 6);
+        const blank = await page.$$eval('.ffla-qna-item .cf-turnstile', (els) => els.filter((el) => el.childElementCount === 0).length);
+        check(blank === 0, 'answer forms added by Show more get their CAPTCHA widget drawn');
+        check((await page.evaluate(() => window.drawn)).every((key) => key === 'ts-site'), 'with the site key');
+        delete process.env.FFLA_UI_SETTINGS;
         await page.close();
 
         console.log('OK: ' + checks + ' product-reviews list and Q&A browser checks passed');
