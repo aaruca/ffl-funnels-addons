@@ -4,6 +4,10 @@ All notable changes to FFL Funnels Addons are documented in this file.
 
 ## [Unreleased]
 
+## [1.56.0] - 2026-10-29
+
+Product Reviews: the features of Customer Reviews for WooCommerce (free and Pro) this store needs, built into the module, in English only. Coupons, Q&A, the second reminder, the checkout consent checkbox, the extra form fields and store emails about new reviews are off by default. On by default, and visible on update: HTML request emails, reviewer names as *Ann B.*, initials avatars, the list toolbar and *Show more*, the photo lightbox, open and click tracking, and product identifiers and review photos in the structured data.
+
 ### Added
 - **Product Reviews:** filters and paging on review lists: star chips (the summary bars filter too), a *With photos* chip, a sort menu (most recent, most helpful, highest, lowest rating), a search box and *Show more reviews*, without reloading the page. New settings under **Display**: *Reviews per page* (5), *Filters, sort and search above lists* (on), *“Show more reviews” button* (on). Filtering and paging use the new public `admin-ajax.php` action `ffla_load_reviews`, which only returns approved reviews of published products.
 - **Product Reviews:** the Bricks **Reviews List** can show one product, some product categories (subcategories included) or the whole store, as a list, a grid (1–6 columns) or a slider, with a minimum rating, photos-only, the product on each card, and every toolbar part switchable per element. Store-wide lists never show reviews of draft or private products.
@@ -28,7 +32,7 @@ All notable changes to FFL Funnels Addons are documented in this file.
 - **Product Reviews:** reviewer names are shown as first name and last initial (*Ann B.*) on cards and in the structured data. **Display → Reviewer name** switches back to the name as entered, or to first name only, initials or *Customer*. The stored name is not changed.
 - **Product Reviews:** *Most helpful* lists now come from the same query as the filters, and exclude reviews of unpublished products.
 - **Product Reviews:** request emails are HTML by default. **Emails → Format → Plain text** keeps the previous emails exactly. The settings page is now under **Product Reviews → Settings**, next to the new **Review requests** log.
-- **Product Reviews:** the settings page is split into tabs (Reviews, Display, Review form, Review requests, Emails). Each tab saves only its own settings, so saving one tab can no longer switch off a toggle that lives on another. Setting keys and defaults are unchanged. New action `ffla_product_reviews_settings_saved` (`$tab`, `$new`, `$old`). New offline check `tests/smoke/product-reviews-admin-smoke.php`, run in CI on PHP 7.4 and 8.3 and before the release ZIP is published.
+- **Product Reviews:** the settings page is split into tabs (Reviews, Display, Review form, Review requests, Emails, Coupons, Q&A). Each tab saves only its own settings, so saving one tab can no longer switch off a toggle that lives on another. Setting keys and defaults are unchanged. New action `ffla_product_reviews_settings_saved` (`$tab`, `$new`, `$old`). New offline check `tests/smoke/product-reviews-admin-smoke.php`, run in CI on PHP 7.4 and 8.3 and before the release ZIP is published.
 
 ### Fixed
 - **Product Reviews:** backslashes typed into a review were removed: the form handler passed unslashed data to `wp_new_comment()`, which unslashes it again.
