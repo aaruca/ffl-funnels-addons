@@ -119,10 +119,14 @@ settings(['captcha_provider' => 'recaptcha_v3', 'captcha_site_key' => 'v3-site',
 $html = form_html();
 check(strpos($html, 'data-ffla-recaptcha-v3="v3-site"') !== false && strpos($html, 'name="g-recaptcha-response"') !== false, 'reCAPTCHA v3: hidden token field filled by the script');
 check(isset($GLOBALS['scripts']['enqueued']['ffla-review-captcha-recaptcha_v3']), 'v3 script');
-$GLOBALS['http_responses'][RECAPTCHA_VERIFY] = ['code' => 200, 'body' => '{"success":true,"score":0.6}'];
+check(strpos($html, 'data-action="ffla_product_review"') !== false, 'the token is asked for the review form\'s action');
+$GLOBALS['http_responses'][RECAPTCHA_VERIFY] = ['code' => 200, 'body' => '{"success":true,"score":0.6,"action":"ffla_product_review"}'];
 $r = submit(['g-recaptcha-response' => 'v3-token']);
 check('error' === $r['ffla_review_status'], 'a score under the minimum refuses');
-$GLOBALS['http_responses'][RECAPTCHA_VERIFY] = ['code' => 200, 'body' => '{"success":true,"score":0.9}'];
+$GLOBALS['http_responses'][RECAPTCHA_VERIFY] = ['code' => 200, 'body' => '{"success":true,"score":0.9,"action":"login"}'];
+$r = submit(['g-recaptcha-response' => 'v3-token']);
+check('error' === $r['ffla_review_status'], 'a token issued for another form on the site (action login) refuses');
+$GLOBALS['http_responses'][RECAPTCHA_VERIFY] = ['code' => 200, 'body' => '{"success":true,"score":0.9,"action":"ffla_product_review"}'];
 $r = submit(['g-recaptcha-response' => 'v3-token']);
 check('success' === $r['ffla_review_status'], 'a score over the minimum passes');
 
@@ -273,7 +277,17 @@ settings();
 
 $GLOBALS['options']['comment_registration'] = 1;
 $html = form_html(102);
-check(strpos($html, 'href="https://store.test/myaccount/?redirect_to=') !== false && strpos($html, '>Log in</a>') !== false, 'log in link to My Account, back to the product');
+check(strpos($html, 'href="https://store.test/myaccount/?ffla_return=') !== false && strpos($html, '>Log in</a>') !== false, 'log in link to My Account, with where to come back to');
+// WooCommerce sends a My Account login to the form's referer: the link itself.
+preg_match('/href="(https:\/\/store\.test\/myaccount\/\?ffla_return=[^"]+)"/', $html, $m);
+$referer = html_entity_decode($m[1], ENT_QUOTES);
+$after   = apply_filters('woocommerce_login_redirect', $referer, null);
+check(0 === strpos($after, 'https://store.test/') && false === strpos($after, 'myaccount'), 'after logging in on My Account, the shopper is back on the product: ' . $after);
+check('https://store.test/myaccount/' === apply_filters('woocommerce_login_redirect', 'https://store.test/myaccount/', null), 'other My Account logins are left alone');
+check('https://store.test/myaccount/?ffla_return=' . rawurlencode('https://evil.test/') === apply_filters('woocommerce_login_redirect', 'https://store.test/myaccount/?ffla_return=' . rawurlencode('https://evil.test/'), null), 'never to another site');
+$GLOBALS['wc_pages']['myaccount'] = 0;
+check(strpos(form_html(102), 'href="https://store.test/wp-login.php?redirect_to=') !== false, 'without a My Account page, the WordPress login (not the home page)');
+unset($GLOBALS['wc_pages']['myaccount']);
 settings(['login_url' => 'https://store.test/sign-in/']);
 check(strpos(form_html(102), 'href="https://store.test/sign-in/?redirect_to=') !== false, 'a custom log in page');
 $GLOBALS['options']['comment_registration'] = 0;
@@ -325,5 +339,16 @@ reset_request(9);
 $_POST = ['ffla_review_media_nonce' => 'forged', 'ffla_review_media_ids' => (string) $img];
 $box->save($rev);
 check(!metadata_exists('comment', $rev, 'ffla_review_media_ids'), 'a forged nonce changes nothing');
+
+// Deleting a review for good deletes the files uploaded with it, never a file
+// picked from the Media Library (a product photo, another review's photo).
+$own    = add_test_attachment('https://store.test/uploads/own.jpg');
+$picked = add_test_attachment('https://store.test/uploads/product-main.jpg');
+$doomed = add_test_comment(['comment_post_ID' => 101, 'comment_author' => 'Doomed', 'meta' => ['rating' => 3, 'ffla_review_media_ids' => [$own, $picked]]]);
+Product_Reviews_Core::mark_review_upload($own, $doomed);
+Product_Reviews_Core::mark_review_upload($picked, $rev);
+wp_delete_comment($doomed, true);
+check(!isset($GLOBALS['attachments'][$own]), 'the review\'s own upload is deleted with it');
+check(isset($GLOBALS['attachments'][$picked]), 'a file uploaded for another review, only attached to this one, is kept');
 
 echo "OK: {$checks} product-reviews form checks passed\n";

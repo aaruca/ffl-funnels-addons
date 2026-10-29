@@ -55,7 +55,7 @@ function csv_rows(string $csv): array
     fwrite($h, $csv);
     rewind($h);
     $rows = [];
-    while (false !== ($row = fgetcsv($h, 0, ',', '"', '\\'))) {
+    while (false !== ($row = fgetcsv($h, 0, ',', '"', ''))) {
         $rows[] = $row;
     }
     fclose($h);
@@ -77,15 +77,49 @@ function export(string $kind): array
 }
 
 /** Write rows to a file in the import folder and queue it, as the upload does. */
-function import_file(array $rows, string $kind = 'reviews', string $mode = 'keep'): array
+function import_file(array $rows, string $kind = 'reviews', string $mode = 'keep', string $delimiter = ','): array
+{
+    $h = fopen('php://memory', 'r+');
+    foreach ($rows as $row) {
+        fputcsv($h, $row, $delimiter, '"', '');
+    }
+    rewind($h);
+    $csv = stream_get_contents($h);
+    fclose($h);
+    return import_raw($csv, $kind, $mode);
+}
+
+/** Queue a file with exactly these bytes. */
+function import_raw(string $csv, string $kind = 'reviews', string $mode = 'keep'): array
 {
     $path = Product_Reviews_Import::storage_dir() . '/test-' . count(glob(Product_Reviews_Import::storage_dir() . '/*.csv') ?: []) . '-' . mt_rand() . '.csv';
-    $h    = fopen($path, 'w');
-    foreach ($rows as $row) {
-        fputcsv($h, $row, ',', '"', '\\');
-    }
-    fclose($h);
+    file_put_contents($path, $csv);
     return Product_Reviews_Import::queue_file($path, $kind, $mode);
+}
+
+function find_comment(string $content): ?WP_Comment
+{
+    foreach ($GLOBALS['comments'] as $c) {
+        if ($content === $c->comment_content) {
+            return $c;
+        }
+    }
+    return null;
+}
+
+function get_comment_date_gmt_for(string $content): string
+{
+    $c = find_comment($content);
+    return $c ? (string) $c->comment_date_gmt : '';
+}
+
+function count_comments(string $content): int
+{
+    $n = 0;
+    foreach ($GLOBALS['comments'] as $c) {
+        $n += $content === $c->comment_content ? 1 : 0;
+    }
+    return $n;
 }
 
 /** Run queued batches until the job ends. */
@@ -174,11 +208,12 @@ check('2025-12-24 10:30:00' === $imported->comment_date_gmt && '1' === (string) 
 check(4 === (int) get_comment_meta($imported->comment_ID, 'rating', true) && 0 === (int) get_comment_meta($imported->comment_ID, 'ffla_verified_purchase', true), 'rating; not verified without a verified column');
 $media = get_comment_meta($imported->comment_ID, 'ffla_review_media_ids', true);
 check(is_array($media) && 1 === count($media), 'the photo is in the Media Library');
+check((int) $imported->comment_ID === (int) get_post_meta($media[0], '_ffla_review_upload', true), 'and is marked as uploaded for that review');
 $side = end($GLOBALS['sideloaded']);
 check(strpos($side['bytes'], 'SECRET-LOCATION') === false && strpos($side['bytes'], 'IHDR') !== false, 'the imported photo lost its text chunks (location data)');
 check($imported_reply && (int) $imported->comment_ID === (int) $imported_reply->comment_parent, 'the reply sits under the imported review');
 check($mails_before === count($GLOBALS['mails']), 'importing sends no email');
-check('' === (string) get_comment_meta($imported->comment_ID, '_ffla_review_coupon_checked', true), 'and earns no coupon');
+check('imported' === (string) get_comment_meta($imported->comment_ID, '_ffla_review_coupon_checked', true), 'and is marked as checked for a coupon, so approving it later earns none');
 check(in_array(102, WC_Comments::$cleared, true), 'WooCommerce recounts the product\'s ratings');
 check([] === glob(Product_Reviews_Import::storage_dir() . '/*.csv'), 'the uploaded file is deleted when the import ends');
 
@@ -261,17 +296,173 @@ $r2 = Product_Reviews_Import::start_job(['name' => 'y.csv', 'tmp_name' => '', 'e
 check(!$r2['ok'] && strpos($r2['message'], 'still running') !== false, 'a new upload is refused while one runs');
 Product_Reviews_Import::cancel_job();
 check('cancelled' === Product_Reviews_Import::job()['status'] && [] === glob(Product_Reviews_Import::storage_dir() . '/*.csv'), 'cancel stops the job and deletes its file');
-run_action('ffla_review_import_batch', []);
+check([] === actions_for('ffla_review_import_batch'), 'cancel removes the queued batch');
+// A batch that had already started when Cancel was clicked.
+Product_Reviews_Import::run_batch();
 $queued_one = false;
 foreach ($GLOBALS['comments'] as $c) {
     $queued_one = $queued_one || 'Queued one' === $c->comment_content;
 }
-check(!$queued_one, 'a batch still queued after cancelling imports nothing');
+check(!$queued_one, 'a batch already running when the job was cancelled imports nothing');
 Product_Reviews_Import::cancel_job();
 check(null === Product_Reviews_Import::job(), 'clearing removes the finished job');
 $GLOBALS['as'] = array_values(array_filter($GLOBALS['as'], function ($a) {
     return 'ffla_review_import_batch' !== $a['hook'];
 }));
+
+/* ── Review findings: emails, products, people, text, dates ───────────── */
+
+// Imported rows held for approval send nothing and earn nothing when approved.
+$mails_before = count($GLOBALS['mails']);
+make_order(7001, 'held@example.com', [[101, 1]]);
+import_file([
+    ['id', 'parent_id', 'product_id', 'email', 'author', 'rating', 'verified', 'order_id', 'content', 'store_reply', 'date_gmt'],
+    ['9001', '', '101', 'held@example.com', 'Held Buyer', '5', '1', '7001', 'Held review from the old store', '', '2024-01-02 10:00:00'],
+    ['9002', '9001', '101', 'staff@store.test', 'Store', '', '', '', 'Held store reply', '1', '2024-01-03 10:00:00'],
+], 'reviews', 'pending');
+run_import();
+$held       = find_comment('Held review from the old store');
+$held_reply = find_comment('Held store reply');
+check($held && '0' === (string) $held->comment_approved && $held_reply && '0' === (string) $held_reply->comment_approved, 'held rows imported as pending');
+wp_set_comment_status((int) $held->comment_ID, 'approve');
+wp_set_comment_status((int) $held_reply->comment_ID, 'approve');
+check($mails_before === count($GLOBALS['mails']), 'approving imported rows later sends no email');
+check('' === (string) get_comment_meta($held->comment_ID, Product_Reviews_Coupons::REVIEW_CODE_META, true) && empty($GLOBALS['orders'][7001]->meta['_ffla_review_coupon']), 'and creates no coupon');
+check(7001 === (int) get_comment_meta($held->comment_ID, 'ffla_review_order_id', true), 'an order of this store with the row\'s email and product is kept');
+
+// A file from another store: the id is a different product here, the SKU decides.
+import_file([
+    ['product_id', 'product_sku', 'email', 'user_id', 'order_id', 'content', 'date_gmt'],
+    ['101', 'BAG-1', 'stranger@example.com', '7', '7001', 'Wrong id, right SKU', '2024-02-01 10:00:00'],
+    ['101', 'NOPE-9', 'stranger@example.com', '', '', 'Unknown SKU', '2024-02-01 10:00:00'],
+    ['102', '', 'buyer@example.com', '7', '', 'Same store, no SKU', '2024-02-01 10:00:00'],
+]);
+run_import();
+$moved = find_comment('Wrong id, right SKU');
+check($moved && 102 === (int) $moved->comment_post_ID, 'a product_id whose product has another SKU is not trusted; the SKU wins');
+check(null === find_comment('Unknown SKU'), 'a row whose SKU is not in this store is skipped, not put on the product with that id');
+check(0 === (int) $moved->user_id, 'a user_id whose account has another email is dropped');
+check('' === (string) get_comment_meta($moved->comment_ID, 'ffla_review_order_id', true), 'an order_id of another customer is dropped');
+check(7 === (int) find_comment('Same store, no SKU')->user_id, 'a user_id with the row\'s email is kept');
+
+// Backslashes, quotes and a cell ending in a backslash (standard CSV).
+import_raw("product_id,content,date_gmt\n101,\"Works great with C:\\\",2024-03-01 10:00:00\n101,\"Path C:\\temp and \"\"quotes\"\" ¯\\_(ツ)_/¯\",2024-03-02 10:00:00\n");
+run_import();
+check(null !== find_comment('Works great with C:\\'), 'a cell ending in a backslash does not swallow the next row');
+check(null !== find_comment('Path C:\\temp and "quotes" ¯\\_(ツ)_/¯'), 'backslashes and quotes are kept');
+list(, $exported) = export('reviews');
+$found = false;
+foreach ($exported as $row) {
+    $found = $found || 'Works great with C:\\' === $row['content'];
+}
+check($found, 'the export writes it back as standard CSV');
+
+// Dates: none, day first, not understood; importing again adds nothing.
+$dated = [
+    ['product_id', 'content', 'date'],
+    ['103', 'No date at all', ''],
+    ['103', 'Day first', '14/03/2024 10:00'],
+    ['103', 'Nonsense date', 'sometime soon-ish'],
+];
+import_file($dated);
+run_import();
+check('2024-03-14' === substr(get_comment_date_gmt_for('Day first'), 0, 10), 'a day-first date (14/03/2024) is understood');
+$notes = implode("\n", Product_Reviews_Import::job()['messages']);
+check(strpos($notes, 'Line 4: the date was not understood') !== false && strpos($notes, 'Line 2:') === false, 'a date not understood gets a note; a missing one does not');
+sleep(1); // The import time differs on the second import.
+import_file($dated);
+run_import();
+check(1 === count_comments('No date at all') && 1 === count_comments('Nonsense date'), 'rows without a usable date are not added again on a second import');
+
+// Same-site export imported again: text with & and a title column still matches.
+$amp = add_test_comment(['comment_post_ID' => 101, 'comment_parent' => 0, 'comment_author' => 'Amp', 'comment_content' => 'Thanks & enjoy <3', 'meta' => ['rating' => 5]]);
+import_file([
+    ['id', 'review_title', 'review_content', 'product_id', 'date'],
+    [(string) $amp, 'A title', 'Thanks &amp; enjoy <3', '101', '2020-01-01'],
+]);
+run_import();
+check(1 === Product_Reviews_Import::job()['skipped'] && 1 === count_comments('Thanks & enjoy <3'), 'this store\'s own review is found again despite entities and a title column');
+
+// Spam and trash rows; a Q&A answer whose question is missing (no type column).
+import_file([
+    ['product_id', 'status', 'content'],
+    ['101', 'spam', 'Spam row'],
+    ['101', 'trash', 'Trash row'],
+]);
+run_import();
+check(null === find_comment('Spam row') && null === find_comment('Trash row'), 'rows marked spam or trash are not imported');
+import_file([
+    ['id', 'parent_id', 'product_id', 'content'],
+    ['5', '424242', '101', 'An answer to a missing question'],
+], 'qna');
+run_import();
+check(null === find_comment('An answer to a missing question'), 'an answer whose question is missing is not published as a question');
+
+// Semicolons (European spreadsheets) and old Mac line endings.
+import_file([['product_id', 'content', 'date_gmt'], ['101', 'Semicolon, with a comma inside', '2024-04-01 10:00:00']], 'reviews', 'keep', ';');
+run_import();
+check(null !== find_comment('Semicolon, with a comma inside'), 'a semicolon-separated file imports');
+import_raw("product_id,content,date_gmt\r101,Old Mac file,2024-04-02 10:00:00\r");
+run_import();
+check(null !== find_comment('Old Mac file') && 1 === Product_Reviews_Import::job()['imported'], 'a file with CR-only line endings imports');
+
+// Upload limits.
+$GLOBALS['max_upload'] = 2 * 1048576;
+$r = Product_Reviews_Import::start_job(['name' => 'big.csv', 'tmp_name' => '', 'error' => UPLOAD_ERR_INI_SIZE, 'size' => 0], 'reviews', 'keep');
+check(!$r['ok'] && strpos($r['message'], 'larger than this server accepts (2 MB)') !== false, 'a file over the server limit says so');
+unset($GLOBALS['max_upload']);
+
+/* ── Review findings: batches the server kills, cancel races ─────────── */
+
+$rows = [['product_id', 'content', 'date_gmt']];
+for ($i = 1; $i <= 30; $i++) {
+    $rows[] = ['103', 'Stall row ' . $i, '2024-05-01 10:00:00'];
+}
+import_file($rows);
+$GLOBALS['as'] = array_values(array_filter($GLOBALS['as'], function ($a) {
+    return 'ffla_review_import_batch' !== $a['hook'];
+}));
+Product_Reviews_Import::resume_stalled();
+check([] === actions_for('ffla_review_import_batch'), 'a job that moved recently is left alone');
+$job = Product_Reviews_Import::job();
+$job['touched'] = time() - 600;
+update_option(Product_Reviews_Import::JOB_OPTION, $job);
+Product_Reviews_Import::resume_stalled();
+check(1 === count(actions_for('ffla_review_import_batch')), 'a job with no queued batch that stopped moving is queued again');
+run_import();
+check('done' === Product_Reviews_Import::job()['status'] && 1 === count_comments('Stall row 30'), 'and finishes');
+// Three kills at the same place: it stops and says where.
+import_file([['product_id', 'content'], ['103', 'Never finishes']]);
+for ($i = 0; $i < 3; $i++) {
+    $GLOBALS['as'] = array_values(array_filter($GLOBALS['as'], function ($a) {
+        return 'ffla_review_import_batch' !== $a['hook'];
+    }));
+    $job = Product_Reviews_Import::job();
+    $job['touched'] = time() - 600;
+    update_option(Product_Reviews_Import::JOB_OPTION, $job);
+    Product_Reviews_Import::resume_stalled();
+}
+$job = Product_Reviews_Import::job();
+check('failed' === $job['status'] && strpos(end($job['messages']), 'three times at the same place') !== false, 'after three kills at the same place the job stops with a note');
+Product_Reviews_Import::cancel_job();
+$GLOBALS['as'] = array_values(array_filter($GLOBALS['as'], function ($a) {
+    return 'ffla_review_import_batch' !== $a['hook'];
+}));
+
+// A batch still running when its job is replaced does not overwrite the new job.
+import_file([['product_id', 'content'], ['103', 'Old job row']]);
+$old_job = Product_Reviews_Import::job();
+Product_Reviews_Import::cancel_job();
+Product_Reviews_Import::cancel_job();
+import_file([['product_id', 'content'], ['103', 'New job row']]);
+$new_token = Product_Reviews_Import::job()['token'];
+update_option(Product_Reviews_Import::JOB_OPTION . '_old', $old_job);
+$ref = new ReflectionMethod('Product_Reviews_Import', 'save_progress');
+$ref->setAccessible(true);
+check(false === $ref->invoke(null, $old_job), 'a batch of a replaced job may not save its progress');
+check($new_token === Product_Reviews_Import::job()['token'], 'the new job is kept');
+run_import();
+check(null !== find_comment('New job row') && null === find_comment('Old job row'), 'only the new file is imported');
 
 /* ── Photos and votes from Customer Reviews for WooCommerce ────────────── */
 
@@ -298,6 +489,36 @@ check(5 === (int) get_comment_meta($cr2, 'ffla_helpful_yes', true), 'a higher co
 Product_Reviews_Import::start_migration();
 run_action('ffla_review_migrate_cusrev', []);
 check([$img1, $img2, $vid] === get_comment_meta($cr, 'ffla_review_media_ids', true), 'running it again changes nothing');
+
+// Photos kept on cusrev.com (an array with a url) are downloaded once; downvotes alone count.
+$GLOBALS['downloads']['https://cdn.cusrev.test/r/photo-a.png'] = stub_png();
+$cloud = add_test_comment(['comment_post_ID' => 102, 'comment_author' => 'Cloud', 'comment_content' => 'Collected on cusrev.com', 'meta' => [
+    'ivole_review_image' => new StubMulti([['url' => 'https://cdn.cusrev.test/r/photo-a.png'], ['url' => 'https://cdn.cusrev.test/r/gone.jpg']]),
+]]);
+$down = add_test_comment(['comment_post_ID' => 102, 'comment_author' => 'Down', 'comment_content' => 'Only downvotes', 'meta' => ['ivole_review_unreg_downvoters' => serialize(['3.3.3.3', '4.4.4.4'])]]);
+check(in_array($cloud, Product_Reviews_Import::cusrev_candidates(), true) && in_array($down, Product_Reviews_Import::cusrev_candidates(), true), 'reviews with only cloud photos or only downvotes are found');
+$sideloads = count($GLOBALS['sideloaded']);
+check(true === Product_Reviews_Import::start_migration(), 'the copy starts');
+check(false === Product_Reviews_Import::start_migration(), 'a second click while it runs does not start a second copy');
+run_action('ffla_review_migrate_cusrev', []);
+$cloud_media = get_comment_meta($cloud, 'ffla_review_media_ids', true);
+check(is_array($cloud_media) && 1 === count($cloud_media) && $sideloads + 1 === count($GLOBALS['sideloaded']), 'the cloud photo is downloaded into the Media Library');
+check(1 === (int) get_option(Product_Reviews_Import::MIGRATE_OPTION)['failed'], 'a cloud file that cannot be downloaded is counted');
+check(2 === (int) get_comment_meta($down, 'ffla_helpful_no', true), 'downvotes alone become a Not helpful count (lists serialized twice too)');
+Product_Reviews_Import::start_migration();
+run_action('ffla_review_migrate_cusrev', []);
+check($sideloads + 1 === count($GLOBALS['sideloaded']) && $cloud_media === get_comment_meta($cloud, 'ffla_review_media_ids', true), 'running it again downloads nothing again');
+
+// A copy that stopped moving can be continued.
+$state = get_option(Product_Reviews_Import::MIGRATE_OPTION);
+$state['status']  = 'running';
+$state['touched'] = time() - 600;
+update_option(Product_Reviews_Import::MIGRATE_OPTION, $state);
+reset_request(1);
+$page = capture(['Product_Reviews_Tools_Admin', 'render']);
+check(strpos($page, 'Continue copying') !== false && strpos($page, 'Stopped:') !== false, 'a stalled copy is shown as stopped and can be continued');
+check(true === Product_Reviews_Import::start_migration() && (int) get_option(Product_Reviews_Import::MIGRATE_OPTION)['reviews'] === (int) $state['reviews'], 'continuing keeps its place');
+run_action('ffla_review_migrate_cusrev', []);
 
 /* ── Admin page ────────────────────────────────────────────────────────── */
 

@@ -6,10 +6,17 @@
  * Exports stream the file row by row. Imports run in the background: the
  * uploaded file is kept in a private folder under uploads, read 100 rows at
  * a time by an Action Scheduler (or WP-Cron) job, and deleted when the job
- * ends. Imported rows are saved with wp_insert_comment(), so they skip the
- * submission rules and send no emails and earn no coupons. A row already
- * imported (same product, email, text and date) is skipped, so a file can
- * be imported again safely.
+ * ends. A batch stops after about 20 seconds and saves its place every few
+ * rows; a job that stopped moving (the server killed the batch) is queued
+ * again when the Import / Export page is opened. Imported rows are saved with
+ * wp_insert_comment(), so they skip the submission rules; they are marked as
+ * already emailed and already checked for a coupon, so approving them later
+ * sends nothing either. A row already imported (same product, email, text
+ * and date) is skipped, so a file can be imported again safely.
+ *
+ * Files are read and written as standard CSV (a quote inside a cell is
+ * doubled; backslashes are plain text). Commas, semicolons and tabs are
+ * understood as separators.
  *
  * Column names follow the export; the names Customer Reviews for
  * WooCommerce uses (review_content, review_score, display_name, parent,
@@ -39,6 +46,15 @@ class Product_Reviews_Import
     const MAX_FILE_BYTES = 20971520;
 
     const HASH_META = '_ffla_import_hash';
+
+    /** Seconds a batch may start new rows for. */
+    const BATCH_SECONDS = 20;
+
+    /** A job that has not moved for this long is queued again. */
+    const STALL_SECONDS = 300;
+
+    /** Reviews already given CusRev's cloud photos (so they are downloaded once). */
+    const CUSREV_CLOUD_META = '_ffla_cusrev_cloud_copied';
 
     const REVIEW_COLUMNS = ['id', 'parent_id', 'product_id', 'product_sku', 'product_name', 'status', 'date_gmt', 'author', 'email', 'user_id', 'rating', 'verified', 'pinned', 'store_reply', 'content', 'criteria', 'media', 'helpful', 'not_helpful', 'order_id'];
 
@@ -110,7 +126,30 @@ class Product_Reviews_Import
      */
     private static function put($handle, array $row): void
     {
-        fputcsv($handle, array_map([__CLASS__, 'cell'], $row), ',', '"', '\\');
+        fputcsv($handle, array_map([__CLASS__, 'cell'], $row), ',', '"', '');
+    }
+
+    /**
+     * Big stores: no time limit for an export, and more time per import row.
+     */
+    private static function long_request(int $seconds = 0): void
+    {
+        if (function_exists('wc_set_time_limit')) {
+            wc_set_time_limit($seconds);
+        } elseif (function_exists('set_time_limit')) {
+            @set_time_limit($seconds); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+        }
+    }
+
+    /**
+     * Drop the comments and meta the last page loaded into the in-memory
+     * object cache, so a long export does not run out of memory.
+     */
+    private static function free_memory(): void
+    {
+        if (function_exists('wp_cache_supports') && function_exists('wp_cache_flush_runtime') && wp_cache_supports('flush_runtime')) {
+            wp_cache_flush_runtime();
+        }
     }
 
     private static function status_name(\WP_Comment $comment): string
@@ -131,8 +170,10 @@ class Product_Reviews_Import
         $rows   = 0;
         $offset = 0;
         $skus   = [];
+        self::long_request();
 
         do {
+            self::free_memory();
             $comments = get_comments([
                 'post_type' => 'product',
                 'status'    => 'all',
@@ -217,42 +258,51 @@ class Product_Reviews_Import
     {
         self::put($handle, self::QNA_COLUMNS);
 
-        $rows     = 0;
-        $comments = get_comments([
-            'type__in' => Product_Reviews_Core::QNA_TYPES,
-            'status'   => 'all',
-            'orderby'  => 'comment_ID',
-            'order'    => 'ASC',
-        ]);
+        $rows   = 0;
+        $offset = 0;
+        self::long_request();
 
-        foreach ((array) $comments as $comment) {
-            if (!$comment instanceof \WP_Comment || in_array((string) $comment->comment_approved, ['spam', 'trash'], true)) {
-                continue;
-            }
-
-            $id         = (int) $comment->comment_ID;
-            $product_id = (int) $comment->comment_post_ID;
-            $product    = wc_get_product($product_id);
-            $answer     = 'ffla_answer' === $comment->comment_type;
-
-            self::put($handle, [
-                $id,
-                $answer ? (int) $comment->comment_parent : '',
-                $answer ? 'answer' : 'question',
-                $product_id,
-                $product ? (string) $product->get_sku() : '',
-                $product ? (string) $product->get_name() : get_the_title($product_id),
-                self::status_name($comment),
-                (string) $comment->comment_date_gmt,
-                (string) $comment->comment_author,
-                (string) $comment->comment_author_email,
-                (int) $comment->user_id,
-                $answer ? (1 === (int) get_comment_meta($id, 'ffla_is_store_answer', true) ? 1 : 0) : '',
-                (string) $comment->comment_content,
-                (int) get_comment_meta($id, 'ffla_helpful_yes', true),
+        do {
+            self::free_memory();
+            $comments = get_comments([
+                'type__in' => Product_Reviews_Core::QNA_TYPES,
+                'status'   => 'all',
+                'orderby'  => 'comment_ID',
+                'order'    => 'ASC',
+                'number'   => 500,
+                'offset'   => $offset,
             ]);
-            $rows++;
-        }
+            $offset += 500;
+
+            foreach ((array) $comments as $comment) {
+                if (!$comment instanceof \WP_Comment || in_array((string) $comment->comment_approved, ['spam', 'trash'], true)) {
+                    continue;
+                }
+
+                $id         = (int) $comment->comment_ID;
+                $product_id = (int) $comment->comment_post_ID;
+                $product    = wc_get_product($product_id);
+                $answer     = 'ffla_answer' === $comment->comment_type;
+
+                self::put($handle, [
+                    $id,
+                    $answer ? (int) $comment->comment_parent : '',
+                    $answer ? 'answer' : 'question',
+                    $product_id,
+                    $product ? (string) $product->get_sku() : '',
+                    $product ? (string) $product->get_name() : get_the_title($product_id),
+                    self::status_name($comment),
+                    (string) $comment->comment_date_gmt,
+                    (string) $comment->comment_author,
+                    (string) $comment->comment_author_email,
+                    (int) $comment->user_id,
+                    $answer ? (1 === (int) get_comment_meta($id, 'ffla_is_store_answer', true) ? 1 : 0) : '',
+                    (string) $comment->comment_content,
+                    (int) get_comment_meta($id, 'ffla_helpful_yes', true),
+                ]);
+                $rows++;
+            }
+        } while (!empty($comments) && count($comments) === 500);
 
         return $rows;
     }
@@ -293,11 +343,71 @@ class Product_Reviews_Import
         return is_array($job) ? $job : null;
     }
 
+    /**
+     * The job as stored now: another request (Cancel, a new upload) may have
+     * changed it since this one read it.
+     *
+     * @return array<string, mixed>|null
+     */
+    private static function fresh_job(): ?array
+    {
+        wp_cache_delete(self::JOB_OPTION, 'options');
+
+        return self::job();
+    }
+
     public static function job_running(): bool
     {
         $job = self::job();
 
         return $job !== null && in_array($job['status'] ?? '', ['queued', 'running'], true);
+    }
+
+    private static function batch_pending(): bool
+    {
+        if (function_exists('as_has_scheduled_action')) {
+            return (bool) as_has_scheduled_action(self::ACTION_BATCH, [], Product_Reviews_Email::GROUP);
+        }
+        if (function_exists('as_next_scheduled_action')) {
+            return false !== as_next_scheduled_action(self::ACTION_BATCH, [], Product_Reviews_Email::GROUP);
+        }
+
+        return false !== wp_next_scheduled(self::ACTION_BATCH);
+    }
+
+    /**
+     * A job whose batch was killed (time limit, fatal error, the module
+     * switched off) has no batch queued and stopped moving: queue it again.
+     * After three tries at the same place it stops, naming the line.
+     */
+    public static function resume_stalled(): void
+    {
+        $job = self::fresh_job();
+        if ($job === null || !in_array($job['status'] ?? '', ['queued', 'running'], true)) {
+            return;
+        }
+        if (time() - (int) ($job['touched'] ?? $job['started'] ?? 0) < self::STALL_SECONDS || self::batch_pending()) {
+            return;
+        }
+
+        $same_place     = (int) ($job['stall_offset'] ?? -1) === (int) $job['offset'];
+        $job['stalls']  = $same_place ? (int) ($job['stalls'] ?? 0) + 1 : 1;
+        $job['stall_offset'] = (int) $job['offset'];
+        $job['touched'] = time();
+
+        if ($job['stalls'] >= 3) {
+            $job['messages'][] = sprintf(
+                /* translators: %d: line number */
+                __('Stopped after line %d: the server ended the import three times at the same place (often a photo that takes too long to download). Remove that row and import the file again; rows already imported are skipped.', 'ffl-funnels-addons'),
+                (int) $job['line']
+            );
+            self::end_job($job, 'failed');
+
+            return;
+        }
+
+        update_option(self::JOB_OPTION, $job, false);
+        self::schedule_batch();
     }
 
     /**
@@ -323,6 +433,26 @@ class Product_Reviews_Import
     }
 
     /**
+     * The largest file this server accepts: 20 MB, or less when PHP's upload
+     * limits are lower.
+     */
+    public static function max_bytes(): int
+    {
+        $server = function_exists('wp_max_upload_size') ? (int) wp_max_upload_size() : 0;
+
+        return $server > 0 ? min(self::MAX_FILE_BYTES, $server) : self::MAX_FILE_BYTES;
+    }
+
+    public static function too_big_message(): string
+    {
+        return sprintf(
+            /* translators: %s: size such as 8 MB */
+            __('The file is larger than this server accepts (%s). Split it into smaller files.', 'ffl-funnels-addons'),
+            size_format(self::max_bytes())
+        );
+    }
+
+    /**
      * Take an uploaded CSV and queue its import. The file is moved to the
      * private folder; the first row must name the columns.
      *
@@ -338,11 +468,22 @@ class Product_Reviews_Import
         $kind = 'qna' === $kind ? 'qna' : 'reviews';
         $mode = 'pending' === $mode ? 'pending' : 'keep';
 
-        if (!empty($upload['error']) || empty($upload['tmp_name']) || !is_uploaded_file((string) $upload['tmp_name'])) {
+        $error = (int) ($upload['error'] ?? UPLOAD_ERR_NO_FILE);
+        if (in_array($error, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) {
+            return ['ok' => false, 'message' => self::too_big_message()];
+        }
+        if (UPLOAD_ERR_NO_FILE === $error || empty($upload['tmp_name'])) {
             return ['ok' => false, 'message' => __('Choose a CSV file to import.', 'ffl-funnels-addons')];
         }
-        if ((int) ($upload['size'] ?? 0) > self::MAX_FILE_BYTES) {
-            return ['ok' => false, 'message' => __('The file is larger than 20 MB. Split it into smaller files.', 'ffl-funnels-addons')];
+        if (UPLOAD_ERR_OK !== $error || !is_uploaded_file((string) $upload['tmp_name'])) {
+            return ['ok' => false, 'message' => sprintf(
+                /* translators: %d: PHP upload error code */
+                __('The file could not be uploaded (PHP upload error %d).', 'ffl-funnels-addons'),
+                $error
+            )];
+        }
+        if ((int) ($upload['size'] ?? 0) > self::max_bytes()) {
+            return ['ok' => false, 'message' => self::too_big_message()];
         }
         if ('csv' !== strtolower((string) pathinfo((string) ($upload['name'] ?? ''), PATHINFO_EXTENSION))) {
             return ['ok' => false, 'message' => __('The file must be a .csv file.', 'ffl-funnels-addons')];
@@ -369,8 +510,11 @@ class Product_Reviews_Import
             return ['ok' => false, 'message' => __('An import is still running. Wait for it to finish, or cancel it.', 'ffl-funnels-addons')];
         }
 
+        self::fix_line_endings($path);
+        $delimiter = self::detect_delimiter($path);
+
         $handle = @fopen($path, 'r'); // phpcs:ignore WordPress.PHP.NoSilencedErrors, WordPress.WP.AlternativeFunctions
-        $header = $handle ? fgetcsv($handle, 0, ',', '"', '\\') : false;
+        $header = $handle ? fgetcsv($handle, 0, $delimiter, '"', '') : false;
         $offset = $handle ? (int) ftell($handle) : 0;
         if ($handle) {
             fclose($handle); // phpcs:ignore WordPress.WP.AlternativeFunctions
@@ -385,11 +529,13 @@ class Product_Reviews_Import
         }
 
         update_option(self::JOB_OPTION, [
-            'kind'     => $kind,
-            'mode'     => $mode,
-            'file'     => $path,
-            'columns'  => $columns,
-            'offset'   => $offset,
+            'token'     => wp_generate_password(12, false, false),
+            'kind'      => $kind,
+            'mode'      => $mode,
+            'file'      => $path,
+            'delimiter' => $delimiter,
+            'columns'   => $columns,
+            'offset'    => $offset,
             'line'     => 1,
             'imported' => 0,
             'skipped'  => 0,
@@ -398,12 +544,56 @@ class Product_Reviews_Import
             'products' => [],
             'status'   => 'queued',
             'started'  => time(),
+            'touched'  => time(),
             'finished' => 0,
         ], false);
 
         self::schedule_batch();
 
         return ['ok' => true, 'message' => __('Import started. It runs in the background; this page shows its progress.', 'ffl-funnels-addons')];
+    }
+
+    /**
+     * Files saved with old Mac line endings (CR only) become one line to
+     * PHP's CSV reader: turn them into LF.
+     */
+    private static function fix_line_endings(string $path): void
+    {
+        $head = (string) @file_get_contents($path, false, null, 0, 65536); // phpcs:ignore WordPress.PHP.NoSilencedErrors, WordPress.WP.AlternativeFunctions
+        if (strpos($head, "\r") === false || strpos($head, "\n") !== false) {
+            return;
+        }
+
+        $all = @file_get_contents($path); // phpcs:ignore WordPress.PHP.NoSilencedErrors, WordPress.WP.AlternativeFunctions
+        if (is_string($all)) {
+            @file_put_contents($path, str_replace("\r", "\n", $all)); // phpcs:ignore WordPress.PHP.NoSilencedErrors, WordPress.WP.AlternativeFunctions
+        }
+    }
+
+    /**
+     * Comma, semicolon (spreadsheets in many European languages) or tab: the
+     * one the header row has most of, outside quotes.
+     */
+    public static function detect_delimiter(string $path): string
+    {
+        $handle = @fopen($path, 'r'); // phpcs:ignore WordPress.PHP.NoSilencedErrors, WordPress.WP.AlternativeFunctions
+        $line   = $handle ? (string) fgets($handle) : '';
+        if ($handle) {
+            fclose($handle); // phpcs:ignore WordPress.WP.AlternativeFunctions
+        }
+
+        $line  = (string) preg_replace('/"[^"]*"/', '', $line);
+        $best  = ',';
+        $count = substr_count($line, ',');
+        foreach ([';', "\t"] as $candidate) {
+            $n = substr_count($line, $candidate);
+            if ($n > $count) {
+                $best  = $candidate;
+                $count = $n;
+            }
+        }
+
+        return $best;
     }
 
     private static function schedule_batch(): void
@@ -424,10 +614,15 @@ class Product_Reviews_Import
 
     public static function cancel_job(): void
     {
-        $job = self::job();
+        $job = self::fresh_job();
         if ($job === null) {
             return;
         }
+
+        if (function_exists('as_unschedule_all_actions')) {
+            as_unschedule_all_actions(self::ACTION_BATCH, [], Product_Reviews_Email::GROUP);
+        }
+        wp_clear_scheduled_hook(self::ACTION_BATCH);
 
         if (!empty($job['file']) && file_exists((string) $job['file'])) {
             @unlink((string) $job['file']); // phpcs:ignore WordPress.PHP.NoSilencedErrors, WordPress.WP.AlternativeFunctions
@@ -445,30 +640,37 @@ class Product_Reviews_Import
 
     /**
      * Import the next rows of the queued file, then queue the next batch or
-     * finish.
+     * finish. A batch takes at most BATCH_SIZE rows and starts no new row
+     * after BATCH_SECONDS; its place is saved every few rows, so a batch the
+     * server kills loses little (rows done again are found as duplicates).
      */
     public static function run_batch(): void
     {
-        $job = self::job();
+        $job = self::fresh_job();
         if ($job === null || !in_array($job['status'] ?? '', ['queued', 'running'], true)) {
             return;
         }
 
         $handle = !empty($job['file']) ? @fopen((string) $job['file'], 'r') : false; // phpcs:ignore WordPress.PHP.NoSilencedErrors, WordPress.WP.AlternativeFunctions
         if (!$handle) {
-            $job['status']     = 'failed';
-            $job['finished']   = time();
             $job['messages'][] = __('The uploaded file is gone.', 'ffl-funnels-addons');
-            update_option(self::JOB_OPTION, $job, false);
+            self::end_job($job, 'failed');
 
             return;
         }
 
         $job['status'] = 'running';
+        $delimiter     = (string) ($job['delimiter'] ?? ',');
+        $started       = microtime(true);
+        $saved_at      = $started;
         fseek($handle, (int) $job['offset']);
 
         for ($n = 0; $n < self::BATCH_SIZE; $n++) {
-            $row = fgetcsv($handle, 0, ',', '"', '\\');
+            if ($n > 0 && microtime(true) - $started > self::BATCH_SECONDS) {
+                break;
+            }
+
+            $row = fgetcsv($handle, 0, $delimiter, '"', '');
             if (false === $row) {
                 break;
             }
@@ -478,6 +680,8 @@ class Product_Reviews_Import
             if ([null] === $row || (1 === count($row) && trim((string) $row[0]) === '')) {
                 continue;
             }
+
+            self::long_request(120);
 
             $data = [];
             foreach ($job['columns'] as $i => $name) {
@@ -502,10 +706,19 @@ class Product_Reviews_Import
                     $result['message']
                 );
             }
+
+            if (($n + 1) % 10 === 0 || microtime(true) - $saved_at > 3) {
+                if (!self::save_progress($job)) {
+                    fclose($handle); // phpcs:ignore WordPress.WP.AlternativeFunctions
+
+                    return;
+                }
+                $saved_at = microtime(true);
+            }
         }
 
         // One more row? The saved offset still points before it.
-        $eof = false === fgetcsv($handle, 0, ',', '"', '\\');
+        $eof = false === fgetcsv($handle, 0, $delimiter, '"', '');
         fclose($handle); // phpcs:ignore WordPress.WP.AlternativeFunctions
 
         if ($eof) {
@@ -514,8 +727,30 @@ class Product_Reviews_Import
             return;
         }
 
+        if (self::save_progress($job)) {
+            self::schedule_batch();
+        }
+    }
+
+    /**
+     * Store the job's progress, unless it was cancelled or replaced by a new
+     * upload since this batch started. Returns false when the batch must
+     * stop.
+     *
+     * @param array<string, mixed> $job
+     */
+    private static function save_progress(array $job): bool
+    {
+        $stored = self::fresh_job();
+        if ($stored === null || ($stored['token'] ?? '') !== ($job['token'] ?? '')
+            || !in_array($stored['status'] ?? '', ['queued', 'running'], true)) {
+            return false;
+        }
+
+        $job['touched'] = time();
         update_option(self::JOB_OPTION, $job, false);
-        self::schedule_batch();
+
+        return true;
     }
 
     /**
@@ -523,6 +758,12 @@ class Product_Reviews_Import
      */
     private static function finish(array $job): void
     {
+        $stored = self::fresh_job();
+        if ($stored === null || ($stored['token'] ?? '') !== ($job['token'] ?? '')
+            || !in_array($stored['status'] ?? '', ['queued', 'running'], true)) {
+            return;
+        }
+
         // WooCommerce's stored rating counts for every product touched.
         if ('reviews' === $job['kind'] && class_exists('WC_Comments') && method_exists('WC_Comments', 'clear_transients')) {
             foreach (array_keys((array) $job['products']) as $product_id) {
@@ -533,11 +774,19 @@ class Product_Reviews_Import
             Product_Reviews_Query::bump_cache_version();
         }
 
+        self::end_job($job, 'done');
+    }
+
+    /**
+     * @param array<string, mixed> $job
+     */
+    private static function end_job(array $job, string $status): void
+    {
         if (!empty($job['file']) && file_exists((string) $job['file'])) {
             @unlink((string) $job['file']); // phpcs:ignore WordPress.PHP.NoSilencedErrors, WordPress.WP.AlternativeFunctions
         }
 
-        $job['status']   = 'done';
+        $job['status']   = $status;
         $job['file']     = '';
         $job['map']      = [];
         $job['finished'] = time();
@@ -558,21 +807,29 @@ class Product_Reviews_Import
      * ------------------------------------------------------------------- */
 
     /**
+     * The product a row is about. The id is used when the row has no SKU or
+     * the product with that id has the row's SKU (the file comes from this
+     * store); otherwise the SKU decides, so a file from another store does
+     * not land on whatever product here shares the id. Variations count as
+     * their parent.
+     *
      * @param array<string, string> $data
      */
     private static function resolve_product(array $data): int
     {
-        $id = (int) ($data['product_id'] ?? 0);
+        $sku = trim((string) ($data['product_sku'] ?? ''));
+        $id  = (int) ($data['product_id'] ?? 0);
+
         if ($id > 0 && in_array(get_post_type($id), ['product', 'product_variation'], true)) {
             $product = wc_get_product($id);
-            if ($product && $product->is_type('variation')) {
-                return (int) $product->get_parent_id();
-            }
+            $parent  = $product && $product->is_type('variation') ? wc_get_product((int) $product->get_parent_id()) : null;
+            $skus    = array_filter([$product ? (string) $product->get_sku() : '', $parent ? (string) $parent->get_sku() : '']);
 
-            return $id;
+            if ($sku === '' || in_array($sku, $skus, true)) {
+                return $product && $product->is_type('variation') ? (int) $product->get_parent_id() : $id;
+            }
         }
 
-        $sku = trim((string) ($data['product_sku'] ?? ''));
         if ($sku !== '' && function_exists('wc_get_product_id_by_sku')) {
             $id = (int) wc_get_product_id_by_sku($sku);
             if ($id > 0) {
@@ -587,49 +844,115 @@ class Product_Reviews_Import
 
     /**
      * GMT date from date_gmt, else a local date (date / review_date), else
-     * now.
+     * now. `known` is false when the row had no date the import understood;
+     * `note` says so when it had one.
      *
      * @param array<string, string> $data
+     * @return array{date:string,known:bool,note:string}
      */
-    private static function date_gmt(array $data): string
+    private static function date_gmt(array $data): array
     {
-        if (!empty($data['date_gmt'])) {
-            $ts = strtotime($data['date_gmt'] . ' UTC');
+        $gmt = trim((string) ($data['date_gmt'] ?? ''));
+        if ($gmt !== '') {
+            $ts = strtotime($gmt . ' UTC');
+            if (false === $ts) {
+                $ts = strtotime($gmt);
+            }
             if (false !== $ts) {
-                return gmdate('Y-m-d H:i:s', $ts);
+                return ['date' => gmdate('Y-m-d H:i:s', $ts), 'known' => true, 'note' => ''];
             }
         }
 
-        if (!empty($data['date_local'])) {
+        $local = trim((string) ($data['date_local'] ?? ''));
+        if ($local !== '') {
+            // 14/03/2024: day first, as many spreadsheets write it.
+            if (preg_match('#^(\d{1,2})/(\d{1,2})/(\d{4})(.*)$#', $local, $m) && (int) $m[1] > 12) {
+                $local = sprintf('%04d-%02d-%02d%s', (int) $m[3], (int) $m[2], (int) $m[1], $m[4]);
+            }
             try {
-                $date = new \DateTimeImmutable($data['date_local'], wp_timezone());
+                $date = new \DateTimeImmutable($local, wp_timezone());
 
-                return $date->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+                return ['date' => $date->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s'), 'known' => true, 'note' => ''];
             } catch (\Exception $e) {
-                return gmdate('Y-m-d H:i:s');
+                // Falls through to now, with a note.
             }
         }
 
-        return gmdate('Y-m-d H:i:s');
+        return [
+            'date'  => gmdate('Y-m-d H:i:s'),
+            'known' => false,
+            'note'  => $gmt !== '' || $local !== '' ? __('the date was not understood; the import time was used.', 'ffl-funnels-addons') : '',
+        ];
     }
 
     /**
+     * '1' or '0', or '' for a row marked spam or trash (not imported).
+     *
      * @param array<string, string> $data
      */
     private static function approved(array $data, string $mode): string
     {
+        $status = strtolower(trim((string) ($data['status'] ?? '')));
+        if (in_array($status, ['spam', 'trash', 'post-trashed', 'trashed', 'deleted'], true)) {
+            return '';
+        }
         if ('pending' === $mode) {
             return '0';
         }
-
-        $status = strtolower(trim((string) ($data['status'] ?? '')));
 
         return in_array($status, ['pending', 'hold', 'unapproved', '0'], true) ? '0' : '1';
     }
 
     /**
+     * Text as a reader sees it, for comparing a stored comment with a cell:
+     * no tags, entities decoded, white space collapsed.
+     */
+    private static function comparable(string $text): string
+    {
+        $text = html_entity_decode(wp_strip_all_tags($text), ENT_QUOTES, 'UTF-8');
+
+        return trim((string) preg_replace('/\s+/u', ' ', $text));
+    }
+
+    /**
+     * The user a row names, when that account has the row's email address.
+     */
+    private static function matching_user(int $user_id, string $email): int
+    {
+        if ($user_id <= 0 || $email === '') {
+            return 0;
+        }
+        $user = get_userdata($user_id);
+
+        return $user && strtolower((string) $user->user_email) === strtolower($email) ? $user_id : 0;
+    }
+
+    /**
+     * The order a row names, when it is an order of this store with the
+     * row's billing email that has the product.
+     */
+    private static function matching_order(int $order_id, string $email, int $product_id): int
+    {
+        if ($order_id <= 0 || $email === '' || !function_exists('wc_get_order')) {
+            return 0;
+        }
+        $order = wc_get_order($order_id);
+        if (!$order instanceof \WC_Order || strtolower((string) $order->get_billing_email()) !== strtolower($email)) {
+            return 0;
+        }
+        foreach ($order->get_items() as $item) {
+            if ($item instanceof \WC_Order_Item_Product && (int) $item->get_product_id() === $product_id) {
+                return $order_id;
+            }
+        }
+
+        return 0;
+    }
+
+    /**
      * The row's own id is a comment of this site on the same product with
      * the same text: the file is this store's export, imported again.
+     * $content is the cell as in the file (without a title column).
      */
     private static function same_site_comment(string $csv_id, int $product_id, string $content): int
     {
@@ -639,7 +962,7 @@ class Product_Reviews_Import
 
         $existing = get_comment((int) $csv_id);
         if ($existing instanceof \WP_Comment && (int) $existing->comment_post_ID === $product_id
-            && trim(wp_strip_all_tags((string) $existing->comment_content)) === trim(wp_strip_all_tags($content))) {
+            && self::comparable((string) $existing->comment_content) === self::comparable($content)) {
             return (int) $existing->comment_ID;
         }
 
@@ -722,16 +1045,26 @@ class Product_Reviews_Import
             return $result;
         }
 
+        $approved = self::approved($data, (string) $job['mode']);
+        if ($approved === '') {
+            $result['message'] = __('marked as spam or trash; skipped.', 'ffl-funnels-addons');
+
+            return $result;
+        }
+
         $email  = sanitize_email((string) ($data['email'] ?? ''));
         $email  = is_email($email) ? $email : '';
-        $date   = self::date_gmt($data);
+        $when   = self::date_gmt($data);
+        $date   = $when['date'];
         $author = sanitize_text_field((string) ($data['author'] ?? ''));
         if ($author === '') {
             $author = __('Customer', 'ffl-funnels-addons');
         }
 
-        $hash = md5($product_id . '|' . $parent . '|' . strtolower($email) . '|' . $content . '|' . $date);
-        $dup  = self::same_site_comment($csv_id, $product_id, $content) ?: self::find_by_hash($hash);
+        // Without a date in the file, the date is the import time: leave it
+        // out, or importing the file again would add every row again.
+        $hash = md5($product_id . '|' . $parent . '|' . strtolower($email) . '|' . $content . ($when['known'] ? '|' . $date : ''));
+        $dup  = self::same_site_comment($csv_id, $product_id, (string) ($data['content'] ?? '')) ?: self::find_by_hash($hash);
         if ($dup > 0) {
             $result['message'] = __('already imported; skipped.', 'ffl-funnels-addons');
             // Replies further down the file still find their review.
@@ -740,12 +1073,11 @@ class Product_Reviews_Import
             return $result;
         }
 
-        $user_id = absint($data['user_id'] ?? 0);
-        if ($user_id > 0 && !get_userdata($user_id)) {
-            $user_id = 0;
-        }
+        $user_id = self::matching_user(absint($data['user_id'] ?? 0), $email);
 
-        $id = wp_insert_comment([
+        // wp_insert_comment() unslashes its input: slash it, so backslashes in
+        // the text survive.
+        $id = wp_insert_comment(wp_slash([
             'comment_post_ID'      => $product_id,
             'comment_parent'       => $parent,
             'comment_type'         => $parent > 0 ? 'comment' : 'review',
@@ -754,11 +1086,11 @@ class Product_Reviews_Import
             'comment_author_email' => $email,
             'comment_author_url'   => '',
             'user_id'              => $user_id,
-            'comment_approved'     => self::approved($data, (string) $job['mode']),
+            'comment_approved'     => $approved,
             'comment_date_gmt'     => $date,
             'comment_date'         => get_date_from_gmt($date),
             'comment_karma'        => $parent <= 0 && '1' === trim((string) ($data['pinned'] ?? '')) ? 1 : 0,
-        ]);
+        ]));
 
         if (!$id) {
             $result['message'] = __('WordPress refused to save it.', 'ffl-funnels-addons');
@@ -768,12 +1100,20 @@ class Product_Reviews_Import
 
         $id = (int) $id;
         update_comment_meta($id, self::HASH_META, $hash);
+        // Its emails went out (or not) on the old store: approving it here
+        // later must not send "your review is published" or a coupon.
+        update_comment_meta($id, Product_Reviews_Notifications::APPROVED_NOTIFIED_META, 1);
+        update_comment_meta($id, Product_Reviews_Notifications::STORE_NOTIFIED_META, 1);
 
         if ($parent > 0) {
+            update_comment_meta($id, Product_Reviews_Notifications::REPLY_NOTIFIED_META, 1);
             if ('1' === trim((string) ($data['store_reply'] ?? ''))) {
                 update_comment_meta($id, Product_Reviews_Notifications::STORE_REPLY_META, 1);
             }
         } else {
+            if (class_exists('Product_Reviews_Coupons')) {
+                update_comment_meta($id, Product_Reviews_Coupons::REVIEW_CHECKED_META, 'imported');
+            }
             $rating = (int) ($data['rating'] ?? 0);
             if ($rating >= 1 && $rating <= 5) {
                 update_comment_meta($id, 'rating', $rating);
@@ -785,7 +1125,7 @@ class Product_Reviews_Import
             update_comment_meta($id, 'ffla_helpful_yes', absint($data['helpful'] ?? 0));
             update_comment_meta($id, 'ffla_helpful_no', absint($data['not_helpful'] ?? 0));
 
-            $order_id = absint($data['order_id'] ?? 0);
+            $order_id = self::matching_order(absint($data['order_id'] ?? 0), $email, $product_id);
             if ($order_id > 0) {
                 update_comment_meta($id, 'ffla_review_order_id', $order_id);
             }
@@ -796,6 +1136,9 @@ class Product_Reviews_Import
             if ($warnings !== '') {
                 $result['message'] = $warnings;
             }
+        }
+        if ($when['note'] !== '') {
+            $result['message'] = trim($when['note'] . ' ' . $result['message']);
         }
 
         $result['id']     = $id;
@@ -850,6 +1193,7 @@ class Product_Reviews_Import
         foreach (array_slice($urls, 0, self::MAX_MEDIA_PER_REVIEW) as $url) {
             $id = self::import_media_url($url);
             if ($id > 0) {
+                Product_Reviews_Core::mark_review_upload($id, $comment_id);
                 $ids[] = $id;
             } else {
                 $failed++;
@@ -958,7 +1302,7 @@ class Product_Reviews_Import
 
         $type   = strtolower(trim((string) ($data['type'] ?? '')));
         $parent = self::resolve_parent((string) ($data['parent_id'] ?? ''), $product_id, $job);
-        if ('answer' === $type || $parent > 0) {
+        if ('answer' === $type || $parent !== 0) {
             $question = $parent > 0 ? get_comment($parent) : null;
             if (!$question instanceof \WP_Comment || Product_Reviews_Qna::QUESTION !== $question->comment_type) {
                 $result['message'] = __('its question was not found; the answer is skipped.', 'ffl-funnels-addons');
@@ -971,11 +1315,19 @@ class Product_Reviews_Import
             $parent = 0;
         }
 
+        $approved = self::approved($data, (string) $job['mode']);
+        if ($approved === '') {
+            $result['message'] = __('marked as spam or trash; skipped.', 'ffl-funnels-addons');
+
+            return $result;
+        }
+
         $email = sanitize_email((string) ($data['email'] ?? ''));
         $email = is_email($email) ? $email : '';
-        $date  = self::date_gmt($data);
-        $hash  = md5('qna|' . $product_id . '|' . $parent . '|' . strtolower($email) . '|' . $content . '|' . $date);
-        $dup   = self::same_site_comment($csv_id, $product_id, $content) ?: self::find_by_hash($hash);
+        $when  = self::date_gmt($data);
+        $date  = $when['date'];
+        $hash  = md5('qna|' . $product_id . '|' . $parent . '|' . strtolower($email) . '|' . $content . ($when['known'] ? '|' . $date : ''));
+        $dup   = self::same_site_comment($csv_id, $product_id, (string) ($data['content'] ?? '')) ?: self::find_by_hash($hash);
         if ($dup > 0) {
             $result['message'] = __('already imported; skipped.', 'ffl-funnels-addons');
             $result['map_id']  = $dup;
@@ -984,9 +1336,8 @@ class Product_Reviews_Import
         }
 
         $author = sanitize_text_field((string) ($data['author'] ?? ''));
-        $user   = absint($data['user_id'] ?? 0);
 
-        $id = wp_insert_comment([
+        $id = wp_insert_comment(wp_slash([
             'comment_post_ID'      => $product_id,
             'comment_parent'       => $parent,
             'comment_type'         => 'answer' === $type ? Product_Reviews_Qna::ANSWER : Product_Reviews_Qna::QUESTION,
@@ -994,11 +1345,11 @@ class Product_Reviews_Import
             'comment_author'       => $author !== '' ? $author : __('Customer', 'ffl-funnels-addons'),
             'comment_author_email' => $email,
             'comment_author_url'   => '',
-            'user_id'              => $user > 0 && get_userdata($user) ? $user : 0,
-            'comment_approved'     => self::approved($data, (string) $job['mode']),
+            'user_id'              => self::matching_user(absint($data['user_id'] ?? 0), $email),
+            'comment_approved'     => $approved,
             'comment_date_gmt'     => $date,
             'comment_date'         => get_date_from_gmt($date),
-        ]);
+        ]));
         if (!$id) {
             $result['message'] = __('WordPress refused to save it.', 'ffl-funnels-addons');
 
@@ -1018,6 +1369,9 @@ class Product_Reviews_Import
             update_comment_meta($id, Product_Reviews_Qna::STORE_NOTIFIED_META, 1);
         }
         wp_cache_delete('qna_count_' . $product_id, 'ffla_product_reviews');
+        if ($when['note'] !== '') {
+            $result['message'] = $when['note'];
+        }
 
         $result['id']     = $id;
         $result['map_id'] = $id;
@@ -1030,10 +1384,19 @@ class Product_Reviews_Import
      * ------------------------------------------------------------------- */
 
     /**
-     * Reviews that carry that plugin's own photos, videos or votes.
+     * Reviews that carry that plugin's own photos, videos or votes. Photos
+     * and videos are attachment IDs (ivole_review_image2 / _video2) or, for
+     * reviews collected through cusrev.com, URLs of files kept there
+     * (ivole_review_image / _video, each an array with a url).
      */
     public static function cusrev_candidates(int $limit = 0): array
     {
+        $keys = ['ivole_review_image2', 'ivole_review_video2', 'ivole_review_image', 'ivole_review_video', 'ivole_review_reg_upvoters', 'ivole_review_unreg_upvoters', 'ivole_review_reg_downvoters', 'ivole_review_unreg_downvoters'];
+        $meta = ['relation' => 'OR'];
+        foreach ($keys as $key) {
+            $meta[] = ['key' => $key, 'compare' => 'EXISTS'];
+        }
+
         $args = [
             'post_type'  => 'product',
             'status'     => 'all',
@@ -1041,13 +1404,7 @@ class Product_Reviews_Import
             'fields'     => 'ids',
             'orderby'    => 'comment_ID',
             'order'      => 'ASC',
-            'meta_query' => [ // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
-                'relation' => 'OR',
-                ['key' => 'ivole_review_image2', 'compare' => 'EXISTS'],
-                ['key' => 'ivole_review_video2', 'compare' => 'EXISTS'],
-                ['key' => 'ivole_review_reg_upvoters', 'compare' => 'EXISTS'],
-                ['key' => 'ivole_review_unreg_upvoters', 'compare' => 'EXISTS'],
-            ],
+            'meta_query' => $meta, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
         ];
         if ($limit > 0) {
             $args['number'] = $limit;
@@ -1057,18 +1414,60 @@ class Product_Reviews_Import
     }
 
     /**
-     * That plugin keeps voters as a list per review.
+     * That plugin keeps voters as a list per review (sometimes serialized
+     * twice).
      */
     private static function count_list(int $comment_id, string $key): int
     {
-        $list = get_comment_meta($comment_id, $key, true);
+        $list = maybe_unserialize(get_comment_meta($comment_id, $key, true));
 
         return is_array($list) ? count($list) : 0;
     }
 
-    public static function start_migration(): void
+    /**
+     * @return array<string, mixed>
+     */
+    public static function migration_state(): array
     {
-        update_option(self::MIGRATE_OPTION, ['status' => 'running', 'last_id' => 0, 'reviews' => 0, 'media' => 0, 'votes' => 0, 'started' => time()], false);
+        wp_cache_delete(self::MIGRATE_OPTION, 'options');
+        $state = get_option(self::MIGRATE_OPTION, []);
+
+        return is_array($state) ? $state : [];
+    }
+
+    /**
+     * Running, and moved within the last few minutes.
+     */
+    public static function migration_running(): bool
+    {
+        $state = self::migration_state();
+
+        return 'running' === ($state['status'] ?? '')
+            && time() - (int) ($state['touched'] ?? $state['started'] ?? 0) < self::STALL_SECONDS;
+    }
+
+    /**
+     * Start the copy, or pick up a copy that stopped moving where it was.
+     */
+    public static function start_migration(): bool
+    {
+        if (self::migration_running()) {
+            return false;
+        }
+
+        $state = self::migration_state();
+        if ('running' !== ($state['status'] ?? '')) {
+            $state = ['status' => 'running', 'last_id' => 0, 'reviews' => 0, 'media' => 0, 'votes' => 0, 'failed' => 0, 'started' => time()];
+        }
+        $state['touched'] = time();
+        update_option(self::MIGRATE_OPTION, $state, false);
+        self::schedule_migration();
+
+        return true;
+    }
+
+    private static function schedule_migration(): void
+    {
         if (function_exists('as_enqueue_async_action')) {
             as_enqueue_async_action(self::ACTION_MIGRATE, [], Product_Reviews_Email::GROUP);
         } else {
@@ -1077,23 +1476,32 @@ class Product_Reviews_Import
     }
 
     /**
-     * Copy photos (the attachment IDs, not new files) and vote counts onto
-     * the module's own fields, 200 reviews per run. Photos and votes the
-     * module already has are kept; running it again changes nothing.
+     * Copy photos (the attachment IDs, not new files; files kept on
+     * cusrev.com are downloaded once) and vote counts onto the module's own
+     * fields, up to 200 reviews per run and no new review after
+     * BATCH_SECONDS. Photos and votes the module already has are kept;
+     * running it again changes nothing.
      */
     public static function run_migration_batch(): void
     {
-        $state = get_option(self::MIGRATE_OPTION, []);
-        if (!is_array($state) || 'running' !== ($state['status'] ?? '')) {
+        $state = self::migration_state();
+        if ('running' !== ($state['status'] ?? '')) {
             return;
         }
 
-        $todo = array_values(array_filter(self::cusrev_candidates(), static function (int $id) use ($state): bool {
+        $started = microtime(true);
+        $todo    = array_values(array_filter(self::cusrev_candidates(), static function (int $id) use ($state): bool {
             return $id > (int) $state['last_id'];
         }));
         $batch = array_slice($todo, 0, 200);
+        $done  = 0;
 
         foreach ($batch as $review_id) {
+            if ($done > 0 && microtime(true) - $started > self::BATCH_SECONDS) {
+                break;
+            }
+            self::long_request(120);
+            $done++;
             $state['last_id'] = $review_id;
             $state['reviews']++;
 
@@ -1106,6 +1514,26 @@ class Product_Reviews_Import
             $theirs = array_values(array_filter($theirs, static function (int $id): bool {
                 return $id > 0 && false !== wp_get_attachment_url($id);
             }));
+
+            if (!get_comment_meta($review_id, self::CUSREV_CLOUD_META, true)) {
+                $cloud = self::cusrev_cloud_urls($review_id);
+                if (!empty($cloud)) {
+                    require_once ABSPATH . 'wp-admin/includes/file.php';
+                    require_once ABSPATH . 'wp-admin/includes/media.php';
+                    require_once ABSPATH . 'wp-admin/includes/image.php';
+                    foreach (array_slice($cloud, 0, 10) as $url) {
+                        $id = self::import_media_url($url);
+                        if ($id > 0) {
+                            Product_Reviews_Core::mark_review_upload($id, $review_id);
+                            $theirs[] = $id;
+                        } else {
+                            $state['failed'] = (int) ($state['failed'] ?? 0) + 1;
+                        }
+                    }
+                }
+                update_comment_meta($review_id, self::CUSREV_CLOUD_META, 1);
+            }
+
             $merged = array_values(array_unique(array_merge($current, $theirs)));
             if ($merged !== $current) {
                 update_comment_meta($review_id, 'ffla_review_media_ids', $merged);
@@ -1115,22 +1543,30 @@ class Product_Reviews_Import
             $up   = self::count_list($review_id, 'ivole_review_reg_upvoters') + self::count_list($review_id, 'ivole_review_unreg_upvoters');
             $down = self::count_list($review_id, 'ivole_review_reg_downvoters') + self::count_list($review_id, 'ivole_review_unreg_downvoters');
 
+            $counted = false;
             if ($up > 0 && (int) get_comment_meta($review_id, 'ffla_helpful_yes', true) < $up) {
                 update_comment_meta($review_id, 'ffla_helpful_yes', $up);
-                $state['votes']++;
+                $counted = true;
             }
             if ($down > 0 && (int) get_comment_meta($review_id, 'ffla_helpful_no', true) < $down) {
                 update_comment_meta($review_id, 'ffla_helpful_no', $down);
+                $counted = true;
+            }
+            if ($counted) {
+                $state['votes']++;
+            }
+
+            // Keep the place every few reviews, in case the server ends the run.
+            if ($done % 10 === 0) {
+                $state['touched'] = time();
+                update_option(self::MIGRATE_OPTION, $state, false);
             }
         }
 
-        if (count($todo) > count($batch)) {
+        $state['touched'] = time();
+        if (count($todo) > $done) {
             update_option(self::MIGRATE_OPTION, $state, false);
-            if (function_exists('as_enqueue_async_action')) {
-                as_enqueue_async_action(self::ACTION_MIGRATE, [], Product_Reviews_Email::GROUP);
-            } else {
-                wp_schedule_single_event(time(), self::ACTION_MIGRATE);
-            }
+            self::schedule_migration();
 
             return;
         }
@@ -1138,5 +1574,27 @@ class Product_Reviews_Import
         $state['status']   = 'done';
         $state['finished'] = time();
         update_option(self::MIGRATE_OPTION, $state, false);
+        if (class_exists('Product_Reviews_Query')) {
+            Product_Reviews_Query::bump_cache_version();
+        }
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private static function cusrev_cloud_urls(int $review_id): array
+    {
+        $urls = [];
+        foreach (['ivole_review_image', 'ivole_review_video'] as $key) {
+            foreach ((array) get_comment_meta($review_id, $key, false) as $value) {
+                $value = maybe_unserialize($value);
+                $url   = is_array($value) ? (string) ($value['url'] ?? '') : '';
+                if ($url !== '' && preg_match('#^https?://#i', $url)) {
+                    $urls[] = $url;
+                }
+            }
+        }
+
+        return array_values(array_unique($urls));
     }
 }

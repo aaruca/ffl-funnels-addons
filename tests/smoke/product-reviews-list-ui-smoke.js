@@ -72,7 +72,11 @@ async function openList(browser, settings, viewport, mode) {
                 }
             });
             ajax.push(fields);
-            return route.fulfill({status: 200, contentType: 'application/json', body: php('ajax', fields)});
+            const answer = php('ajax', fields);
+            if (page.slow) {
+                await new Promise((resolve) => setTimeout(resolve, 400));
+            }
+            return route.fulfill({status: 200, contentType: 'application/json', body: answer});
         }
         return route.fulfill({status: 200, contentType: 'text/html', body: pageHtml(settings, mode)});
     });
@@ -138,6 +142,19 @@ async function settle(page) {
         await page.keyboard.press('Enter');
         await settle(page);
         check((await cards(page)).length === 5, 'pressing Enter on the active bar clears the star filter');
+
+        // A second filter picked while the first request is still out is not lost.
+        page.slow = true;
+        const sentBefore = page.ajax.length;
+        await page.click('.ffla-reviews-chip[data-ffla-rating="5"]');
+        await page.click('.ffla-rating-summary__row[data-ffla-filter-rating="1"]');
+        await settle(page);
+        page.slow = false;
+        check((await cards(page)).length === 2, 'a filter picked while a request was out is applied when it returns');
+        check(page.ajax.length === sentBefore + 2 && page.ajax[page.ajax.length - 1].rating === '1', 'the list loads again with the latest filter');
+        check(await page.getAttribute('.ffla-reviews-chip[data-ffla-rating="1"]', 'aria-pressed') === 'true', 'and the pressed chip matches what is shown');
+        await page.click('.ffla-rating-summary__row[data-ffla-filter-rating="1"]');
+        await settle(page);
 
         await page.selectOption('[data-ffla-sort]', 'lowest');
         await settle(page);

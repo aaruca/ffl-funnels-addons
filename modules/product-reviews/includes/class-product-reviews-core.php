@@ -1096,6 +1096,10 @@ class Product_Reviews_Core
         if (class_exists('WC_Comments') && method_exists('WC_Comments', 'clear_transients')) {
             \WC_Comments::clear_transients((int) $comment->comment_post_ID);
         }
+        // Store-wide and category numbers (summary, chips, badge) too.
+        if (class_exists('Product_Reviews_Query')) {
+            Product_Reviews_Query::bump_cache_version((int) $comment->comment_post_ID);
+        }
     }
 
     /**
@@ -1454,6 +1458,7 @@ class Product_Reviews_Core
 
             if (!is_wp_error($attachment_id) && $attachment_id > 0) {
                 $attachment_ids[] = (int) $attachment_id;
+                self::mark_review_upload((int) $attachment_id, $comment_id);
                 $processed++;
             }
         }
@@ -1463,6 +1468,26 @@ class Product_Reviews_Core
         }
     }
 
+    /** Post meta on an attachment the module saved for a review: that review's ID. */
+    const UPLOAD_OWNER_META = '_ffla_review_upload';
+
+    /**
+     * Remember which review a file was uploaded or imported for, so deleting
+     * that review deletes the file and nothing else.
+     */
+    public static function mark_review_upload(int $attachment_id, int $comment_id): void
+    {
+        if ($attachment_id > 0 && $comment_id > 0) {
+            update_post_meta($attachment_id, self::UPLOAD_OWNER_META, $comment_id);
+        }
+    }
+
+    /**
+     * When a review is deleted for good, delete the files that were uploaded
+     * or imported for it. Files picked from the Media Library on the review's
+     * edit screen (a product photo, another review's photo) are only taken
+     * off it.
+     */
     public static function cleanup_review_media(int $comment_id): void
     {
         $comment = get_comment($comment_id);
@@ -1482,7 +1507,7 @@ class Product_Reviews_Core
 
         foreach ($media_ids as $media_id) {
             $media_id = absint($media_id);
-            if ($media_id > 0) {
+            if ($media_id > 0 && $comment_id === (int) get_post_meta($media_id, self::UPLOAD_OWNER_META, true)) {
                 wp_delete_attachment($media_id, true);
             }
         }

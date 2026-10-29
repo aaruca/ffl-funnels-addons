@@ -169,6 +169,8 @@ function nocache_headers() { $GLOBALS['nocache']++; }
 function wp_verify_nonce($nonce, $action) { return 'good-nonce' === $nonce ? 1 : false; }
 function get_option($key, $default = false) { return array_key_exists($key, $GLOBALS['options']) ? $GLOBALS['options'][$key] : $default; }
 function update_option($key, $value) { $GLOBALS['options'][$key] = $value; return true; }
+function update_post_meta($id, $key, $value) { $GLOBALS['post_meta'][(int) $id][$key] = $value; return true; }
+function get_post_meta($id, $key = '', $single = false) { return $GLOBALS['post_meta'][(int) $id][$key] ?? ''; }
 function get_transient($key) { return $GLOBALS['transients'][$key] ?? false; }
 function set_transient($key, $value, $ttl = 0) { $GLOBALS['transients'][$key] = $value; return true; }
 function delete_transient($key) { unset($GLOBALS['transients'][$key]); return true; }

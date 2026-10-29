@@ -257,8 +257,9 @@ class Product_Reviews_Frontend_Render
      * @param bool                      $interactive Bars filter the list below (needs the script).
      * @param array<string, mixed>|null $data        Numbers for a scope other than one product
      *                                               (Product_Reviews_Query::distribution()).
+     * @param int                       $min_rating  The list's minimum rating: bars below it do not filter.
      */
-    public static function render_rating_summary(int $product_id, bool $interactive = false, ?array $data = null): void
+    public static function render_rating_summary(int $product_id, bool $interactive = false, ?array $data = null, int $min_rating = 0): void
     {
         if ($data === null) {
             $data = Product_Reviews_Core::get_rating_distribution($product_id);
@@ -292,7 +293,7 @@ class Product_Reviews_Frontend_Render
             );
 
             $attrs = '';
-            if ($interactive && $count > 0) {
+            if ($interactive && $count > 0 && $stars >= $min_rating) {
                 $attrs = ' data-ffla-filter-rating="' . esc_attr((string) $stars) . '" role="button" tabindex="0" aria-pressed="false" aria-label="'
                     . esc_attr(sprintf(
                         /* translators: %d: star rating 1-5 */
@@ -941,7 +942,7 @@ class Product_Reviews_Frontend_Render
             : Product_Reviews_Query::distribution(self::query_args($config));
 
         if ($config['showSummary']) {
-            self::render_rating_summary($config['productId'], $config['filters'], $data);
+            self::render_rating_summary($config['productId'], $config['filters'], $data, (int) $config['minRating']);
         }
 
         $client = [
@@ -1013,7 +1014,7 @@ class Product_Reviews_Frontend_Render
                 echo '<button type="button" class="ffla-reviews-chip is-active" data-ffla-rating="0" aria-pressed="true">' . esc_html__('All', 'ffl-funnels-addons') . '</button>';
                 for ($stars = 5; $stars >= 1; $stars--) {
                     $count = (int) ($data['counts'][$stars] ?? 0);
-                    if ($count < 1) {
+                    if ($count < 1 || $stars < (int) $config['minRating']) {
                         continue;
                     }
                     echo '<button type="button" class="ffla-reviews-chip" data-ffla-rating="' . esc_attr((string) $stars) . '" aria-pressed="false">'

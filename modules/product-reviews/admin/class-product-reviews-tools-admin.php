@@ -71,7 +71,8 @@ class Product_Reviews_Tools_Admin
         echo '<p class="wb-field__desc">' . esc_html__('The file holds customers’ names and email addresses: store it like other customer data.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
-        // Import.
+        // Import. A job whose batch the server killed is queued again here.
+        Product_Reviews_Import::resume_stalled();
         $job = Product_Reviews_Import::job();
         echo '<div class="wb-card"><div class="wb-card__header"><h3>' . esc_html__('Import', 'ffl-funnels-addons') . '</h3>'
             . '<p>' . esc_html__('Add reviews or questions from a CSV file, for example from another store or another reviews plugin. The first row names the columns.', 'ffl-funnels-addons') . '</p></div>';
@@ -96,7 +97,11 @@ class Product_Reviews_Tools_Admin
 
             echo '<div class="wb-field"><label class="wb-field__label" for="ffla-import-file">' . esc_html__('CSV file', 'ffl-funnels-addons') . '</label><div class="wb-field__control">';
             echo '<input type="file" id="ffla-import-file" name="file" accept=".csv,text/csv" required>';
-            echo '<p class="wb-field__desc">' . esc_html__('Up to 20 MB. Needed: content and product_id or product_sku. Understood too: rating, author, email, date or date_gmt, status, verified, pinned, criteria, media (URLs, downloaded into the Media Library), helpful, not_helpful, parent_id with store_reply for replies, and the column names of Customer Reviews for WooCommerce exports (review_content, review_score, display_name, parent, date, media). Rows already imported are skipped, so a file can be imported again.', 'ffl-funnels-addons') . '</p>';
+            echo '<p class="wb-field__desc">' . esc_html(sprintf(
+                /* translators: %s: size such as 20 MB */
+                __('Up to %s.', 'ffl-funnels-addons'),
+                size_format(Product_Reviews_Import::max_bytes())
+            )) . ' ' . esc_html__('Separated by commas, semicolons or tabs. Needed: content and product_id or product_sku. Understood too: rating, author, email, date or date_gmt, status, verified, pinned, criteria, media (URLs, downloaded into the Media Library), helpful, not_helpful, parent_id with store_reply for replies, and the column names of Customer Reviews for WooCommerce exports (review_content, review_score, display_name, parent, date, media). Rows already imported are skipped, so a file can be imported again.', 'ffl-funnels-addons') . '</p>';
             echo '</div></div>';
 
             echo '<div class="wb-actions-bar"><button type="submit" class="wb-btn wb-btn--primary">' . esc_html__('Import', 'ffl-funnels-addons') . '</button></div>';
@@ -106,23 +111,36 @@ class Product_Reviews_Tools_Admin
 
         // Migration.
         $candidates = count(Product_Reviews_Import::cusrev_candidates(1));
-        $state      = get_option(Product_Reviews_Import::MIGRATE_OPTION, []);
-        if ($candidates > 0 || is_array($state) && !empty($state)) {
+        $state      = Product_Reviews_Import::migration_state();
+        $moving     = Product_Reviews_Import::migration_running();
+        if ($candidates > 0 || !empty($state)) {
             echo '<div class="wb-card"><div class="wb-card__header"><h3>' . esc_html__('From Customer Reviews for WooCommerce', 'ffl-funnels-addons') . '</h3>'
-                . '<p>' . esc_html__('Reviews are WooCommerce reviews in both plugins, so they already show here with their stars. This copies the photos and videos (the same files, nothing is downloaded) and the helpful votes that plugin kept on its own.', 'ffl-funnels-addons') . '</p></div><div class="wb-card__body">';
-            if (is_array($state) && !empty($state)) {
+                . '<p>' . esc_html__('Reviews are WooCommerce reviews in both plugins, so they already show here with their stars. This copies the photos and videos that plugin kept on its own (files already in the Media Library are reused; files kept on cusrev.com are downloaded) and its helpful and not-helpful votes.', 'ffl-funnels-addons') . '</p></div><div class="wb-card__body">';
+            if (!empty($state)) {
+                $running = 'running' === ($state['status'] ?? '');
                 echo '<p>' . esc_html(sprintf(
                     /* translators: 1: status, 2: reviews, 3: media files, 4: reviews with votes */
                     __('%1$s: %2$d reviews checked, %3$d photos or videos and %4$d vote counts copied.', 'ffl-funnels-addons'),
-                    'done' === ($state['status'] ?? '') ? __('Done', 'ffl-funnels-addons') : __('Running', 'ffl-funnels-addons'),
+                    !$running ? __('Done', 'ffl-funnels-addons') : ($moving ? __('Running', 'ffl-funnels-addons') : __('Stopped', 'ffl-funnels-addons')),
                     (int) ($state['reviews'] ?? 0),
                     (int) ($state['media'] ?? 0),
                     (int) ($state['votes'] ?? 0)
                 )) . '</p>';
+                if ((int) ($state['failed'] ?? 0) > 0) {
+                    echo '<p class="wb-field__desc">' . esc_html(sprintf(
+                        /* translators: %d: number of files */
+                        _n('%d file on cusrev.com could not be downloaded.', '%d files on cusrev.com could not be downloaded.', (int) $state['failed'], 'ffl-funnels-addons'),
+                        (int) $state['failed']
+                    )) . '</p>';
+                }
+                if ($moving) {
+                    echo '<meta http-equiv="refresh" content="10">';
+                }
             }
-            if ('running' !== ($state['status'] ?? '')) {
-                $url = wp_nonce_url(add_query_arg(['action' => self::MIGRATE_ACTION], admin_url('admin-post.php')), self::MIGRATE_ACTION);
-                echo '<p><a class="wb-btn wb-btn--subtle" href="' . esc_url($url) . '">' . esc_html__('Copy photos and votes', 'ffl-funnels-addons') . '</a></p>';
+            if (!$moving) {
+                $url   = wp_nonce_url(add_query_arg(['action' => self::MIGRATE_ACTION], admin_url('admin-post.php')), self::MIGRATE_ACTION);
+                $label = 'running' === ($state['status'] ?? '') ? __('Continue copying', 'ffl-funnels-addons') : __('Copy photos and votes', 'ffl-funnels-addons');
+                echo '<p><a class="wb-btn wb-btn--subtle" href="' . esc_url($url) . '">' . esc_html($label) . '</a></p>';
                 echo '<p class="wb-field__desc">' . esc_html__('Safe to run more than once; photos and votes already here are kept.', 'ffl-funnels-addons') . '</p>';
             }
             echo '</div></div>';
@@ -203,6 +221,14 @@ class Product_Reviews_Tools_Admin
 
     public function handle_import(): void
     {
+        // A file over PHP's post_max_size arrives as an empty request, which
+        // would fail the nonce check with "link expired".
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing
+        if (empty($_POST) && empty($_FILES) && !empty($_SERVER['CONTENT_LENGTH']) && current_user_can('manage_woocommerce')) {
+            wp_safe_redirect(self::page_url(['tools_notice' => Product_Reviews_Import::too_big_message(), 'tools_type' => 'error']));
+            exit;
+        }
+
         check_admin_referer(self::IMPORT_ACTION);
         if (!current_user_can('manage_woocommerce')) {
             self::deny();
@@ -237,8 +263,10 @@ class Product_Reviews_Tools_Admin
             self::deny();
         }
 
-        Product_Reviews_Import::start_migration();
-        wp_safe_redirect(self::page_url(['tools_notice' => __('Copying photos and votes in the background.', 'ffl-funnels-addons')]));
+        $started = Product_Reviews_Import::start_migration();
+        wp_safe_redirect(self::page_url(['tools_notice' => $started
+            ? __('Copying photos and votes in the background.', 'ffl-funnels-addons')
+            : __('The copy is already running.', 'ffl-funnels-addons')]));
         exit;
     }
 }

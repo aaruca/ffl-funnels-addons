@@ -328,7 +328,8 @@
             orderBy: config.orderBy || 'recent',
             search: '',
             page: 1,
-            busy: false
+            busy: false,
+            queued: false
         };
 
         if (toolbar) {
@@ -398,6 +399,11 @@
 
         function load(append) {
             if (state.busy) {
+                // A filter, sort or search changed while a request is out:
+                // load again with the new state once it is back.
+                if (!append) {
+                    state.queued = true;
+                }
                 return;
             }
             state.busy = true;
@@ -424,6 +430,9 @@
                 page: append ? state.page + 1 : 1
             })
                 .then(function (json) {
+                    if (state.queued) {
+                        return; // Answers the old filters; the new load follows.
+                    }
                     if (!json || !json.success || !json.data) {
                         throw new Error('bad response');
                     }
@@ -443,13 +452,19 @@
                     paintFilters();
                 })
                 .catch(function () {
-                    setStatus(i18n('loadError'));
+                    if (!state.queued) {
+                        setStatus(i18n('loadError'));
+                    }
                 })
                 .then(function () {
                     state.busy = false;
                     body.removeAttribute('aria-busy');
                     if (more) {
                         more.disabled = false;
+                    }
+                    if (state.queued) {
+                        state.queued = false;
+                        load(false);
                     }
                 });
         }
@@ -548,7 +563,7 @@
         var items = body.querySelector('[data-ffla-qna-items]');
         var more = body.querySelector('[data-ffla-qna-more]');
         var search = body.querySelector('[data-ffla-qna-search]');
-        var state = { page: 1, search: '', busy: false };
+        var state = { page: 1, search: '', busy: false, queued: false };
 
         if (!items) {
             return;
@@ -559,6 +574,9 @@
 
         function load(append) {
             if (state.busy) {
+                if (!append) {
+                    state.queued = true;
+                }
                 return;
             }
             state.busy = true;
@@ -572,6 +590,9 @@
                 search: state.search
             })
                 .then(function (json) {
+                    if (state.queued) {
+                        return;
+                    }
                     if (!json || !json.success || !json.data) {
                         throw new Error('bad response');
                     }
@@ -596,6 +617,9 @@
                     }
                 })
                 .catch(function () {
+                    if (state.queued) {
+                        return;
+                    }
                     var p = document.createElement('p');
                     p.className = 'ffla-qna__empty';
                     p.textContent = i18n('loadError');
@@ -604,6 +628,10 @@
                 .then(function () {
                     state.busy = false;
                     body.removeAttribute('aria-busy');
+                    if (state.queued) {
+                        state.queued = false;
+                        load(false);
+                    }
                 });
         }
 
@@ -801,10 +829,12 @@
      * reCAPTCHA v3: a token is fetched when the form is sent
      * ---------------------------------------------------------------- */
 
+    // Every send gets a fresh token: a token works once, and a page restored
+    // from the back/forward cache still holds the one already used.
     document.addEventListener('submit', function (event) {
         var form = event.target;
         var field = form && form.querySelector ? form.querySelector('[data-ffla-recaptcha-v3]') : null;
-        if (!field || field.value || form.getAttribute('data-ffla-recaptcha-busy') === '1') {
+        if (!field || form.getAttribute('data-ffla-recaptcha-busy') === '1') {
             return;
         }
         if (!window.grecaptcha || typeof window.grecaptcha.ready !== 'function') {
@@ -823,6 +853,18 @@
                 });
         });
     }, true);
+
+    window.addEventListener('pageshow', function (event) {
+        if (!event.persisted) {
+            return;
+        }
+        Array.prototype.forEach.call(document.querySelectorAll('[data-ffla-recaptcha-busy]'), function (form) {
+            form.removeAttribute('data-ffla-recaptcha-busy');
+        });
+        Array.prototype.forEach.call(document.querySelectorAll('[data-ffla-recaptcha-v3]'), function (field) {
+            field.value = '';
+        });
+    });
 
     /* ------------------------------------------------------------------
      * Boot

@@ -80,6 +80,9 @@ $GLOBALS['product_props'][105] = ['cats' => [20]];
 $GLOBALS['terms'][23]          = ['product_cat', 'Red dots', 'red-dots', 20];
 $GLOBALS['posts'][106]         = ['product', 'publish', 'Red Dot Sight'];
 $GLOBALS['product_props'][106] = ['cats' => [23]];
+// Product 107 is published behind a password: WordPress hides its reviews.
+$GLOBALS['posts'][107]         = ['product', 'publish', 'Dealer Preview', 'secret'];
+$GLOBALS['product_props'][107] = ['cats' => [20]];
 
 $photo = add_test_attachment('https://store.test/uploads/photo-1.jpg');
 $photo2 = add_test_attachment('https://store.test/uploads/photo-2.jpg');
@@ -101,6 +104,7 @@ $h = review(102, 'Hal Brook', 4, '2026-02-01 10:00:00');
 $i = review(103, 'Ivy Moss', 5, '2026-02-02 10:00:00', [], ['ffla_verified_purchase' => 1]);
 $j = review(106, 'Jo Ridge', 3, '2026-02-03 10:00:00');
 $draft_review = review(105, 'Draft Dan', 5, '2026-02-04 10:00:00');
+$locked_review = review(107, 'Locked Lou', 5, '2026-02-05 10:00:00');
 
 // WooCommerce's stored aggregates for product 101, as it keeps them.
 $GLOBALS['product_props'][101] += ['rating_counts' => [5 => 2, 4 => 1, 3 => 1, 2 => 1, 1 => 1], 'average' => '3.33', 'review_count' => 7];
@@ -124,12 +128,23 @@ $five = Product_Reviews_Query::find(['products' => [101], 'rating' => 5]);
 check($five['ids'] === [$f, $a] && 2 === $five['total'], 'star filter returns only that rating');
 $min4 = Product_Reviews_Query::find(['products' => [101], 'minRating' => 4, 'perPage' => 50]);
 check(3 === $min4['total'] && !in_array($d, $min4['ids'], true), 'minimum rating keeps 4 and 5 stars only');
+$below = Product_Reviews_Query::find(['products' => [101], 'minRating' => 4, 'rating' => 2]);
+check([] === $below['ids'] && 0 === $below['total'], 'a star filter below the list\'s minimum rating finds nothing');
+$both = Product_Reviews_Query::find(['products' => [101], 'minRating' => 4, 'rating' => 5]);
+check($both['ids'] === [$f, $a], 'a star filter at or above the minimum works as usual');
 $media = Product_Reviews_Query::find(['products' => [101], 'withMedia' => true]);
 check($media['ids'] === [$a], 'With photos ignores an empty media list');
 $search = Product_Reviews_Query::find(['products' => [101], 'search' => 'reticle']);
 check($search['ids'] === [$e], 'search matches the review text');
-$search = Product_Reviews_Query::find(['products' => [101], 'search' => 'stone']);
-check($search['ids'] === [$b], 'search matches the reviewer name, case-insensitive');
+// A review whose text does not name its author.
+$k = review(102, 'Kim Hiddenfield', 4, '2026-01-01 10:00:00', ['comment_content' => 'Fine bag, good zips.']);
+$search = Product_Reviews_Query::find(['products' => [102], 'search' => 'hiddenfield']);
+check([] === $search['ids'], 'with names shown as "Kim H.", searching the hidden last name finds nothing');
+settings(['review_name_format' => 'full']);
+$search = Product_Reviews_Query::find(['products' => [102], 'search' => 'HIDDENFIELD']);
+check($search['ids'] === [$k], 'with full names shown, search matches the reviewer name, case-insensitive');
+settings();
+unset($GLOBALS['comments'][$k], $GLOBALS['cmeta'][$k]);
 
 $p1 = Product_Reviews_Query::find(['products' => [101], 'perPage' => 3, 'page' => 1]);
 $p2 = Product_Reviews_Query::find(['products' => [101], 'perPage' => 3, 'page' => 2]);
@@ -139,6 +154,7 @@ check([] === Product_Reviews_Query::find(['products' => [101], 'perPage' => 3, '
 
 $store = Product_Reviews_Query::find(['perPage' => 50]);
 check(10 === $store['total'] && !in_array($draft_review, $store['ids'], true), 'store-wide: every published product, never a draft product');
+check(!in_array($locked_review, $store['ids'], true) && [] === Product_Reviews_Query::find(['products' => [107]])['ids'], 'never a password-protected product, even asked for by ID');
 $draft = Product_Reviews_Query::find(['products' => [105]]);
 check([] === $draft['ids'], 'asking for a draft product by ID returns nothing');
 $optics = Product_Reviews_Query::find(['categories' => [20], 'perPage' => 50]);
@@ -211,6 +227,9 @@ check(strpos($html, 'data-ffla-media-filter') !== false && strpos($html, 'data-f
 check(strpos($html, 'data-ffla-more>') !== false && strpos($html, 'data-ffla-more hidden') === false, 'Show more visible when there are more reviews');
 check(strpos($html, 'Showing 3 of 7 reviews') !== false, 'status line with WooCommerce-free total: ' . (preg_match('/Showing[^<]+/', $html, $m) ? $m[0] : 'none'));
 check(strpos($html, 'data-ffla-filter-rating="5"') !== false, 'summary bars filter the list when the toolbar is on');
+$floor = list_html(101, ['perPage' => 3, 'minRating' => 4]);
+check(strpos($floor, 'data-ffla-rating="4"') !== false && strpos($floor, 'data-ffla-rating="3"') === false && strpos($floor, 'data-ffla-rating="2"') === false, 'a list with a minimum rating has no chips below it');
+check(strpos($floor, 'data-ffla-filter-rating="5"') !== false && strpos($floor, 'data-ffla-filter-rating="2"') === false, 'and its summary bars below it do not filter');
 check(isset($GLOBALS['scripts']['enqueued']['ffla-product-reviews']), 'interactive list loads the script');
 preg_match('/data-ffla-reviews="([^"]+)"/', $html, $m);
 $client = json_decode(html_entity_decode($m[1], ENT_QUOTES), true);
@@ -332,5 +351,28 @@ do_action('wp_update_comment_count', 101, 0, 7);
 check('' === Product_Reviews_Frontend_Render::render_store_badge(['hideIfEmpty' => true]), 'badge hidden with no reviews when asked');
 $GLOBALS['comments'] = $saved;
 do_action('wp_update_comment_count', 101, 7, 0);
+
+/* ── Cached scope numbers are retired when what they count changes ─────── */
+
+$version = function (): int {
+    return (int) get_option(Product_Reviews_Query::CACHE_VERSION_OPTION, 0);
+};
+Product_Reviews_Core::init();
+$v = $version();
+update_comment_meta($a, 'rating', 4);
+do_action('updated_comment_meta', 1, $a, 'rating', 4); // As WordPress fires it.
+check($version() === $v + 1, 'a rating written directly (custom code, WP-CLI) retires the cached store-wide numbers');
+$product = new WP_Post();
+$product->ID = 106;
+$product->post_type = 'product';
+$v = $version();
+do_action('transition_post_status', 'draft', 'publish', $product);
+check($version() === $v + 1, 'unpublishing a product retires them');
+do_action('transition_post_status', 'publish', 'publish', $product);
+check($version() === $v + 1, 'saving a published product again does not');
+$locked = clone $product;
+$locked->post_password = 'secret';
+do_action('post_updated', 106, $locked, $product);
+check($version() === $v + 2, 'giving a product a password retires them');
 
 echo "OK: {$checks} product-reviews list checks passed\n";

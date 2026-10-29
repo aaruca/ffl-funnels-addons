@@ -186,6 +186,7 @@ function sanitize_key($s) { return strtolower(preg_replace('/[^a-z0-9_\-]/i', ''
 function wp_unslash($s) { return $s; }
 function wp_parse_args($args, $defaults) { return array_merge($defaults, (array) $args); }
 function get_option($key, $default = false) { return $GLOBALS['options'][$key] ?? $default; }
+function update_option($key, $value, $autoload = null) { $GLOBALS['options'][$key] = $value; return true; }
 function add_filter(...$a) {}
 function add_action(...$a) {}
 function apply_filters($tag, $value, ...$args)

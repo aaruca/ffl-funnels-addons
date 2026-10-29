@@ -4,7 +4,9 @@
  * Edit): add files from the Media Library, take files off the review, and
  * see the reviewer's answers to the review form questions.
  *
- * Taking a file off the review leaves it in the Media Library.
+ * Taking a file off the review leaves it in the Media Library, and a file
+ * picked here is never deleted with the review (only files uploaded or
+ * imported for it are: Product_Reviews_Core::cleanup_review_media()).
  *
  * @package FFL_Funnels_Addons
  */
@@ -87,7 +89,7 @@ class Product_Reviews_Review_Media_Admin
         }
         $html .= '</ul>';
         $html .= '<p><button type="button" class="button" data-ffla-media-add>' . esc_html__('Add photos or videos', 'ffl-funnels-addons') . '</button></p>';
-        $html .= '<p class="description">' . esc_html__('Files taken off the review stay in the Media Library. Update the review to save.', 'ffl-funnels-addons') . '</p>';
+        $html .= '<p class="description">' . esc_html__('Files taken off the review stay in the Media Library. Deleting the review for good deletes only the files uploaded with it. Update the review to save.', 'ffl-funnels-addons') . '</p>';
 
         return $html;
     }

@@ -38,6 +38,36 @@ class Product_Reviews_Query
         // A review was posted, edited, approved, unapproved, trashed or
         // deleted: WordPress recounts the product's comments for each.
         add_action('wp_update_comment_count', [__CLASS__, 'bump_cache_version'], 10, 1);
+        // A product published, unpublished, trashed or given a password
+        // changes which reviews count.
+        add_action('transition_post_status', [__CLASS__, 'on_product_status'], 10, 3);
+        add_action('post_updated', [__CLASS__, 'on_product_updated'], 10, 3);
+    }
+
+    /**
+     * @param string        $new_status
+     * @param string        $old_status
+     * @param \WP_Post|mixed $post
+     */
+    public static function on_product_status($new_status, $old_status, $post): void
+    {
+        if ($new_status !== $old_status && $post instanceof \WP_Post && 'product' === $post->post_type
+            && ('publish' === $new_status || 'publish' === $old_status)) {
+            self::bump_cache_version();
+        }
+    }
+
+    /**
+     * @param int|mixed      $post_id
+     * @param \WP_Post|mixed $after
+     * @param \WP_Post|mixed $before
+     */
+    public static function on_product_updated($post_id, $after, $before): void
+    {
+        if ($after instanceof \WP_Post && $before instanceof \WP_Post && 'product' === $after->post_type
+            && $after->post_password !== $before->post_password) {
+            self::bump_cache_version();
+        }
     }
 
     /**
@@ -142,7 +172,7 @@ class Product_Reviews_Query
         global $wpdb;
 
         $sql = " FROM {$wpdb->comments} c"
-            . " INNER JOIN {$wpdb->posts} p ON p.ID = c.comment_post_ID AND p.post_type = 'product' AND p.post_status = 'publish'"
+            . " INNER JOIN {$wpdb->posts} p ON p.ID = c.comment_post_ID AND p.post_type = 'product' AND p.post_status = 'publish' AND p.post_password = ''"
             . " LEFT JOIN {$wpdb->commentmeta} r ON r.comment_id = c.comment_ID AND r.meta_key = 'rating'"
             . $joins
             . " WHERE c.comment_approved = '1' AND c.comment_type = 'review' AND c.comment_parent = 0";
@@ -160,10 +190,13 @@ class Product_Reviews_Query
             return $sql;
         }
 
+        // Both apply: a list set to "4 stars and up" never shows a 2-star
+        // review, whatever the shopper picks.
+        if ($q['minRating'] > 0) {
+            $sql .= $wpdb->prepare(' AND CAST(r.meta_value AS UNSIGNED) >= %d', $q['minRating']);
+        }
         if ($q['rating'] > 0) {
             $sql .= $wpdb->prepare(' AND CAST(r.meta_value AS UNSIGNED) = %d', $q['rating']);
-        } elseif ($q['minRating'] > 0) {
-            $sql .= $wpdb->prepare(' AND CAST(r.meta_value AS UNSIGNED) >= %d', $q['minRating']);
         }
 
         if ($q['withMedia']) {
@@ -173,7 +206,13 @@ class Product_Reviews_Query
 
         if ($q['search'] !== '') {
             $like = '%' . $wpdb->esc_like($q['search']) . '%';
-            $sql .= $wpdb->prepare(' AND (c.comment_content LIKE %s OR c.comment_author LIKE %s)', $like, $like);
+            // Names are searched only when cards show them in full: with
+            // "Ann B." a search for the last name would tell who wrote what.
+            if ('full' === Product_Reviews_Core::get_setting('review_name_format', 'first_initial')) {
+                $sql .= $wpdb->prepare(' AND (c.comment_content LIKE %s OR c.comment_author LIKE %s)', $like, $like);
+            } else {
+                $sql .= $wpdb->prepare(' AND c.comment_content LIKE %s', $like);
+            }
         }
 
         return $sql;

@@ -108,6 +108,9 @@ class Product_Reviews_Captcha
      * The challenge inside a form. reCAPTCHA v3 has no widget: the module's
      * script asks for a token when the form is sent.
      */
+    /** reCAPTCHA v3 actions of the module's forms (render_field()'s $form_id). */
+    const V3_ACTIONS = ['ffla_product_review', 'ffla_product_question', 'ffla_product_answer'];
+
     public static function render_field(string $form_id = 'ffla_product_review'): void
     {
         if (!self::is_available()) {
@@ -223,7 +226,10 @@ class Product_Reviews_Captcha
         if ('recaptcha_v3' === $provider) {
             $threshold = (float) Product_Reviews_Core::get_setting('captcha_v3_threshold', '0.5');
 
-            return isset($body['score']) && (float) $body['score'] >= $threshold;
+            // A token issued for another form on the site (a login, a
+            // newsletter) is not accepted for these.
+            return isset($body['score']) && (float) $body['score'] >= $threshold
+                && in_array((string) ($body['action'] ?? ''), self::V3_ACTIONS, true);
         }
 
         return true;

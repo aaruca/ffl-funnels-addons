@@ -146,7 +146,15 @@ function esc_attr_e($text, $domain = null) { echo htmlspecialchars($text, ENT_QU
 function esc_html($text) { return htmlspecialchars((string) $text, ENT_QUOTES); }
 function esc_attr($text) { return htmlspecialchars((string) $text, ENT_QUOTES); }
 function esc_textarea($text) { return htmlspecialchars((string) $text, ENT_QUOTES); }
-function esc_url($url) { return htmlspecialchars((string) $url, ENT_QUOTES); }
+function esc_url($url)
+{
+    $url = str_replace(' ', '%20', ltrim((string) $url));
+    // Like WordPress: square brackets after the host are encoded.
+    if (preg_match('#^([a-z]+://[^/?\#]*)(.*)$#i', $url, $m)) {
+        $url = $m[1] . str_replace(['[', ']'], ['%5B', '%5D'], $m[2]);
+    }
+    return htmlspecialchars($url, ENT_QUOTES);
+}
 function esc_url_raw($url) { return (string) $url; }
 function esc_js($text) { return addslashes((string) $text); }
 function wp_kses_post($html) { return (string) $html; }
@@ -162,6 +170,9 @@ function sanitize_hex_color($c) { return preg_match('/^#([A-Fa-f0-9]{3}){1,2}$/'
 function sanitize_file_name($s) { return preg_replace('/[^A-Za-z0-9._-]/', '-', (string) $s); }
 function wp_unslash($s) { return $s; }
 /** As WordPress: comment data travels slashed into wp_new_comment(). */
+function size_format($bytes, $decimals = 0) { return round($bytes / 1048576, $decimals) . ' MB'; }
+function wp_max_upload_size() { return $GLOBALS['max_upload'] ?? 67108864; }
+function maybe_unserialize($v) { return is_string($v) && @unserialize($v) !== false ? unserialize($v) : $v; }
 function wp_slash($v) { return is_array($v) ? array_map('wp_slash', $v) : (is_string($v) ? addslashes($v) : $v); }
 function stub_unslash_deep($v) { return is_array($v) ? array_map('stub_unslash_deep', $v) : (is_string($v) ? stripslashes($v) : $v); }
 function wp_parse_args($args, $defaults = []) { return array_merge((array) $defaults, (array) $args); }
@@ -207,13 +218,29 @@ function add_query_arg(...$a)
         $hash = substr($url, $pos);
         $url  = substr($url, 0, $pos);
     }
-    return $url . (strpos($url, '?') === false ? '?' : '&') . http_build_query($args) . $hash;
+    // Like WordPress: keys and values go in as given (callers encode them).
+    $pairs = [];
+    foreach ($args as $k => $v) {
+        if (false === $v || null === $v) {
+            continue;
+        }
+        $pairs[] = $k . '=' . $v;
+    }
+    return $url . (strpos($url, '?') === false ? '?' : '&') . implode('&', $pairs) . $hash;
 }
 function remove_query_arg($keys, $url = '') { return (string) $url; }
 function trailingslashit($s) { return rtrim((string) $s, '/') . '/'; }
 function untrailingslashit($s) { return rtrim((string) $s, '/'); }
 function get_permalink($id) { return 'https://store.test/?p=' . (int) $id; }
-function wp_validate_redirect($url, $fallback = '') { return $url !== '' ? $url : $fallback; }
+function wp_validate_redirect($url, $fallback = '')
+{
+    // Like WordPress: only this site (and relative URLs) are allowed.
+    $host = (string) parse_url((string) $url, PHP_URL_HOST);
+    return $url !== '' && ($host === '' || 'store.test' === $host) ? $url : $fallback;
+}
+if (!function_exists('wp_parse_url')) {
+    function wp_parse_url($url, $component = -1) { return parse_url((string) $url, $component); }
+}
 function wp_safe_redirect($url, $status = 302) { throw new Redirected((string) $url); }
 function wp_redirect($url, $status = 302) { throw new Redirected((string) $url); }
 function wp_get_referer() { return $GLOBALS['referer'] ?? false; }
@@ -423,6 +450,7 @@ class WP_Post
     public $post_status;
     public $post_title;
     public $post_content = '';
+    public $post_password = '';
 }
 class WP_Term
 {
@@ -879,7 +907,9 @@ function wp_new_comment($data, $wp_error = false)
 }
 function wp_insert_comment($data)
 {
-    $id = add_test_comment($data + ['comment_date_gmt' => gmdate('Y-m-d H:i:s')]);
+    // Like WordPress: wp_insert_comment() unslashes its input.
+    $data = stub_unslash_deep($data);
+    $id   = add_test_comment($data + ['comment_date_gmt' => gmdate('Y-m-d H:i:s')]);
     if (isset($data['comment_meta']) && is_array($data['comment_meta'])) {
         foreach ($data['comment_meta'] as $k => $v) {
             update_comment_meta($id, $k, $v);
@@ -905,6 +935,11 @@ function wp_get_attachment_image($id, $size = 'thumbnail', $icon = false, $attr 
 function wp_get_attachment_image_src($id, $size = 'thumbnail') { $u = wp_get_attachment_url($id); return $u ? [$u, 800, 600, false] : false; }
 function wp_video_shortcode($attr) { return '<div class="wp-video"><video><source src="' . ($attr['src'] ?? '') . '"></video></div>'; }
 function wp_delete_attachment($id, $force = false) { unset($GLOBALS['attachments'][(int) $id]); return true; }
+$GLOBALS['postmeta'] = [];
+function get_post_meta($id, $key = '', $single = false) { return $GLOBALS['postmeta'][(int) $id][$key] ?? ($single ? '' : []); }
+function update_post_meta($id, $key, $value) { $GLOBALS['postmeta'][(int) $id][$key] = $value; return true; }
+function delete_post_meta($id, $key) { unset($GLOBALS['postmeta'][(int) $id][$key]); return true; }
+
 function add_test_attachment(string $url, string $mime = 'image/jpeg'): int
 {
     $id = 900 + count($GLOBALS['attachments']) + 1;
@@ -1332,7 +1367,7 @@ class Stub_Wpdb
         $this->db = new SQLite3(':memory:');
         $this->db->exec('CREATE TABLE wp_comments (comment_ID INTEGER PRIMARY KEY, comment_post_ID INTEGER, comment_author TEXT, comment_author_email TEXT, comment_content TEXT, comment_type TEXT, comment_parent INTEGER, user_id INTEGER, comment_approved TEXT, comment_karma INTEGER, comment_date_gmt TEXT)');
         $this->db->exec('CREATE TABLE wp_commentmeta (meta_id INTEGER PRIMARY KEY AUTOINCREMENT, comment_id INTEGER, meta_key TEXT, meta_value TEXT)');
-        $this->db->exec('CREATE TABLE wp_posts (ID INTEGER PRIMARY KEY, post_type TEXT, post_status TEXT, post_title TEXT)');
+        $this->db->exec("CREATE TABLE wp_posts (ID INTEGER PRIMARY KEY, post_type TEXT, post_status TEXT, post_title TEXT, post_password TEXT NOT NULL DEFAULT '')");
         $this->db->exec('CREATE TABLE wp_term_taxonomy (term_taxonomy_id INTEGER PRIMARY KEY, term_id INTEGER, taxonomy TEXT, parent INTEGER)');
         $this->db->exec('CREATE TABLE wp_term_relationships (object_id INTEGER, term_taxonomy_id INTEGER)');
     }
@@ -1366,12 +1401,13 @@ class Stub_Wpdb
                 $m->execute();
             }
         }
-        $p = $this->db->prepare('INSERT INTO wp_posts VALUES (:id, :type, :status, :title)');
+        $p = $this->db->prepare('INSERT INTO wp_posts VALUES (:id, :type, :status, :title, :password)');
         foreach ($GLOBALS['posts'] as $id => $post) {
             $p->bindValue(':id', (int) $id);
             $p->bindValue(':type', (string) $post[0]);
             $p->bindValue(':status', (string) $post[1]);
             $p->bindValue(':title', (string) ($post[2] ?? ''));
+            $p->bindValue(':password', (string) ($post[3] ?? ''));
             $p->execute();
         }
         foreach ($GLOBALS['terms'] as $term_id => $term) {
@@ -1633,7 +1669,8 @@ function wc_get_coupon_id_by_code($code)
     }
     return 0;
 }
-function wc_get_page_permalink($page) { return 'https://store.test/' . $page . '/'; }
+function wc_get_page_id($page) { return (int) ($GLOBALS['wc_pages'][$page] ?? 10); }
+function wc_get_page_permalink($page) { return wc_get_page_id($page) > 0 ? 'https://store.test/' . $page . '/' : 'https://store.test/'; }
 
 /* ── Files, downloads, sideloads ───────────────────────────────────────── */
 

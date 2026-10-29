@@ -36,6 +36,10 @@ class Product_Reviews_Form_Extras
 
         add_action('ffla_product_reviews_qna_form_fields', [__CLASS__, 'render_qna_fields'], 10, 2);
         add_filter('ffla_product_reviews_qna_check', [__CLASS__, 'check_qna'], 10, 2);
+
+        // WooCommerce's My Account login sends people back to that page, not
+        // to where they clicked "Log in".
+        add_filter('woocommerce_login_redirect', [__CLASS__, 'login_redirect'], 10, 2);
     }
 
     /* ---------------------------------------------------------------------
@@ -444,21 +448,55 @@ class Product_Reviews_Form_Extras
      * Log in link
      * ------------------------------------------------------------------- */
 
+    /** Query argument on My Account login links: where to go after logging in. */
+    const RETURN_ARG = 'ffla_return';
+
     /**
-     * Where "log in" links go: the store's setting, else WooCommerce's My
-     * Account page, else the WordPress login, coming back to $redirect.
+     * Where "log in" links go: the store's setting (with WordPress's
+     * `redirect_to`), else WooCommerce's My Account page (with RETURN_ARG,
+     * which login_redirect() follows), else the WordPress login, coming back
+     * to $redirect.
      */
     public static function login_url(string $redirect = ''): string
     {
         $url = trim((string) Product_Reviews_Core::get_setting('login_url', ''));
-        if ($url === '' && function_exists('wc_get_page_permalink')) {
-            $account = (string) wc_get_page_permalink('myaccount');
-            $url     = $account !== '' && false === strpos($account, '?page_id=-1') ? $account : '';
-        }
-        if ($url === '') {
-            return wp_login_url($redirect);
+        if ($url !== '') {
+            return $redirect !== '' ? add_query_arg('redirect_to', rawurlencode($redirect), $url) : $url;
         }
 
-        return $redirect !== '' ? add_query_arg('redirect_to', rawurlencode($redirect), $url) : $url;
+        // wc_get_page_permalink() falls back to the home page when no My
+        // Account page is set: check the page itself.
+        if (function_exists('wc_get_page_id') && function_exists('wc_get_page_permalink') && wc_get_page_id('myaccount') > 0) {
+            $account = (string) wc_get_page_permalink('myaccount');
+
+            return $redirect !== '' ? add_query_arg(self::RETURN_ARG, rawurlencode($redirect), $account) : $account;
+        }
+
+        return wp_login_url($redirect);
+    }
+
+    /**
+     * After a My Account login, go back to the page in RETURN_ARG (same
+     * site only). WooCommerce redirects to the login form's referer, which
+     * carries the argument; the form also posts to that URL.
+     *
+     * @param string|mixed $redirect
+     * @param mixed        $user
+     * @return string|mixed
+     */
+    public static function login_redirect($redirect, $user = null)
+    {
+        $args = [];
+        parse_str((string) wp_parse_url((string) $redirect, PHP_URL_QUERY), $args);
+        $target = isset($args[self::RETURN_ARG]) && is_string($args[self::RETURN_ARG]) ? $args[self::RETURN_ARG] : '';
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- a destination only, validated below.
+        if ($target === '' && isset($_GET[self::RETURN_ARG]) && is_string($_GET[self::RETURN_ARG])) {
+            $target = wp_unslash($_GET[self::RETURN_ARG]); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- validated below.
+        }
+        if ($target === '') {
+            return $redirect;
+        }
+
+        return wp_validate_redirect(esc_url_raw($target), (string) $redirect);
     }
 }
