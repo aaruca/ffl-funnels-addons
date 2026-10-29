@@ -246,6 +246,30 @@ class Product_Reviews_Admin_Fields
                 ],
             ],
             [
+                'title'  => __('SEO', 'ffl-funnels-addons'),
+                'desc'   => __('Extra structured data on product pages, next to the review markup this module already matches to the reviews shown.', 'ffl-funnels-addons'),
+                'fields' => [
+                    [
+                        'key'   => 'seo_identifiers',
+                        'type'  => 'toggle',
+                        'label' => __('Product identifiers (GTIN, MPN, brand)', 'ffl-funnels-addons'),
+                        'desc'  => __('Adds an MPN and a Brand field under the SKU (Product data → Inventory), and a GTIN field on WooCommerce before 9.2, and puts them in the product\'s structured data. WooCommerce\'s own GTIN field and Brands come first. Only fills what the markup lacks, so an SEO plugin\'s own values are kept.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'seo_default_brand',
+                        'type'  => 'text',
+                        'label' => __('Default brand', 'ffl-funnels-addons'),
+                        'desc'  => __('For products without a brand. Leave empty when you sell many brands.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'seo_review_images',
+                        'type'  => 'toggle',
+                        'label' => __('Review photos in the structured data', 'ffl-funnels-addons'),
+                        'desc'  => __('Each marked-up review lists its photos (associatedMedia).', 'ffl-funnels-addons'),
+                    ],
+                ],
+            ],
+            [
                 'title'  => __('Helpful votes', 'ffl-funnels-addons'),
                 'fields' => [
                     [

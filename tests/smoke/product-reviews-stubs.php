@@ -490,6 +490,10 @@ function get_ancestors($id, $taxonomy = '', $type = '')
 function wc_get_product_cat_ids($product_id) { return $GLOBALS['product_props'][(int) $product_id]['cats'] ?? []; }
 function wp_get_post_terms($post_id, $taxonomy, $args = [])
 {
+    if ('product_brand' === $taxonomy) {
+        $names = $GLOBALS['product_props'][(int) $post_id]['brands'] ?? [];
+        return ($args['fields'] ?? '') === 'names' ? $names : [];
+    }
     $ids = 'product_cat' === $taxonomy ? wc_get_product_cat_ids($post_id) : [];
     if (($args['fields'] ?? '') === 'ids') {
         return $ids;
@@ -566,6 +570,8 @@ class WC_Product
     public function get_average_rating() { return $GLOBALS['product_props'][$this->id]['average'] ?? 0; }
     public function get_review_count() { return $GLOBALS['product_props'][$this->id]['review_count'] ?? 0; }
     public function get_meta($key, $single = true) { return $GLOBALS['product_props'][$this->id]['meta'][$key] ?? ''; }
+    public function update_meta_data($key, $value) { $GLOBALS['product_props'][$this->id]['meta'][$key] = $value; }
+    public function delete_meta_data($key) { unset($GLOBALS['product_props'][$this->id]['meta'][$key]); }
     public function get_global_unique_id() { return $GLOBALS['product_props'][$this->id]['gtin'] ?? ''; }
     public function is_visible() { return true; }
 }
@@ -1720,3 +1726,14 @@ function wp_safe_remote_post($url, $args = [])
 function wp_remote_retrieve_response_code($r) { return is_array($r) ? (int) ($r['code'] ?? 0) : 0; }
 function wp_remote_retrieve_body($r) { return is_array($r) ? (string) ($r['body'] ?? '') : ''; }
 function wp_login_url($redirect = '') { return 'https://store.test/wp-login.php' . ($redirect !== '' ? '?redirect_to=' . rawurlencode($redirect) : ''); }
+
+/* ── Product screen helpers ────────────────────────────────────────────── */
+
+$GLOBALS['taxonomies'] = ['product_cat'];
+function taxonomy_exists($taxonomy) { return in_array($taxonomy, $GLOBALS['taxonomies'], true); }
+function woocommerce_wp_text_input($field) { echo '<input type="text" name="' . esc_attr($field['id']) . '" value="' . esc_attr($field['value'] ?? '') . '">'; }
+class WC_Admin_Meta_Boxes
+{
+    public static $errors = [];
+    public static function add_error($text) { self::$errors[] = $text; }
+}

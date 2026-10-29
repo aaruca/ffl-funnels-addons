@@ -56,6 +56,9 @@ Gives WooCommerce products a richer review form and list (star rating plus optio
 | Reviewer name | *First name and last initial (Ann B.)*, *Name as entered*, *First name only*, *Initials only (A. B.)* or *Anonymous (Customer)*. Cards and structured data; the stored name is not changed. | First name and last initial |
 | Avatars | *Initials on a colour*, *WordPress avatar (Gravatar)* or *No avatar*. | Initials |
 | Verified buyer label | Text of the badge. Empty uses “Verified buyer”. | Verified buyer |
+| Product identifiers (GTIN, MPN, brand) | MPN and Brand fields under the SKU (Inventory tab), a GTIN field on WooCommerce before 9.2, and all three in the product's structured data. WooCommerce's own GTIN field and Brands come first; values already in the markup are kept. | On |
+| Default brand | For products without one. | Empty |
+| Review photos in the structured data | Each marked-up review lists its photos (`associatedMedia`). | On |
 | Open review photos in a lightbox | Photos open full size over the page, with previous / next. Off for themes that put every image in their own lightbox. | On |
 | Enable helpful votes | Shows the *Helpful* button on each review. | On |
 | Also allow “Not helpful” votes | Adds a *Not helpful* button. Needs helpful votes on. | Off |
@@ -218,6 +221,11 @@ Google only accepts review markup for reviews shoppers can see on the page. WooC
 - **Rank Math's** Product schema, when Rank Math builds it: printed in the page head, before any list renders, so only the expected list is used.
 - The expected list is the **Reviews List** element in the product's Bricks template (its *Max reviews* and *Order by*), or, with *Replace WooCommerce reviews tab* on, the tab's list. A list inside a nested template or a component is not seen in advance; WooCommerce's markup still ends up matching it, Rank Math's does not (use the `ffla_product_reviews_structured_data_list_settings` filter).
 - With WooCommerce's own Reviews tab in use and no FFL list on the page, the markup is left as WooCommerce builds it.
+
+### Product identifiers
+
+- With **Product identifiers** on, WooCommerce's product JSON-LD (and Rank Math's Product entity) gets `gtin8` / `gtin12` / `gtin13` / `gtin14` (by length), `mpn` and `brand` when it does not have them yet. The GTIN is WooCommerce's *GTIN, UPC, EAN, or ISBN* field (9.2+), else the module's own field; the brand is the product's first WooCommerce Brand (9.6+), else the module's Brand field, else **Default brand**. A GTIN must be 8, 12, 13 or 14 digits (spaces and dashes are removed); anything else is not saved, with a notice. Variations use their parent's identifiers. Fields: meta `_ffla_gtin`, `_ffla_mpn`, `_ffla_brand`.
+- With **Review photos in the structured data** on, each review in the markup lists its photos as `ImageObject`s (large size). Videos are left out.
 
 ### Review request emails
 

@@ -215,7 +215,7 @@ class Product_Reviews_Structured_Data
             return null;
         }
 
-        return [
+        $markup = [
             '@type'         => 'Review',
             'reviewRating'  => [
                 '@type'       => 'Rating',
@@ -231,6 +231,24 @@ class Product_Reviews_Structured_Data
             'reviewBody'    => get_comment_text($review),
             'datePublished' => get_comment_date('c', $review),
         ];
+
+        // The review's photos (Display → SEO). Videos are left out: a
+        // VideoObject needs more than the module knows about them.
+        if ('1' === Product_Reviews_Core::get_setting('seo_review_images', '1')) {
+            $media = get_comment_meta((int) $review->comment_ID, 'ffla_review_media_ids', true);
+            foreach (is_array($media) ? $media : [] as $media_id) {
+                $media_id = absint($media_id);
+                if ($media_id <= 0 || strpos((string) get_post_mime_type($media_id), 'image/') !== 0) {
+                    continue;
+                }
+                $url = wp_get_attachment_image_url($media_id, 'large') ?: wp_get_attachment_url($media_id);
+                if ($url) {
+                    $markup['associatedMedia'][] = ['@type' => 'ImageObject', 'contentUrl' => (string) $url, 'url' => (string) $url];
+                }
+            }
+        }
+
+        return $markup;
     }
 
     /**
