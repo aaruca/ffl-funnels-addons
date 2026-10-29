@@ -272,6 +272,63 @@ class FFLA_Coupon_Admin
         echo '</div>';
     }
 
+    /**
+     * Schedule: one time (Starts on → expiry date) or recurring (weekly on
+     * chosen days, monthly between two days of the month, yearly between
+     * two dates). The script shows the rows for the choice made.
+     */
+    private static function schedule_rows(array $o): void
+    {
+        self::row(__('Schedule', 'ffl-funnels-addons'), self::select('schedule', [
+            'once'      => __('One time', 'ffl-funnels-addons'),
+            'recurring' => __('Recurring', 'ffl-funnels-addons'),
+        ], $o['schedule'], false, ''), __('Recurring: the coupon works only on the days below, again and again, from Starts on until General → Coupon expiry date (empty = no end).', 'ffl-funnels-addons'));
+        self::row(__('Starts on', 'ffl-funnels-addons'), '<input type="date" class="short" name="ffla[starts]" value="' . esc_attr($o['starts']) . '">', __('Not usable before this date (store time). Set the end in General → Coupon expiry date.', 'ffl-funnels-addons'));
+        self::row(__('Repeats', 'ffl-funnels-addons'), self::select('frequency', [
+            'weekly'  => __('Every week', 'ffl-funnels-addons'),
+            'monthly' => __('Every month', 'ffl-funnels-addons'),
+            'yearly'  => __('Every year', 'ffl-funnels-addons'),
+        ], $o['frequency'], false, ''), '', 'ffla-show-recurring');
+
+        $days = '';
+        foreach (FFLA_Coupon_Schedule::weekday_names() as $n => $name) {
+            $days .= '<label class="ffla-cpn-day"><input type="checkbox" name="ffla[weekdays][]" value="' . (int) $n . '"' . checked(in_array($n, array_map('intval', (array) $o['weekdays']), true), true, false) . '> ' . esc_html($name) . '</label> ';
+        }
+        self::row(__('On', 'ffl-funnels-addons'), '<span class="ffla-cpn-days">' . $days . '</span>', __('The days of the week it works, e.g. Saturday and Sunday for a weekend sale.', 'ffl-funnels-addons'), 'ffla-show-recurring ffla-show-weekly');
+
+        $month_days = [];
+        for ($d = 1; $d <= 31; $d++) {
+            $month_days[$d] = FFLA_Coupon_Schedule::ordinal($d);
+        }
+        self::row(
+            __('Days of the month', 'ffl-funnels-addons'),
+            str_replace('style="width:50%"', 'style="width:auto"', self::select('month_from', $month_days, (int) $o['month_from'], false, ''))
+                . ' ' . esc_html__('to', 'ffl-funnels-addons') . ' '
+                . str_replace('style="width:50%"', 'style="width:auto"', self::select('month_to', $month_days, (int) $o['month_to'], false, '')),
+            __('E.g. the 1st to the 7th. 25th to 5th runs over the turn of the month; the 31st means the last day of shorter months.', 'ffl-funnels-addons'),
+            'ffla-show-recurring ffla-show-monthly'
+        );
+
+        $year = (string) wp_date('Y');
+        $date = static function (string $key, string $md) use ($year): string {
+            return '<input type="date" class="short" id="ffla_' . esc_attr($key) . '" name="ffla[' . esc_attr($key) . ']" value="' . esc_attr('' !== $md ? $year . '-' . $md : '') . '">';
+        };
+        self::row(
+            __('Dates each year', 'ffl-funnels-addons'),
+            $date('year_from', (string) $o['year_from']) . ' ' . esc_html__('to', 'ffl-funnels-addons') . ' ' . $date('year_to', (string) $o['year_to']),
+            __('Start date and end date; only the day and month count, so it comes back every year (e.g. November 25 to December 2). A range may run over the new year.', 'ffl-funnels-addons'),
+            'ffla-show-recurring ffla-show-yearly'
+        );
+
+        if (FFLA_Coupon_Schedule::is_recurring($o)) {
+            self::row('', '<span class="ffla-cpn-when">' . esc_html(sprintf(
+                /* translators: %s: e.g. "on Saturdays and Sundays" */
+                __('As saved: works %s.', 'ffl-funnels-addons'),
+                FFLA_Coupon_Schedule::describe($o)
+            )) . '</span>', '', 'ffla-show-recurring');
+        }
+    }
+
     private static function row(string $label, string $control, string $help = '', string $class = ''): void
     {
         echo '<p class="form-field ' . esc_attr($class) . '"><label>' . esc_html($label) . '</label>' . $control // phpcs:ignore WordPress.Security.EscapeOutput
@@ -303,7 +360,7 @@ class FFLA_Coupon_Admin
         self::product_rules($o, $cats);
 
         echo '<div class="options_group"><h4>' . esc_html__('When it works', 'ffl-funnels-addons') . '</h4>';
-        self::row(__('Starts on', 'ffl-funnels-addons'), '<input type="date" class="short" name="ffla[starts]" value="' . esc_attr($o['starts']) . '">', __('Not usable before this date (store time). Set the end in General → Coupon expiry date.', 'ffl-funnels-addons'));
+        self::schedule_rows($o);
         self::row(__('First order only', 'ffl-funnels-addons'), '<input type="checkbox" name="ffla[first_order]" value="1"' . checked($o['first_order'], true, false) . '> ' . esc_html__('Only for customers with no previous paid order (by account or email)', 'ffl-funnels-addons'));
         self::row(__('Only for', 'ffl-funnels-addons'), self::select('roles', $roles, $o['roles'], true), __('Customer roles, e.g. members or employees. Empty = everyone.', 'ffl-funnels-addons'));
         self::row(__('Uses per person', 'ffl-funnels-addons'), $num('per_customer', $o['per_customer'] ?: ''), __('Counted by email (Gmail dots and +tags ignored), phone and shipping address — not just the account, so new accounts do not get it again.', 'ffl-funnels-addons'));

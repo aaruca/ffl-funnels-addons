@@ -102,6 +102,9 @@ jobs:
           php tests/smoke/monsterinsights-payload-smoke.php
           php tests/smoke/order-badges-smoke.php
 
+      - name: Smart Coupons recurring schedule checks
+        run: php tests/smoke/smart-coupons-schedule-smoke.php
+
   product-reviews:
     name: Product Reviews (PHP ${{ matrix.php }})
     runs-on: ubuntu-latest

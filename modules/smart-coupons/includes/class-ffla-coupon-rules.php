@@ -58,6 +58,12 @@ class FFLA_Coupon_Rules
             throw new Exception(esc_html(sprintf(__('This coupon starts on %s.', 'ffl-funnels-addons'), date_i18n(get_option('date_format'), strtotime($o['starts'])))), 100);
         }
 
+        // Recurring: only on its days (the expiry date still ends the series).
+        $when = FFLA_Coupon_Schedule::refusal($o);
+        if ('' !== $when) {
+            throw new Exception(esc_html($when), 100);
+        }
+
         if ($o['roles']) {
             $user = wp_get_current_user();
             $roles = $user && $user->exists() ? (array) $user->roles : ['guest'];

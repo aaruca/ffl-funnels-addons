@@ -74,4 +74,6 @@
 .ffla-join.is-or ~ .ffla-sum .ffla-sum__op.is-join { background: #996800; }
 .ffla-sum__more { color: #646970; font-size: 12px; }
 .ffla-sum__note { margin-top: 6px; color: #646970; font-size: 12px; }
-
+.ffla-cpn-days { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; }
+.ffla-cpn-panel .ffla-cpn-day { float: none; width: auto; margin: 0; padding: 0; font-weight: 400; }
+.ffla-cpn-when { font-weight: 600; }

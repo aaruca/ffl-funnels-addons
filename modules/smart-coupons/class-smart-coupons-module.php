@@ -6,7 +6,8 @@
  * - Guardrails: firearms and protected categories/tags are never discounted
  *   unless a coupon allows it, and no coupon pushes a product below its
  *   minimum (MAP) price.
- * - Conditions: start date, first order, customer roles, minimum quantity
+ * - Conditions: start date, a recurring schedule (weekdays, days of the
+ *   month, dates each year), first order, customer roles, minimum quantity
  *   from categories, pickup / shipping, states, payment methods.
  * - Discount types: spend tiers, buy X get Y, a cap on percentage coupons
  *   and a free gift added to the cart.
@@ -54,7 +55,7 @@ class Smart_Coupons_Module extends FFLA_Module
 
     public function boot(): void
     {
-        foreach (['settings', 'categories', 'rules', 'discounts', 'credit', 'codes', 'report', 'admin'] as $part) {
+        foreach (['settings', 'schedule', 'categories', 'rules', 'discounts', 'credit', 'codes', 'report', 'admin'] as $part) {
             require_once __DIR__ . '/includes/class-ffla-coupon-' . $part . '.php';
         }
         FFLA_Coupon_Categories::boot();
