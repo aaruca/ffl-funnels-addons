@@ -16,6 +16,7 @@ Gives WooCommerce products a richer review form and list (star rating plus optio
 - **On the order.** A *Review request* box: status (scheduled, sent, opened, clicked, reviewed, skipped and why), *Send review request now*, *Copy review link*, a QR code (download or print), WhatsApp click-to-chat with the link, and *Cancel*. A *Send review request* bulk action on the orders list, and a **Review requests** log with 30-day totals.
 - **Coupons for reviews.** A coupon by email when a verified buyer's review is published, whatever the rating: one per order, up to three tiers by number of photos or videos, a new unique coupon (restricted to the reviewer, one use) or an existing code, and a disclosure badge on rewarded reviews.
 - **Product Q&A.** Shoppers ask about a product in a product tab or the Bricks **Product Q&A** element; the store (or, if allowed, buyers or any customer) answers. Held for approval by default, store answers labelled and first, helpful votes on answers, search and *Show more*, an admin **Questions** page with inline answers, emails to the store and the asker.
+- **Import and export.** Reviews (with replies, criteria, photos and votes) and Q&A as CSV; import from another store or from Customer Reviews for WooCommerce exports in the background, with photos downloaded; a one-click copy of that plugin's photos and votes.
 - **Moderation.** Hold every new review, hold reviews with photos or videos automatically, hold or refuse reviews containing forbidden words, pin reviews. One review per customer per product.
 - **Reviewer emails.** "Your review is now published" and, for store replies, "Someone replied to your review", which WordPress does not send on its own.
 - **Spam protection.** Hidden honeypot field, Cloudflare Turnstile when the Simple Cloudflare Turnstile plugin is active, an hourly limit for guests, and a security token for signed-in users.
@@ -255,6 +256,20 @@ The installed text is written for one product ("We would love your feedback on {
 - Answering a held question from **Product Reviews → Questions** publishes it. The page has *Unanswered*, *Waiting for approval*, *Answered* and *All* views, an answer box under each question, and Approve / Unapprove / Trash for questions and answers (needs `moderate_comments`).
 - The list shows published questions, newest first, with their published answers (store answers first, then the most helpful). *Show more questions* and the search use `admin-ajax.php` (action `ffla_load_questions`), which only returns published questions of published products. Votes on answers use the review vote endpoint with its limits; questions take no votes. The *Ask a question* and *Answer this question* forms are folded `<details>` and work without JavaScript.
 
+### Import and export
+
+**Product Reviews → Import / Export** (needs `manage_woocommerce`).
+
+- **Export reviews** downloads every review and reply on products (approved and pending; spam and trash left out), oldest first: `id`, `parent_id` (replies), `product_id`, `product_sku`, `product_name`, `status`, `date_gmt`, `author`, `email`, `user_id`, `rating`, `verified`, `pinned`, `store_reply`, `content`, `criteria` (`quality=5;value=4`), `media` (URLs separated by `|`), `helpful`, `not_helpful`, `order_id`. **Export questions and answers** has `id`, `parent_id`, `type`, `product_id`, `product_sku`, `product_name`, `status`, `date_gmt`, `author`, `email`, `user_id`, `store_answer`, `content`, `helpful`. UTF-8 with a BOM, so Excel opens it correctly. A cell starting with `=`, `+`, `-` or `@` (and not a number) gets a leading `'` so a spreadsheet never runs it as a formula; importing removes it again. The files hold customers' names and emails.
+- **Import** takes a CSV (up to 20 MB) whose first row names the columns: `content` and `product_id` or `product_sku` are needed, the export's other columns are understood, and so are the column names of Customer Reviews for WooCommerce exports (`review_content`, `review_score`, `review_title`, `display_name`, `parent`, `date`, `media` separated by commas). Variations are imported on the parent product. `date_gmt` is UTC; `date` is store time. *Status: As in the file* (approved unless `pending`) or *Everything waits for approval*.
+- It runs in the background, 100 rows per queue run (Action Scheduler, else WP-Cron); the page shows progress, reloads while it runs, and can cancel it. The file waits in `wp-content/uploads/ffla-review-imports/` (closed to the web on Apache, random name everywhere) and is deleted when the job ends or is cancelled. The page keeps the result and up to 100 notes with line numbers (rows skipped and why, photos that could not be downloaded).
+- Rows are saved with `wp_insert_comment()`: no submission rules, no emails, no coupons. Replies and answers go under the review or question named in `parent_id` (an `id` from the same file, or an existing comment on the same product); if it cannot be found the row is skipped. Store reviews (`product_id` -1) are skipped. `verified` 1 sets Verified buyer; `pinned` 1 pins.
+- Photos and videos in `media` (at most five per review) are downloaded with `download_url()` (which refuses local and private addresses), checked to be JPG, PNG, GIF, WebP, MP4 or WebM up to 25 MB, cleaned of location data like uploads, and added to the Media Library.
+- A row already imported (same product, parent, email, text and date) or one whose `id` is the same review on this site is skipped, so a file, or this store's own export, can be imported again without duplicates.
+- When it ends, WooCommerce recounts the rating of every product the file touched.
+
+**From Customer Reviews for WooCommerce.** Its reviews are WooCommerce reviews, so they already show in FFL lists with their stars. **Copy photos and votes** (shown while that plugin's data is in the database) adds its photos and videos (the same attachments, `ivole_review_image2` / `ivole_review_video2`) to each review's FFL photos, and its upvoters and downvoters as *Helpful* / *Not helpful* counts, 200 reviews per queue run. Photos and higher vote counts already in place are kept; running it again changes nothing.
+
 ### Consent at checkout
 
 With **Ask for consent** on *Unticked checkbox*, the classic checkout shows the box above *Place order* (saved as `_ffla_review_consent` `yes` / `no`) and the Checkout block gets an order field through WooCommerce's additional checkout fields (WooCommerce 8.9+; stored as `_wc_other/ffla/review-consent`). Only orders where it was ticked get requests, including requests sent by hand. Orders placed before the setting was switched on have no answer and get none.
@@ -289,6 +304,7 @@ The link in a request email opens a confirmation page; the address is only added
 | **FFL Funnels → Product Reviews → Review requests** | 30-day totals (sent, opened, review page opened, reviewed, reviews written, scheduled, skipped) and every order with request activity, filterable by status. |
 | Checkout | The consent checkbox, when switched on. |
 | Product page, **Questions & Answers** tab | Questions, answers, search and the ask form, when Q&A and the tab are on. |
+| **FFL Funnels → Product Reviews → Import / Export** | Review and Q&A CSV export, background import with progress, copy of photos and votes from Customer Reviews for WooCommerce. |
 | **FFL Funnels → Product Reviews → Questions** | Every question with its answers, an answer box, approve / unapprove / trash. |
 | Customer inbox | Review request, approval and reply emails. |
 
@@ -319,6 +335,7 @@ The CSS and JavaScript load only where review output is printed: each Bricks ele
 | Pinned flag | `comment_karma` = 1 on the comment | Kept |
 | Review photos and videos | Media Library | Kept |
 | Request tracking (scheduled and when, sent, reminder, sent by hand, skip reason, failed attempts, opens, clicks, reviews through the link) | order meta | Kept |
+| Import job, migration progress | options `ffla_review_import_job`, `ffla_review_migrate_cusrev`; files waiting in `uploads/ffla-review-imports/`; imported comments carry `_ffla_import_hash` | Deleted (the comments are kept) |
 | Checkout consent | order meta `_ffla_review_consent` (classic) or `_wc_other/ffla/review-consent` (block) | Kept |
 | Coupons made for reviews | WooCommerce coupons (meta `_ffla_review_coupon_review`); the review's `ffla_review_coupon_code`, `ffla_incentivized`, `_ffla_review_coupon_checked`, `_ffla_review_coupon_emailed`, `_ffla_review_coupon_attempts`; the order's `_ffla_review_coupon` | Kept |
 | Queued request, reminder and hand-sent emails | Action Scheduler / WP-Cron | Removed (also when the module is switched off) |
@@ -376,7 +393,7 @@ Uninstall cleanup runs whenever the settings option exists, even if the module w
 | `ffla_review_approved_email_subject`, `ffla_review_approved_email_body` | `string`, `WP_Comment $review` | Approval email. |
 | `ffla_review_reply_email_subject`, `ffla_review_reply_email_body` | `string`, `WP_Comment $reply`, `WP_Comment $review` | Reply email. |
 
-**Scheduled actions** (Action Scheduler group `ffla-product-reviews`, or single WP-Cron events): `ffla_send_product_review_request` (`$order_id`, `$product_id`, `$user_id`), `ffla_send_order_review_bundle` (`$order_id`), `ffla_send_order_review_reminder` (`$order_id`) `ffla_send_manual_review_request` (`$order_id`, queued by the bulk action) and `ffla_send_review_coupon_email` (`$review_id`, a coupon email retry).
+**Scheduled actions** (Action Scheduler group `ffla-product-reviews`, or single WP-Cron events): `ffla_send_product_review_request` (`$order_id`, `$product_id`, `$user_id`), `ffla_send_order_review_bundle` (`$order_id`), `ffla_send_order_review_reminder` (`$order_id`) `ffla_send_manual_review_request` (`$order_id`, queued by the bulk action) and `ffla_send_review_coupon_email` (`$review_id`, a coupon email retry), `ffla_review_import_batch` (the next 100 rows of an import) and `ffla_review_migrate_cusrev` (the next 200 reviews of the copy).
 
 **Endpoints**
 
@@ -392,6 +409,7 @@ Uninstall cleanup runs whenever the settings option exists, even if the module w
 | `admin-post.php`, actions `ffla_submit_question` (`product_id`, `question`) and `ffla_submit_answer` (`question_id`, `answer`), POST, guests too | Guests also `author`, `email`; `ffla_hp` must be empty; `ffla_qna_nonce` checked for signed-in users. Redirect with `ffla_qna_status` (`asked`, `answered`, `error`) and `ffla_qna_message`, anchored `#qna`. |
 | `admin-ajax.php`, action `ffla_load_questions` (POST, guests too, no nonce) | `product`, `page`, `perPage` (≤ 50), `search`. Returns `html`, `hasMore`, `total`, `status`. |
 | `admin-post.php`, actions `ffla_qna_admin_answer` and `ffla_qna_admin_status` | Questions page; need `moderate_comments`. |
+| `admin-post.php`, actions `ffla_review_export` (GET `kind`), `ffla_review_import` (POST `file`, `kind`, `mode`), `ffla_review_import_cancel`, `ffla_review_migrate` | Import / Export page; nonce and `manage_woocommerce`. |
 | `admin-post.php`, action `ffla_toggle_review_pin` | `comment_id`, `pin` (`1`/`0`), nonce; needs `moderate_comments`. |
 | `admin-post.php`, action `product_reviews_save_settings` | Settings form, one tab per post (`tab` field); only that tab's keys are written. Needs `manage_woocommerce`. Fires `ffla_product_reviews_settings_saved` (`$tab`, `$new`, `$old`). |
 

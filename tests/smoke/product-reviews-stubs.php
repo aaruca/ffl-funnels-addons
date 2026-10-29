@@ -802,12 +802,21 @@ function stub_meta_query_matches(int $comment_id, array $query): bool
     }
     return 'OR' === $relation ? in_array(true, $results, true) : !in_array(false, $results, true);
 }
+/** Several rows under one meta key (add_comment_meta() without $unique). */
+class StubMulti
+{
+    public $values;
+    public function __construct(array $values) { $this->values = $values; }
+}
 function get_comment_meta($id, $key = '', $single = false)
 {
     if ($key === '') {
         return $GLOBALS['cmeta'][(int) $id] ?? [];
     }
     $v = $GLOBALS['cmeta'][(int) $id][$key] ?? '';
+    if ($v instanceof StubMulti) {
+        return $single ? ($v->values[0] ?? '') : $v->values;
+    }
     return $single ? $v : ($v === '' ? [] : [$v]);
 }
 function update_comment_meta($id, $key, $value) { $GLOBALS['cmeta'][(int) $id][$key] = $value; return true; }
@@ -1619,3 +1628,80 @@ function wc_get_coupon_id_by_code($code)
     return 0;
 }
 function wc_get_page_permalink($page) { return 'https://store.test/' . $page . '/'; }
+
+/* ── Files, downloads, sideloads ───────────────────────────────────────── */
+
+$GLOBALS['upload_base'] = rtrim(sys_get_temp_dir(), '/\\') . '/ffla-pr-uploads-' . getmypid();
+register_shutdown_function(function () {
+    $base = $GLOBALS['upload_base'];
+    if (!is_dir($base)) {
+        return;
+    }
+    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($base, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+    foreach ($it as $f) {
+        $f->isDir() ? @rmdir($f->getPathname()) : @unlink($f->getPathname());
+    }
+    @rmdir($base);
+});
+function wp_upload_dir($time = null, $create = true, $refresh = false) { return ['basedir' => $GLOBALS['upload_base'], 'baseurl' => 'https://store.test/wp-content/uploads', 'error' => false]; }
+function wp_mkdir_p($dir) { return is_dir($dir) || @mkdir($dir, 0777, true); }
+function get_date_from_gmt($date, $format = 'Y-m-d H:i:s') { return gmdate($format, strtotime($date . ' UTC')); }
+function wc_get_product_id_by_sku($sku)
+{
+    foreach ($GLOBALS['product_props'] as $id => $props) {
+        if (($props['sku'] ?? '') === $sku) {
+            return $id;
+        }
+    }
+    return 0;
+}
+
+/** URL => file bytes, or WP_Error. */
+$GLOBALS['downloads'] = [];
+function download_url($url, $timeout = 300)
+{
+    if (!isset($GLOBALS['downloads'][$url])) {
+        return new WP_Error('http_404', 'Not Found');
+    }
+    if ($GLOBALS['downloads'][$url] instanceof WP_Error) {
+        return $GLOBALS['downloads'][$url];
+    }
+    $tmp = tempnam(sys_get_temp_dir(), 'ffla-dl-');
+    file_put_contents($tmp, $GLOBALS['downloads'][$url]);
+    $GLOBALS['tmp_files'][] = $tmp;
+    return $tmp;
+}
+function wp_check_filetype_and_ext($tmp, $name, $mimes = null)
+{
+    $map = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'gif' => 'image/gif', 'webp' => 'image/webp', 'mp4' => 'video/mp4', 'webm' => 'video/webm'];
+    $ext = strtolower(pathinfo((string) $name, PATHINFO_EXTENSION));
+    return isset($map[$ext]) ? ['ext' => $ext, 'type' => $map[$ext], 'proper_filename' => false] : ['ext' => false, 'type' => false, 'proper_filename' => false];
+}
+$GLOBALS['sideloaded'] = [];
+function media_handle_sideload($file, $post_id = 0, $desc = null, $overrides = [])
+{
+    $GLOBALS['sideloaded'][] = ['name' => $file['name'], 'bytes' => file_get_contents($file['tmp_name'])];
+    @unlink($file['tmp_name']);
+    return add_test_attachment('https://store.test/wp-content/uploads/' . $file['name']);
+}
+
+/** Records WooCommerce rating recounts. */
+class WC_Comments
+{
+    public static $cleared = [];
+    public static function clear_transients($post_id) { self::$cleared[] = (int) $post_id; }
+}
+
+/** Build a small valid PNG; $extra chunks go between IHDR and IDAT. */
+function stub_png(string $extra = ''): string
+{
+    $chunk = function (string $type, string $data): string {
+        return pack('N', strlen($data)) . $type . $data . pack('N', crc32($type . $data));
+    };
+    return "\x89PNG\r\n\x1A\n" . $chunk('IHDR', pack('NNCCCCC', 1, 1, 8, 2, 0, 0, 0)) . $extra
+        . $chunk('IDAT', gzcompress("\x00\xff\x00\x00")) . $chunk('IEND', '');
+}
+function stub_png_chunk(string $type, string $data): string
+{
+    return pack('N', strlen($data)) . $type . $data . pack('N', crc32($type . $data));
+}

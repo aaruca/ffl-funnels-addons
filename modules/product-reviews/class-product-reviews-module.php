@@ -86,6 +86,9 @@ class Product_Reviews_Module extends FFLA_Module
         require_once $base . 'includes/class-product-reviews-qna.php';
         Product_Reviews_Qna::init();
 
+        require_once $base . 'includes/class-product-reviews-import.php';
+        Product_Reviews_Import::init();
+
         require_once $base . 'integrations/class-product-reviews-bricks.php';
         Product_Reviews_Bricks::init();
 
@@ -107,6 +110,9 @@ class Product_Reviews_Module extends FFLA_Module
 
             require_once $base . 'admin/class-product-reviews-qna-admin.php';
             (new Product_Reviews_Qna_Admin())->init();
+
+            require_once $base . 'admin/class-product-reviews-tools-admin.php';
+            (new Product_Reviews_Tools_Admin())->init();
         }
     }
 
@@ -129,7 +135,7 @@ class Product_Reviews_Module extends FFLA_Module
         // Settings and data stay. Queued request emails go: they are not sent
         // while the module is off, and switching it back on must not release
         // a backlog of stale requests at once.
-        foreach (['ffla_send_product_review_request', 'ffla_send_order_review_bundle', 'ffla_send_order_review_reminder', 'ffla_send_manual_review_request', 'ffla_send_review_coupon_email'] as $hook) {
+        foreach (['ffla_send_product_review_request', 'ffla_send_order_review_bundle', 'ffla_send_order_review_reminder', 'ffla_send_manual_review_request', 'ffla_send_review_coupon_email', 'ffla_review_import_batch', 'ffla_review_migrate_cusrev'] as $hook) {
             wp_unschedule_hook($hook);
 
             if (function_exists('as_unschedule_all_actions')) {
@@ -156,6 +162,11 @@ class Product_Reviews_Module extends FFLA_Module
                 'title' => __('Review requests', 'ffl-funnels-addons'),
                 'icon'  => '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M4 7l8 6 8-6"/></svg>',
             ],
+            [
+                'slug'  => 'ffla-product-reviews-tools',
+                'title' => __('Import / Export', 'ffl-funnels-addons'),
+                'icon'  => '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>',
+            ],
         ];
     }
 
@@ -163,6 +174,11 @@ class Product_Reviews_Module extends FFLA_Module
     {
         if ('ffla-product-reviews-questions' === $page_slug && class_exists('Product_Reviews_Qna_Admin')) {
             Product_Reviews_Qna_Admin::render();
+            return;
+        }
+
+        if ('ffla-product-reviews-tools' === $page_slug && class_exists('Product_Reviews_Tools_Admin')) {
+            Product_Reviews_Tools_Admin::render();
             return;
         }
 

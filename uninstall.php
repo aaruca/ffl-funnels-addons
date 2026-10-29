@@ -229,7 +229,7 @@ if (in_array('product-reviews', $ffla_active_modules, true) || false !== get_opt
     // of who asked to stop receiving review requests. Dropping it would mean a
     // reinstall silently starts emailing those people again.
 
-    foreach (['ffla_send_product_review_request', 'ffla_send_order_review_bundle', 'ffla_send_order_review_reminder', 'ffla_send_manual_review_request', 'ffla_send_review_coupon_email'] as $ffla_pr_hook) {
+    foreach (['ffla_send_product_review_request', 'ffla_send_order_review_bundle', 'ffla_send_order_review_reminder', 'ffla_send_manual_review_request', 'ffla_send_review_coupon_email', 'ffla_review_import_batch', 'ffla_review_migrate_cusrev'] as $ffla_pr_hook) {
         wp_unschedule_hook($ffla_pr_hook);
 
         if (function_exists('as_unschedule_all_actions')) {
@@ -238,6 +238,21 @@ if (in_array('product-reviews', $ffla_active_modules, true) || false !== get_opt
     }
 
     delete_option('ffla_rev_cache_version');
+    delete_option('ffla_review_import_job');
+    delete_option('ffla_review_migrate_cusrev');
+
+    // CSV files waiting to be imported (customer names and emails).
+    $ffla_pr_uploads = wp_upload_dir();
+    $ffla_pr_imports = trailingslashit((string) $ffla_pr_uploads['basedir']) . 'ffla-review-imports';
+    if (is_dir($ffla_pr_imports)) {
+        foreach ((array) glob($ffla_pr_imports . '/*') as $ffla_pr_file) {
+            @unlink((string) $ffla_pr_file); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+        }
+        foreach (['/.htaccess'] as $ffla_pr_hidden) {
+            @unlink($ffla_pr_imports . $ffla_pr_hidden); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+        }
+        @rmdir($ffla_pr_imports); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+    }
 
     // Cached rating histograms (one transient per product, from before
     // 1.55.10) and store-wide / category numbers (one per scope and cache

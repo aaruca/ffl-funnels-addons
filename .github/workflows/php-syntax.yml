@@ -128,3 +128,5 @@ jobs:
         run: php tests/smoke/product-reviews-coupons-smoke.php
       - name: Check product questions and answers
         run: php tests/smoke/product-reviews-qna-smoke.php
+      - name: Check CSV import and export
+        run: php tests/smoke/product-reviews-tools-smoke.php
