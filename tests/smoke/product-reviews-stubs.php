@@ -161,6 +161,9 @@ function sanitize_title($s) { return strtolower(trim(preg_replace('/[^a-z0-9]+/i
 function sanitize_hex_color($c) { return preg_match('/^#([A-Fa-f0-9]{3}){1,2}$/', (string) $c) ? (string) $c : null; }
 function sanitize_file_name($s) { return preg_replace('/[^A-Za-z0-9._-]/', '-', (string) $s); }
 function wp_unslash($s) { return $s; }
+/** As WordPress: comment data travels slashed into wp_new_comment(). */
+function wp_slash($v) { return is_array($v) ? array_map('wp_slash', $v) : (is_string($v) ? addslashes($v) : $v); }
+function stub_unslash_deep($v) { return is_array($v) ? array_map('stub_unslash_deep', $v) : (is_string($v) ? stripslashes($v) : $v); }
 function wp_parse_args($args, $defaults = []) { return array_merge((array) $defaults, (array) $args); }
 function is_email($email) { return (bool) filter_var($email, FILTER_VALIDATE_EMAIL); }
 function wp_strip_all_tags($s) { return trim(strip_tags((string) $s)); }
@@ -852,7 +855,8 @@ function wp_new_comment($data, $wp_error = false)
         return $approved;
     }
 
-    $id = add_test_comment($data + ['comment_date_gmt' => gmdate('Y-m-d H:i:s')]);
+    // wp_insert_comment() unslashes what it stores.
+    $id = add_test_comment(stub_unslash_deep($data) + ['comment_date_gmt' => gmdate('Y-m-d H:i:s')]);
     $GLOBALS['comments'][$id]->comment_approved = (string) $approved;
     do_action('comment_post', $id, $approved, $data);
 

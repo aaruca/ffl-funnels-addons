@@ -15,6 +15,7 @@ Gives WooCommerce products a richer review form and list (star rating plus optio
 - **Who and what is asked.** Guests on or off, user roles, product categories, free products left out, a product limit for large orders, excluded addresses and domains, one request per customer within a window, optional consent checkbox at checkout (classic and block checkout), the account address instead of the billing address.
 - **On the order.** A *Review request* box: status (scheduled, sent, opened, clicked, reviewed, skipped and why), *Send review request now*, *Copy review link*, a QR code (download or print), WhatsApp click-to-chat with the link, and *Cancel*. A *Send review request* bulk action on the orders list, and a **Review requests** log with 30-day totals.
 - **Coupons for reviews.** A coupon by email when a verified buyer's review is published, whatever the rating: one per order, up to three tiers by number of photos or videos, a new unique coupon (restricted to the reviewer, one use) or an existing code, and a disclosure badge on rewarded reviews.
+- **Product Q&A.** Shoppers ask about a product in a product tab or the Bricks **Product Q&A** element; the store (or, if allowed, buyers or any customer) answers. Held for approval by default, store answers labelled and first, helpful votes on answers, search and *Show more*, an admin **Questions** page with inline answers, emails to the store and the asker.
 - **Moderation.** Hold every new review, hold reviews with photos or videos automatically, hold or refuse reviews containing forbidden words, pin reviews. One review per customer per product.
 - **Reviewer emails.** "Your review is now published" and, for store replies, "Someone replied to your review", which WordPress does not send on its own.
 - **Spam protection.** Hidden honeypot field, Cloudflare Turnstile when the Simple Cloudflare Turnstile plugin is active, an hourly limit for guests, and a security token for signed-in users.
@@ -115,6 +116,19 @@ Gives WooCommerce products a richer review form and list (star rating plus optio
 | Only for categories / Never for categories | Product categories the coupon applies to or never applies to. | None |
 | Subject, Heading, Text, Button text | The coupon email; `{customer_name}`, `{product_name}`, `{coupon_code}`, `{coupon_amount}`, `{coupon_expiry}`, `{shop_url}`, `{store_name}`. Format and design come from the Emails tab. *Send a test* sends it with a made-up code. | Built-in |
 | Mark rewarded reviews / Badge text | Badge on reviews that earned a coupon (disclosure rules such as the FTC's expect it). | On / Received a coupon for this review |
+
+| **Q&A tab** | | |
+| Enable product Q&A | Questions and the *Ask a question* form in a product tab and the Bricks Product Q&A element. | Off |
+| Add a product tab / Tab title | A WooCommerce tab (*Questions & Answers (n)*, n = published questions). | On / Questions & Answers |
+| Questions per page | First page, and each *Show more questions*. | 5 |
+| Search box | Searches the product's questions. | On |
+| Helpful votes on answers | Same limits as review votes; its own switch. | On |
+| Who can ask | *Anyone* (guests give a name and email) or *Signed-in customers only*. | Anyone |
+| Who can answer | *Only the store*, *The store and customers who bought the product*, *… any signed-in customer*, *Anyone*. | Only the store |
+| Hold new questions for approval | Shown once approved or answered. | On |
+| Hold customer answers for approval | Store answers are never held. | On |
+| Email the store about new questions / Send them to | With a link to the Questions page; empty address uses the admin email. | On / admin email |
+| Email the asker when the question is answered | Once per answer, when it is published. | On |
 
 The **Cloudflare Turnstile** card (Review form tab) and **Bricks Elements** card (Display tab) are information only. The Emails tab also shows how many addresses have unsubscribed. While requests are on and no published hub page is selected, the settings page and the rest of wp-admin (for users with `manage_woocommerce`) show a warning that links to the Review requests tab.
 
@@ -232,6 +246,15 @@ The installed text is written for one product ("We would love your feedback on {
 - The email uses the Emails tab's format and design: a box with the code, the amount and expiry, and a *Shop now* button. It has no unsubscribe link: it answers something the customer did. It counts as sent only when `wp_mail()` succeeds; a failure keeps the coupon, is logged and is retried an hour later, three attempts in all.
 - The review gets `ffla_incentivized` and shows the disclosure badge (**Mark rewarded reviews**, on by default). The coupon also shows in the order's *Review request* box.
 
+### Product Q&A
+
+- Questions are comments of type `ffla_question` on the product, answers `ffla_answer` comments under them. The review rules never touch them: no rating, Verified buyer flag, review media, coupon or *Hold all new reviews*; they are left out of WooCommerce's own review list (`comments_template_query_args`) and of every FFL review list and count. They show under **Comments** in wp-admin, and WordPress's own comment checks (duplicates, flooding, disallowed keys, Akismet) apply.
+- Asking: the product must be published. Guests give a name and email (not shown), pass the honeypot and Turnstile (when the Simple Cloudflare Turnstile plugin is active), and are limited to five questions or answers an hour per connection (`ffla_product_reviews_qna_guest_hourly_limit`). Signed-in users need a valid nonce and post under their account. *Signed-in customers only* refuses guests.
+- Held for approval by default (**Hold new questions for approval**); a question with a forbidden word (Reviews tab) is always held. The store is emailed about each new question.
+- Answering: *Only the store* by default (anyone who can moderate comments). Store answers are published straight away, labelled *Store answer* with the store name, and listed first; customer answers are held by default and show *Verified buyer* when the account bought the product. Answers are only accepted under published questions. The asker gets an email once per published answer (not for their own).
+- Answering a held question from **Product Reviews → Questions** publishes it. The page has *Unanswered*, *Waiting for approval*, *Answered* and *All* views, an answer box under each question, and Approve / Unapprove / Trash for questions and answers (needs `moderate_comments`).
+- The list shows published questions, newest first, with their published answers (store answers first, then the most helpful). *Show more questions* and the search use `admin-ajax.php` (action `ffla_load_questions`), which only returns published questions of published products. Votes on answers use the review vote endpoint with its limits; questions take no votes. The *Ask a question* and *Answer this question* forms are folded `<details>` and work without JavaScript.
+
 ### Consent at checkout
 
 With **Ask for consent** on *Unticked checkbox*, the classic checkout shows the box above *Place order* (saved as `_ffla_review_consent` `yes` / `no`) and the Checkout block gets an order field through WooCommerce's additional checkout fields (WooCommerce 8.9+; stored as `_wc_other/ffla/review-consent`). Only orders where it was ticked get requests, including requests sent by hand. Orders placed before the setting was switched on have no answer and get none.
@@ -258,19 +281,22 @@ The link in a request email opens a confirmation page; the address is only added
 | **Comments** | The same columns, for stores that still list reviews there. |
 | Product page, **Reviews** tab | FFL list (first **Reviews per page**, with filters and *Show more*) and form, when *Replace WooCommerce reviews tab* is on. |
 | Bricks elements, category **FFL Funnels** | See below. |
-| Bricks dynamic tags, group **FFL Funnels - Product Reviews** | `{ffla_review_count}` (WooCommerce's review count), `{ffla_review_average}` (one decimal, empty with no ratings), `{ffla_review_recommend_percent}` (share of 4 and 5 star ratings, empty with no ratings); store-wide `{ffla_store_review_average}`, `{ffla_store_review_count}`, `{ffla_store_review_verified}` (percent of verified buyers). |
+| Bricks dynamic tags, group **FFL Funnels - Product Reviews** | `{ffla_review_count}` (WooCommerce's review count), `{ffla_review_average}` (one decimal, empty with no ratings), `{ffla_review_recommend_percent}` (share of 4 and 5 star ratings, empty with no ratings); store-wide `{ffla_store_review_average}`, `{ffla_store_review_count}`, `{ffla_store_review_verified}` (percent of verified buyers); `{ffla_question_count}` (the product's published questions). |
 | Product page structured data | The `review` list matches the FFL list (see *Structured data*). |
 | Hub page | Forms for every product in the order. |
 | **WooCommerce → Orders** → an order | *Review request* box (side): status, Send now, Cancel, Copy review link, QR code, WhatsApp. |
 | **WooCommerce → Orders** list | Bulk action *Send review request* (while a hub page is ready). |
 | **FFL Funnels → Product Reviews → Review requests** | 30-day totals (sent, opened, review page opened, reviewed, reviews written, scheduled, skipped) and every order with request activity, filterable by status. |
 | Checkout | The consent checkbox, when switched on. |
+| Product page, **Questions & Answers** tab | Questions, answers, search and the ask form, when Q&A and the tab are on. |
+| **FFL Funnels → Product Reviews → Questions** | Every question with its answers, an answer box, approve / unapprove / trash. |
 | Customer inbox | Review request, approval and reply emails. |
 
 | Bricks element | Shows | Main controls |
 |---|---|---|
 | Reviews Rating Badge | Average, partial stars, review count in brackets (WooCommerce's numbers, as in the rating summary) | Product ID, Average number (Show / Hide), Review count (Show / Hide), Hide when no reviews, star colours and size, typography |
 | Reviews List | Summary, toolbar and review cards | *Which reviews*: Reviews of (This product / All products / Product categories), Categories, Product ID, Minimum rating, Only reviews with photos. Max reviews (1–50, default 5), Order by (Most recent / Most helpful / Highest / Lowest rating), Rating summary. *Layout*: List / Grid / Slider, Columns / cards per view, Product on each card. *Filters and paging*: Star filter, “With photos” filter, Sort menu, Search box, “Show more” button (each Use module setting / Show / Hide). Star and card styling, typography |
+| Product Q&A | Questions, answers, search, ask form | Product ID, Title, Questions per page, Search box, “Ask a question” form; question border and background, question and answer typography |
 | Store Rating Badge | Store-wide average, stars, review count and share of verified buyers | Style (Card / Compact), Theme (Light / Dark), Label, Review count, Verified buyers share, With no reviews yet (Show 0.0 / Hide), Link; star, background and text colours, average typography |
 | Review Form | The FFL form | Product ID, Title (default "Write a review"), Intro text, Extra rating criteria (Show / Hide; all configured criteria), Media upload (Collapsed / Expanded), Login hint (Show / Hide); Style tab: Container, Stars, Fields, Submit button, Notices |
 | Order reviews hub | The hub | Intro title (optional), plus Bricks' own ID, classes and styles on the wrapper |
@@ -288,6 +314,7 @@ The CSS and JavaScript load only where review output is printed: each Bricks ele
 | Settings | option `ffla_product_reviews_settings` | Deleted |
 | Unsubscribed addresses (hashed) | option `ffla_review_email_optouts` | Kept on purpose, so a reinstall does not email them again |
 | Reviews and replies | WordPress comments on products | Kept |
+| Questions and answers | WordPress comments on products (types `ffla_question`, `ffla_answer`; meta `ffla_is_store_answer`, `ffla_helpful_yes`, `_ffla_store_notified`, `_ffla_asker_notified`) | Kept |
 | Rating, criteria scores, votes, verified flag (the module's and WooCommerce's `verified`), media IDs, notification flags | comment meta | Kept |
 | Pinned flag | `comment_karma` = 1 on the comment | Kept |
 | Review photos and videos | Media Library | Kept |
@@ -341,6 +368,9 @@ Uninstall cleanup runs whenever the settings option exists, even if the module w
 | `ffla_product_reviews_request_status_allowed` | `bool`, `WC_Order $order` | Whether the order's status allows its request email when it is due. Default: the trigger status, or a status that is not a core pre-fulfilment status reached after it. |
 | `ffla_product_reviews_client_ip` | `string $ip` | Visitor address used to throttle votes. |
 | `ffla_product_reviews_before_coupon_save` (action) | `WC_Coupon $coupon`, `WP_Comment $review`, `WC_Order $order` | Change a coupon made for a review before it is saved. |
+| `ffla_product_reviews_qna_check` | `string $error` (''), `string $action` | Refuse a question or answer with a message (extra checks). |
+| `ffla_product_reviews_qna_guest_hourly_limit` | `int` (5) | Guest questions and answers per IP address per hour. 0 turns it off. |
+| `ffla_product_reviews_qna_form_fields` (action) | `string $kind` (`question` / `answer`), `int $product_id` | Print extra fields in the Q&A forms. |
 | `ffla_product_reviews_whatsapp_phone` | `string $digits`, `WC_Order $order` | The number the WhatsApp button opens (digits with country code). |
 | `ffla_product_reviews_cloudflare_ranges` | `string[]` (Cloudflare's published IPv4/IPv6 ranges) | Proxy addresses whose `CF-Connecting-IP` header is trusted. |
 | `ffla_review_approved_email_subject`, `ffla_review_approved_email_body` | `string`, `WP_Comment $review` | Approval email. |
@@ -359,6 +389,9 @@ Uninstall cleanup runs whenever the settings option exists, even if the module w
 | `admin-post.php`, action `ffla_review_open` (GET `o`, `s`, guests too) | Open pixel: records the open when the signature matches; always answers with a transparent GIF. |
 | `admin-post.php`, actions `ffla_review_send_now` and `ffla_review_cancel` (GET `order_id`, nonce) | Order box; need `manage_woocommerce` or `edit_shop_orders`. |
 | `admin-ajax.php`, action `ffla_review_send_test` (POST `to`, `kind`, nonce) and `admin-post.php`, action `ffla_review_email_preview` (GET `kind`, nonce) | Test email and preview; need `manage_woocommerce`. |
+| `admin-post.php`, actions `ffla_submit_question` (`product_id`, `question`) and `ffla_submit_answer` (`question_id`, `answer`), POST, guests too | Guests also `author`, `email`; `ffla_hp` must be empty; `ffla_qna_nonce` checked for signed-in users. Redirect with `ffla_qna_status` (`asked`, `answered`, `error`) and `ffla_qna_message`, anchored `#qna`. |
+| `admin-ajax.php`, action `ffla_load_questions` (POST, guests too, no nonce) | `product`, `page`, `perPage` (≤ 50), `search`. Returns `html`, `hasMore`, `total`, `status`. |
+| `admin-post.php`, actions `ffla_qna_admin_answer` and `ffla_qna_admin_status` | Questions page; need `moderate_comments`. |
 | `admin-post.php`, action `ffla_toggle_review_pin` | `comment_id`, `pin` (`1`/`0`), nonce; needs `moderate_comments`. |
 | `admin-post.php`, action `product_reviews_save_settings` | Settings form, one tab per post (`tab` field); only that tab's keys are written. Needs `manage_woocommerce`. Fires `ffla_product_reviews_settings_saved` (`$tab`, `$new`, `$old`). |
 
@@ -374,5 +407,6 @@ Uninstall cleanup runs whenever the settings option exists, even if the module w
 - `Product_Reviews_Core::is_verified_purchase( $comment_id )`: the module's flag when the review has one, otherwise WooCommerce's `verified`.
 - `Product_Reviews_Frontend_Render::list_reviews( $product_id, $settings )` returns the reviews a list with those settings shows, in order; `rendered_reviews( $product_id )` what the lists on the current page showed; `display_name( $review )` the reviewer's name as shown.
 - `Product_Reviews_Query::find( $args )` returns `ids` (one page, in display order) and `total` for `products`, `categories`, `rating`, `minRating`, `withMedia`, `search`, `orderBy`, `page`, `perPage`; `distribution( $args )` a scope's star counts, average and review count; `store_stats()` the store-wide numbers with `verified` and `verified_percent`.
-- Bricks element names also include `ffla-store-rating-badge`.
+- Bricks element names also include `ffla-store-rating-badge` and `ffla-product-qna`.
+- `Product_Reviews_Qna::questions( $product_id, $page, $per_page, $search )`, `question_count( $product_id )`, `can_answer( $user_id, $product_id )`.
 - `Product_Reviews_Assets::enqueue( $with_script = true )` loads the front-end CSS (and JS).

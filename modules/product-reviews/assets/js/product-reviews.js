@@ -529,6 +529,105 @@
     }
 
     /* ------------------------------------------------------------------
+     * Product Q&A: search and Show more
+     * ---------------------------------------------------------------- */
+
+    function initQna(body) {
+        if (body.getAttribute('data-ffla-qna-init') === '1') {
+            return;
+        }
+        body.setAttribute('data-ffla-qna-init', '1');
+
+        var config;
+        try {
+            config = JSON.parse(body.getAttribute('data-ffla-qna') || '{}');
+        } catch (e) {
+            return;
+        }
+
+        var items = body.querySelector('[data-ffla-qna-items]');
+        var more = body.querySelector('[data-ffla-qna-more]');
+        var search = body.querySelector('[data-ffla-qna-search]');
+        var state = { page: 1, search: '', busy: false };
+
+        if (!items) {
+            return;
+        }
+        if (search) {
+            search.hidden = false;
+        }
+
+        function load(append) {
+            if (state.busy) {
+                return;
+            }
+            state.busy = true;
+            body.setAttribute('aria-busy', 'true');
+
+            post({
+                action: 'ffla_load_questions',
+                product: config.product,
+                perPage: config.perPage || 5,
+                page: append ? state.page + 1 : 1,
+                search: state.search
+            })
+                .then(function (json) {
+                    if (!json || !json.success || !json.data) {
+                        throw new Error('bad response');
+                    }
+                    var data = json.data;
+                    if (append) {
+                        state.page += 1;
+                        items.insertAdjacentHTML('beforeend', data.html || '');
+                    } else {
+                        state.page = 1;
+                        if (data.html) {
+                            items.innerHTML = data.html;
+                        } else {
+                            items.innerHTML = '';
+                            var p = document.createElement('p');
+                            p.className = 'ffla-qna__empty';
+                            p.textContent = data.status || '';
+                            items.appendChild(p);
+                        }
+                    }
+                    if (more) {
+                        more.hidden = !data.hasMore;
+                    }
+                })
+                .catch(function () {
+                    var p = document.createElement('p');
+                    p.className = 'ffla-qna__empty';
+                    p.textContent = i18n('loadError');
+                    items.appendChild(p);
+                })
+                .then(function () {
+                    state.busy = false;
+                    body.removeAttribute('aria-busy');
+                });
+        }
+
+        if (more) {
+            more.addEventListener('click', function () {
+                load(true);
+            });
+        }
+
+        if (search) {
+            search.addEventListener('submit', function (event) {
+                event.preventDefault();
+                var input = search.querySelector('input');
+                state.search = input ? input.value.trim() : '';
+                load(false);
+            });
+        }
+    }
+
+    function initQnas() {
+        document.querySelectorAll('[data-ffla-qna]').forEach(initQna);
+    }
+
+    /* ------------------------------------------------------------------
      * Photo lightbox
      * ---------------------------------------------------------------- */
 
@@ -725,6 +824,7 @@
         initStarRatingInputs();
         initMediaUploadZones();
         initReviewLists();
+        initQnas();
         initSliders();
     }
 

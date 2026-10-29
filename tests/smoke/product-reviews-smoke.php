@@ -140,6 +140,7 @@ function sanitize_email($s) { return trim((string) $s); }
 function sanitize_title($s) { return strtolower(trim(preg_replace('/[^a-z0-9]+/i', '-', (string) $s), '-')); }
 function sanitize_key($s) { return preg_replace('/[^a-z0-9_\-]/', '', strtolower((string) $s)); }
 function wp_unslash($s) { return $s; }
+function wp_slash($s) { return $s; }
 function wp_parse_args($args, $defaults) { return array_merge($defaults, (array) $args); }
 function is_email($email) { return (bool) filter_var($email, FILTER_VALIDATE_EMAIL); }
 function wp_strip_all_tags($s) { return trim(strip_tags((string) $s)); }

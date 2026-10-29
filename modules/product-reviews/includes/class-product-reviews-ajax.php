@@ -104,7 +104,15 @@ class Product_Reviews_Ajax
             ], 403);
         }
 
-        if ('1' !== Product_Reviews_Core::get_setting('enable_helpful_votes', '1')) {
+        $comment_id = isset($_POST['comment_id']) ? absint($_POST['comment_id']) : 0;
+        $target     = $comment_id > 0 ? get_comment($comment_id) : null;
+        $is_answer  = $target instanceof \WP_Comment && 'ffla_answer' === $target->comment_type;
+
+        // Answers have their own switch (Q&A tab); everything else is a review.
+        $enabled = $is_answer
+            ? '1' === Product_Reviews_Core::get_setting('qna_votes', '1')
+            : '1' === Product_Reviews_Core::get_setting('enable_helpful_votes', '1');
+        if (!$enabled) {
             wp_send_json_error(['message' => __('Helpful votes are disabled.', 'ffl-funnels-addons')]);
         }
 
@@ -115,17 +123,17 @@ class Product_Reviews_Ajax
             wp_send_json_error(['message' => __('Invalid vote.', 'ffl-funnels-addons')]);
         }
 
-        if ('no' === $vote && '1' !== Product_Reviews_Core::get_setting('enable_not_helpful_votes', '0')) {
+        if ('no' === $vote && ($is_answer || '1' !== Product_Reviews_Core::get_setting('enable_not_helpful_votes', '0'))) {
             wp_send_json_error(['message' => __('That vote type is disabled.', 'ffl-funnels-addons')]);
         }
 
-        $comment_id = isset($_POST['comment_id']) ? absint($_POST['comment_id']) : 0;
         if ($comment_id <= 0) {
             wp_send_json_error(['message' => __('Invalid review.', 'ffl-funnels-addons')]);
         }
 
         $comment = get_comment($comment_id);
-        if (!$comment || 'product' !== get_post_type((int) $comment->comment_post_ID) || '1' !== $comment->comment_approved) {
+        if (!$comment || 'product' !== get_post_type((int) $comment->comment_post_ID) || '1' !== $comment->comment_approved
+            || !in_array((string) $comment->comment_type, ['review', 'ffla_answer'], true)) {
             wp_send_json_error(['message' => __('Review not available.', 'ffl-funnels-addons')]);
         }
 

@@ -83,6 +83,9 @@ class Product_Reviews_Module extends FFLA_Module
         require_once $base . 'includes/class-product-reviews-coupons.php';
         Product_Reviews_Coupons::init();
 
+        require_once $base . 'includes/class-product-reviews-qna.php';
+        Product_Reviews_Qna::init();
+
         require_once $base . 'integrations/class-product-reviews-bricks.php';
         Product_Reviews_Bricks::init();
 
@@ -101,6 +104,9 @@ class Product_Reviews_Module extends FFLA_Module
             (new Product_Reviews_Order_Tools())->init();
 
             require_once $base . 'admin/class-product-reviews-requests-log.php';
+
+            require_once $base . 'admin/class-product-reviews-qna-admin.php';
+            (new Product_Reviews_Qna_Admin())->init();
         }
     }
 
@@ -141,6 +147,11 @@ class Product_Reviews_Module extends FFLA_Module
                 'icon'  => '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
             ],
             [
+                'slug'  => 'ffla-product-reviews-questions',
+                'title' => __('Questions', 'ffl-funnels-addons'),
+                'icon'  => '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>',
+            ],
+            [
                 'slug'  => 'ffla-product-reviews-requests',
                 'title' => __('Review requests', 'ffl-funnels-addons'),
                 'icon'  => '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M4 7l8 6 8-6"/></svg>',
@@ -150,6 +161,11 @@ class Product_Reviews_Module extends FFLA_Module
 
     public function render_admin_page(string $page_slug): void
     {
+        if ('ffla-product-reviews-questions' === $page_slug && class_exists('Product_Reviews_Qna_Admin')) {
+            Product_Reviews_Qna_Admin::render();
+            return;
+        }
+
         if ('ffla-product-reviews-requests' === $page_slug && class_exists('Product_Reviews_Requests_Log')) {
             Product_Reviews_Requests_Log::render();
             return;

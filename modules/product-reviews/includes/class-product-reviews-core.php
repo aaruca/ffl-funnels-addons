@@ -28,6 +28,9 @@ class Product_Reviews_Core
     /** Order statuses whose signed review links stop working. */
     const TOKEN_DEAD_STATUSES = ['refunded', 'cancelled', 'failed', 'trash'];
 
+    /** Product Q&A comment types; the review rules never touch them. */
+    const QNA_TYPES = ['ffla_question', 'ffla_answer'];
+
     /** @var bool */
     private static $order_review_rewrite_tag_registered = false;
 
@@ -233,6 +236,19 @@ class Product_Reviews_Core
             'coupon_button_text'        => '',
             'coupon_badge'              => '1',
             'coupon_badge_text'         => '',
+            'qna_enabled'               => '0',
+            'qna_tab'                   => '1',
+            'qna_tab_title'             => '',
+            'qna_who_asks'              => 'anyone',
+            'qna_who_answers'           => 'store',
+            'qna_moderate_questions'    => '1',
+            'qna_moderate_answers'      => '1',
+            'qna_per_page'              => '5',
+            'qna_search'                => '1',
+            'qna_votes'                 => '1',
+            'qna_notify_store'          => '1',
+            'qna_notify_email'          => '',
+            'qna_notify_asker'          => '1',
             'whatsapp_template'         => __('Hi {customer_name}, thank you for your order from {store_name}! Would you take a minute to review it? {review_url}', 'ffl-funnels-addons'),
             'email_subject'             => __('How was your purchase?', 'ffl-funnels-addons'),
             'email_heading'             => __('Leave a review for your recent order', 'ffl-funnels-addons'),
@@ -487,6 +503,11 @@ class Product_Reviews_Core
 
         $product_id = absint($commentdata['comment_post_ID']);
         if ('product' !== get_post_type($product_id)) {
+            return $commentdata;
+        }
+
+        // Questions and answers have their own handler and rules.
+        if (in_array((string) ($commentdata['comment_type'] ?? ''), self::QNA_TYPES, true)) {
             return $commentdata;
         }
 
@@ -1251,6 +1272,10 @@ class Product_Reviews_Core
             return;
         }
 
+        if (in_array((string) ($commentdata['comment_type'] ?? ''), self::QNA_TYPES, true)) {
+            return;
+        }
+
         $rating = isset($_POST['rating']) ? absint($_POST['rating']) : 0;
         if ($rating > 0) {
             update_comment_meta($comment_id, 'rating', min(5, $rating));
@@ -1807,7 +1832,9 @@ class Product_Reviews_Core
 
         $commentdata = self::apply_review_comment_approval($commentdata);
 
-        $comment_id = wp_new_comment($commentdata, true);
+        // Slashed, as wp_new_comment() expects (wp_insert_comment() unslashes):
+        // unslashed text lost every backslash the customer typed.
+        $comment_id = wp_new_comment(wp_slash($commentdata), true);
         if (is_wp_error($comment_id)) {
             // WordPress's own refusals (duplicate, flooding, Discussion rules)
             // say what went wrong; show that rather than a generic line.

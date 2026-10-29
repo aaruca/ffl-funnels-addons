@@ -1,7 +1,8 @@
 /**
  * Product Reviews lists in a real browser: toolbar, star / photo filters,
- * sort, search, "Show more", the photo lightbox, votes on cards loaded later
- * and the slider arrows.
+ * sort, search, "Show more", the photo lightbox, votes on cards loaded later,
+ * the slider arrows and the grid; and product Q&A (paging, search, votes on
+ * answers, the folded ask form).
  *
  * The page markup comes from the module's own renderer and every AJAX call
  * is answered by its own endpoint (product-reviews-list-ui-fixture.php over
@@ -34,17 +35,17 @@ function php(mode, args) {
     return execFileSync('php', [FIXTURE, mode, JSON.stringify(args)], {encoding: 'utf8'});
 }
 
-function pageHtml(settings) {
+function pageHtml(settings, mode) {
     return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
         + '<style>html{font-size:62.5%}body{margin:0;padding:16px;font-family:system-ui,sans-serif}'
         + '.screen-reader-text{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}' + STYLES + '</style></head><body>'
-        + '<main style="max-width:900px;margin:0 auto">' + php('page', settings) + '</main>'
+        + '<main style="max-width:900px;margin:0 auto">' + php(mode || 'page', settings) + '</main>'
         + '<script>' + SCRIPT + '</script></body></html>';
 }
 
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><rect width="800" height="600" fill="#3b5b92"/></svg>';
 
-async function openList(browser, settings, viewport) {
+async function openList(browser, settings, viewport, mode) {
     const page = await browser.newPage({viewport: viewport || {width: 1000, height: 900}});
     const ajax = [];
     await page.route('https://store.test/**', async (route) => {
@@ -73,7 +74,7 @@ async function openList(browser, settings, viewport) {
             ajax.push(fields);
             return route.fulfill({status: 200, contentType: 'application/json', body: php('ajax', fields)});
         }
-        return route.fulfill({status: 200, contentType: 'text/html', body: pageHtml(settings)});
+        return route.fulfill({status: 200, contentType: 'text/html', body: pageHtml(settings, mode)});
     });
     await page.goto('https://store.test/product/scope/');
     page.ajax = ajax;
@@ -250,7 +251,35 @@ async function settle(page) {
         check(mid === 2, 'grid shows two columns on tablets');
         await page.close();
 
-        console.log('OK: ' + checks + ' product-reviews list browser checks passed');
+        /* ── Product Q&A ───────────────────────────────────────────────── */
+        page = await openList(browser, {}, {width: 1000, height: 900}, 'qna');
+        const questions = () => page.$$eval('.ffla-qna-item .ffla-qna-item__text', (els) => els.map((el) => el.textContent));
+        check(await page.isVisible('[data-ffla-qna-search]'), 'the script reveals the Q&A search');
+        check((await questions()).length === 3, 'first 3 questions');
+        check((await questions())[0] === 'Question 6?', 'newest question first');
+        await page.click('[data-ffla-qna-more]');
+        await settle(page);
+        await page.waitForFunction(() => document.querySelectorAll('.ffla-qna-item').length === 6);
+        check(new Set(await questions()).size === 6, 'Show more questions appends the next 3');
+        await page.click('[data-ffla-qna-more]');
+        await page.waitForFunction(() => document.querySelectorAll('.ffla-qna-item').length === 7);
+        check(!(await page.isVisible('[data-ffla-qna-more]')), 'Show more questions hides at the end');
+        await page.fill('[data-ffla-qna-search] input', 'turret');
+        await page.press('[data-ffla-qna-search] input', 'Enter');
+        await page.waitForFunction(() => document.querySelectorAll('.ffla-qna-item').length === 1);
+        check(JSON.stringify(await questions()) === JSON.stringify(['Question 4 about the turret caps?']), 'Q&A search');
+        await page.click('.ffla-qna-answer .ffla-review-helpful');
+        await page.waitForSelector('.ffla-qna-answer .ffla-review-helpful__message');
+        check((await page.textContent('.ffla-qna-answer .ffla-review-helpful__count')).trim() === '2', 'helpful vote on a store answer');
+        check(!(await page.isVisible('.ffla-qna__ask form')), 'the ask form starts folded');
+        await page.click('.ffla-qna__ask-summary');
+        check(await page.isVisible('.ffla-qna__ask form textarea[name="question"]'), 'Ask a question opens the form');
+        if (SHOTS) {
+            await page.screenshot({path: path.join(SHOTS, 'qna.png'), fullPage: true});
+        }
+        await page.close();
+
+        console.log('OK: ' + checks + ' product-reviews list and Q&A browser checks passed');
     } finally {
         await browser.close();
     }

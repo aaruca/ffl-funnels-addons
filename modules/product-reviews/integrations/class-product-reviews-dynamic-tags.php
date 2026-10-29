@@ -28,6 +28,7 @@ class Product_Reviews_Dynamic_Tags
             'ffla_store_review_average'     => __('Store-wide review average', 'ffl-funnels-addons'),
             'ffla_store_review_count'       => __('Store-wide review count', 'ffl-funnels-addons'),
             'ffla_store_review_verified'    => __('Store-wide verified buyers percent', 'ffl-funnels-addons'),
+            'ffla_question_count'           => __('Product question count', 'ffl-funnels-addons'),
         ];
     }
 
@@ -91,6 +92,10 @@ class Product_Reviews_Dynamic_Tags
             return '';
         }
 
+        if ('ffla_question_count' === $name) {
+            return class_exists('Product_Reviews_Qna') ? number_format_i18n(Product_Reviews_Qna::question_count($product_id)) : '';
+        }
+
         $data = Product_Reviews_Core::get_rating_distribution($product_id);
 
         switch ($name) {
@@ -143,11 +148,11 @@ class Product_Reviews_Dynamic_Tags
      */
     public static function render_content($content, $post = null, $context = 'text')
     {
-        if (!is_string($content) || (strpos($content, '{ffla_review_') === false && strpos($content, '{ffla_store_review_') === false)) {
+        if (!is_string($content) || (strpos($content, '{ffla_review_') === false && strpos($content, '{ffla_store_review_') === false && strpos($content, '{ffla_question_count}') === false)) {
             return $content;
         }
 
-        $product_id = strpos($content, '{ffla_review_') !== false ? self::resolve_product_id($post) : 0;
+        $product_id = (strpos($content, '{ffla_review_') !== false || strpos($content, '{ffla_question_count}') !== false) ? self::resolve_product_id($post) : 0;
 
         foreach (array_keys(self::tags()) as $name) {
             $needle = '{' . $name . '}';

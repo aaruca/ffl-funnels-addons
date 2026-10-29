@@ -41,6 +41,7 @@ class Product_Reviews_Admin_Fields
             'requests' => __('Review requests', 'ffl-funnels-addons'),
             'emails'   => __('Emails', 'ffl-funnels-addons'),
             'coupons'  => __('Coupons', 'ffl-funnels-addons'),
+            'qna'      => __('Q&A', 'ffl-funnels-addons'),
         ];
     }
 
@@ -62,6 +63,8 @@ class Product_Reviews_Admin_Fields
                 return self::emails_cards();
             case 'coupons':
                 return self::coupons_cards();
+            case 'qna':
+                return self::qna_cards();
         }
 
         return [];
@@ -1140,6 +1143,118 @@ class Product_Reviews_Admin_Fields
         ];
 
         return $cards;
+    }
+
+    private static function qna_cards(): array
+    {
+        return [
+            [
+                'title'  => __('Product questions and answers', 'ffl-funnels-addons'),
+                'desc'   => __('Shoppers ask about a product and the store (or other customers) answers. Answer and moderate them under Product Reviews → Questions.', 'ffl-funnels-addons'),
+                'fields' => [
+                    [
+                        'key'   => 'qna_enabled',
+                        'type'  => 'toggle',
+                        'label' => __('Enable product Q&A', 'ffl-funnels-addons'),
+                        'desc'  => __('Shows questions and the “Ask a question” form in a product tab and in the Bricks Product Q&A element.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'qna_tab',
+                        'type'  => 'toggle',
+                        'label' => __('Add a product tab', 'ffl-funnels-addons'),
+                        'desc'  => __('A WooCommerce tab next to Reviews. Turn off when the Bricks element shows Q&A instead.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'qna_tab_title',
+                        'type'  => 'text',
+                        'label' => __('Tab title', 'ffl-funnels-addons'),
+                        'desc'  => __('Empty uses “Questions & Answers”. The number of published questions is added.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'qna_per_page',
+                        'type'  => 'number',
+                        'label' => __('Questions per page', 'ffl-funnels-addons'),
+                        'desc'  => __('“Show more questions” loads the next ones.', 'ffl-funnels-addons'),
+                        'min'   => 1,
+                        'max'   => 50,
+                    ],
+                    [
+                        'key'   => 'qna_search',
+                        'type'  => 'toggle',
+                        'label' => __('Search box', 'ffl-funnels-addons'),
+                        'desc'  => __('Searches the questions of the product.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'qna_votes',
+                        'type'  => 'toggle',
+                        'label' => __('Helpful votes on answers', 'ffl-funnels-addons'),
+                        'desc'  => __('Same limits as review votes. Store answers always come first.', 'ffl-funnels-addons'),
+                    ],
+                ],
+            ],
+            [
+                'title'  => __('Who can ask and answer', 'ffl-funnels-addons'),
+                'fields' => [
+                    [
+                        'key'     => 'qna_who_asks',
+                        'type'    => 'select',
+                        'label'   => __('Who can ask', 'ffl-funnels-addons'),
+                        'options' => [
+                            'anyone'    => __('Anyone (guests give a name and email)', 'ffl-funnels-addons'),
+                            'logged_in' => __('Signed-in customers only', 'ffl-funnels-addons'),
+                        ],
+                        'desc'    => __('Guests are limited to five questions or answers an hour per connection, and must pass Cloudflare Turnstile when it is set up.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'     => 'qna_who_answers',
+                        'type'    => 'select',
+                        'label'   => __('Who can answer', 'ffl-funnels-addons'),
+                        'options' => [
+                            'store'     => __('Only the store', 'ffl-funnels-addons'),
+                            'buyers'    => __('The store and customers who bought the product', 'ffl-funnels-addons'),
+                            'logged_in' => __('The store and any signed-in customer', 'ffl-funnels-addons'),
+                            'anyone'    => __('Anyone', 'ffl-funnels-addons'),
+                        ],
+                        'desc'    => __('Answers from staff (anyone who can moderate comments) are labelled “Store answer”. Customer answers from buyers show the Verified buyer label.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'qna_moderate_questions',
+                        'type'  => 'toggle',
+                        'label' => __('Hold new questions for approval', 'ffl-funnels-addons'),
+                        'desc'  => __('Recommended: a question is shown once you approve or answer it. Answering a held question from the Questions page approves it.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'qna_moderate_answers',
+                        'type'  => 'toggle',
+                        'label' => __('Hold customer answers for approval', 'ffl-funnels-addons'),
+                        'desc'  => __('Store answers are never held. Questions and answers with a forbidden word (Reviews tab) are always held.', 'ffl-funnels-addons'),
+                    ],
+                ],
+            ],
+            [
+                'title'  => __('Q&A emails', 'ffl-funnels-addons'),
+                'fields' => [
+                    [
+                        'key'   => 'qna_notify_store',
+                        'type'  => 'toggle',
+                        'label' => __('Email the store about new questions', 'ffl-funnels-addons'),
+                        'desc'  => __('With a link to the Questions page.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'qna_notify_email',
+                        'type'  => 'email',
+                        'label' => __('Send them to', 'ffl-funnels-addons'),
+                        'desc'  => __('Empty uses the site’s admin email.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'qna_notify_asker',
+                        'type'  => 'toggle',
+                        'label' => __('Email the asker when the question is answered', 'ffl-funnels-addons'),
+                        'desc'  => __('Once per answer, when it is published.', 'ffl-funnels-addons'),
+                    ],
+                ],
+            ],
+        ];
     }
 
     /**
