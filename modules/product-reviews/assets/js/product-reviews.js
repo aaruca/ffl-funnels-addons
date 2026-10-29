@@ -165,8 +165,8 @@
     function initMediaUploadZones() {
         var zones = document.querySelectorAll('[data-ffla-media-upload]');
         var fu = (typeof window.fflaProductReviews.fileUpload === 'object' && window.fflaProductReviews.fileUpload) || {};
-        var maxFiles = 3;
-        var maxBytes = 5 * 1024 * 1024;
+        var maxFiles = parseInt(fu.maxCount, 10) || 3;
+        var maxBytes = parseInt(fu.maxBytes, 10) || 5 * 1024 * 1024;
 
         zones.forEach(function (zone) {
             if (zone.getAttribute('data-ffla-media-init') === '1') {
@@ -796,6 +796,33 @@
             update();
         });
     }
+
+    /* ------------------------------------------------------------------
+     * reCAPTCHA v3: a token is fetched when the form is sent
+     * ---------------------------------------------------------------- */
+
+    document.addEventListener('submit', function (event) {
+        var form = event.target;
+        var field = form && form.querySelector ? form.querySelector('[data-ffla-recaptcha-v3]') : null;
+        if (!field || field.value || form.getAttribute('data-ffla-recaptcha-busy') === '1') {
+            return;
+        }
+        if (!window.grecaptcha || typeof window.grecaptcha.ready !== 'function') {
+            return;
+        }
+
+        event.preventDefault();
+        form.setAttribute('data-ffla-recaptcha-busy', '1');
+        window.grecaptcha.ready(function () {
+            window.grecaptcha.execute(field.getAttribute('data-ffla-recaptcha-v3'), { action: field.getAttribute('data-action') || 'submit' })
+                .then(function (token) {
+                    field.value = token;
+                    form.submit();
+                }, function () {
+                    form.removeAttribute('data-ffla-recaptcha-busy');
+                });
+        });
+    }, true);
 
     /* ------------------------------------------------------------------
      * Boot

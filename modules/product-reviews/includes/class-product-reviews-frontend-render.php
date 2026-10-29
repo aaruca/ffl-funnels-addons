@@ -72,7 +72,12 @@ class Product_Reviews_Frontend_Render
         echo '<button type="button" class="ffla-review-form__file-add">' . esc_html__('Choose files', 'ffl-funnels-addons') . '</button>';
         echo '<ul class="ffla-review-form__file-list" hidden aria-live="polite"></ul>';
         echo '</div>';
-        echo '<p class="ffla-review-form__file-help" id="' . esc_attr($hint_id) . '">' . esc_html__('Up to 3 files, 5 MB each. JPG, PNG, GIF, WebP, MP4, or WebM.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="ffla-review-form__file-help" id="' . esc_attr($hint_id) . '">' . esc_html(sprintf(
+            /* translators: 1: number of files, 2: size in megabytes */
+            _n('Up to %1$d file, %2$d MB. JPG, PNG, GIF, WebP, MP4, or WebM.', 'Up to %1$d files, %2$d MB each. JPG, PNG, GIF, WebP, MP4, or WebM.', Product_Reviews_Core::media_max_files(), 'ffl-funnels-addons'),
+            Product_Reviews_Core::media_max_files(),
+            Product_Reviews_Core::media_max_mb()
+        )) . '</p>';
         echo '</div>';
     }
 
@@ -133,7 +138,8 @@ class Product_Reviews_Frontend_Render
             $text = is_user_logged_in()
                 ? __('Only customers who bought this product can review it.', 'ffl-funnels-addons')
                 : __('Only customers who bought this product can review it. Log in to your account, or use the review link from your order email.', 'ffl-funnels-addons');
-            echo '<p class="ffla-review-form__notice ffla-review-form__notice--info">' . esc_html($text) . '</p>';
+            echo '<p class="ffla-review-form__notice ffla-review-form__notice--info">' . esc_html($text)
+                . (is_user_logged_in() ? '' : ' ' . self::login_link($redirect_target)) . '</p>';
             if ($wrap) {
                 echo '</div>';
             }
@@ -142,7 +148,8 @@ class Product_Reviews_Frontend_Render
         }
 
         if (!is_user_logged_in() && get_option('comment_registration') && $show_login_hint) {
-            echo '<p class="ffla-review-form__notice ffla-review-form__notice--info">' . esc_html__('You must be logged in to submit a review.', 'ffl-funnels-addons') . '</p>';
+            echo '<p class="ffla-review-form__notice ffla-review-form__notice--info">' . esc_html__('You must be logged in to submit a review.', 'ffl-funnels-addons')
+                . ' ' . self::login_link($redirect_target) . '</p>';
         }
 
         echo '<form class="ffla-review-form" method="post" enctype="multipart/form-data" action="' . esc_url(admin_url('admin-post.php')) . '">';
@@ -161,16 +168,18 @@ class Product_Reviews_Frontend_Render
         self::render_star_radios('rating', $uid . '-r', __('Overall rating', 'ffl-funnels-addons'), true);
 
         if ($show_criteria && Product_Reviews_Criteria::is_enabled()) {
+            // Required criteria are only enforced on a form that showed them.
+            echo '<input type="hidden" name="ffla_criteria_shown" value="1">';
             foreach (Product_Reviews_Criteria::get_criteria() as $index => $criterion) {
                 self::render_star_radios(
                     Product_Reviews_Criteria::field_name($criterion['slug']),
                     $uid . '-c' . $index,
-                    sprintf(
+                    !empty($criterion['required']) ? $criterion['label'] : sprintf(
                         /* translators: %s: name of a secondary rating criterion, e.g. "Quality" */
                         __('%s (optional)', 'ffl-funnels-addons'),
                         $criterion['label']
                     ),
-                    false
+                    !empty($criterion['required'])
                 );
             }
         }
@@ -195,8 +204,17 @@ class Product_Reviews_Frontend_Render
             echo '</div>';
         }
 
-        if (class_exists('Product_Reviews_Turnstile')) {
-            Product_Reviews_Turnstile::render_field();
+        /**
+         * Extra fields before the CAPTCHA and the submit button (customer
+         * questions, terms checkbox).
+         *
+         * @param int    $product_id
+         * @param string $context product / hub
+         */
+        do_action('ffla_product_reviews_form_fields', $product_id, 'product');
+
+        if (class_exists('Product_Reviews_Captcha')) {
+            Product_Reviews_Captcha::render_field();
         }
 
         echo '<input type="hidden" name="comment_post_ID" value="' . esc_attr((string) $product_id) . '">';
@@ -210,6 +228,16 @@ class Product_Reviews_Frontend_Render
         }
     }
 
+
+    /**
+     * "Log in" link back to this page (Review form → Log in page).
+     */
+    public static function login_link(string $redirect): string
+    {
+        $url = class_exists('Product_Reviews_Form_Extras') ? Product_Reviews_Form_Extras::login_url($redirect) : wp_login_url($redirect);
+
+        return '<a class="ffla-review-form__login" href="' . esc_url($url) . '">' . esc_html__('Log in', 'ffl-funnels-addons') . '</a>';
+    }
 
     public static function render_stars(float $rating, int $max_stars = 5): string
     {
@@ -493,6 +521,18 @@ class Product_Reviews_Frontend_Render
                 echo '<span>' . esc_html($criterion['label']) . ': ' . esc_html((string) $criterion['score']) . '/5</span>';
             }
             echo '</div>';
+        }
+
+        /**
+         * More about the review under the criteria (for example the
+         * reviewer's public answers). Return escaped HTML.
+         *
+         * @param string      $html
+         * @param \WP_Comment $review
+         */
+        $details = (string) apply_filters('ffla_product_reviews_card_details', '', $review);
+        if ($details !== '') {
+            echo $details; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- filter contract: escaped HTML.
         }
 
         $allowed_html = [

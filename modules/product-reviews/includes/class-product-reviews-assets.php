@@ -84,8 +84,18 @@ class Product_Reviews_Assets
             ],
             'fileUpload' => [
                 'removeLabel'  => __('Remove file', 'ffl-funnels-addons'),
-                'maxFiles'     => __('You can attach up to 3 files.', 'ffl-funnels-addons'),
-                'fileTooLarge' => __('Each file must be 5 MB or less.', 'ffl-funnels-addons'),
+                'maxCount'     => Product_Reviews_Core::media_max_files(),
+                'maxBytes'     => Product_Reviews_Core::media_max_mb() * 1024 * 1024,
+                'maxFiles'     => sprintf(
+                    /* translators: %d: number of files */
+                    _n('You can attach up to %d file.', 'You can attach up to %d files.', Product_Reviews_Core::media_max_files(), 'ffl-funnels-addons'),
+                    Product_Reviews_Core::media_max_files()
+                ),
+                'fileTooLarge' => sprintf(
+                    /* translators: %d: size in megabytes */
+                    __('Each file must be %d MB or less.', 'ffl-funnels-addons'),
+                    Product_Reviews_Core::media_max_mb()
+                ),
             ],
         ]);
 

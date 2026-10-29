@@ -135,6 +135,22 @@ class Product_Reviews_Core
         return '1' === self::get_setting('allow_media_uploads', '1');
     }
 
+    /**
+     * Photos and videos per review (Review form → Most files per review).
+     */
+    public static function media_max_files(): int
+    {
+        return max(1, min(10, absint(self::get_setting('media_max_files', (string) self::MAX_MEDIA_FILES)) ?: self::MAX_MEDIA_FILES));
+    }
+
+    /**
+     * Largest file accepted, in megabytes (Review form → Largest file).
+     */
+    public static function media_max_mb(): int
+    {
+        return max(1, min(50, absint(self::get_setting('media_max_mb', '5')) ?: 5));
+    }
+
     public static function get_default_settings(): array
     {
         return [
@@ -161,6 +177,8 @@ class Product_Reviews_Core
             'replace_default_reviews_tab' => '0',
             'form_title'                => __('Write a review', 'ffl-funnels-addons'),
             'allow_media_uploads'       => '1',
+            'media_max_files'           => '3',
+            'media_max_mb'              => '5',
             'moderate_all_reviews'      => '0',
             'request_email_mode'        => 'bundle',
             'order_review_page_id'      => '0',
@@ -249,6 +267,19 @@ class Product_Reviews_Core
             'qna_notify_store'          => '1',
             'qna_notify_email'          => '',
             'qna_notify_asker'          => '1',
+            'review_questions'          => '',
+            'terms_on_reviews'          => '0',
+            'terms_on_qna'              => '0',
+            'terms_text'                => '',
+            'terms_page_id'             => '0',
+            'captcha_provider'          => 'plugin',
+            'captcha_site_key'          => '',
+            'captcha_secret_key'        => '',
+            'captcha_v3_threshold'      => '0.5',
+            'login_url'                 => '',
+            'notify_store_new_review'   => '0',
+            'notify_store_email'        => '',
+            'notify_store_max_rating'   => '5',
             'whatsapp_template'         => __('Hi {customer_name}, thank you for your order from {store_name}! Would you take a minute to review it? {review_url}', 'ffl-funnels-addons'),
             'email_subject'             => __('How was your purchase?', 'ffl-funnels-addons'),
             'email_heading'             => __('Leave a review for your recent order', 'ffl-funnels-addons'),
@@ -562,10 +593,10 @@ class Product_Reviews_Core
         // unless the Turnstile plugin already guards the comment form itself.
         if (self::is_native_top_level_review($commentdata)
             && '1' === self::get_setting('replace_default_reviews_tab', '0')
-            && class_exists('Product_Reviews_Turnstile')
-            && Product_Reviews_Turnstile::is_available()
-            && !Product_Reviews_Turnstile::protects_native_comments()
-            && !Product_Reviews_Turnstile::passes()) {
+            && class_exists('Product_Reviews_Captcha')
+            && Product_Reviews_Captcha::is_available()
+            && !Product_Reviews_Captcha::protects_native_comments()
+            && !Product_Reviews_Captcha::passes()) {
             wp_die(
                 esc_html__('Cloudflare validation failed. Please try again.', 'ffl-funnels-addons'),
                 '',
@@ -1209,13 +1240,14 @@ class Product_Reviews_Core
     }
 
     /**
-     * Validate the Turnstile response (when the Simple Cloudflare Turnstile
-     * plugin is active). Signed order-review links bypass the challenge
-     * because the token already proves the request comes from the customer.
+     * Validate the CAPTCHA response (Review form → CAPTCHA; by default the
+     * Simple Cloudflare Turnstile plugin when it is active). Signed
+     * order-review links bypass the challenge because the token already
+     * proves the request comes from the customer.
      */
     private static function turnstile_token_valid_for_request(): bool
     {
-        if (!class_exists('Product_Reviews_Turnstile') || !Product_Reviews_Turnstile::is_available()) {
+        if (!class_exists('Product_Reviews_Captcha') || !Product_Reviews_Captcha::is_available()) {
             return true;
         }
 
@@ -1223,7 +1255,7 @@ class Product_Reviews_Core
             return true;
         }
 
-        return Product_Reviews_Turnstile::passes();
+        return Product_Reviews_Captcha::passes();
     }
 
     /**
@@ -1374,7 +1406,7 @@ class Product_Reviews_Core
         $processed = 0;
 
         foreach ($files as $file) {
-            if ($processed >= self::MAX_MEDIA_FILES) {
+            if ($processed >= self::media_max_files()) {
                 break;
             }
 
@@ -1382,7 +1414,7 @@ class Product_Reviews_Core
                 continue;
             }
 
-            if (!empty($file['size']) && (int) $file['size'] > (5 * 1024 * 1024)) {
+            if (!empty($file['size']) && (int) $file['size'] > (self::media_max_mb() * 1024 * 1024)) {
                 continue;
             }
 
@@ -1685,6 +1717,19 @@ class Product_Reviews_Core
                 __('Cloudflare validation failed. Please try again.', 'ffl-funnels-addons'),
                 $fallback
             );
+        }
+
+        /**
+         * Extra checks on the FFL review form (terms checkbox, customer
+         * questions). Return a message to refuse the review.
+         *
+         * @param string             $error    ''
+         * @param int                $product_id
+         * @param \WC_Order|null     $order    The signed link's order, if any.
+         */
+        $extra = (string) apply_filters('ffla_product_reviews_form_check', '', $product_id, $order_ctx);
+        if ($extra !== '') {
+            self::redirect_with_status($redirect, 'error', $extra, $fallback);
         }
 
         // These three checks are done; preprocess_comment must not repeat them.

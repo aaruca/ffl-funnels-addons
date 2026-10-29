@@ -1705,3 +1705,18 @@ function stub_png_chunk(string $type, string $data): string
 {
     return pack('N', strlen($data)) . $type . $data . pack('N', crc32($type . $data));
 }
+
+/* ── HTTP (CAPTCHA verify endpoints) ───────────────────────────────────── */
+
+/** URL => ['code' => int, 'body' => string] or WP_Error. */
+$GLOBALS['http_responses'] = [];
+$GLOBALS['http_requests']  = [];
+function wp_safe_remote_post($url, $args = [])
+{
+    $GLOBALS['http_requests'][] = ['url' => $url, 'args' => $args];
+    $r = $GLOBALS['http_responses'][$url] ?? new WP_Error('http_request_failed', 'unreachable');
+    return $r;
+}
+function wp_remote_retrieve_response_code($r) { return is_array($r) ? (int) ($r['code'] ?? 0) : 0; }
+function wp_remote_retrieve_body($r) { return is_array($r) ? (string) ($r['body'] ?? '') : ''; }
+function wp_login_url($redirect = '') { return 'https://store.test/wp-login.php' . ($redirect !== '' ? '?redirect_to=' . rawurlencode($redirect) : ''); }

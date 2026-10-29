@@ -1486,3 +1486,75 @@ a.ffla-store-badge:hover {
 .ffla-qna__form .ffla-review-form__submit {
     align-self: flex-start;
 }
+
+/* Review form: choices, terms, CAPTCHA note, log in link */
+
+.ffla-review-form__choices {
+    display: flex !important;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.ffla-review-form__choice {
+    display: flex !important;
+    align-items: center;
+    gap: 8px;
+    font-weight: 400 !important;
+    margin: 0 !important;
+}
+
+.ffla-review-form__choice input {
+    width: auto !important;
+    margin: 0;
+}
+
+.ffla-review-form__field select {
+    min-height: 4.8rem;
+    padding: 10px 12px;
+    border: 1px solid #cfd6e4;
+    border-radius: 8px;
+    background: #fff;
+    font-size: 1em;
+}
+
+.ffla-review-form__terms {
+    font-size: 0.9em;
+}
+
+.ffla-review-captcha__note {
+    margin: 0;
+    font-size: 0.8em;
+    color: var(--ffla-ui-muted, #64748b);
+}
+
+.ffla-review-form__login {
+    font-weight: 600;
+}
+
+/* Review card: public answers */
+
+.ffla-review-card__answers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    margin: 8px 0;
+    font-size: 0.9em;
+}
+
+.ffla-review-card__answer {
+    display: flex;
+    gap: 4px;
+}
+
+.ffla-review-card__answer dt {
+    color: var(--ffla-ui-muted, #64748b);
+}
+
+.ffla-review-card__answer dt::after {
+    content: ':';
+}
+
+.ffla-review-card__answer dd {
+    margin: 0;
+    font-weight: 600;
+}

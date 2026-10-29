@@ -19,7 +19,7 @@ class Product_Reviews_Criteria
      * Hard cap so a pasted essay in the settings textarea cannot generate
      * hundreds of star groups on every product page.
      */
-    const MAX_CRITERIA = 6;
+    const MAX_CRITERIA = 12;
 
     /**
      * Criteria that predate this class stored their score under a bespoke meta
@@ -33,7 +33,7 @@ class Product_Reviews_Criteria
         'value'   => 'ffla_review_value',
     ];
 
-    /** @var array<int, array{slug:string,label:string}>|null */
+    /** @var array<int, array{slug:string,label:string,required:bool}>|null */
     private static $memo = null;
 
     /**
@@ -47,7 +47,7 @@ class Product_Reviews_Criteria
     }
 
     /**
-     * @return array<int, array{slug:string,label:string}>
+     * @return array<int, array{slug:string,label:string,required:bool}>
      */
     public static function get_criteria(): array
     {
@@ -71,7 +71,10 @@ class Product_Reviews_Criteria
     }
 
     /**
-     * @return array<int, array{slug:string,label:string}>
+     * One per line: `slug|Label`, or `slug|Label|required` for a criterion the
+     * reviewer must rate.
+     *
+     * @return array<int, array{slug:string,label:string,required:bool}>
      */
     public static function parse_definition(string $raw): array
     {
@@ -84,8 +87,12 @@ class Product_Reviews_Criteria
                 continue;
             }
 
+            $required = false;
             if (strpos($line, '|') !== false) {
-                [$slug, $label] = array_map('trim', explode('|', $line, 2));
+                $parts    = array_map('trim', explode('|', $line, 3));
+                $slug     = $parts[0];
+                $label    = $parts[1] ?? '';
+                $required = 'required' === strtolower($parts[2] ?? '');
             } else {
                 $slug  = $line;
                 $label = $line;
@@ -99,7 +106,7 @@ class Product_Reviews_Criteria
             }
 
             $seen[$slug] = true;
-            $criteria[]  = ['slug' => $slug, 'label' => $label];
+            $criteria[]  = ['slug' => $slug, 'label' => $label, 'required' => $required];
 
             if (count($criteria) >= self::MAX_CRITERIA) {
                 break;
@@ -118,6 +125,39 @@ class Product_Reviews_Criteria
     public static function meta_key(string $slug): string
     {
         return self::LEGACY_META_KEYS[$slug] ?? 'ffla_review_criteria_' . $slug;
+    }
+
+    /**
+     * Written back to the settings textarea.
+     *
+     * @param array<int, array{slug:string,label:string,required:bool}> $criteria
+     */
+    public static function serialize_definition(array $criteria): string
+    {
+        return implode("\n", array_map(static function (array $c): string {
+            return $c['slug'] . '|' . $c['label'] . (!empty($c['required']) ? '|required' : '');
+        }, $criteria));
+    }
+
+    /**
+     * A required criterion the form showed but the reviewer did not rate,
+     * or null.
+     *
+     * @return array{slug:string,label:string,required:bool}|null
+     */
+    public static function missing_required(): ?array
+    {
+        if (!self::is_enabled()) {
+            return null;
+        }
+
+        foreach (self::get_criteria() as $criterion) {
+            if (!empty($criterion['required']) && self::read_submitted_score($criterion['slug']) < 1) {
+                return $criterion;
+            }
+        }
+
+        return null;
     }
 
     /**

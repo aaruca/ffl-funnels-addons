@@ -6,7 +6,7 @@ Gives WooCommerce products a richer review form and list (star rating plus optio
 
 ## What it does
 
-- **Review form.** Overall rating (required), optional extra star ratings (*Quality* and *Value for money* out of the box, up to six of your own), review text, and up to three photos or videos. Guests enter name and email; signed-in customers post under their account.
+- **Review form.** Overall rating (required), extra star ratings (*Quality* and *Value for money* out of the box, up to twelve of your own, each optional or required), questions about the reviewer (text, one or several choices; shown on the review or kept private), review text, photos or videos (3 files of 5 MB by default, up to 10 of 50 MB), an optional terms checkbox, and a CAPTCHA (Cloudflare Turnstile, hCaptcha or reCAPTCHA v2/v3). Guests enter name and email; signed-in customers post under their account.
 - **Reviews list.** Rating summary (average plus a bar per star level), *Verified buyer* label, criteria scores, photos and videos (photos open in a lightbox), *Helpful* and optional *Not helpful* buttons, store replies nested under the review, pinned reviews first as *Featured review*. Reviewer names are shortened to *Ann B.* by default, with an initials avatar.
 - **Filters and paging.** Star chips (and clickable summary bars), a *With photos* chip, a sort menu (most recent, most helpful, highest, lowest), a search box and *Show more reviews*, all without reloading the page.
 - **Store-wide lists.** A Bricks Reviews List can show one product, some product categories or the whole store, as a list, a grid or a slider. The **Store Rating Badge** shows the store's average, review count and share of verified buyers.
@@ -19,7 +19,8 @@ Gives WooCommerce products a richer review form and list (star rating plus optio
 - **Import and export.** Reviews (with replies, criteria, photos and votes) and Q&A as CSV; import from another store or from Customer Reviews for WooCommerce exports in the background, with photos downloaded; a one-click copy of that plugin's photos and votes.
 - **Moderation.** Hold every new review, hold reviews with photos or videos automatically, hold or refuse reviews containing forbidden words, pin reviews. One review per customer per product.
 - **Reviewer emails.** "Your review is now published" and, for store replies, "Someone replied to your review", which WordPress does not send on its own.
-- **Spam protection.** Hidden honeypot field, Cloudflare Turnstile when the Simple Cloudflare Turnstile plugin is active, an hourly limit for guests, and a security token for signed-in users.
+- **Spam protection.** Hidden honeypot field, a CAPTCHA (the Simple Cloudflare Turnstile plugin by default, or Turnstile, hCaptcha, reCAPTCHA v2 or v3 with your own keys), an hourly limit for guests, and a security token for signed-in users.
+- **For the store.** An email about each new review (or only low ratings), and a *Photos and videos* box on a review's edit screen to add or take off files.
 - **Privacy.** Location and camera data are removed from review photos before they are stored.
 
 ## Setup
@@ -31,7 +32,7 @@ Gives WooCommerce products a richer review form and list (star rating plus optio
 3. Create the hub page: a normal page containing the `[ffla_order_reviews]` shortcode or the Bricks **Order reviews hub** element. Publish it and select it under **Review requests → Hub page**. Request emails do not run without it.
 4. Check the **Review requests** tab (trigger status, delay, sending hour and days, who gets requests) and the **Emails** tab (format, subject, text, design). Use **Preview** and **Send a test** at the bottom of the Emails tab. Check that **WooCommerce → Settings → Emails** has the sender name and address the emails should come from; its header image, colours and footer are used until you set your own.
 5. Optional: turn on **Pretty URLs for review links** (Review requests tab). If a link from a test email gives a 404, visit **Settings → Permalinks** once.
-6. Optional: install and configure Simple Cloudflare Turnstile. There is nothing to set here; the **Cloudflare Turnstile** card shows when it is detected.
+6. Optional: spam protection under **Review form → CAPTCHA**: keep *Simple Cloudflare Turnstile plugin* (install and configure that plugin), or pick Turnstile, hCaptcha or reCAPTCHA and paste the site and secret keys.
 7. Test: open a test order with your own billing email and use **Send review request now** in its *Review request* box; or set the delay to 0, move the order to the trigger status and look for the scheduled action (group `ffla-product-reviews`) under **WooCommerce → Status → Scheduled Actions** and in **Product Reviews → Review requests**. Set the delay back afterwards.
 
 ## Settings
@@ -60,9 +61,14 @@ Gives WooCommerce products a richer review form and list (star rating plus optio
 | Also allow “Not helpful” votes | Adds a *Not helpful* button. Needs helpful votes on. | Off |
 | **Review form tab** | | |
 | Review form title | Heading of the form in the WooCommerce Reviews tab (the Bricks Review Form has its own Title). | Write a review |
+| Log in page | Where the *Log in* links on the review and Q&A forms go (back to the product). Empty: WooCommerce's My Account page, else the WordPress login. | Empty |
 | Allow photo and video uploads | Shows the upload field on every FFL form. Off hides it and ignores uploaded files. | On |
+| Most files per review / Largest file (MB) | 1–10 files, 1–50 MB each (the server's upload limit still applies). | 3 / 5 |
 | Enable secondary rating criteria | Shows the extra star groups on the form and the scores on reviews. | On |
-| Criteria | One per line, `slug\|Label`, up to 6. Malformed lines are dropped on save. | `quality\|Quality` and `value\|Value for money` |
+| Criteria | One per line, `slug\|Label`, or `slug\|Label\|required`, up to 12. Malformed lines are dropped on save. | `quality\|Quality` and `value\|Value for money` |
+| Questions about the reviewer | One per line, `slug\|Label\|type\|choices\|flags`: type `text`, `select`, `radio` or `checkbox`; choices comma separated; flags `required`, `public` (shown on the review), `product` or `hub` (only there). Up to 10. | Empty |
+| Terms checkbox: on review forms / on Q&A forms / text / page | A required checkbox; `{terms}` in the text links to the page (none: the privacy policy page). | Off |
+| CAPTCHA / Site key / Secret key / reCAPTCHA v3 minimum score | *Simple Cloudflare Turnstile plugin*, *Cloudflare Turnstile*, *hCaptcha*, *reCAPTCHA v2*, *reCAPTCHA v3* (with the keys) or *None*. The secret is never printed back into the page. | Plugin / 0.5 |
 | **Review requests tab** | | |
 | Enable review requests | Schedules request emails automatically. Does nothing until a published **Hub page** is selected. Switching it off also stops emails already queued. Requests sent by hand still work. | On |
 | Review request email | *One email per order (all products, single link)* or *One email per product (all sent the same day)*. Reminders and requests sent by hand are always one per order. | One email per order |
@@ -98,6 +104,7 @@ Gives WooCommerce products a richer review form and list (star rating plus optio
 | Track opens and clicks | Open pixel in HTML emails and the hub visit, recorded on the order. Reviews through the link are always counted. | On |
 | Preview / Send a test | Preview the request or reminder in a new tab, or send it to an address, with the newest order (or newest products). Uses the saved settings; nothing is recorded on any order. | |
 | WhatsApp message | Text for the WhatsApp button on the order screen; `{customer_name}`, `{store_name}`, `{order_number}`, `{review_url}`. | Hi {customer_name}, thank you for your order… |
+| Email the store about new reviews / Send them to / For reviews of | One plain-text email per new review (rating, text, Verified buyer, photos, published or waiting with a link); *Any rating* or only 3, 2 or 1 stars. | Off / admin email / Any rating |
 | Email the reviewer when their review is approved | Sent once when a held review is approved. If `wp_mail()` fails, nothing is recorded and it is sent the next time the review is approved. | On |
 | Email the reviewer when someone replies | Sent once per approved store reply (written by someone who could moderate comments). Other replies are never emailed. A failed send is retried the next time the reply is approved. | On |
 | Re-subscribe an address | Not stored: enter an email and save to remove it from the unsubscribed list, when the customer asks to get review requests again. | Empty |
@@ -131,7 +138,7 @@ Gives WooCommerce products a richer review form and list (star rating plus optio
 | Email the store about new questions / Send them to | With a link to the Questions page; empty address uses the admin email. | On / admin email |
 | Email the asker when the question is answered | Once per answer, when it is published. | On |
 
-The **Cloudflare Turnstile** card (Review form tab) and **Bricks Elements** card (Display tab) are information only. The Emails tab also shows how many addresses have unsubscribed. While requests are on and no published hub page is selected, the settings page and the rest of wp-admin (for users with `manage_woocommerce`) show a warning that links to the Review requests tab.
+The CAPTCHA card (Review form tab) says whether the Simple Cloudflare Turnstile plugin is active; the **Bricks Elements** card (Display tab) is information only. The Emails tab also shows how many addresses have unsubscribed. While requests are on and no published hub page is selected, the settings page and the rest of wp-admin (for users with `manage_woocommerce`) show a warning that links to the Review requests tab.
 
 ## How it works
 
@@ -147,6 +154,14 @@ The **Cloudflare Turnstile** card (Review form tab) and **Bricks Elements** card
 - WooCommerce's own form and anything else posting to `wp-comments-post.php` follow the same *verified owners* and one-review rules, and the honeypot. While *Replace WooCommerce reviews tab* is on, a new top-level review posted there must also pass Turnstile when the plugin is active (unless the plugin's own comment-form protection is on; it then checks the form itself). Reviews added by other code (imports, other plugins) are not affected.
 - Variations are always reviewed on the parent product.
 
+### Form extras
+
+- **Required criteria and questions** are only enforced on a form that showed them (the form posts `ffla_criteria_shown` / `ffla_questions_shown`), so a Bricks Review Form that hides the criteria, or a hub form without the product-only questions, still sends. A missing one comes back as "Please rate Fit." or "Please answer: …". An answer that is not one of a question's choices does not count; checkbox answers are saved in the order of the choices (`ffla_review_q_<slug>`, comma separated). Public answers show on the card under the criteria; all of them show in a box on the review's edit screen.
+- **Terms checkbox**: required when on; on the product form and the hub (reviews) and on the ask and answer forms (Q&A).
+- **CAPTCHA**: with your own keys, the provider's script is loaded with the form and the token is checked server-side once per request (`wp_safe_remote_post()` to the provider's verify URL); an unreachable provider refuses and logs. reCAPTCHA v3 has no widget: the script fetches a token when the form is sent, and a score below the minimum refuses. Signed review links never get a challenge. While *Replace WooCommerce reviews tab* is on, a review posted straight to `wp-comments-post.php` must pass it too (unless the Turnstile plugin protects the comment form itself).
+- **New review emails** go out once per review when it is saved (not for spam), to *Send them to* or the admin email.
+- **Photos and videos box**: on a review's edit screen (Products → Reviews → Edit), add photos and videos from the Media Library or take them off the review (the files stay in the Media Library); saved with the review's Update button. Only photo and video attachments are kept; needs permission to edit the comment.
+
 ### When a review is held or refused
 
 | Rule | Result |
@@ -160,7 +175,7 @@ These rules apply to every new product review, including ones from WooCommerce's
 
 ### Photos and videos
 
-- Up to 3 files per review, 5 MB each: JPG, PNG, GIF, WebP, MP4 or WebM. The browser warns about extra or oversized files; the server also skips anything over the limits or of another type.
+- Up to **Most files per review** files (3 by default), **Largest file** each (5 MB): JPG, PNG, GIF, WebP, MP4 or WebM. The browser warns about extra or oversized files; the server also skips anything over the limits or of another type.
 - Files are only taken from the FFL form, after its security checks, and never for a review filed as spam or trash. Files sent with a comment to WordPress's own `wp-comments-post.php` are ignored and do not hold the review.
 - Before a photo is stored, its location and camera data are removed: EXIF (GPS, camera, date), XMP, IPTC and comments in JPEG; text and EXIF chunks in PNG; EXIF and XMP in WebP. The colour profile is kept, and a rotated JPEG keeps its orientation so it still displays upright. The file is not re-encoded. A photo that cannot be read this way is skipped. GIF carries no such data; videos are stored as uploaded (their metadata is not changed).
 - Files go into the Media Library, not attached to the product. Media Cleaner always treats them as in use.
@@ -378,6 +393,9 @@ Uninstall cleanup runs whenever the settings option exists, even if the module w
 | `ffla_product_reviews_wc_tab_form_settings` | `array $settings`, `int $product_id` | Form in the replaced tab. Keys `title`, `introText`, `showOptionalCriteria`, `collapseMedia`, `showLoginHint`. Default `[]`. |
 | `ffla_product_reviews_enqueue_assets` | `bool $force` (false) | Load the front-end CSS/JS in the page head on other pages. |
 | `ffla_product_reviews_structured_data_list_settings` | `array\|null $settings`, `int $product_id` | The list the product page will show (`perPage`, `orderBy`), worked out before it renders; `null` leaves the structured data alone. Default: the Bricks Reviews List element in the page content, or the replaced tab's list. |
+| `ffla_product_reviews_card_details` | `string $html` (''), `WP_Comment $review` | More under the criteria on a card (public answers use it). Return escaped HTML. |
+| `ffla_product_reviews_form_check` | `string $error` (''), `int $product_id`, `WC_Order\|null $order` | Refuse an FFL review submission with a message. |
+| `ffla_product_reviews_form_fields` (action) | `int $product_id`, `string $context` (`product` / `hub`) | Print extra fields in the review forms. |
 | `ffla_product_reviews_card_badges` | `string $html` (''), `WP_Comment $review` | Extra badges printed after *Verified buyer* on a card. Return escaped HTML. |
 | `ffla_helpful_daily_cap` | `int` (200) | Votes per review per calendar day. |
 | `ffla_product_reviews_guest_hourly_limit` | `int` (5) | New guest reviews per IP address per hour through the FFL form. 0 turns the limit off. |
@@ -417,7 +435,7 @@ Uninstall cleanup runs whenever the settings option exists, even if the module w
 
 - Shortcode `[ffla_order_reviews]` (no attributes). The token arrives as `?ffla_ro=` or through the rewrite `/<slug>/<token>/` (query var `ffla_order_review_token`).
 - Bricks element names: `ffla-reviews-rating-badge`, `ffla-reviews-list`, `ffla-review-form`, `ffla-order-review-hub`.
-- Comment meta: `rating`, `ffla_review_quality`, `ffla_review_value`, `ffla_review_criteria_<slug>`, `ffla_helpful_yes`, `ffla_helpful_no`, `ffla_verified_purchase`, `ffla_review_media_ids` (array of attachment IDs), `ffla_is_store_reply`, `_ffla_approved_notified`, `_ffla_reply_notified`. WooCommerce's `verified` is overwritten with the same value as `ffla_verified_purchase` for every product comment posted while the module is on.
+- Comment meta: `rating`, `ffla_review_quality`, `ffla_review_value`, `ffla_review_criteria_<slug>`, `ffla_review_q_<slug>` (answers), `_ffla_store_review_notified`, `ffla_helpful_yes`, `ffla_helpful_no`, `ffla_verified_purchase`, `ffla_review_media_ids` (array of attachment IDs), `ffla_is_store_reply`, `_ffla_approved_notified`, `_ffla_reply_notified`. WooCommerce's `verified` is overwritten with the same value as `ffla_verified_purchase` for every product comment posted while the module is on.
 - Order meta: `_ffla_review_request_scheduled`, `_ffla_review_scheduled_for`, `_ffla_review_bundle_sent`, `_ffla_review_sent_<product ID>`, `_ffla_review_last_sent`, `_ffla_review_reminder_sent`, `_ffla_review_manual_sent`, `_ffla_review_trigger_reached`, `_ffla_review_skipped`, `_ffla_review_bundle_attempts`, `_ffla_review_attempts_<product ID>`, `_ffla_review_reminder_attempts` (failed sends), `_ffla_review_opened`, `_ffla_review_open_count`, `_ffla_review_clicked`, `_ffla_review_click_count`, `_ffla_review_reviewed`, `_ffla_review_first_review`.
 - `Product_Reviews_Email::send_now( $order_id )` sends a request by hand and returns `sent` and `message`; `request_status( $order )` the status shown in the box and the log; `first_send_time( $order )` when the first email would go out.
 - `Product_Reviews_Core::hub_page_ready()` and `requests_ready()` say whether request emails can run; `reviewable_product_ids( $order )` lists the order's products that can still be reviewed.

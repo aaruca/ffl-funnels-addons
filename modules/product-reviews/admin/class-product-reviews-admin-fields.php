@@ -289,10 +289,40 @@ class Product_Reviews_Admin_Fields
                         'fallback' => __('Write a review', 'ffl-funnels-addons'),
                     ],
                     [
+                        'key'      => 'login_url',
+                        'type'     => 'text',
+                        'label'    => __('Log in page', 'ffl-funnels-addons'),
+                        'desc'     => __('Where the “Log in” links on review and Q&A forms go (they come back to the product). Empty uses the WooCommerce My Account page, else the WordPress login.', 'ffl-funnels-addons'),
+                        'sanitize' => static function ($raw): string {
+                            return esc_url_raw(trim((string) $raw));
+                        },
+                    ],
+                ],
+            ],
+            [
+                'title'  => __('Photos and videos', 'ffl-funnels-addons'),
+                'fields' => [
+                    [
                         'key'   => 'allow_media_uploads',
                         'type'  => 'toggle',
                         'label' => __('Allow photo and video uploads', 'ffl-funnels-addons'),
-                        'desc'  => __('Shows the upload field on review forms (up to 3 files, 5 MB each). Reviews with uploads are always held for moderation. Turn off to hide the field everywhere.', 'ffl-funnels-addons'),
+                        'desc'  => __('Shows the upload field on review forms. Reviews with uploads are always held for moderation. Turn off to hide the field everywhere.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'media_max_files',
+                        'type'  => 'number',
+                        'label' => __('Most files per review', 'ffl-funnels-addons'),
+                        'desc'  => __('1 to 10.', 'ffl-funnels-addons'),
+                        'min'   => 1,
+                        'max'   => 10,
+                    ],
+                    [
+                        'key'   => 'media_max_mb',
+                        'type'  => 'number',
+                        'label' => __('Largest file (MB)', 'ffl-funnels-addons'),
+                        'desc'  => __('1 to 50. Your server’s upload limit still applies.', 'ffl-funnels-addons'),
+                        'min'   => 1,
+                        'max'   => 50,
                     ],
                 ],
             ],
@@ -303,7 +333,7 @@ class Product_Reviews_Admin_Fields
                         'key'   => 'enable_criteria',
                         'type'  => 'toggle',
                         'label' => __('Enable secondary rating criteria', 'ffl-funnels-addons'),
-                        'desc'  => __('Adds optional star groups below the overall rating, such as Quality or Value for money.', 'ffl-funnels-addons'),
+                        'desc'  => __('Adds star groups below the overall rating, such as Quality or Value for money.', 'ffl-funnels-addons'),
                     ],
                     [
                         'key'      => 'review_criteria',
@@ -311,28 +341,117 @@ class Product_Reviews_Admin_Fields
                         'label'    => __('Criteria', 'ffl-funnels-addons'),
                         'desc'     => sprintf(
                             /* translators: %d: maximum number of criteria */
-                            __('One per line, written as slug|Label — for example: fit|Fit and finish. The slug is what the score is stored under, so renaming a label keeps existing scores. Removing a criterion hides it without deleting anything; add it back and the old scores reappear. Maximum %d.', 'ffl-funnels-addons'),
+                            __('One per line, written as slug|Label — for example: fit|Fit and finish. Add |required to make reviewers rate it (fit|Fit and finish|required). The slug is what the score is stored under, so renaming a label keeps existing scores. Removing a criterion hides it without deleting anything; add it back and the old scores reappear. Maximum %d.', 'ffl-funnels-addons'),
                             Product_Reviews_Criteria::MAX_CRITERIA
                         ),
                         // Re-serialised from the parsed form so a malformed line
                         // is dropped at save time rather than silently ignored on
                         // every page render.
                         'sanitize' => static function ($raw): string {
-                            $parsed = Product_Reviews_Criteria::parse_definition(sanitize_textarea_field((string) $raw));
-
-                            return implode("\n", array_map(
-                                static function (array $c): string {
-                                    return $c['slug'] . '|' . $c['label'];
-                                },
-                                $parsed
-                            ));
+                            return Product_Reviews_Criteria::serialize_definition(
+                                Product_Reviews_Criteria::parse_definition(sanitize_textarea_field((string) $raw))
+                            );
                         },
                     ],
                 ],
             ],
             [
-                'title'  => __('Cloudflare Turnstile', 'ffl-funnels-addons'),
+                'title'  => __('Questions about the reviewer', 'ffl-funnels-addons'),
+                'desc'   => __('Extra questions on the review form, for example experience level or how the product is used. Public answers show on the review; the others only in wp-admin and the export.', 'ffl-funnels-addons'),
                 'fields' => [
+                    [
+                        'key'      => 'review_questions',
+                        'type'     => 'textarea',
+                        'label'    => __('Questions', 'ffl-funnels-addons'),
+                        'desc'     => sprintf(
+                            /* translators: %d: maximum number of questions */
+                            __('One per line: slug|Label|type|choices|flags. Type is text, select, radio (one choice) or checkbox (several). Choices are comma separated (not for text). Flags, comma separated: required, public (shown on the review), product or hub (only on product forms, or only on the review page from the email). Example: experience|Shooting experience|select|Beginner,Intermediate,Expert|required,public. Maximum %d; malformed lines are dropped on save.', 'ffl-funnels-addons'),
+                            Product_Reviews_Form_Extras::MAX_QUESTIONS
+                        ),
+                        'sanitize' => static function ($raw): string {
+                            Product_Reviews_Form_Extras::flush_memo();
+
+                            return Product_Reviews_Form_Extras::serialize(Product_Reviews_Form_Extras::parse(sanitize_textarea_field((string) $raw)));
+                        },
+                    ],
+                ],
+            ],
+            [
+                'title'  => __('Terms and privacy checkbox', 'ffl-funnels-addons'),
+                'fields' => [
+                    [
+                        'key'   => 'terms_on_reviews',
+                        'type'  => 'toggle',
+                        'label' => __('On review forms', 'ffl-funnels-addons'),
+                        'desc'  => __('Reviewers must tick it to send a review (product pages and the review page from the email).', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'terms_on_qna',
+                        'type'  => 'toggle',
+                        'label' => __('On question and answer forms', 'ffl-funnels-addons'),
+                        'desc'  => '',
+                    ],
+                    [
+                        'key'   => 'terms_text',
+                        'type'  => 'text',
+                        'label' => __('Checkbox text', 'ffl-funnels-addons'),
+                        'desc'  => __('{terms} becomes a link to the page below. Empty uses “I agree to the {terms}.”', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'terms_page_id',
+                        'type'  => 'page',
+                        'label' => __('Page to link', 'ffl-funnels-addons'),
+                        'desc'  => __('Your review guidelines or terms. None uses the privacy policy page from Settings → Privacy.', 'ffl-funnels-addons'),
+                    ],
+                ],
+            ],
+            [
+                'title'  => __('CAPTCHA', 'ffl-funnels-addons'),
+                'desc'   => __('Spam protection on review and Q&A forms (guests only for answers). The review page from the email never shows one: its signed link is the proof. A hidden honeypot field and an hourly limit for guests always apply.', 'ffl-funnels-addons'),
+                'fields' => [
+                    [
+                        'key'     => 'captcha_provider',
+                        'type'    => 'select',
+                        'label'   => __('CAPTCHA', 'ffl-funnels-addons'),
+                        'options' => [
+                            'plugin'       => __('Cloudflare Turnstile through the Simple Cloudflare Turnstile plugin (when active)', 'ffl-funnels-addons'),
+                            'turnstile'    => __('Cloudflare Turnstile with the keys below', 'ffl-funnels-addons'),
+                            'hcaptcha'     => __('hCaptcha with the keys below', 'ffl-funnels-addons'),
+                            'recaptcha_v2' => __('Google reCAPTCHA v2 (checkbox) with the keys below', 'ffl-funnels-addons'),
+                            'recaptcha_v3' => __('Google reCAPTCHA v3 (invisible) with the keys below', 'ffl-funnels-addons'),
+                            'none'         => __('None', 'ffl-funnels-addons'),
+                        ],
+                        'desc'    => __('With keys set here the provider’s script loads only on pages with a review or Q&A form. Get the keys from the provider for this site’s domain.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'captcha_site_key',
+                        'type'  => 'text',
+                        'label' => __('Site key', 'ffl-funnels-addons'),
+                        'desc'  => '',
+                    ],
+                    [
+                        'key'      => 'captcha_secret_key',
+                        'type'     => 'password',
+                        'label'    => __('Secret key', 'ffl-funnels-addons'),
+                        'desc'     => __('Stored in the settings; never shown on the site.', 'ffl-funnels-addons'),
+                        'sanitize' => static function ($raw, $field, $current): string {
+                            $value = trim(sanitize_text_field((string) $raw));
+
+                            // An untouched masked field keeps the saved secret.
+                            return $value === '' ? (string) ($current['captcha_secret_key'] ?? '') : $value;
+                        },
+                    ],
+                    [
+                        'key'      => 'captcha_v3_threshold',
+                        'type'     => 'text',
+                        'label'    => __('reCAPTCHA v3 minimum score', 'ffl-funnels-addons'),
+                        'desc'     => __('0.0 (allow all) to 1.0 (strict). Google suggests 0.5.', 'ffl-funnels-addons'),
+                        'sanitize' => static function ($raw): string {
+                            $score = (float) str_replace(',', '.', (string) $raw);
+
+                            return (string) max(0.0, min(1.0, $score));
+                        },
+                    ],
                     ['type' => 'html', 'html' => self::turnstile_status_html()],
                 ],
             ],
@@ -799,6 +918,35 @@ class Product_Reviews_Admin_Fields
                         'type'  => 'textarea',
                         'label' => __('Message', 'ffl-funnels-addons'),
                         'desc'  => __('Used by the WhatsApp button in the Review request box on the order screen: it opens a chat with the customer’s billing phone with this text filled in, and you press send. Placeholders: {customer_name}, {store_name}, {order_number}, {review_url}.', 'ffl-funnels-addons'),
+                    ],
+                ],
+            ],
+            [
+                'title'  => __('New review emails', 'ffl-funnels-addons'),
+                'fields' => [
+                    [
+                        'key'   => 'notify_store_new_review',
+                        'type'  => 'toggle',
+                        'label' => __('Email the store about new reviews', 'ffl-funnels-addons'),
+                        'desc'  => __('One email per new review with its rating, text, Verified buyer, photos and a link to approve or see it. WordPress’s own comment emails (Settings → Discussion) are separate.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'   => 'notify_store_email',
+                        'type'  => 'email',
+                        'label' => __('Send them to', 'ffl-funnels-addons'),
+                        'desc'  => __('Empty uses the site’s admin email.', 'ffl-funnels-addons'),
+                    ],
+                    [
+                        'key'     => 'notify_store_max_rating',
+                        'type'    => 'select',
+                        'label'   => __('For reviews of', 'ffl-funnels-addons'),
+                        'options' => [
+                            '5' => __('Any rating', 'ffl-funnels-addons'),
+                            '3' => __('3 stars or less', 'ffl-funnels-addons'),
+                            '2' => __('2 stars or less', 'ffl-funnels-addons'),
+                            '1' => __('1 star only', 'ffl-funnels-addons'),
+                        ],
+                        'desc'    => __('For example only low ratings, to answer unhappy customers quickly.', 'ffl-funnels-addons'),
                     ],
                 ],
             ],
@@ -1333,6 +1481,11 @@ class Product_Reviews_Admin_Fields
 
             case 'textarea':
                 FFLA_Admin::render_textarea_field($label, $key, (string) $value, $desc);
+                return;
+
+            case 'password':
+                // The saved secret is never printed back into the page.
+                FFLA_Admin::render_password_field($label, $key, '', $desc . ((string) $value !== '' ? ' ' . __('A secret is saved; leave empty to keep it.', 'ffl-funnels-addons') : ''));
                 return;
 
             case 'color':

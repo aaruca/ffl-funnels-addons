@@ -457,7 +457,8 @@ class Product_Reviews_Qna
         echo '<summary class="ffla-qna__ask-summary">' . esc_html__('Ask a question', 'ffl-funnels-addons') . '</summary>';
 
         if (!self::can_ask(get_current_user_id())) {
-            echo '<p class="ffla-review-form__notice ffla-review-form__notice--info">' . esc_html__('Please log in to ask a question.', 'ffl-funnels-addons') . '</p>';
+            echo '<p class="ffla-review-form__notice ffla-review-form__notice--info">' . esc_html__('Please log in to ask a question.', 'ffl-funnels-addons')
+                . ' ' . Product_Reviews_Frontend_Render::login_link(self::redirect_target($product_id)) . '</p>';
             echo '</details>';
 
             return;
@@ -473,8 +474,8 @@ class Product_Reviews_Qna
         self::render_guest_fields($uid);
         echo '<p class="ffla-review-form__field"><label for="' . esc_attr($uid) . '-q">' . esc_html__('Your question', 'ffl-funnels-addons') . '</label>';
         echo '<textarea id="' . esc_attr($uid) . '-q" name="question" rows="3" required maxlength="1000"></textarea></p>';
-        if (class_exists('Product_Reviews_Turnstile')) {
-            Product_Reviews_Turnstile::render_field('ffla_product_question');
+        if (class_exists('Product_Reviews_Captcha')) {
+            Product_Reviews_Captcha::render_field('ffla_product_question');
         }
         do_action('ffla_product_reviews_qna_form_fields', 'question', $product_id);
         echo '<button class="ffla-review-form__submit" type="submit">' . esc_html__('Send question', 'ffl-funnels-addons') . '</button>';
@@ -495,8 +496,8 @@ class Product_Reviews_Qna
         self::render_guest_fields($uid);
         echo '<p class="ffla-review-form__field"><label for="' . esc_attr($uid) . '-a">' . esc_html__('Your answer', 'ffl-funnels-addons') . '</label>';
         echo '<textarea id="' . esc_attr($uid) . '-a" name="answer" rows="3" required maxlength="2000"></textarea></p>';
-        if (class_exists('Product_Reviews_Turnstile') && !is_user_logged_in()) {
-            Product_Reviews_Turnstile::render_field('ffla_product_answer');
+        if (class_exists('Product_Reviews_Captcha') && !is_user_logged_in()) {
+            Product_Reviews_Captcha::render_field('ffla_product_answer');
         }
         do_action('ffla_product_reviews_qna_form_fields', 'answer', $product_id);
         echo '<button class="ffla-review-form__submit" type="submit">' . esc_html__('Send answer', 'ffl-funnels-addons') . '</button>';
@@ -582,7 +583,7 @@ class Product_Reviews_Qna
             self::back($redirect, $fallback, 'error', __('Security check failed. Please refresh and try again.', 'ffl-funnels-addons'));
         }
 
-        if (!is_user_logged_in() && class_exists('Product_Reviews_Turnstile') && !Product_Reviews_Turnstile::passes()) {
+        if (!is_user_logged_in() && class_exists('Product_Reviews_Captcha') && !Product_Reviews_Captcha::passes()) {
             self::back($redirect, $fallback, 'error', __('Cloudflare validation failed. Please try again.', 'ffl-funnels-addons'));
         }
 

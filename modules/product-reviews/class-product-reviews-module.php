@@ -89,6 +89,9 @@ class Product_Reviews_Module extends FFLA_Module
         require_once $base . 'includes/class-product-reviews-import.php';
         Product_Reviews_Import::init();
 
+        require_once $base . 'includes/class-product-reviews-form-extras.php';
+        Product_Reviews_Form_Extras::init();
+
         require_once $base . 'integrations/class-product-reviews-bricks.php';
         Product_Reviews_Bricks::init();
 
@@ -97,6 +100,7 @@ class Product_Reviews_Module extends FFLA_Module
         // unconditionally so static helpers are always callable, but the class
         // is a no-op until the plugin's cfturnstile_* helpers exist.
         require_once $base . 'integrations/class-product-reviews-turnstile.php';
+        require_once $base . 'includes/class-product-reviews-captcha.php';
 
         if (is_admin()) {
             require_once $base . 'admin/class-product-reviews-admin.php';
@@ -113,6 +117,9 @@ class Product_Reviews_Module extends FFLA_Module
 
             require_once $base . 'admin/class-product-reviews-tools-admin.php';
             (new Product_Reviews_Tools_Admin())->init();
+
+            require_once $base . 'admin/class-product-reviews-review-media-admin.php';
+            (new Product_Reviews_Review_Media_Admin())->init();
         }
     }
 

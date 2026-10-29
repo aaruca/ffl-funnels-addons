@@ -125,6 +125,7 @@ $GLOBALS['nocache']    = 0;
 $GLOBALS['log']        = [];
 
 function __($text, $domain = null) { return $text; }
+function _n($single, $plural, $n, $domain = null) { return 1 === (int) $n ? $single : $plural; }
 function esc_html__($text, $domain = null) { return htmlspecialchars($text, ENT_QUOTES); }
 function esc_attr__($text, $domain = null) { return htmlspecialchars($text, ENT_QUOTES); }
 function esc_html($text) { return htmlspecialchars((string) $text, ENT_QUOTES); }
@@ -141,6 +142,7 @@ function sanitize_title($s) { return strtolower(trim(preg_replace('/[^a-z0-9]+/i
 function sanitize_key($s) { return preg_replace('/[^a-z0-9_\-]/', '', strtolower((string) $s)); }
 function wp_unslash($s) { return $s; }
 function wp_slash($s) { return $s; }
+function wp_login_url($redirect = '') { return 'https://store.test/wp-login.php?redirect_to=' . rawurlencode((string) $redirect); }
 function wp_parse_args($args, $defaults) { return array_merge($defaults, (array) $args); }
 function is_email($email) { return (bool) filter_var($email, FILTER_VALIDATE_EMAIL); }
 function wp_strip_all_tags($s) { return trim(strip_tags((string) $s)); }
@@ -578,6 +580,7 @@ require $module_dir . 'includes/class-product-reviews-consent.php';
 require $module_dir . 'includes/class-product-reviews-tracking.php';
 require $module_dir . 'includes/class-product-reviews-email.php';
 require $module_dir . 'integrations/class-product-reviews-turnstile.php';
+require $module_dir . 'includes/class-product-reviews-captcha.php';
 require $module_dir . 'class-product-reviews-module.php';
 
 Product_Reviews_Order_Hub::init();

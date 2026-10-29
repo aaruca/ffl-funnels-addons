@@ -113,6 +113,7 @@ jobs:
           php tests/smoke/product-reviews-coupons-smoke.php
           php tests/smoke/product-reviews-qna-smoke.php
           php tests/smoke/product-reviews-tools-smoke.php
+          php tests/smoke/product-reviews-form-smoke.php
 
       - name: Validate Google Merchant policy before publishing
         if: ${{ steps.tag.outputs.skip != 'true' }}

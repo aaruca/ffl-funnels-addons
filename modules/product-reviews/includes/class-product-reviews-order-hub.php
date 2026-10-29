@@ -240,16 +240,17 @@ class Product_Reviews_Order_Hub
         self::render_star_fieldset('rating', $uid . '-r', __('Overall rating', 'ffl-funnels-addons'), true, $preset_rating);
 
         if ($show_criteria && \Product_Reviews_Criteria::is_enabled()) {
+            echo '<input type="hidden" name="ffla_criteria_shown" value="1">';
             foreach (\Product_Reviews_Criteria::get_criteria() as $index => $criterion) {
                 self::render_star_fieldset(
                     \Product_Reviews_Criteria::field_name($criterion['slug']),
                     $uid . '-c' . $index,
-                    sprintf(
+                    !empty($criterion['required']) ? $criterion['label'] : sprintf(
                         /* translators: %s: name of a secondary rating criterion, e.g. "Quality" */
                         __('%s (optional)', 'ffl-funnels-addons'),
                         $criterion['label']
                     ),
-                    false
+                    !empty($criterion['required'])
                 );
             }
         }
@@ -266,7 +267,9 @@ class Product_Reviews_Order_Hub
             echo '</div>';
         }
 
-        if (class_exists('\\Product_Reviews_Turnstile') && \Product_Reviews_Turnstile::is_available()) {
+        do_action('ffla_product_reviews_form_fields', $product_id, 'hub');
+
+        if (class_exists('\\Product_Reviews_Captcha') && \Product_Reviews_Captcha::is_available()) {
             echo '<p class="ffla-order-reviews__turnstile-note"><small>'
                 . esc_html__('Security check is not shown here; your signed email link is used instead.', 'ffl-funnels-addons')
                 . '</small></p>';

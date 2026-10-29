@@ -25,6 +25,8 @@ load_module([
     'includes/class-product-reviews-notifications.php',
     'includes/class-product-reviews-email.php',
     'integrations/class-product-reviews-turnstile.php',
+    'includes/class-product-reviews-captcha.php',
+    'includes/class-product-reviews-form-extras.php',
     'admin/class-product-reviews-admin.php',
 ]);
 

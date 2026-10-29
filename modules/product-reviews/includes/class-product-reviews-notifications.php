@@ -29,6 +29,9 @@ class Product_Reviews_Notifications
 
     const STORE_REPLY_META = 'ffla_is_store_reply';
 
+    /** On a review: the store was told about it. */
+    const STORE_NOTIFIED_META = '_ffla_store_review_notified';
+
     public static function init(): void
     {
         add_action('transition_comment_status', [__CLASS__, 'on_comment_status_transition'], 10, 3);
@@ -262,6 +265,10 @@ class Product_Reviews_Notifications
         self::maybe_flag_store_reply($comment);
         Product_Reviews_Core::flush_product_review_caches((int) $comment->comment_post_ID);
 
+        if (!in_array((string) $comment_approved, ['spam', 'trash'], true)) {
+            self::maybe_notify_store($comment);
+        }
+
         if (1 === (int) $comment_approved) {
             self::maybe_notify_reply($comment);
         }
@@ -439,6 +446,84 @@ class Product_Reviews_Notifications
         );
 
         self::send($to, $subject, $body, $reply_id, self::REPLY_NOTIFIED_META, 'reply');
+    }
+
+    /**
+     * Emails → New review emails: the store hears about every new review
+     * (or only low ratings), with the rating, the text, whether it waits for
+     * approval and a link to it.
+     */
+    private static function maybe_notify_store(\WP_Comment $review): void
+    {
+        if ('1' !== Product_Reviews_Core::get_setting('notify_store_new_review', '0') || !self::is_product_review($review) || (int) $review->comment_parent > 0) {
+            return;
+        }
+
+        $review_id = (int) $review->comment_ID;
+        if (get_comment_meta($review_id, self::STORE_NOTIFIED_META, true)) {
+            return;
+        }
+
+        $rating = (int) get_comment_meta($review_id, 'rating', true);
+        $max    = max(1, min(5, absint(Product_Reviews_Core::get_setting('notify_store_max_rating', '5')) ?: 5));
+        if ($rating > $max) {
+            return;
+        }
+
+        $to = sanitize_email((string) Product_Reviews_Core::get_setting('notify_store_email', ''));
+        if (!is_email($to)) {
+            $to = (string) get_option('admin_email');
+        }
+        if (!is_email($to)) {
+            return;
+        }
+
+        $product_id = (int) $review->comment_post_ID;
+        $product    = function_exists('wc_get_product') ? wc_get_product($product_id) : null;
+        $name       = $product ? $product->get_name() : get_the_title($product_id);
+        $held       = '1' !== (string) $review->comment_approved;
+        $media      = get_comment_meta($review_id, 'ffla_review_media_ids', true);
+        $media      = is_array($media) ? count($media) : 0;
+
+        $lines = [
+            sprintf(
+                /* translators: 1: reviewer name, 2: product name */
+                __('%1$s reviewed %2$s.', 'ffl-funnels-addons'),
+                (string) $review->comment_author,
+                $name
+            ),
+            '',
+            $rating > 0 ? sprintf(
+                /* translators: %d: star rating 1-5 */
+                __('Rating: %d of 5 stars', 'ffl-funnels-addons'),
+                $rating
+            ) : __('Rating: none', 'ffl-funnels-addons'),
+            Product_Reviews_Core::is_verified_purchase($review_id) ? __('Verified buyer: yes', 'ffl-funnels-addons') : __('Verified buyer: no', 'ffl-funnels-addons'),
+        ];
+        if ($media > 0) {
+            $lines[] = sprintf(
+                /* translators: %d: number of files */
+                _n('%d photo or video attached', '%d photos or videos attached', $media, 'ffl-funnels-addons'),
+                $media
+            );
+        }
+        $lines[] = '';
+        $lines[] = wp_strip_all_tags((string) $review->comment_content);
+        $lines[] = '';
+        $lines[] = $held
+            ? __('It waits for your approval:', 'ffl-funnels-addons') . "\n" . Product_Reviews_Core::reviews_admin_url('moderated')
+            : __('It is published:', 'ffl-funnels-addons') . "\n" . get_permalink($product_id) . '#review-' . $review_id;
+
+        $subject = sprintf(
+            /* translators: 1: star rating, 2: product name */
+            __('New %1$s-star review of %2$s', 'ffl-funnels-addons'),
+            $rating > 0 ? (string) $rating : '–',
+            $name
+        );
+
+        if (wp_mail($to, $subject, implode("\n", $lines), self::mail_headers())) {
+            update_comment_meta($review_id, self::STORE_NOTIFIED_META, 1);
+        }
     }
 
     /**
