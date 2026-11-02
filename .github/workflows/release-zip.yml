@@ -134,6 +134,7 @@ jobs:
           php tests/smoke/pickup-shipping-native-conflict-smoke.php
           php tests/smoke/pickup-shipping-smoke.php missing-provider
           php tests/smoke/pickup-shipping-transitions-smoke.php
+          php tests/smoke/pickup-shipping-ship-to-smoke.php
 
       - name: Validate the other modules before publishing
         if: ${{ steps.tag.outputs.skip != 'true' }}

@@ -92,6 +92,16 @@ class Pickup_Shipping_Admin
                     <div class="ffla-ps-grid">
                         <?php self::field('store_name',__('Store name','ffl-funnels-addons'),$s); self::field('store_address',__('Pickup address','ffl-funnels-addons'),$s,true); self::field('instructions',__('Pickup instructions','ffl-funnels-addons'),$s,true); ?>
                     </div>
+                    <?php $ship_to = Pickup_Shipping_Checkout::store_ship_to(); ?>
+                    <div class="ffla-ps-alert" id="ffla-ps-ship-to">
+                        <strong><?php esc_html_e('Ship-to address on store pickup orders','ffl-funnels-addons'); ?></strong>
+                        <?php if ($ship_to): ?>
+                            <p><?php echo esc_html(implode(', ', array_filter([$ship_to['company'] ?? '', $ship_to['address_1'] ?? '', $ship_to['address_2'] ?? '', $ship_to['city'] ?? '', trim(($ship_to['state'] ?? '') . ' ' . ($ship_to['postcode'] ?? '')), $ship_to['country'] ?? ''], 'strlen'))); ?></p>
+                            <p><?php esc_html_e('Store pickup orders get this address as their shipping address, with the customer\'s name, so the order screen and order list show the store instead of a copy of the billing address. The street comes from the store address in WooCommerce → Settings → General; the company is the Store name above. Orders with an FFL dealer keep the dealer address from g-FFL Checkout.','ffl-funnels-addons'); ?></p>
+                        <?php else: ?>
+                            <p><?php esc_html_e('No complete store address found. Fill in the store address, city and country in WooCommerce → Settings → General. Until then store pickup orders keep the address WooCommerce copied from billing.','ffl-funnels-addons'); ?></p>
+                        <?php endif; ?>
+                    </div>
                 </section>
                 <section class="ffla-ps-panel" id="ps-panel-ffl" data-ps-panel="ffl">
                     <h3><?php esc_html_e('FFL delivery rules','ffl-funnels-addons'); ?></h3>

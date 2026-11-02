@@ -15,6 +15,8 @@ class Pickup_Shipping_Checkout
         add_filter('woocommerce_shipping_packages', [__CLASS__,'sync_packages'], 999);
         add_action('woocommerce_after_checkout_validation', [__CLASS__,'validate'], 999, 2);
         add_action('woocommerce_checkout_create_order_shipping_item', [__CLASS__,'shipping_meta'], 20, 4);
+        // After g-FFL Checkout saves the selected dealer (priority 10).
+        add_action('woocommerce_checkout_create_order', [__CLASS__,'pickup_ship_to'], 50, 2);
         add_action('woocommerce_checkout_billing', [__CLASS__,'automatic'], 5);
         add_shortcode('ffla_delivery_choice', [__CLASS__,'shortcode']);
         add_filter('woocommerce_update_order_review_fragments', [__CLASS__,'fragments']);
@@ -294,6 +296,8 @@ class Pickup_Shipping_Checkout
         if (!in_array($mode,['pickup','ship'],true)) { return; }
         $item->add_meta_data('_ffla_delivery', [
             'mode'=>$mode,
+            // `customer` (the delivery cards) or `ffl` (the selected dealer).
+            'reason'=>is_string($decision['reason'] ?? null) ? $decision['reason'] : '',
             'name'=>$mode === 'pickup' ? ($decision['location']['name'] ?? $s['store_name']) : '',
             'address'=>$mode === 'pickup' ? ($decision['location']['address'] ?? $s['store_address']) : '',
             'instructions'=>$mode === 'pickup' ? ($decision['location']['instructions'] ?? $s['instructions']) : '',
@@ -309,6 +313,68 @@ class Pickup_Shipping_Checkout
                 }
             }
         }
+    }
+    /**
+     * Store pickup orders get the store as their ship-to address.
+     *
+     * The classic checkout copies billing into shipping when "Ship to a
+     * different address" is unchecked, also for Local pickup, so the order
+     * screen and order list showed the customer's home as the ship-to. Only
+     * orders whose every shipping line is a store pickup chosen with the
+     * delivery cards are changed. An order with an FFL dealer keeps the
+     * dealer address g-FFL Checkout writes (for the store's own FFL that is
+     * already the store). Billing is never touched.
+     */
+    public static function pickup_ship_to($order, $data = []): void
+    {
+        if (!self::active() || !is_object($order) || !is_callable([$order,'get_shipping_methods']) || !is_callable([$order,'set_address'])) { return; }
+        $lines = $order->get_shipping_methods();
+        if (!$lines) { return; }
+        foreach ($lines as $item) {
+            $delivery = is_object($item) && is_callable([$item,'get_meta']) ? $item->get_meta('_ffla_delivery') : null;
+            if (!is_array($delivery) || ($delivery['mode'] ?? '') !== 'pickup' || ($delivery['reason'] ?? '') === 'ffl') { return; }
+        }
+        if (trim((string) $order->get_meta('_shipping_fflno')) !== '') { return; }
+        $address = self::store_ship_to($order);
+        if ($address) { $order->set_address($address, 'shipping'); }
+    }
+    /**
+     * The ship-to address used for store pickup: the customer's name, the
+     * pickup location name as company, and WooCommerce's store address
+     * (Settings > General). Empty when that store address is incomplete, so
+     * an order is never given a partial address.
+     */
+    public static function store_ship_to($order = null): array
+    {
+        $countries = function_exists('WC') && WC() && isset(WC()->countries) && is_object(WC()->countries) ? WC()->countries : null;
+        if (!$countries) { return []; }
+        $s = Pickup_Shipping_Settings::get();
+        $name = function (string $field) use ($order): string {
+            if (!is_object($order)) { return ''; }
+            foreach (['get_shipping_' . $field,'get_billing_' . $field] as $getter) {
+                $value = is_callable([$order,$getter]) ? trim((string) $order->$getter()) : '';
+                if ($value !== '') { return $value; }
+            }
+            return '';
+        };
+        $company = trim((string) $s['store_name']);
+        if ($company === '' && function_exists('get_bloginfo')) { $company = wp_specialchars_decode((string) get_bloginfo('name'), ENT_QUOTES); }
+        $address = [
+            'first_name'=>$name('first_name'), 'last_name'=>$name('last_name'), 'company'=>$company,
+            'address_1'=>(string) $countries->get_base_address(), 'address_2'=>(string) $countries->get_base_address_2(),
+            'city'=>(string) $countries->get_base_city(), 'state'=>(string) $countries->get_base_state(),
+            'postcode'=>(string) $countries->get_base_postcode(), 'country'=>(string) $countries->get_base_country(),
+        ];
+        if (trim($address['address_1']) === '' || trim($address['city']) === '' || trim($address['country']) === '') { return []; }
+        /**
+         * Change or cancel the ship-to written on store pickup orders.
+         *
+         * @param array          $address WooCommerce shipping address keys (first_name … country).
+         * @param WC_Order|null  $order   The order being created; null on the settings screen.
+         * @return array Return an empty array to leave the order's shipping address unchanged.
+         */
+        $address = apply_filters('ffla_pickup_shipping_ship_to_address', $address, $order);
+        return is_array($address) ? $address : [];
     }
     public static function automatic(): void
     {
