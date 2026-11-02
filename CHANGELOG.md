@@ -4,6 +4,15 @@ All notable changes to FFL Funnels Addons are documented in this file.
 
 ## [Unreleased]
 
+## [1.56.1] - 2026-11-02
+
+### Fixed
+- **Sales Tax Reports:** previewing a long period (for example year to date) could end in "There has been a critical error on this website". Every order, item, meta row and term a report read stayed in WordPress's in-memory object cache until the end of the request, so paging did not bound memory: on a live store with about 3,000 orders in the period (legacy order storage, no persistent object cache) the Nexus Monitor and the filing report peaked at about 850 MB against a 512 MB limit. The order and refund scans now release that per-request cache after each page (`wp_cache_flush_runtime()`); a persistent object cache keeps its data. The same report now peaks at about 390 MB, with identical totals.
+
+### Changed
+- **Sales Tax Reports:** the Nexus Monitor follows the **States** filter like the other tabs. With states selected it lists only those states (a note above the results says so); leave the filter empty to monitor every state, as before. `Tax_Nexus_Monitor::normalize_filters()` now also returns `states`, and the monitor's stats count `orders_skipped_state_filter` and `refunds_skipped_state_filter`.
+- **Sales Tax Reports:** `tests/smoke/tax-split-payment-smoke.php` checks that the object cache is released after every order and refund page and that the Nexus Monitor honours the States filter.
+
 ## [1.56.0] - 2026-10-29
 
 Product Reviews: the features of Customer Reviews for WooCommerce (free and Pro) this store needs, built into the module, in English only; Smart Coupons: recurring coupon schedules. Coupons, Q&A, the second reminder, the checkout consent checkbox, the extra form fields and store emails about new reviews are off by default. On by default, and visible on update: HTML request emails, reviewer names as *Ann B.*, initials avatars, the list toolbar and *Show more*, the photo lightbox, open and click tracking, and product identifiers and review photos in the structured data.

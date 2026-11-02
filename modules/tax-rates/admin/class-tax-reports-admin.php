@@ -1099,6 +1099,14 @@ class Tax_Reports_Admin
         $summary = (array) ($result['summary'] ?? []);
         $dataset = (array) ($result['dataset'] ?? []);
         echo '<p class="ffla-tax-report-callout">' . esc_html((string) ($result['revenue_measure']['split_payment_basis'] ?? '')) . '</p>';
+        $selected_states = (array) ($result['filters']['states'] ?? []);
+        if (!empty($selected_states)) {
+            echo '<p class="ffla-tax-report-callout">' . esc_html(sprintf(
+                /* translators: %s: comma-separated state codes. */
+                __('Showing only the selected states: %s. Clear the States filter to monitor every state.', 'ffl-funnels-addons'),
+                implode(', ', $selected_states)
+            )) . '</p>';
+        }
         echo '<div class="ffla-tax-report-kpis">';
         self::render_kpi(__('States with sales', 'ffl-funnels-addons'), (string) ($summary['states_with_transactions'] ?? 0));
         self::render_kpi(__('Threshold exceeded', 'ffl-funnels-addons'), (string) ($summary['states_actual_threshold_exceeded'] ?? 0));

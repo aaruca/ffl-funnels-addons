@@ -2384,6 +2384,8 @@ class Tax_Report_Service
                 }
                 $this->aggregate_exceptions($exception_totals, [$exception]);
             }
+            unset($refunds, $result, $refund, $order);
+            Tax_Report_Sale_Identity::release_memory();
             $page++;
         } while ($page <= $pages);
     }
