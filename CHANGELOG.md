@@ -4,6 +4,16 @@ All notable changes to FFL Funnels Addons are documented in this file.
 
 ## [Unreleased]
 
+## [1.56.1] - 2026-11-02
+
+### Fixed
+- **Sales Tax Reports:** previewing a long period (a year to check nexus thresholds, or year to date) could end in "There has been a critical error on this website". On ga-guns.com (about 3,000 orders year to date, legacy order storage, no persistent object cache) the Nexus tab and the filing report ran out of PHP memory (`Allowed memory size of 536870912 bytes exhausted`), peaking at about 850 MB: every order, item, meta row and term a report read stayed in WordPress's in-memory object cache until the end of the request, so paging did not bound memory. The order and refund scans now release that per-request cache after each page (`wp_cache_flush_runtime()`; a persistent object cache keeps its data); measured on the store, the same report peaks at about 390 MB with identical totals.
+- **Sales Tax Reports:** long periods also no longer load every order twice: the paid-date pass, which only adds Split Payment receipts created before the period, asks for order IDs and loads only orders the creation-date pass did not see. Only orders that belong in the report count toward the order safety cap, so the failed, cancelled and pending orders scanned for Split Payment receipts (card-testing attacks leave thousands) no longer stop a year's report; a scan ceiling of ten times the cap still bounds the work. PHP's time limit is lifted while a report or the Nexus Monitor runs. Report figures are unchanged.
+
+### Changed
+- **Sales Tax Reports:** the Nexus Monitor follows the **States** filter like the other tabs. With states selected it lists only those states (a note above the results says so); leave the filter empty to monitor every state, as before. `Tax_Nexus_Monitor::normalize_filters()` now also returns `states`, and the monitor's stats count `orders_skipped_state_filter` and `refunds_skipped_state_filter`.
+- **Sales Tax Reports:** `tests/smoke/tax-split-payment-smoke.php` checks that the object cache is released after every order and refund page, that the paid-date pass reuses what the first pass loaded, that failed ordinary orders do not trip the cap, that the time limit is lifted, and that the Nexus Monitor honours the States filter.
+
 ## [1.56.0] - 2026-10-29
 
 Product Reviews: the features of Customer Reviews for WooCommerce (free and Pro) this store needs, built into the module, in English only; Smart Coupons: recurring coupon schedules. Coupons, Q&A, the second reminder, the checkout consent checkbox, the extra form fields and store emails about new reviews are off by default. On by default, and visible on update: HTML request emails, reviewer names as *Ann B.*, initials avatars, the list toolbar and *Show more*, the photo lightbox, open and click tracking, and product identifiers and review photos in the structured data.
