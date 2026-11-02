@@ -4,6 +4,9 @@ class Pickup_Shipping_Checkout
 {
     const SESSION = 'ffla_pickup_shipping_state';
     const AVAILABLE = 'ffla_pickup_shipping_available';
+    /** Order meta: `store` while the order's ship-to is the store pickup address. */
+    const SHIP_TO_META = '_ffla_pickup_ship_to';
+    const ADDRESS_KEYS = ['first_name','last_name','company','address_1','address_2','city','state','postcode','country','phone'];
     private static $posted = [];
     private static $rendered = false;
     public static function init(): void
@@ -327,29 +330,63 @@ class Pickup_Shipping_Checkout
      */
     public static function pickup_ship_to($order, $data = []): void
     {
-        if (!self::active() || !is_object($order) || !is_callable([$order,'get_shipping_methods']) || !is_callable([$order,'set_address'])) { return; }
+        if (!self::active() || !is_object($order) || !is_callable([$order,'get_shipping_methods']) || !is_callable([$order,'get_meta'])) { return; }
+        $address = self::qualifies_for_store_ship_to($order) ? self::store_ship_to($order) : [];
+        if ($address) {
+            self::set_shipping($order, $address);
+            $order->update_meta_data(self::SHIP_TO_META, 'store');
+            return;
+        }
+        // WooCommerce resumes the pending order after a failed payment when the
+        // cart is unchanged, and resets only the shipping fields the checkout
+        // shows. If that order got the store earlier and now ships, give the
+        // fields the form did not send (a hidden Company or Address line 2,
+        // the phone) back from billing, so no store detail stays behind.
+        if ($order->get_meta(self::SHIP_TO_META) !== 'store') { return; }
+        $data = is_array($data) ? $data : [];
+        $restore = [];
+        foreach (self::ADDRESS_KEYS as $key) {
+            if (array_key_exists('shipping_' . $key, $data)) { continue; }
+            $getter = 'get_billing_' . $key;
+            $restore[$key] = is_callable([$order,$getter]) ? (string) $order->$getter() : '';
+        }
+        self::set_shipping($order, $restore);
+        if (is_callable([$order,'delete_meta_data'])) { $order->delete_meta_data(self::SHIP_TO_META); }
+    }
+    /** Every shipping line is a store pickup chosen with the cards, and no FFL dealer was selected. */
+    private static function qualifies_for_store_ship_to($order): bool
+    {
         $lines = $order->get_shipping_methods();
-        if (!$lines) { return; }
+        if (!$lines) { return false; }
         foreach ($lines as $item) {
             $delivery = is_object($item) && is_callable([$item,'get_meta']) ? $item->get_meta('_ffla_delivery') : null;
-            if (!is_array($delivery) || ($delivery['mode'] ?? '') !== 'pickup' || ($delivery['reason'] ?? '') === 'ffl') { return; }
+            if (!is_array($delivery) || ($delivery['mode'] ?? '') !== 'pickup' || ($delivery['reason'] ?? '') === 'ffl') { return false; }
         }
-        if (trim((string) $order->get_meta('_shipping_fflno')) !== '') { return; }
-        $address = self::store_ship_to($order);
-        if ($address) { $order->set_address($address, 'shipping'); }
+        // g-FFL Checkout saves the selected dealer at priority 10 and owns that address.
+        return trim((string) $order->get_meta('_shipping_fflno')) === '';
+    }
+    /** Write through the order's own setters (WC_Order::set_address() is legacy and writes post meta). */
+    private static function set_shipping($order, array $address): void
+    {
+        foreach ($address as $key=>$value) {
+            // Only address fields, whatever a filter returned.
+            if (!in_array($key, self::ADDRESS_KEYS, true)) { continue; }
+            $setter = 'set_shipping_' . $key;
+            if (is_callable([$order,$setter])) { $order->$setter(is_scalar($value) ? (string) $value : ''); }
+        }
     }
     /**
-     * The ship-to address used for store pickup: the customer's name, the
-     * pickup location name as company, and WooCommerce's store address
-     * (Settings > General). Empty when that store address is incomplete, so
-     * an order is never given a partial address.
+     * The ship-to address used for store pickup: the customer's name and
+     * phone (shipping, else billing), the pickup location name as company,
+     * and WooCommerce's store address (Settings > General). Empty when that
+     * store address is incomplete, so an order is never given a partial address.
      */
     public static function store_ship_to($order = null): array
     {
         $countries = function_exists('WC') && WC() && isset(WC()->countries) && is_object(WC()->countries) ? WC()->countries : null;
         if (!$countries) { return []; }
         $s = Pickup_Shipping_Settings::get();
-        $name = function (string $field) use ($order): string {
+        $customer = function (string $field) use ($order): string {
             if (!is_object($order)) { return ''; }
             foreach (['get_shipping_' . $field,'get_billing_' . $field] as $getter) {
                 $value = is_callable([$order,$getter]) ? trim((string) $order->$getter()) : '';
@@ -360,10 +397,11 @@ class Pickup_Shipping_Checkout
         $company = trim((string) $s['store_name']);
         if ($company === '' && function_exists('get_bloginfo')) { $company = wp_specialchars_decode((string) get_bloginfo('name'), ENT_QUOTES); }
         $address = [
-            'first_name'=>$name('first_name'), 'last_name'=>$name('last_name'), 'company'=>$company,
+            'first_name'=>$customer('first_name'), 'last_name'=>$customer('last_name'), 'company'=>$company,
             'address_1'=>(string) $countries->get_base_address(), 'address_2'=>(string) $countries->get_base_address_2(),
             'city'=>(string) $countries->get_base_city(), 'state'=>(string) $countries->get_base_state(),
             'postcode'=>(string) $countries->get_base_postcode(), 'country'=>(string) $countries->get_base_country(),
+            'phone'=>$customer('phone'),
         ];
         if (trim($address['address_1']) === '' || trim($address['city']) === '' || trim($address['country']) === '') { return []; }
         /**

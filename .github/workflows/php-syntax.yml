@@ -26,6 +26,27 @@ jobs:
       - name: Check cart consolidation and purchase attribution
         run: php tests/smoke/woobooster-attribution-smoke.php
 
+  pickup-shipping-php:
+    name: Pickup & Shipping (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['7.4', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - name: Pickup, ship-to and coupon address checks
+        run: |
+          set -e
+          php tests/smoke/pickup-shipping-smoke.php
+          php tests/smoke/pickup-shipping-smoke.php missing-provider
+          php tests/smoke/pickup-shipping-ship-to-smoke.php
+          php tests/smoke/smart-coupons-pickup-address-smoke.php
+          php tests/smoke/smart-coupons-pickup-address-smoke.php
+
   lint:
     runs-on: ubuntu-latest
     steps:
