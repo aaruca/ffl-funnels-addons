@@ -11,7 +11,7 @@ function esc_html_e($s,$d=''){echo esc_html($s);} function esc_attr_e($s,$d=''){
 function selected($a,$b,$echo=true){$s=$a==$b?'selected':'';if($echo)echo $s;return $s;}
 function checked($a,$b=true,$echo=true){$s=$a==$b?'checked':'';if($echo)echo $s;return $s;}
 function disabled($a,$b=true,$echo=true){$s=$a==$b?'disabled':'';if($echo)echo $s;return $s;}
-function add_action($n,$c,$p=10,$a=1){$GLOBALS['hooks'][$n][]=$c;}
+function add_action($n,$c,$p=10,$a=1){$GLOBALS['hooks'][$n][]=$c;$GLOBALS['hook_priorities'][$n][]=[$c,$p];}
 function add_filter($n,$c,$p=10,$a=1){$GLOBALS['hooks'][$n][]=$c;}
 function add_shortcode($n,$c){$GLOBALS['hooks'][$n][]=$c;}
 function apply_filters($n,$v,...$a){foreach($GLOBALS['hooks'][$n]??[] as $callback){$v=$callback($v,...$a);}return $v;}
