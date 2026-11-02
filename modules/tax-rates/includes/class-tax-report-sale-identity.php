@@ -105,6 +105,22 @@ class Tax_Report_Sale_Identity
         return $result;
     }
 
+    /**
+     * Drop what the last page of orders loaded into the in-memory object cache.
+     *
+     * WooCommerce caches every order, item, item meta, post meta and term it
+     * reads for the rest of the request. Paging alone therefore does not bound
+     * memory: a year-to-date report on a few thousand legacy-storage orders
+     * exceeded a 512 MB limit. Only the per-request copy is flushed; a
+     * persistent object cache keeps its data.
+     */
+    public static function release_memory(): void
+    {
+        if (function_exists('wp_cache_supports') && function_exists('wp_cache_flush_runtime') && wp_cache_supports('flush_runtime')) {
+            wp_cache_flush_runtime();
+        }
+    }
+
     public function counts_in_period(array $identity, int $from, int $to): bool
     {
         return !$identity['managed'] || (!$identity['issues'] && $identity['recognized_at'] >= $from && $identity['recognized_at'] <= $to);
@@ -179,23 +195,10 @@ class Tax_Report_Sale_Identity
                     if (++$yielded > $cap) { throw new RuntimeException('The report reached its order scan safety cap. Narrow the date range.'); }
                     yield ['order' => $order, 'identity' => $identity];
                 }
-                unset($orders, $result);
+                unset($orders, $result, $order);
                 self::release_memory();
                 $page++;
             } while ($page <= $pages);
-        }
-    }
-
-    /**
-     * Drop what the last page of orders put in the in-memory object cache
-     * (orders, items, meta). Also called after each page of refunds. Without it a year of orders stays in memory until
-     * the request ends. Only where the cache supports it; a persistent cache
-     * keeps its stored copy.
-     */
-    public static function release_memory(): void
-    {
-        if (function_exists('wp_cache_supports') && function_exists('wp_cache_flush_runtime') && wp_cache_supports('flush_runtime')) {
-            wp_cache_flush_runtime();
         }
     }
 }

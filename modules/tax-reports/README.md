@@ -162,7 +162,7 @@ Compares the report's tax totals with WooCommerce's own: total tax, product and 
 
 ### Nexus monitor
 
-- Uses the report's period, statuses and negative-order setting, not its **States** filter.
+- Uses the report's period, statuses, negative-order setting and **States** filter: with states selected it lists only those states (a note above the results says so); with the filter empty it monitors every state.
 - **Revenue** per state is order totals minus collected tax, net of refunds created in the period (refunded tax excluded). Shipping and fees are included. Revenue can be customised with filters.
 - **Transactions** are sales counted, so a Split Payment sale counts once.
 - The state is the shipping state, else the billing state. Local pickup orders count in the store's state, as in the filing report.

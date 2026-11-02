@@ -95,11 +95,25 @@ final class Tax_Nexus_Monitor
         $forecast_requested = !empty($options['forecast']);
         $forecast_applied = $forecast_requested && $observed_days > 0 && $observed_days < $period_days;
 
+        // An optional state filter limits the monitor to the states selected
+        // in the report filters; an empty filter keeps every state.
+        $state_filter = array_fill_keys($filters['states'], true);
+        $state_selected = static function (string $state) use ($state_filter): bool {
+            return empty($state_filter) || isset($state_filter[$state]);
+        };
+
         $buckets = [];
         foreach ($dataset['states'] as $state => $threshold) {
-            $buckets[$state] = $this->new_bucket($state, $threshold);
+            if ($state_selected($state)) {
+                $buckets[$state] = $this->new_bucket($state, $threshold);
+            }
         }
-        if ($home['country'] === 'US' && $home['state'] !== '' && !isset($buckets[$home['state']])) {
+        foreach (array_keys($state_filter) as $state) {
+            if (!isset($buckets[$state]) && $this->is_us_state_code($state)) {
+                $buckets[$state] = $this->new_bucket($state, $this->unknown_threshold($state));
+            }
+        }
+        if ($home['country'] === 'US' && $home['state'] !== '' && !isset($buckets[$home['state']]) && $state_selected($home['state'])) {
             $buckets[$home['state']] = $this->new_bucket(
                 $home['state'],
                 $this->unknown_threshold($home['state'])
@@ -113,7 +127,9 @@ final class Tax_Nexus_Monitor
             'orders_skipped_invalid'    => 0,
             'orders_country_inferred'   => 0,
             'orders_skipped_negative'   => 0,
+            'orders_skipped_state_filter' => 0,
             'refunds_processed'         => 0,
+            'refunds_skipped_state_filter' => 0,
             'refunds_skipped_invalid'   => 0,
             'pages_processed'           => 0,
             'max_records'               => $max_records,
@@ -157,6 +173,10 @@ final class Tax_Nexus_Monitor
                     }
 
                     $state = $destination['state'];
+                    if (!$state_selected($state)) {
+                        $stats['orders_skipped_state_filter']++;
+                        continue;
+                    }
                     if (!isset($buckets[$state])) {
                         $buckets[$state] = $this->new_bucket($state, $this->unknown_threshold($state));
                     }
@@ -244,6 +264,10 @@ final class Tax_Nexus_Monitor
                         continue;
                     }
                     $state = $destination['state'];
+                    if (!$state_selected($state)) {
+                        $stats['refunds_skipped_state_filter']++;
+                        continue;
+                    }
                     if (!isset($buckets[$state])) {
                         $buckets[$state] = $this->new_bucket($state, $this->unknown_threshold($state));
                     }
@@ -268,7 +292,7 @@ final class Tax_Nexus_Monitor
                     $buckets[$state]['sales_by_currency_minor'][$currency] -= $this->to_minor($refund_revenue, $money_decimals);
                     $stats['refunds_processed']++;
                 }
-                unset($refunds, $result);
+                unset($refunds, $result, $refund, $parent);
                 Tax_Report_Sale_Identity::release_memory();
                 $page++;
             } while ($page <= $pages);
@@ -413,10 +437,25 @@ final class Tax_Nexus_Monitor
             throw new InvalidArgumentException('Select at least one WooCommerce order status.');
         }
 
+        $requested_states = $filters['states'] ?? [];
+        if (is_string($requested_states)) {
+            $requested_states = preg_split('/[\s,]+/', $requested_states, -1, PREG_SPLIT_NO_EMPTY);
+        }
+        $states = [];
+        foreach ((array) $requested_states as $state) {
+            $state = strtoupper(trim((string) $state));
+            if (preg_match('/^[A-Z]{2}$/', $state)) {
+                $states[] = $state;
+            }
+        }
+        $states = array_values(array_unique($states));
+        sort($states);
+
         return [
             'date_from' => $date_from,
             'date_to'   => $date_to,
             'statuses'  => $statuses,
+            'states'    => $states,
             'include_negative_orders' => !empty($filters['include_negative_orders']),
         ];
     }

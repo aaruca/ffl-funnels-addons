@@ -295,6 +295,25 @@ check($thrown,'Manual-paid status without date requires review');
 $two->status='completed';$two->paid=new DateTimeImmutable('2026-02-03',wp_timezone());
 $ordinaryCancelled=fixture(112,'2026-01-05','2026-01-06');$ordinaryCancelled->meta=[];$ordinaryCancelled->status='cancelled';$orders[112]=$ordinaryCancelled;
 check(report()['stats']['receipt_orders']===3,'Extra scan statuses never include excluded ordinary cancelled orders');unset($orders[112]);
+// Each page of orders and refunds releases the request object cache, so long
+// periods cannot exhaust PHP memory (one-page-per-record here).
+$GLOBALS['cache_flushes']=0;$queries=[];nexus('2026-01-01','2026-04-30');
+check($GLOBALS['cache_flushes']===count($queries) && count($queries)>3,'Nexus releases the object cache after every order and refund page');
+$GLOBALS['cache_flushes']=0;$queries=[];report('2026-01-01','2026-04-30');
+check($GLOBALS['cache_flushes']===count($queries),'Filing report releases the object cache after every order and refund page');
+
+// The nexus monitor honours the States filter; an empty filter keeps every state.
+$fl=fixture(113,'2026-01-07','2026-01-07',113,40);$fl->meta=[];$fl->status='completed';$fl->state='FL';$orders[113]=$fl;
+$nexusStates=function(array $states){$r=(new Tax_Nexus_Monitor())->generate(['date_from'=>'2026-01-01','date_to'=>'2026-04-30','states'=>$states],['as_of'=>'2026-04-30','timezone'=>wp_timezone(),'home_country'=>'US','home_state'=>'GA','page_size'=>1]);$out=[];foreach($r['states'] as $s){$out[$s['state']]=$s;}return [$r,$out];};
+[$all,$allStates]=$nexusStates([]);
+check(count($allStates)>2 && isset($allStates['FL'],$allStates['GA']),'Empty States filter keeps every state');
+[$ga,$gaStates]=$nexusStates(['ga']);
+check(array_keys($gaStates)===['GA'] && $ga['filters']['states']===['GA'],'States filter limits nexus to the selected state');
+check($gaStates['GA']['actual_revenue']===$allStates['GA']['actual_revenue'] && $gaStates['GA']['actual_transactions']===$allStates['GA']['actual_transactions'],'Filtered state totals match the unfiltered monitor');
+check($ga['stats']['orders_skipped_state_filter']===1 && $ga['summary']['states_reported']===1,'Out-of-filter orders are counted as skipped');
+[$fla,$flaStates]=$nexusStates(['FL']);
+check(array_keys($flaStates)===['FL'] && (float)$flaStates['FL']['actual_revenue']===40.0 && $fla['stats']['refunds_skipped_state_filter']===1,'Home state and refunds outside the filter are excluded');
+unset($orders[113]);
 
 // Large ranges (a full year to check nexus): the paid-date pass reuses what the
 // first pass loaded, failed ordinary orders do not trip the cap, memory is freed
