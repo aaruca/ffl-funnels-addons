@@ -224,7 +224,7 @@ class FFLA_Coupon_Rules
         $context = [
             'email'   => (string) $order->get_billing_email(),
             'phone'   => (string) $order->get_billing_phone(),
-            'address' => self::address_key((string) ($order->get_shipping_address_1() ?: $order->get_billing_address_1()), (string) ($order->get_shipping_postcode() ?: $order->get_billing_postcode())),
+            'address' => self::order_address_key($order),
             'state'   => (string) ($order->get_shipping_state() ?: $order->get_billing_state()),
             'pickup'  => $methods ? self::methods_are_pickup($methods) : null,
             'payment' => is_object($request) && method_exists($request, 'get_param') ? (string) $request->get_param('payment_method') : (string) $order->get_payment_method(),
@@ -306,6 +306,22 @@ class FFLA_Coupon_Rules
         return '' !== $line && '' !== $zip ? $line . '|' . $zip : '';
     }
 
+    /**
+     * The address an order is matched by: its ship-to, or billing when it has
+     * none. Store pickup orders whose ship-to was set to the store (order meta
+     * `_ffla_pickup_ship_to` = `store`, Pickup & Shipping) use billing, so all
+     * pickup customers do not share the store's address.
+     *
+     * @param WC_Order $order
+     */
+    public static function order_address_key($order): string
+    {
+        if ('store' === $order->get_meta('_ffla_pickup_ship_to')) {
+            return self::address_key((string) $order->get_billing_address_1(), (string) $order->get_billing_postcode());
+        }
+        return self::address_key((string) ($order->get_shipping_address_1() ?: $order->get_billing_address_1()), (string) ($order->get_shipping_postcode() ?: $order->get_billing_postcode()));
+    }
+
     /** How many past orders used this coupon for the same person (email, phone or address). */
     public static function uses_by_person(string $code, array $context): int
     {
@@ -328,7 +344,7 @@ class FFLA_Coupon_Rules
             }
             $same = ('' !== $email && self::normalize_email((string) $order->get_billing_email()) === $email)
                 || ('' !== $phone && self::phone_key((string) $order->get_billing_phone()) === $phone)
-                || ('' !== $address && self::address_key((string) ($order->get_shipping_address_1() ?: $order->get_billing_address_1()), (string) ($order->get_shipping_postcode() ?: $order->get_billing_postcode())) === $address);
+                || ('' !== $address && self::order_address_key($order) === $address);
             if ($same) {
                 $count++;
             }

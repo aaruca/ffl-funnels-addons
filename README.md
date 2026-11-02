@@ -2,7 +2,7 @@
 
 **Custom addons and integrations for FFL Funnels WooCommerce stores.**
 
-![Version](https://img.shields.io/badge/version-1.56.1-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.56.2-brightgreen.svg)
 ![WordPress](https://img.shields.io/badge/WordPress-6.2+-blue.svg)
 ![WooCommerce](https://img.shields.io/badge/WooCommerce-8.0+-violet.svg)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-green.svg)
@@ -76,7 +76,7 @@ Guide: [modules/ffl-checkout/README.md](modules/ffl-checkout/README.md)
 Lets customers choose pickup or shipping at checkout. It is opt-in and configured per site.
 
 *   **Setup:** choose pickup, shipping or both, the default selection, and which existing WooCommerce shipping method instances count as pickup and as shipping. Empty or incomplete settings leave checkout unchanged. The Appearance & Text settings control colours, radii, gap and copy.
-*   **Classic checkout selector:** accessible delivery cards, placed before the billing fields automatically or with `[ffla_delivery_choice]` inside a custom classic checkout form. Addresses, prices, tax and carrier requests stay with WooCommerce and your existing providers, and the module never makes a method free. Checkout Blocks and the Store API are not modified; an admin notice says so.
+*   **Classic checkout selector:** accessible delivery cards, placed before the billing fields automatically or with `[ffla_delivery_choice]` inside a custom classic checkout form. Prices, tax and carrier requests stay with WooCommerce and your existing providers, and the module never makes a method free. Store pickup orders get the store as their ship-to address instead of a copy of billing (FFL dealer orders keep g-FFL Checkout's dealer address). Checkout Blocks and the Store API are not modified; an admin notice says so.
 *   **Optional FFL rules (needs g-FFL Checkout):** the module reads g-FFL Checkout's native Local Pickup FFL. The configured local FFL permits only the selected pickup methods; any other FFL permits shipping only. Mixed FFL and customer packages must be separated by the fulfillment provider, otherwise checkout is blocked with an explanation.
 *   **Validation and order data:** the final choice is validated on the server, and a delivery snapshot is saved in the order's shipping-line metadata. Since 1.47.7, a plugin such as Split Payment (FPPC 1.2.3) can keep an authorized, already offered zero-cost internal plan rate through the `ffla_pickup_shipping_keep_internal_rate` filter. Missing FFL choices, disallowed pickup or shipping modes and non-zero rates stay blocked.
 *   **Before enabling:** disable the old Camarillo pickup/shipping snippet (the module pauses itself with an admin warning when it finds it) and keep any separate tax code. Verify on staging first.

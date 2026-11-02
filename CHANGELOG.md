@@ -4,6 +4,21 @@ All notable changes to FFL Funnels Addons are documented in this file.
 
 ## [Unreleased]
 
+## [1.56.2] - 2026-11-02
+
+### Fixed
+- **Pickup & Shipping:** store pickup orders showed the customer's home as the ship-to address. On the classic checkout WooCommerce copies billing into shipping when *Ship to a different address* is unchecked, also for Local pickup, and nothing replaced it for orders without an FFL dealer, so the order screen and the **Ship to** column of the order list showed the customer's address. Firearm pickups looked right only because g-FFL Checkout writes the selected dealer, the store, as the shipping address. When every shipping package of an order is a store pickup chosen with the delivery cards, the order's shipping address is now the store: the customer's name and phone (shipping, else billing), **Store name** as the company, and the store address from **WooCommerce → Settings → General**. Billing is not changed, and checkout totals and taxes are unchanged (they are calculated before the order is created, and local pickup was already taxed at the store). Orders with an FFL dealer keep g-FFL Checkout's dealer address, orders with any shipping package keep the customer's address, and nothing is written while the store address, city or country is empty. Orders placed before this version are not changed.
+- **Pickup & Shipping:** when WooCommerce resumes the same pending order after a failed payment and the customer now ships, the fields the checkout form does not send (a hidden Company or Address line 2, the phone) are taken back from billing, so no store detail stays on a shipped order.
+
+### Changed
+- **Pickup & Shipping:** for new store pickup orders, everything that reads the ship-to now sees the store: the payment gateway (as for firearm pickups), Sales Tax Reports' line and refund state (where pickup is taxed), and the *Shipped to* line of Customer Requests claims. Orders that got the store as ship-to carry order meta `_ffla_pickup_ship_to` = `store`.
+- **Smart Coupons:** *Uses per person* matches those store pickup orders by their billing address (`FFLA_Coupon_Rules::order_address_key()`), so a returning customer is still recognized by their home address and other customers do not inherit every pickup use through the store's address.
+
+### Added
+- **Pickup & Shipping:** the settings screen shows the ship-to address store pickup orders will get, or explains that the WooCommerce store address is incomplete.
+- **Pickup & Shipping:** filter `ffla_pickup_shipping_ship_to_address` (`$address`, `$order`; `$order` is null on the settings screen) to change that address or return an empty array to keep WooCommerce's. The shipping-line snapshot `_ffla_delivery` also records `reason` (`customer` or `ffl`). The address is written with the order's own setters, not the legacy `WC_Order::set_address()`.
+- New checks `tests/smoke/pickup-shipping-ship-to-smoke.php` and `tests/smoke/smart-coupons-pickup-address-smoke.php`, in CI on PHP 7.4 and 8.3 and before the release ZIP.
+
 ## [1.56.1] - 2026-11-02
 
 ### Fixed

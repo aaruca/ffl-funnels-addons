@@ -415,7 +415,8 @@ delete_option('ffla_order_badges_settings');
 
 // ── Pickup & Shipping cleanup ──────────────────────────────────────
 // Settings only. Delivery details saved on orders (`_ffla_delivery` on
-// shipping lines) stay with the orders; the session keys expire on their own.
+// shipping lines, `_ffla_pickup_ship_to` on store pickup orders) stay with
+// the orders; the session keys expire on their own.
 delete_option('ffla_pickup_shipping');
 
 // ── White Label cleanup ────────────────────────────────────────────
