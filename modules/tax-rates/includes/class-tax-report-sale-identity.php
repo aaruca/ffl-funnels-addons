@@ -188,11 +188,11 @@ class Tax_Report_Sale_Identity
 
     /**
      * Drop what the last page of orders put in the in-memory object cache
-     * (orders, items, meta). Without it a year of orders stays in memory until
+     * (orders, items, meta). Also called after each page of refunds. Without it a year of orders stays in memory until
      * the request ends. Only where the cache supports it; a persistent cache
      * keeps its stored copy.
      */
-    private static function release_memory(): void
+    public static function release_memory(): void
     {
         if (function_exists('wp_cache_supports') && function_exists('wp_cache_flush_runtime') && wp_cache_supports('flush_runtime')) {
             wp_cache_flush_runtime();

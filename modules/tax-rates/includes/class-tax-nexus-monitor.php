@@ -268,6 +268,8 @@ final class Tax_Nexus_Monitor
                     $buckets[$state]['sales_by_currency_minor'][$currency] -= $this->to_minor($refund_revenue, $money_decimals);
                     $stats['refunds_processed']++;
                 }
+                unset($refunds, $result);
+                Tax_Report_Sale_Identity::release_memory();
                 $page++;
             } while ($page <= $pages);
             if (!empty($stats['truncated'])) {

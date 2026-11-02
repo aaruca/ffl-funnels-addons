@@ -310,6 +310,12 @@ check($GLOBALS['cache_flushes']>=2,'The in-memory cache is freed after every pag
 check(in_array(0,$GLOBALS['time_limits'],true),'The report lifts the PHP time limit');
 $GLOBALS['time_limits']=[];nexus();
 check(in_array(0,$GLOBALS['time_limits'],true),'The nexus monitor lifts the PHP time limit');
+// Refund pages free memory too: one release per page read, orders and refunds.
+$yearRefund=new TestRefund(305,'2026-02-10');$yearRefund->parent=120;$yearRefund->items=['line_item'=>[3051=>new TestLine(3051,-10,-0.80)]];$orders[305]=$yearRefund;
+$GLOBALS['cache_flushes']=0;
+$monitored=(new Tax_Nexus_Monitor())->generate(['date_from'=>'2026-01-01','date_to'=>'2026-03-31'],['as_of'=>'2026-03-31','timezone'=>wp_timezone(),'home_country'=>'US','home_state'=>'GA','page_size'=>1]);
+check($monitored['stats']['refunds_processed']>=1 && $GLOBALS['cache_flushes']===$monitored['stats']['pages_processed'],'The nexus monitor frees memory after every page, refund pages included ('.$GLOBALS['cache_flushes'].' of '.$monitored['stats']['pages_processed'].')');
+unset($orders[305]);
 for($i=0;$i<12;$i++){$f=fixture(130+$i,'2026-01-15','2026-01-15');$f->meta=[];$f->status='failed';$f->paid=null;$orders[130+$i]=$f;}
 $GLOBALS['test_filters']['ffla_tax_report_max_orders']=static function(){return 5;};
 $capped=false;try{$r=report();}catch(RuntimeException $e){$capped=$e->getMessage();}
