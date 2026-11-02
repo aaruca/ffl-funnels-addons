@@ -15,7 +15,11 @@ function wp_json_encode($v) { return json_encode($v); }
 function wc_get_price_decimals() { return 2; }
 function get_option($key, $default = false) { return $default; }
 function esc_html($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
-function wc_get_order($id) { return $GLOBALS['orders'][$id] ?? null; }
+function wc_get_order($id) { $GLOBALS['loads'][$id] = ($GLOBALS['loads'][$id] ?? 0) + 1; return $GLOBALS['orders'][$id] ?? null; }
+// Like WordPress / WooCommerce: a cache that can drop its in-memory copy, and the time limit helper.
+function wp_cache_supports($feature) { return 'flush_runtime' === $feature; }
+function wp_cache_flush_runtime() { $GLOBALS['cache_flushes'] = ($GLOBALS['cache_flushes'] ?? 0) + 1; return true; }
+function wc_set_time_limit($limit = 0) { $GLOBALS['time_limits'][] = $limit; }
 function wc_get_orders($query) {
     $GLOBALS['queries'][] = $query;
     $field = isset($query['date_paid']) ? 'date_paid' : 'date_created';
@@ -26,7 +30,10 @@ function wc_get_orders($query) {
             && $date && $date->getTimestamp() >= $start && $date->getTimestamp() <= $end;
     }));
     usort($rows, static function ($a, $b) { return $a->get_date_created() <=> $b->get_date_created(); });
-    return (object) ['orders' => array_slice($rows, ($query['page'] - 1) * $query['limit'], $query['limit']), 'max_num_pages' => (int) ceil(count($rows) / $query['limit'])];
+    $page = array_slice($rows, ($query['page'] - 1) * $query['limit'], $query['limit']);
+    // Like WooCommerce: 'ids' returns order IDs, not objects.
+    if (($query['return'] ?? 'objects') === 'ids') { $page = array_map(static function ($o) { return $o->get_id(); }, $page); }
+    return (object) ['orders' => $page, 'max_num_pages' => (int) ceil(count($rows) / $query['limit'])];
 }
 class WC_Order {
     public $id; public $meta = []; public $items = []; public $refunds = []; public $type = 'shop_order';
@@ -288,4 +295,28 @@ check($thrown,'Manual-paid status without date requires review');
 $two->status='completed';$two->paid=new DateTimeImmutable('2026-02-03',wp_timezone());
 $ordinaryCancelled=fixture(112,'2026-01-05','2026-01-06');$ordinaryCancelled->meta=[];$ordinaryCancelled->status='cancelled';$orders[112]=$ordinaryCancelled;
 check(report()['stats']['receipt_orders']===3,'Extra scan statuses never include excluded ordinary cancelled orders');unset($orders[112]);
+
+// Large ranges (a full year to check nexus): the paid-date pass reuses what the
+// first pass loaded, failed ordinary orders do not trip the cap, memory is freed
+// per page and PHP's time limit is lifted.
+$queries=[];$GLOBALS['loads']=[];$GLOBALS['cache_flushes']=0;$GLOBALS['time_limits']=[];
+$ordinary=fixture(120,'2026-01-10','2026-01-10');$ordinary->meta=[];$ordinary->status='completed';$orders[120]=$ordinary;
+$r=report();
+check($r['stats']['receipt_orders']===4,'An ordinary paid order is reported once');
+$paidPass=array_values(array_filter($queries,static function($q){return isset($q['date_paid']);}));
+check($paidPass && ($paidPass[0]['return']??'')==='ids','The paid-date pass asks for IDs only');
+check(empty($GLOBALS['loads'][120]),'An order the first pass loaded is not loaded again by the paid-date pass');
+check($GLOBALS['cache_flushes']>=2,'The in-memory cache is freed after every page');
+check(in_array(0,$GLOBALS['time_limits'],true),'The report lifts the PHP time limit');
+$GLOBALS['time_limits']=[];nexus();
+check(in_array(0,$GLOBALS['time_limits'],true),'The nexus monitor lifts the PHP time limit');
+for($i=0;$i<12;$i++){$f=fixture(130+$i,'2026-01-15','2026-01-15');$f->meta=[];$f->status='failed';$f->paid=null;$orders[130+$i]=$f;}
+$GLOBALS['test_filters']['ffla_tax_report_max_orders']=static function(){return 5;};
+$capped=false;try{$r=report();}catch(RuntimeException $e){$capped=$e->getMessage();}
+check($capped===false && $r['stats']['receipt_orders']===4,'Twelve failed ordinary orders do not trip a cap of five reportable orders: '.var_export($capped,true));
+$GLOBALS['test_filters']['ffla_tax_report_max_orders']=static function(){return 3;};
+$capped=false;try{report();}catch(RuntimeException $e){$capped=strpos($e->getMessage(),'safety cap')!==false;}
+check($capped,'More reportable orders than the cap still stop the report');
+unset($GLOBALS['test_filters']['ffla_tax_report_max_orders']);
+for($i=0;$i<12;$i++){unset($orders[130+$i]);}unset($orders[120]);
 echo "$checks Split Payment tax-report checks passed.\n";

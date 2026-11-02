@@ -209,7 +209,8 @@ The report shows snapshot coverage and flags orders without one (older orders, o
 
 ### Limits
 
-- **Order caps**: 50,000 for a filing summary, 25,000 with order rows, 10,000 for an advanced package. Advanced packages are also capped at 100,000 detail rows.
+- **Order caps**: 50,000 for a filing summary, 25,000 with order rows, 10,000 for an advanced package. Advanced packages are also capped at 100,000 detail rows. Only orders that belong in the report count; failed, cancelled and pending ordinary orders scanned while looking for Split Payment receipts do not, and the scan stops at ten times the cap.
+- **Long periods**: orders are read 200 at a time, each order once, and memory is freed after each batch; PHP's time limit is lifted while a report or the nexus monitor runs.
 - **Nexus monitor**: 50,000 orders and refunds.
 - Reaching a cap stops the report with an error instead of returning partial totals.
 - Currencies are never converted or added together.
@@ -250,7 +251,8 @@ The report shows snapshot coverage and flags orders without one (older orders, o
 |---|---|
 | No **Sales Tax Reports** menu | The module must be on, and your user needs `manage_woocommerce`. |
 | "The report preview link expired" | Submit the filters again. |
-| "…reached its order safety cap" or "detail-row safety cap" | Use a shorter period (or filing detail), or raise the cap with a filter. |
+| "…reached its order safety cap" or "detail-row safety cap" | Use a shorter period (or filing detail), or raise the cap with a filter. Only orders that belong in the report count toward the cap (failed, cancelled and pending ordinary orders do not); the scan stops at ten times the cap. |
+| A long period (a year) never finishes loading, or the browser shows a timeout | The report runs while the page loads. PHP's time limit is lifted for it, but a proxy or the host can still end the request (Cloudflare after 100 seconds). Ask the host for a longer request timeout for `wp-admin`, or run shorter periods: filing totals of several periods can be added up with the **Tools** tab (download each period's package, then combine them). |
 | "Split Payment receipt N needs review: a confirmed payment date is unavailable." | That payment order is paid but has no paid date. Fix the order, then run the report again. |
 | A state shows *Needs review* | Look at *Sales needing review* and the state's jurisdictions, then **Items to review**. Untaxed sales into states where you do not collect count as needing review. |
 | *Unmapped Georgia jurisdiction* | The order's tax components did not match a Georgia county or special code. Check the order's quote or tax line labels. |

@@ -177,6 +177,11 @@ class Tax_Report_Service
         }
 
         $filters = self::normalize_filters($filters);
+        // A year of orders takes longer than a typical PHP time limit; the
+        // order and detail-row caps below bound the work instead.
+        if (function_exists('wc_set_time_limit')) {
+            wc_set_time_limit(0);
+        }
         $this->counted_sales = [];
         $this->shipping_fee_keys = null;
         $this->fee_shipping_orders = [];

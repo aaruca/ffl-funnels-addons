@@ -4,6 +4,11 @@ All notable changes to FFL Funnels Addons are documented in this file.
 
 ## [Unreleased]
 
+## [1.56.1] - 2026-11-02
+
+### Fixed
+- **Sales Tax Reports:** reports and the nexus monitor over long periods (a full year to check nexus thresholds) could fail on busy stores. Every order in the period was loaded twice (once by creation date, again by paid date), the failed, cancelled and pending orders scanned for Split Payment receipts counted toward the order safety cap (card-testing attacks leave thousands), loaded orders stayed in memory until the page finished, and PHP's time limit could stop the page. The paid-date pass now loads only Split Payment receipts created before the period, only orders that belong in the report count toward the cap (a scan ceiling of ten times the cap still bounds the work), memory is freed after every page of orders, and the time limit is lifted while a report or the nexus monitor runs. Report figures are unchanged.
+
 ## [1.56.0] - 2026-10-29
 
 Product Reviews: the features of Customer Reviews for WooCommerce (free and Pro) this store needs, built into the module, in English only; Smart Coupons: recurring coupon schedules. Coupons, Q&A, the second reminder, the checkout consent checkbox, the extra form fields and store emails about new reviews are off by default. On by default, and visible on update: HTML request emails, reviewer names as *Ann B.*, initials avatars, the list toolbar and *Show more*, the photo lightbox, open and click tracking, and product identifiers and review photos in the structured data.

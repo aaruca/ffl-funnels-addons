@@ -110,28 +110,48 @@ class Tax_Report_Sale_Identity
         return !$identity['managed'] || (!$identity['issues'] && $identity['recognized_at'] >= $from && $identity['recognized_at'] <= $to);
     }
 
-    /** Two bounded, HPOS-compatible queries; ordinary orders keep their existing date/status basis. */
+    /**
+     * Two bounded, HPOS-compatible queries; ordinary orders keep their existing date/status basis.
+     *
+     * The first pass loads orders created in the period. The second pass, by
+     * paid date, only adds Split Payment receipts created earlier: it asks for
+     * IDs and loads only orders the first pass did not see. $cap limits the
+     * orders that belong in the report; failed, cancelled and pending
+     * ordinary orders, which the plan statuses bring into the scan, do not
+     * count toward it (card-testing attacks leave thousands of them). A scan
+     * ceiling of ten times the cap keeps the work bounded. The in-memory
+     * object cache is freed after every page, so a year of orders does not
+     * stay in memory.
+     */
     public function orders(array $statuses, int $from, int $to, int $page_size, int $cap): Generator
     {
         $seen = [];
         $scanned = 0;
+        $yielded = 0;
+        $scan_ceiling = $cap * 10;
         $capture_refs = [];
         $this->pages_processed = 0;
         foreach (['date_created', 'date_paid'] as $date_field) {
+            $ids_only = $date_field === 'date_paid';
             $page = 1;
             do {
                 $query = ['type' => 'shop_order', 'status' => array_values(array_unique(array_merge($statuses, self::PLAN_STATUSES))),
                     $date_field => $from . '...' . $to, 'orderby' => 'date', 'order' => 'ASC',
-                    'limit' => $page_size, 'page' => $page, 'paginate' => true, 'return' => 'objects'];
+                    'limit' => $page_size, 'page' => $page, 'paginate' => true, 'return' => $ids_only ? 'ids' : 'objects'];
                 $result = wc_get_orders($query);
                 $this->pages_processed++;
                 $orders = is_object($result) && isset($result->orders) ? $result->orders : (is_array($result) ? $result : []);
                 $pages = is_object($result) && isset($result->max_num_pages) ? max(1, (int) $result->max_num_pages) : 1;
                 foreach ($orders as $order) {
+                    if ($ids_only) {
+                        $id = is_object($order) && method_exists($order, 'get_id') ? (int) $order->get_id() : (int) $order;
+                        if (!$id || isset($seen[$id])) { continue; }
+                        $order = is_object($order) ? $order : wc_get_order($id);
+                    }
                     if (!is_object($order) || !method_exists($order, 'get_id')) { continue; }
                     $id = (int) $order->get_id();
                     if (isset($seen[$id])) { continue; }
-                    if (++$scanned > $cap) { throw new RuntimeException('The report reached its order scan safety cap. Narrow the date range.'); }
+                    if (++$scanned > $scan_ceiling) { throw new RuntimeException('The report reached its order scan safety cap. Narrow the date range.'); }
                     $seen[$id] = true;
                     $identity = $this->describe($order);
                     if ($identity['managed']) {
@@ -156,10 +176,26 @@ class Tax_Report_Sale_Identity
                         if ($date_field !== 'date_created') { continue; }
                         if (method_exists($order, 'get_status') && !in_array($order->get_status(), $statuses, true)) { continue; }
                     }
+                    if (++$yielded > $cap) { throw new RuntimeException('The report reached its order scan safety cap. Narrow the date range.'); }
                     yield ['order' => $order, 'identity' => $identity];
                 }
+                unset($orders, $result);
+                self::release_memory();
                 $page++;
             } while ($page <= $pages);
+        }
+    }
+
+    /**
+     * Drop what the last page of orders put in the in-memory object cache
+     * (orders, items, meta). Without it a year of orders stays in memory until
+     * the request ends. Only where the cache supports it; a persistent cache
+     * keeps its stored copy.
+     */
+    private static function release_memory(): void
+    {
+        if (function_exists('wp_cache_supports') && function_exists('wp_cache_flush_runtime') && wp_cache_supports('flush_runtime')) {
+            wp_cache_flush_runtime();
         }
     }
 }

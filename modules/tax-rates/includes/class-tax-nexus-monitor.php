@@ -50,6 +50,11 @@ final class Tax_Nexus_Monitor
         }
 
         $filters = self::normalize_filters($filters);
+        // A year of orders takes longer than a typical PHP time limit; the
+        // record cap bounds the work instead.
+        if (function_exists('wc_set_time_limit')) {
+            wc_set_time_limit(0);
+        }
         $timezone = $this->resolve_timezone($options['timezone'] ?? null);
         $period_start = $this->parse_date($filters['date_from'], $timezone);
         $period_end = $this->parse_date($filters['date_to'], $timezone);
