@@ -729,6 +729,16 @@ for ($order_id = 1; $order_id <= $order_count; $order_id++) {
     if (in_array(5002, $lines, true) && !in_array(5001, $lines, true)) {
         $lines[] = 5001;
     }
+    // 5201 + 5202: a rarer kit (holster + mag pouch) bought with one pistol,
+    // so it shows up, tied, in the Bought Together lists of that pistol and
+    // of what is bought with it.
+    if (in_array(5005, $lines, true) && mt_rand(1, 2) === 1) {
+        $lines[] = 5201;
+        $lines[] = 5202;
+    }
+    if (in_array(5201, $lines, true) xor in_array(5202, $lines, true)) {
+        $lines[] = in_array(5201, $lines, true) ? 5202 : 5201;
+    }
     if (mt_rand(1, 40) === 1) {
         $lines[] = $virtual[mt_rand(0, 1)]; // Transfer fee.
     }
@@ -820,6 +830,15 @@ $batches = (int) ceil($expected['orders_scanned'] / 50);
 
 check(empty($stats['stopped']), 'Bought Together build completes');
 check(stored_lists($wpdb) === $expected['index'], 'Bought Together lists identical to the previous algorithm (scores, ties, order, min support, bulk cap, virtual products, unsynced orders)');
+$kit_lists = 0;
+foreach ($expected['index'] as $pid => $list) {
+    $at = array_search(5201, $list, true);
+    if (false !== $at && in_array(5202, $list, true)) {
+        $kit_lists++;
+        check(($list[$at + 1] ?? null) === 5202, "kit products tie in the list of $pid and are ordered by ID");
+    }
+}
+check($kit_lists >= 1, "fixture has exact score ties (kit products in $kit_lists lists)");
 foreach (['orders_scanned', 'multi_item_orders', 'single_item_orders', 'bulk_orders', 'min_support'] as $key) {
     check($stats[$key] === $expected[$key], "build stat $key unchanged");
 }
@@ -889,17 +908,20 @@ if (PHP_VERSION_ID < 80100) {
 check([7, 9] === $pair_ids->invoke(null, $pair_key->invoke(null, 9, 7)), 'pair key is order-independent and reversible');
 check([5, 3000000000] === $pair_ids->invoke(null, $pair_key->invoke(null, 3000000000, 5)), 'IDs too large to pack fall back to a string key');
 
-for ($round = 0; $round < 25; $round++) {
+for ($round = 0; $round < 40; $round++) {
     $flat_w = [];
     $flat_c = [];
     $nested_w = [];
     $nested_c = [];
     $orders_with = [];
-    $n = mt_rand(5, 60);
+    // Half the rounds are dense (every product has dozens of partners), so
+    // the candidate lists are cut many times while ranking.
+    $dense = 0 === $round % 2;
+    $n = $dense ? mt_rand(40, 90) : mt_rand(5, 60);
     for ($p = 1; $p <= $n; $p++) {
         $orders_with[$p] = mt_rand(1, 30);
     }
-    for ($e = 0; $e < $n * 4; $e++) {
+    for ($e = 0; $e < $n * ($dense ? 40 : 4); $e++) {
         $a = mt_rand(1, $n);
         $b = mt_rand(1, $n);
         if ($a === $b) {
@@ -918,7 +940,7 @@ for ($round = 0; $round < 25; $round++) {
         $nested_c[$a][$b] = ($nested_c[$a][$b] ?? 0) + 1;
         $nested_c[$b][$a] = ($nested_c[$b][$a] ?? 0) + 1;
     }
-    foreach ([[1, 1], [2, 3], [1, 20], [3, 2]] as [$support, $max]) {
+    foreach ([[1, 1], [2, 3], [1, 20], [3, 2], [1, 8], [2, 30]] as [$support, $max]) {
         $ref = reference_rank_pairs($nested_w, $nested_c, $orders_with, 100, $support, $max);
         $new = WooBooster_Copurchase::rank_pair_map($flat_w, $flat_c, $orders_with, 100, $support, $max);
         ksort($ref);
@@ -981,6 +1003,8 @@ check([] === lock_rows($wpdb), 'lock released after a stopped build');
 $trending_before = trending_transients();
 $stats = (new WooBooster_Trending())->build();
 check('memory' === $stats['stopped'] && isset($stats['categories']) && '' !== $stats['reason'], 'Trending memory guard stops with a reason');
+$saved = $GLOBALS['options']['woobooster_last_build']['trending'];
+check(isset($saved['products'], $saved['categories'], $saved['time'], $saved['date']) && '' === $saved['date'] && 'memory' === $saved['stopped'], 'a first build that stops still stores the keys the admin reads (empty date: waiting for the first update)');
 check(trending_transients() === $trending_before, 'stopped Trending build writes nothing');
 remove_all_filters('woobooster_smart_build_memory_ratio');
 
@@ -1008,8 +1032,26 @@ foreach ([true, false] as $hpos) {
     check($GLOBALS['cache_flushes'] - $flushes_before >= (int) ceil(count($reference['scores']) / 45), "in-memory cache emptied between category chunks ($label)");
     check(count($reference['scores']) > 200 && count($built['cats'][10]) === 50, 'the firearms category has more than 200 products and keeps its top 50');
     check($reference['rows'] > count($reference['scores']), 'the database now returns one row per product instead of one per product and day');
+
+    // The SQL sums themselves, at fixed times of day (before and after noon
+    // UTC, where the max(0, age) clamp matters for today's sales).
+    $decayed = new ReflectionMethod('WooBooster_Trending', 'decayed_scores');
+    if (PHP_VERSION_ID < 80100) {
+        $decayed->setAccessible(true);
+    }
+    $statuses = WooBooster_Trending::get_order_statuses();
+    $statuses = $hpos ? WooBooster_Trending::expand_statuses_for_hpos($statuses) : $statuses;
+    foreach ([strtotime(gmdate('Y-m-d') . ' 03:17:00 UTC'), strtotime(gmdate('Y-m-d') . ' 12:00:00 UTC'), strtotime(gmdate('Y-m-d') . ' 21:45:30 UTC')] as $at) {
+        $sql_scores = $decayed->invoke(new WooBooster_Trending(), $hpos, $statuses, gmdate('Y-m-d H:i:s', strtotime('-90 days')), $at, 14.0, WooBooster_Copurchase::excluded_product_ids());
+        $php_scores = reference_trending($wpdb, $hpos, 90, 14.0, $at, true)['scores'];
+        ksort($sql_scores);
+        ksort($php_scores);
+        check($sql_scores === $php_scores, "SQL decayed sums equal score_rows() bit for bit at " . gmdate('H:i', $at) . " UTC ($label)");
+    }
 }
 check(in_array(5001, $built['global'], true) && !in_array(5399, $built['global'], true), 'kit product trends; virtual fee product is left out');
+$at = array_search(5001, $built['global'], true);
+check(5002 === ($built['global'][$at + 1] ?? null), 'kit products have equal Trending scores and are ordered by ID');
 remove_all_filters('woobooster_trending_chunk_size');
 
 // Half-life setting goes into the SQL unchanged.

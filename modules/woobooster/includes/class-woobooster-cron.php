@@ -643,7 +643,14 @@ class WooBooster_Cron
         if ('locked' !== $code) {
             $last_build = get_option('woobooster_last_build', array());
             $last_build = is_array($last_build) ? $last_build : array();
-            $previous = isset($last_build[$type]) && is_array($last_build[$type]) ? $last_build[$type] : array('type' => $type);
+            $previous = isset($last_build[$type]) && is_array($last_build[$type]) ? $last_build[$type] : array();
+            // The admin status lines read these keys; an empty date still
+            // reads as "waiting for the first update".
+            $previous = array_merge(
+                array('type' => $type, 'products' => 0, 'time' => 0, 'date' => ''),
+                'trending' === $type ? array('categories' => 0) : array(),
+                $previous
+            );
             unset($previous['skipped']);
             $previous['stopped'] = $code;
             $previous['stopped_reason'] = $reason;
