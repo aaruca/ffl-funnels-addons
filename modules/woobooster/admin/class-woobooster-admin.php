@@ -38,7 +38,28 @@ class WooBooster_Admin
             'model'    => 'deepseek-ai/deepseek-v3.2',
             'thinking' => true,
         ),
+        // One OpenAI-compatible endpoint for many hosted models. The default,
+        // GLM-4.7-Flash, costs a few cents per million tokens. Requests ask for
+        // hosts that do not store or train on prompts (get_ai_provider_config()).
+        'openrouter' => array(
+            'label'    => 'OpenRouter (GLM-4.7-Flash and others)',
+            'api_url'  => 'https://openrouter.ai/api/v1/chat/completions',
+            'model'    => 'z-ai/glm-4.7-flash',
+            'thinking' => false,
+        ),
     );
+
+    /** Default number of AI assistant messages per user per day (0 = no limit). */
+    const AI_DAILY_LIMIT_DEFAULT = 30;
+
+    /** User meta: today's AI assistant message count. */
+    const AI_USAGE_META = 'woobooster_ai_usage';
+
+    /** Chat history sent to the model: at most this many messages… */
+    const AI_HISTORY_MAX_MESSAGES = 20;
+
+    /** …of at most this many characters each. */
+    const AI_HISTORY_MAX_CHARS = 6000;
 
     /** Client page under WooCommerce (WooBooster_Store_Page); not under FFL Funnels. */
     const STORE_SLUG = 'ffla-woobooster-store';
@@ -368,11 +389,11 @@ class WooBooster_Admin
                 if (self::constant_value('FFLA_WOOBOOSTER_AI_KEY')) {
                     self::render_constant_notice(__('API Key', 'ffl-funnels-addons'), 'FFLA_WOOBOOSTER_AI_KEY');
                 } else {
-                    FFLA_Admin::render_password_field(
+                    self::render_secret_field(
                         __('API Key', 'ffl-funnels-addons'),
                         'woobooster_ai_api_key',
-                        $api_key,
-                        __('Enter the API key for your selected provider (OpenAI, DeepSeek, or NVIDIA), or define FFLA_WOOBOOSTER_AI_KEY in wp-config.php to set it for this site without saving it in the database.', 'ffl-funnels-addons')
+                        (string) $api_key,
+                        __('The API key for the selected provider (OpenAI, DeepSeek, NVIDIA or OpenRouter), or define FFLA_WOOBOOSTER_AI_KEY in wp-config.php to set it for this site without saving it in the database.', 'ffl-funnels-addons')
                     );
                 }
                 ?>
@@ -402,14 +423,32 @@ class WooBooster_Admin
                 if (self::constant_value('FFLA_WOOBOOSTER_TAVILY_KEY')) {
                     self::render_constant_notice(__('Tavily API Key', 'ffl-funnels-addons'), 'FFLA_WOOBOOSTER_TAVILY_KEY');
                 } else {
-                    FFLA_Admin::render_password_field(
+                    self::render_secret_field(
                         __('Tavily API Key', 'ffl-funnels-addons'),
                         'woobooster_tavily_key',
-                        $tavily_key,
+                        (string) $tavily_key,
                         __('Optional. Allows the AI to search the web for product compatibility data and rankings. Can also be set with FFLA_WOOBOOSTER_TAVILY_KEY in wp-config.php.', 'ffl-funnels-addons')
                     );
                 }
 
+                $daily_limit = isset($options['ai_daily_limit']) && '' !== (string) $options['ai_daily_limit'] ? (int) $options['ai_daily_limit'] : self::AI_DAILY_LIMIT_DEFAULT;
+                ?>
+                <div class="wb-field">
+                    <label class="wb-field__label" for="woobooster_ai_daily_limit"><?php esc_html_e('Daily AI messages per user', 'ffl-funnels-addons'); ?></label>
+                    <div class="wb-field__control">
+                        <input type="number" id="woobooster_ai_daily_limit" name="woobooster_ai_daily_limit" value="<?php echo esc_attr((string) $daily_limit); ?>" min="0" max="1000" class="wb-input wb-input--sm" style="width:100px;">
+                        <p class="wb-field__desc"><?php esc_html_e('How many messages each user can send the assistant per day (one message can make up to 5 model calls). 0 removes the limit. Resets at midnight, store time.', 'ffl-funnels-addons'); ?></p>
+                    </div>
+                </div>
+
+                <div class="wb-field wb-openrouter-only">
+                    <label class="wb-field__label" for="woobooster_ai_openrouter_hosts"><?php esc_html_e('OpenRouter hosts', 'ffl-funnels-addons'); ?></label>
+                    <div class="wb-field__control">
+                        <input type="text" id="woobooster_ai_openrouter_hosts" name="woobooster_ai_openrouter_hosts" value="<?php echo esc_attr(isset($options['ai_openrouter_hosts']) ? (string) $options['ai_openrouter_hosts'] : ''); ?>" class="wb-input" placeholder="<?php esc_attr_e('Any host that does not store or train on prompts', 'ffl-funnels-addons'); ?>">
+                        <p class="wb-field__desc"><?php esc_html_e('OpenRouter only. Comma-separated host slugs from the model’s page on openrouter.ai, e.g. to keep requests on US-based hosts. Requests then go only to these hosts, with no fallback. Leave empty to allow any host that neither stores nor trains on prompts.', 'ffl-funnels-addons'); ?></p>
+                    </div>
+                </div>
+                <?php
                 $this->render_mcp_status();
                 ?>
             </div>
@@ -429,6 +468,164 @@ class WooBooster_Admin
         })();
         </script>
         <?php
+    }
+
+    /**
+     * Keep only what a chat needs: user/assistant turns with text content.
+     * The browser sends the history, so a system or tool message, an object
+     * or a huge text is dropped or cut here; at most the last
+     * AI_HISTORY_MAX_MESSAGES messages of AI_HISTORY_MAX_CHARS characters.
+     *
+     * @param mixed $history Decoded chat_history.
+     * @return array<int, array{role: string, content: string}>
+     */
+    public static function sanitize_chat_history($history): array
+    {
+        if (!is_array($history)) {
+            return array();
+        }
+
+        $clean = array();
+        foreach ($history as $message) {
+            if (!is_array($message) || !isset($message['role'], $message['content'])) {
+                continue;
+            }
+            $role = is_string($message['role']) ? $message['role'] : '';
+            if (!in_array($role, array('user', 'assistant'), true) || !is_string($message['content'])) {
+                continue;
+            }
+            $content = trim($message['content']);
+            if ('' === $content) {
+                continue;
+            }
+            if (function_exists('mb_substr')) {
+                $content = mb_substr($content, 0, self::AI_HISTORY_MAX_CHARS);
+            } else {
+                $content = substr($content, 0, self::AI_HISTORY_MAX_CHARS);
+            }
+            $clean[] = array('role' => $role, 'content' => $content);
+        }
+
+        $clean = array_slice($clean, -self::AI_HISTORY_MAX_MESSAGES);
+
+        // The conversation must end with the user's message.
+        while (!empty($clean) && 'user' !== $clean[count($clean) - 1]['role']) {
+            array_pop($clean);
+        }
+
+        return array_values($clean);
+    }
+
+    /**
+     * Messages per user per day; 0 means no limit. Setting
+     * "Daily AI messages per user", filter woobooster_ai_daily_limit.
+     */
+    public static function ai_daily_limit(int $user_id): int
+    {
+        $options = get_option('woobooster_settings', array());
+        $limit   = isset($options['ai_daily_limit']) && '' !== (string) $options['ai_daily_limit']
+            ? (int) $options['ai_daily_limit']
+            : self::AI_DAILY_LIMIT_DEFAULT;
+
+        return max(0, (int) apply_filters('woobooster_ai_daily_limit', $limit, $user_id));
+    }
+
+    /**
+     * @return array{allowed: bool, used: int, limit: int}
+     */
+    public static function ai_usage_check(int $user_id): array
+    {
+        $limit = self::ai_daily_limit($user_id);
+        $used  = self::ai_usage_today($user_id);
+
+        return array(
+            'allowed' => 0 === $limit || $used < $limit,
+            'used'    => $used,
+            'limit'   => $limit,
+        );
+    }
+
+    public static function ai_usage_today(int $user_id): int
+    {
+        $usage = get_user_meta($user_id, self::AI_USAGE_META, true);
+
+        return is_array($usage) && isset($usage['date'], $usage['count']) && wp_date('Y-m-d') === $usage['date']
+            ? (int) $usage['count']
+            : 0;
+    }
+
+    public static function ai_usage_record(int $user_id): void
+    {
+        update_user_meta($user_id, self::AI_USAGE_META, array(
+            'date'  => wp_date('Y-m-d'),
+            'count' => self::ai_usage_today($user_id) + 1,
+        ));
+    }
+
+    /**
+     * OpenRouter host slugs from the "OpenRouter hosts" setting.
+     *
+     * @param array<string, mixed> $options
+     * @return string[]
+     */
+    private static function openrouter_hosts(array $options): array
+    {
+        $raw   = isset($options['ai_openrouter_hosts']) ? (string) $options['ai_openrouter_hosts'] : '';
+        $hosts = array();
+        foreach (explode(',', $raw) as $host) {
+            $host = strtolower(trim($host));
+            if ('' !== $host && preg_match('/^[a-z0-9][a-z0-9._\/-]*$/', $host)) {
+                $hosts[] = $host;
+            }
+        }
+
+        return array_values(array_unique($hosts));
+    }
+
+    /**
+     * A secret field that never prints the saved value: empty input keeps
+     * the saved key, "Remove" clears it.
+     */
+    private static function render_secret_field(string $label, string $name, string $saved, string $desc): void
+    {
+        $hint = '';
+        if ('' !== $saved) {
+            $tail = function_exists('mb_substr') ? mb_substr($saved, -4) : substr($saved, -4);
+            /* translators: %s: last four characters of the saved key */
+            $hint = sprintf(__('Saved (ends in %s). Leave empty to keep it.', 'ffl-funnels-addons'), $tail);
+        }
+        ?>
+        <div class="wb-field">
+            <label class="wb-field__label" for="<?php echo esc_attr($name); ?>"><?php echo esc_html($label); ?></label>
+            <div class="wb-field__control">
+                <input type="password" id="<?php echo esc_attr($name); ?>" name="<?php echo esc_attr($name); ?>"
+                    value="" class="wb-input" autocomplete="new-password"
+                    placeholder="<?php echo esc_attr('' !== $hint ? '••••••••' . ($tail ?? '') : ''); ?>">
+                <?php if ('' !== $hint) : ?>
+                    <p class="wb-field__desc"><?php echo esc_html($hint); ?>
+                        <label style="margin-left:8px;"><input type="checkbox" name="<?php echo esc_attr($name . '_clear'); ?>" value="1"> <?php esc_html_e('Remove saved key', 'ffl-funnels-addons'); ?></label>
+                    </p>
+                <?php endif; ?>
+                <p class="wb-field__desc"><?php echo esc_html($desc); ?></p>
+            </div>
+        </div>
+        <?php
+    }
+
+    /**
+     * New value of a secret field on save: the typed key, '' when removed,
+     * otherwise the saved key (an empty field never erases it).
+     */
+    public static function secret_from_post(string $name, string $saved): string
+    {
+        // phpcs:disable WordPress.Security.NonceVerification.Missing -- verified by the caller.
+        $typed = isset($_POST[$name]) ? trim(sanitize_text_field(wp_unslash($_POST[$name]))) : '';
+        if ('' !== $typed) {
+            return $typed;
+        }
+
+        return !empty($_POST[$name . '_clear']) ? '' : $saved;
+        // phpcs:enable
     }
 
     /**
@@ -942,22 +1139,31 @@ class WooBooster_Admin
             'enabled' => isset($_POST['woobooster_enabled']) ? '1' : '0',
             'section_title' => isset($_POST['woobooster_section_title']) ? sanitize_text_field(wp_unslash($_POST['woobooster_section_title'])) : '',
             'ai_provider' => isset($_POST['woobooster_ai_provider']) ? sanitize_key($_POST['woobooster_ai_provider']) : 'openai',
-            'ai_api_key' => isset($_POST['woobooster_ai_api_key']) ? sanitize_text_field(wp_unslash($_POST['woobooster_ai_api_key'])) : ($existing['ai_api_key'] ?? ''),
+            // Keys are never printed back into the form: an empty field keeps
+            // the saved key; "Remove saved key" clears it.
+            'ai_api_key' => self::secret_from_post('woobooster_ai_api_key', (string) ($existing['ai_api_key'] ?? '')),
             'ai_model' => isset($_POST['woobooster_ai_model']) ? sanitize_text_field(wp_unslash($_POST['woobooster_ai_model'])) : '',
             'ai_thinking' => isset($_POST['woobooster_ai_thinking']) ? '1' : '0',
-            'tavily_key' => isset($_POST['woobooster_tavily_key']) ? sanitize_text_field(wp_unslash($_POST['woobooster_tavily_key'])) : ($existing['tavily_key'] ?? ''),
+            'tavily_key' => self::secret_from_post('woobooster_tavily_key', (string) ($existing['tavily_key'] ?? '')),
+            'ai_daily_limit' => isset($_POST['woobooster_ai_daily_limit']) ? min(1000, absint($_POST['woobooster_ai_daily_limit'])) : (int) ($existing['ai_daily_limit'] ?? self::AI_DAILY_LIMIT_DEFAULT),
+            'ai_openrouter_hosts' => isset($_POST['woobooster_ai_openrouter_hosts']) ? implode(', ', self::openrouter_hosts(array('ai_openrouter_hosts' => sanitize_text_field(wp_unslash($_POST['woobooster_ai_openrouter_hosts']))))) : (string) ($existing['ai_openrouter_hosts'] ?? ''),
             'exclude_outofstock' => isset($_POST['woobooster_exclude_outofstock']) ? '1' : '0',
             'debug_mode' => isset($_POST['woobooster_debug_mode']) ? '1' : '0',
             'delete_data_uninstall' => isset($_POST['woobooster_delete_data']) ? '1' : '0',
         ));
+
+        // Removing the key also removes the pre-2.0 OpenAI key it fell back to.
+        if (!empty($_POST['woobooster_ai_api_key_clear'])) {
+            unset($options['openai_key']);
+        }
 
         // Smart recommendations settings (same form).
         if (isset($_POST['woobooster_smart_save'])) {
             $options['smart_copurchase'] = isset($_POST['woobooster_smart_copurchase']) ? '1' : '0';
             $options['smart_trending'] = isset($_POST['woobooster_smart_trending']) ? '1' : '0';
             $options['smart_recently_viewed'] = isset($_POST['woobooster_smart_recently_viewed']) ? '1' : '0';
-            $options['smart_days'] = isset($_POST['woobooster_smart_days']) ? absint($_POST['woobooster_smart_days']) : 90;
-            $options['smart_max_relations'] = isset($_POST['woobooster_smart_max_relations']) ? absint($_POST['woobooster_smart_max_relations']) : 20;
+            $options['smart_days'] = isset($_POST['woobooster_smart_days']) ? min(365, max(7, absint($_POST['woobooster_smart_days']))) : 90;
+            $options['smart_max_relations'] = isset($_POST['woobooster_smart_max_relations']) ? min(50, max(5, absint($_POST['woobooster_smart_max_relations']))) : 20;
 
             $attrs = isset($_POST['woobooster_similar_key_attributes']) ? sanitize_text_field(wp_unslash($_POST['woobooster_similar_key_attributes'])) : '';
             $attrs = array_filter(array_map('sanitize_key', array_map('trim', explode(',', $attrs))));
@@ -1075,6 +1281,7 @@ class WooBooster_Admin
         $dates_are_gmt            = isset($data['schedule_dates']) && 'gmt' === $data['schedule_dates'];
 
         $count = 0;
+        $missing_coupons = array();
         foreach ($data['rules'] as $rule_data) {
             if (!is_array($rule_data)) {
                 continue;
@@ -1173,14 +1380,20 @@ class WooBooster_Admin
                             }
                             if ('apply_coupon' === $row['action_source']) {
                                 $coupon_id = 0;
-                                if (!empty($action['action_coupon_code']) && function_exists('wc_get_coupon_id_by_code')) {
-                                    $coupon_id = (int) wc_get_coupon_id_by_code(sanitize_text_field((string) $action['action_coupon_code']));
-                                }
-                                if (!$coupon_id && !empty($action['action_coupon_id']) && 'shop_coupon' === get_post_type(absint($action['action_coupon_id']))) {
+                                $code      = !empty($action['action_coupon_code']) ? sanitize_text_field((string) $action['action_coupon_code']) : '';
+                                if ('' !== $code) {
+                                    // A file with a code is matched by code only: the same ID on
+                                    // another site is usually a different coupon, which would then
+                                    // be applied automatically.
+                                    $coupon_id = function_exists('wc_get_coupon_id_by_code') ? (int) wc_get_coupon_id_by_code($code) : 0;
+                                } elseif (!empty($action['action_coupon_id']) && 'shop_coupon' === get_post_type(absint($action['action_coupon_id']))) {
+                                    // Files from versions that saved no code: same-site restores.
                                     $coupon_id = absint($action['action_coupon_id']);
                                 }
                                 if ($coupon_id) {
                                     $row['action_coupon_id'] = $coupon_id;
+                                } else {
+                                    $missing_coupons[$rule_id] = '' !== $code ? $code : '#' . absint($action['action_coupon_id'] ?? 0);
                                 }
                             }
                             $clean_groups[$group_id][] = $row;
@@ -1192,16 +1405,41 @@ class WooBooster_Admin
                     }
                 }
 
+                // A coupon rule whose coupon does not exist here stays off until
+                // someone picks the coupon.
+                if (isset($missing_coupons[$rule_id])) {
+                    WooBooster_Rule::update($rule_id, array('status' => 0));
+                }
+
                 $count++;
             }
         }
 
+        WooBooster_Matcher::invalidate_recommendation_cache();
+
+        $message = sprintf(
+            /* translators: %d: number of rules */
+            _n('%d rule imported successfully.', '%d rules imported successfully.', $count, 'ffl-funnels-addons'),
+            $count
+        );
+        if (!empty($missing_coupons)) {
+            $message .= ' ' . sprintf(
+                /* translators: 1: number of rules, 2: comma-separated coupon codes */
+                _n(
+                    '%1$d rule was imported turned off because its coupon does not exist on this site (%2$s). Create the coupon, pick it in the rule and turn the rule on.',
+                    '%1$d rules were imported turned off because their coupons do not exist on this site (%2$s). Create the coupons, pick them in the rules and turn the rules on.',
+                    count($missing_coupons),
+                    'ffl-funnels-addons'
+                ),
+                count($missing_coupons),
+                implode(', ', array_unique($missing_coupons))
+            );
+        }
+
         wp_send_json_success(array(
-            'message' => sprintf(
-                __('%d rules imported successfully.', 'ffl-funnels-addons'),
-                $count
-            ),
-            'count' => $count,
+            'message'         => $message,
+            'count'           => $count,
+            'missing_coupons' => array_values(array_unique($missing_coupons)),
         ));
     }
 
@@ -1298,12 +1536,16 @@ class WooBooster_Admin
         $conditions_table = $wpdb->prefix . 'woobooster_rule_conditions';
         $actions_table = $wpdb->prefix . 'woobooster_rule_actions';
 
-        // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared -- TRUNCATE does not support placeholders; table names are hardcoded.
-        $wpdb->query("TRUNCATE TABLE {$conditions_table}");
-        $wpdb->query("TRUNCATE TABLE {$actions_table}");
-        $wpdb->query("TRUNCATE TABLE {$index_table}");
-        $wpdb->query("TRUNCATE TABLE {$rules_table}");
-        // phpcs:enable
+        // DELETE, not TRUNCATE: TRUNCATE resets AUTO_INCREMENT, so new rules
+        // reused old IDs and inherited their analytics, add-to-cart counts and
+        // Bricks loops pinned to a rule ID.
+        $wpdb->query($wpdb->prepare('DELETE FROM %i', $conditions_table));
+        $wpdb->query($wpdb->prepare('DELETE FROM %i', $actions_table));
+        $wpdb->query($wpdb->prepare('DELETE FROM %i', $index_table));
+        $wpdb->query($wpdb->prepare('DELETE FROM %i', $rules_table));
+
+        // Cached results still named the deleted rules (up to an hour).
+        WooBooster_Matcher::invalidate_recommendation_cache();
 
         wp_send_json_success(array('message' => __('All rules deleted successfully.', 'ffl-funnels-addons')));
     }
@@ -1324,10 +1566,28 @@ class WooBooster_Admin
         }
 
         $chat_history_json = isset($_POST['chat_history']) ? wp_unslash($_POST['chat_history']) : '[]';
-        $chat_history = json_decode($chat_history_json, true);
+        $chat_history = self::sanitize_chat_history(json_decode($chat_history_json, true));
 
-        if (!is_array($chat_history) || empty($chat_history)) {
+        if (empty($chat_history)) {
             wp_send_json_error(array('message' => __('No message provided.', 'ffl-funnels-addons')));
+        }
+
+        // Per-user daily cap, so the shared API key cannot be run up.
+        $usage = self::ai_usage_check(get_current_user_id());
+        if (!$usage['allowed']) {
+            wp_send_json_error(array(
+                'message' => sprintf(
+                    /* translators: %d: daily message limit */
+                    _n(
+                        'You have used today’s %d AI message. The limit resets at midnight (store time).',
+                        'You have used today’s %d AI messages. The limit resets at midnight (store time).',
+                        $usage['limit'],
+                        'ffl-funnels-addons'
+                    ),
+                    $usage['limit']
+                ),
+                'limit_reached' => true,
+            ));
         }
 
         $config = $this->get_ai_provider_config();
@@ -1342,6 +1602,9 @@ class WooBooster_Admin
                 ),
             ));
         }
+
+        // Count the message now: one message may make several model calls.
+        self::ai_usage_record(get_current_user_id());
 
         // Detect mode: 'rule' (default) or 'bundle'.
         $mode = isset($_POST['mode']) ? sanitize_key($_POST['mode']) : 'rule';
@@ -1586,6 +1849,32 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
             }
         }
 
+        $headers = array(
+            'Content-Type'  => 'application/json',
+            'Authorization' => 'Bearer ' . trim($api_key),
+        );
+
+        if ('openrouter' === $provider) {
+            // Only hosts that neither store nor train on prompts, and only hosts
+            // that support every parameter sent (tool calling). An allow-list
+            // of host slugs (setting "OpenRouter hosts") pins the request to
+            // those hosts with no fallback, e.g. US-based ones.
+            $routing = array(
+                'data_collection'    => 'deny',
+                'require_parameters' => true,
+            );
+            $only = self::openrouter_hosts($options);
+            if (!empty($only)) {
+                $routing['only']            = $only;
+                $routing['allow_fallbacks'] = false;
+            }
+            $body_extra['provider'] = (array) apply_filters('woobooster_openrouter_provider', $routing, $model);
+
+            // Optional attribution headers OpenRouter documents.
+            $headers['HTTP-Referer'] = home_url('/');
+            $headers['X-Title']      = 'FFL Funnels WooBooster';
+        }
+
         if ($supports_thinking) {
             if ('nvidia' === $provider) {
                 $body_extra['chat_template_kwargs'] = array('thinking' => true);
@@ -1601,10 +1890,7 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
             'model'      => $model,
             'api_key'    => $api_key,
             'thinking'   => $supports_thinking,
-            'headers'    => array(
-                'Content-Type'  => 'application/json',
-                'Authorization' => 'Bearer ' . trim($api_key),
-            ),
+            'headers'    => $headers,
             'body_extra' => $body_extra,
         );
     }

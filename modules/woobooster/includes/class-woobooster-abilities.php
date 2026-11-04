@@ -64,13 +64,35 @@ class WooBooster_Abilities
     }
 
     /**
-     * Only store managers may use WooBooster abilities.
+     * Only the agency may use WooBooster abilities: store managers who are
+     * exempt from White Label restrictions. Client logins are Administrators
+     * too, so manage_woocommerce alone let any client create and activate
+     * rules through an MCP client. Without active White Label restrictions
+     * everyone with manage_woocommerce counts, as before.
      *
      * @return bool
      */
     public static function can_manage(): bool
     {
-        return current_user_can('manage_woocommerce');
+        return self::is_agency_user();
+    }
+
+    /**
+     * Whether the current user is agency staff (see can_manage()). Filter
+     * woobooster_is_agency_user.
+     */
+    public static function is_agency_user(): bool
+    {
+        if (!current_user_can('manage_woocommerce')) {
+            return false;
+        }
+
+        $agency = true;
+        if (class_exists('White_Label_Access') && White_Label_Access::restrictions_active()) {
+            $agency = White_Label_Access::current_user_is_exempt();
+        }
+
+        return (bool) apply_filters('woobooster_is_agency_user', $agency, get_current_user_id());
     }
 
     public static function register_abilities(): void
@@ -177,7 +199,7 @@ class WooBooster_Abilities
                 $input = (array) $input;
                 return WooBooster_AI_Tools::set_rule_status(absint($input['rule_id'] ?? 0), !empty($input['active']));
             },
-            'annotations'  => array('readonly' => false, 'destructive' => false, 'idempotent' => true),
+            'annotations'  => array('readonly' => false, 'destructive' => true, 'idempotent' => true),
         ));
 
         self::register('woobooster/diagnose-product', array(
