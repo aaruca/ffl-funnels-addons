@@ -2,7 +2,8 @@
 /**
  * White Label — dashboard data.
  *
- * WooCommerce business metrics are loaded with bounded-memory pagination.
+ * HPOS business metrics use SQL aggregation without loading order objects.
+ * Legacy order storage retains the paginated WooCommerce API fallback.
  * Analytics providers are fetched separately so the dashboard can lazy-load
  * only the selected MonsterInsights or SnapFind tab.
  *
@@ -27,8 +28,8 @@ class White_Label_Dashboard_Data
      */
     public static function get(string $from, string $to, bool $force = false): array
     {
-        // v4: the window and daily buckets are in the site's time zone.
-        $key = self::cache_key('v4|woo|' . $from . '|' . $to);
+        // v5: aggregate HPOS totals without retaining full orders in memory.
+        $key = self::cache_key('v5|woo|' . $from . '|' . $to);
 
         if (!$force) {
             $cached = get_transient($key);
@@ -141,13 +142,18 @@ class White_Label_Dashboard_Data
     }
 
     /**
-     * Sum paid orders in fixed-size pages so large stores cannot exhaust PHP
-     * memory by materialising every order object at once.
+     * Aggregate HPOS orders without hydrating objects or priming order caches.
+     * Keep the existing WooCommerce API fallback for legacy order storage.
      *
      * @return array{sales: float, orders: int, daily: array<string, float>}
      */
     private static function woo_period(int $from_ts, int $to_ts): array
     {
+        if (class_exists('\\Automattic\\WooCommerce\\Utilities\\OrderUtil')
+            && \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled()) {
+            return self::woo_period_hpos($from_ts, $to_ts);
+        }
+
         $sales     = 0.0;
         $count     = 0;
         $daily     = [];
@@ -196,6 +202,74 @@ class White_Label_Dashboard_Data
         } while ($page <= $max_pages);
 
         return ['sales' => $sales, 'orders' => $count, 'daily' => $daily];
+    }
+
+    /**
+     * Sum stored order totals (including tax/shipping), not Analytics net sales.
+     * SQL returns one row per local day, independent of the number of orders.
+     *
+     * @return array{sales: float, orders: int, daily: array<string, float>}
+     */
+    private static function woo_period_hpos(int $from_ts, int $to_ts): array
+    {
+        global $wpdb;
+
+        $totals   = ['sales' => 0.0, 'orders' => 0, 'daily' => []];
+        $statuses = array_values(array_unique(array_map(static function ($status): string {
+            return 0 === strpos($status, 'wc-') ? $status : 'wc-' . $status;
+        }, wc_get_is_paid_statuses())));
+
+        if ($to_ts < $from_ts || empty($statuses)) {
+            return $totals;
+        }
+
+        // HPOS stores UTC dates. Build each local midnight in PHP: this handles
+        // 23/25-hour DST days and does not require MySQL timezone tables.
+        $cursor = (new DateTimeImmutable('@' . $from_ts))->setTimezone(wp_timezone())->setTime(0, 0);
+        $cases  = [];
+        $args   = [];
+        while ($cursor->getTimestamp() <= $to_ts) {
+            $next    = $cursor->modify('+1 day');
+            $cases[] = 'WHEN date_created_gmt < %s THEN %s';
+            $args[]  = gmdate('Y-m-d H:i:s', $next->getTimestamp());
+            $args[]  = $cursor->format('Y-m-d');
+            $cursor  = $next;
+        }
+
+        $day_sql      = 'CASE ' . implode(' ', $cases) . ' END';
+        $placeholders = implode(', ', array_fill(0, count($statuses), '%s'));
+        $args[]       = $wpdb->prefix . 'wc_orders';
+        $args         = array_merge($args, $statuses, [
+            gmdate('Y-m-d H:i:s', $from_ts),
+            gmdate('Y-m-d H:i:s', $to_ts),
+        ]);
+
+        // Only authoritative HPOS rows are read. No order metadata, addresses,
+        // reporting-table imports, or WooCommerce object caches are needed.
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT {$day_sql} AS order_day, COUNT(*) AS order_count,
+                    COALESCE(SUM(total_amount), 0) AS sales
+             FROM %i
+             WHERE type = 'shop_order' AND status IN ({$placeholders})
+               AND date_created_gmt >= %s AND date_created_gmt <= %s
+             GROUP BY order_day ORDER BY order_day",
+            $args
+        ), ARRAY_A);
+
+        if (!is_array($rows) || '' !== $wpdb->last_error) {
+            // Let woocommerce() return null, so a failed query is never cached
+            // as a successful zero-sales result.
+            throw new \RuntimeException('Unable to aggregate dashboard order totals.');
+        }
+
+        foreach ($rows as $row) {
+            $sales = (float) $row['sales'];
+            $totals['sales'] += $sales;
+            $totals['orders'] += (int) $row['order_count'];
+            $totals['daily'][$row['order_day']] = $sales;
+        }
+
+        return $totals;
     }
 
     /* =====================================================================
