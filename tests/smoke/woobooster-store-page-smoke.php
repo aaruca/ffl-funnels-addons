@@ -77,10 +77,14 @@ function wp_add_inline_style($handle, $css) { $GLOBALS['inline_css'] = $css; }
 class FFLA_Admin
 {
     public static function render_notice(string $type, string $message): void { echo '<div class="notice-' . $type . '">' . $message . '</div>'; }
-    public static function render_toggle_field(string $label, string $name, string $value, string $desc): void { echo '<input type="checkbox" name="' . $name . '"' . ('1' === $value ? ' checked' : '') . '>'; }
+    public static function render_toggle_field(string $label, string $name, string $value, string $desc): void { echo '<input type="checkbox" name="' . $name . '"' . ('1' === $value ? ' checked' : '') . '><p>' . esc_html($desc) . '</p>'; }
     public static function render_text_field(string $label, string $name, string $value, string $desc): void { echo '<input type="text" name="' . $name . '" value="' . esc_attr($value) . '">'; }
 }
 class WooBooster_Matcher { public static function invalidate_recommendation_cache() { $GLOBALS['cache_cleared']++; } }
+$GLOBALS['counts'] = ['bundles' => 3, 'rules' => 0];
+class WooBooster_Bundle { public static function count($args = []) { return $GLOBALS['counts']['bundles']; } }
+class WooBooster_Rule { public static function count($args = []) { return $GLOBALS['counts']['rules']; } }
+function number_format_i18n($number, $decimals = 0) { return number_format((float) $number, $decimals); }
 class WooBooster_Cron { public static function schedule() { $GLOBALS['cron_scheduled']++; } }
 
 require FFLA_PATH . 'modules/woobooster/admin/class-woobooster-admin.php';
@@ -228,8 +232,34 @@ foreach (['woobooster_ai_provider', 'woobooster_ai_api_key', 'woobooster_tavily_
     check(false === strpos($html, $agency_field), "settings tab has no $agency_field");
 }
 check(false === strpos($html, 'sk-agency'), 'API key never printed on the client page');
-check(false !== strpos($html, 'nav-tab-active" aria-current="page">Settings'), 'Settings tab marked current');
-check(4 === preg_match_all('/class="nav-tab( nav-tab-active)?"/', $html), 'four tabs: Bundles, Recommendation rules, Settings, Analytics');
+check((bool) preg_match('#class="ffla-wbs-tab is-active" aria-current="page">.*?<span>Settings</span>#s', $html), 'Settings tab marked current');
+check(4 === preg_match_all('/class="ffla-wbs-tab( is-active)?"/', $html), 'four tabs: Bundles, Recommendation rules, Settings, Analytics');
+check((bool) preg_match('#<span>Bundles</span><span class="ffla-wbs-tab__count">3<#', $html) && (bool) preg_match('#<span>Recommendation rules</span><span class="ffla-wbs-tab__count">0<#', $html), 'tabs show how many bundles and rules exist');
+check(false !== strpos($html, 'ffla-wbs-status is-on') && false !== strpos($html, 'Recommendations on'), 'header shows recommendations are on');
+check(false !== strpos($html, 'What these settings change') && false === strpos($html, '<details class="ffla-wbs-guide" open'), 'settings tab explains itself, closed by default');
+check(false !== strpos($html, 'Status: waiting for the first update.'), 'Trending switched on: status says the first update is pending');
+check(false === strpos($html, 'Get help'), 'no help button without a White Label support link');
+
+// Rules tab with no rules: the guide starts open.
+$GLOBALS['options']['woobooster_settings']['enabled'] = '0';
+$_GET = ['page' => 'ffla-woobooster-store', 'tab' => 'rules'];
+$store_reflection = new ReflectionMethod('WooBooster_Store_Page', 'render_guide');
+$store_reflection->setAccessible(true);
+ob_start();
+$store_reflection->invoke($store, 'rules', true);
+$guide = ob_get_clean();
+check(false !== strpos($guide, '<details class="ffla-wbs-guide" open>') && 3 === substr_count($guide, 'class="ffla-wbs-step"'), 'empty rules tab: three-step guide open');
+check(false !== strpos($guide, 'Example: when a shopper views a 9mm handgun'), 'rules guide gives an example');
+$header = (function () use ($store) {
+    $content = new ReflectionProperty('WooBooster_Store_Page', 'content');
+    $content->setAccessible(true);
+    $content->setValue($store, '');
+    ob_start();
+    $store->render();
+    return ob_get_clean();
+})();
+check(false !== strpos($header, 'ffla-wbs-status is-off') && false !== strpos($header, 'Recommendations off'), 'header shows recommendations are off');
+check(false !== strpos($header, '<details class="ffla-wbs-guide" open>'), 'tab with nothing in it opens its guide');
 
 /* ── Analytics: previous period as long as the range ─────────────────── */
 

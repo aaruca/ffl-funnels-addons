@@ -203,13 +203,13 @@ class WooBooster_Admin
                 'errorDelete'          => __('Error deleting rules.', 'ffl-funnels-addons'),
                 'error'                => __('Error', 'ffl-funnels-addons'),
                 'networkError'        => __('Network error.', 'ffl-funnels-addons'),
-                'actionGroup'          => __('Action Group', 'ffl-funnels-addons'),
+                'actionGroup'          => __('Group', 'ffl-funnels-addons'),
                 'or'                   => __('— OR —', 'ffl-funnels-addons'),
                 'and'                  => __('AND', 'ffl-funnels-addons'),
-                'addAndAction'         => __('+ AND Action', 'ffl-funnels-addons'),
-                'addAndCondition'      => __('+ AND Condition', 'ffl-funnels-addons'),
-                'addAndSource'         => __('+ AND Source', 'ffl-funnels-addons'),
-                'exclusions'           => __('Exclusions', 'ffl-funnels-addons'),
+                'addAndAction'         => __('+ Narrow down (AND)', 'ffl-funnels-addons'),
+                'addAndCondition'      => __('+ Add condition (AND)', 'ffl-funnels-addons'),
+                'addAndSource'         => __('+ Narrow down (AND)', 'ffl-funnels-addons'),
+                'exclusions'           => __('Exceptions', 'ffl-funnels-addons'),
                 'pleaseFix'            => __('Please fix the following:', 'ffl-funnels-addons'),
                 // AI chat modal.
                 'aiSearchingInfo'      => __('Searching for information…', 'ffl-funnels-addons'),
@@ -750,9 +750,14 @@ class WooBooster_Admin
                 echo '</div>';
                 echo '</div>';
                 echo '<div class="wb-card__section">';
-                echo '<form method="post">';
-                $list->display();
-                echo '</form>';
+                if (!$list->has_items()) {
+                    // No table chrome (headers, "1 of 0" pager) around the empty state.
+                    $list->no_items();
+                } else {
+                    echo '<form method="post">';
+                    $list->display();
+                    echo '</form>';
+                }
                 echo '</div>';
                 echo '</div>';
 
@@ -805,11 +810,18 @@ class WooBooster_Admin
                 echo '</div>';
                 echo '</div>';
                 echo '<div class="wb-card__body wb-card__body--table">';
-                echo '<form method="get">';
-                echo self::view_hidden_fields('rules'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in view_hidden_fields().
-                $list->search_box(__('Search Rules', 'ffl-funnels-addons'), 'rule');
-                $list->display();
-                echo '</form>';
+                // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+                if (!$list->has_items() && empty($_REQUEST['s'])) {
+                    echo '<div class="wb-card__section">';
+                    $list->no_items();
+                    echo '</div>';
+                } else {
+                    echo '<form method="get">';
+                    echo self::view_hidden_fields('rules'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in view_hidden_fields().
+                    $list->search_box(__('Search Rules', 'ffl-funnels-addons'), 'rule');
+                    $list->display();
+                    echo '</form>';
+                }
                 echo '</div></div>';
 
                 // Render AI Modal Structure

@@ -1286,3 +1286,87 @@
     transform: scale(1);
   }
 }
+/* ═══════════════════════════════════════════════════════════════════
+   Phones: condition and action rows wrap instead of overflowing
+   (the min-quantity box was cut off and help text squeezed to a column).
+   ═══════════════════════════════════════════════════════════════════ */
+@media (max-width: 782px) {
+  .wb-condition-row {
+    flex-wrap: wrap;
+  }
+
+  .wb-condition-row > *,
+  .wb-action-row > * {
+    max-width: 100%;
+  }
+
+  .wb-condition-store-all-hint {
+    max-width: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Plain-language helpers on the rule and bundle forms
+   ═══════════════════════════════════════════════════════════════════ */
+.wb-form-intro {
+  background: var(--wb-color-brand-soft, #eaf2fb);
+  border-bottom: 1px solid var(--wb-color-neutral-stroke-2);
+}
+
+.wb-form-intro__lead {
+  margin: 0 0 6px;
+  max-width: 72ch;
+  font-size: var(--wb-font-size-base);
+  line-height: 1.55;
+  color: var(--wb-color-neutral-foreground-1);
+}
+
+.wb-form-intro__example {
+  margin: 0;
+  font-size: var(--wb-font-size-sm);
+  color: var(--wb-color-neutral-foreground-2);
+}
+
+.wb-section-eyebrow {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: var(--wb-radius-round);
+  background: var(--wb-color-neutral-background-3);
+  color: var(--wb-color-neutral-foreground-2);
+  font-size: 11px;
+  font-weight: var(--wb-font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.wb-min-qty {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.wb-min-qty__label,
+.wb-action-limit-unit {
+  font-size: 12px;
+  font-weight: var(--wb-font-weight-medium);
+  color: var(--wb-color-neutral-foreground-2);
+  white-space: nowrap;
+}
+
+.wb-action-limit-unit {
+  margin-left: -6px;
+}
+
+.wb-action-limit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.wb-action-limit .wb-action-limit-unit {
+  margin-left: 0;
+}

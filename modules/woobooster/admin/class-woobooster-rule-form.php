@@ -86,6 +86,15 @@ class WooBooster_Rule_Form
 
         // ── Basic Settings ──────────────────────────────────────────────────
 
+        // What a rule is, in one sentence and one example.
+        echo '<div class="wb-card__section wb-form-intro">';
+        echo '<p class="wb-form-intro__lead">' . wp_kses(
+            __('A rule has two parts: <strong>when</strong> a shopper views a product that matches the conditions, the products from the actions are <strong>recommended</strong> on that page.', 'ffl-funnels-addons'),
+            array('strong' => array())
+        ) . '</p>';
+        echo '<p class="wb-form-intro__example">' . esc_html__('Example: when Category is Handguns → show Category 9mm Ammo, 4 products, best sellers first.', 'ffl-funnels-addons') . '</p>';
+        echo '</div>';
+
         echo '<div class="wb-card__section">';
         echo '<h3>' . esc_html__('Basic Settings', 'ffl-funnels-addons') . '</h3>';
 
@@ -93,7 +102,8 @@ class WooBooster_Rule_Form
         echo '<div class="wb-field">';
         echo '<label class="wb-field__label" for="wb-rule-name">' . esc_html__('Rule Name', 'ffl-funnels-addons') . '</label>';
         echo '<div class="wb-field__control">';
-        echo '<input type="text" id="wb-rule-name" name="rule_name" value="' . esc_attr($name) . '" class="wb-input" required>';
+        echo '<input type="text" id="wb-rule-name" name="rule_name" value="' . esc_attr($name) . '" class="wb-input" required placeholder="' . esc_attr__('e.g. 9mm ammo on 9mm handguns', 'ffl-funnels-addons') . '">';
+        echo '<p class="wb-field__desc">' . esc_html__('For you only; shoppers never see it.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
         // Priority.
@@ -101,17 +111,18 @@ class WooBooster_Rule_Form
         echo '<label class="wb-field__label" for="wb-rule-priority">' . esc_html__('Priority', 'ffl-funnels-addons') . '</label>';
         echo '<div class="wb-field__control">';
         echo '<input type="number" id="wb-rule-priority" name="rule_priority" value="' . esc_attr($priority) . '" min="1" max="999" class="wb-input wb-input--sm">';
-        echo '<p class="wb-field__desc">' . esc_html__('Lower number = higher priority. If multiple rules match, the lowest priority wins.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('Only matters when two rules fit the same product: the lower number is used. Leave 10 if unsure.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
         // Status.
         echo '<div class="wb-field">';
-        echo '<label class="wb-field__label">' . esc_html__('Status', 'ffl-funnels-addons') . '</label>';
+        echo '<label class="wb-field__label" for="wb-rule-status">' . esc_html__('Active', 'ffl-funnels-addons') . '</label>';
         echo '<div class="wb-field__control">';
         echo '<label class="wb-toggle">';
-        echo '<input type="checkbox" name="rule_status" value="1"' . checked($status, 1, false) . '>';
+        echo '<input type="checkbox" id="wb-rule-status" name="rule_status" value="1"' . checked($status, 1, false) . '>';
         echo '<span class="wb-toggle__slider"></span>';
         echo '</label>';
+        echo '<p class="wb-field__desc">' . esc_html__('When off, the rule is saved but not used on your store.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
         // Schedule.
@@ -141,8 +152,8 @@ class WooBooster_Rule_Form
         // ── Conditions ──────────────────────────────────────────────────────
 
         echo '<div class="wb-card__section" id="wb-conditions-section">';
-        echo '<h3>' . esc_html__('Conditions', 'ffl-funnels-addons') . '</h3>';
-        echo '<p class="wb-section-desc">' . esc_html__('Groups are combined with OR. Conditions within a group are combined with AND. Use “Entire store” when the rule should apply to every product (no category, tag, or search value needed).', 'ffl-funnels-addons') . '</p>';
+        echo '<h3>' . esc_html__('When a shopper views…', 'ffl-funnels-addons') . ' <span class="wb-section-eyebrow">' . esc_html__('Conditions', 'ffl-funnels-addons') . '</span></h3>';
+        echo '<p class="wb-section-desc">' . esc_html__('Pick the product pages this rule is for. Every condition in a group must match. Add another group for a different set of pages: a page then matches if either group fits. “Entire store” matches every product.', 'ffl-funnels-addons') . '</p>';
 
         echo '<div id="wb-condition-groups">';
 
@@ -154,7 +165,7 @@ class WooBooster_Rule_Form
 
             echo '<div class="wb-condition-group" data-group="' . esc_attr($group_index) . '">';
             echo '<div class="wb-condition-group__header">';
-            echo '<span class="wb-condition-group__label">' . esc_html__('Condition Group', 'ffl-funnels-addons') . ' ' . ($group_index + 1) . '</span>';
+            echo '<span class="wb-condition-group__label">' . esc_html__('Group', 'ffl-funnels-addons') . ' ' . ($group_index + 1) . '</span>';
             if ($group_index > 0) {
                 echo '<button type="button" class="wb-btn wb-btn--danger wb-btn--xs wb-remove-group" title="' . esc_attr__('Remove Group', 'ffl-funnels-addons') . '">&times;</button>';
             }
@@ -243,23 +254,27 @@ class WooBooster_Rule_Form
 
                 // Value autocomplete.
                 echo '<div class="wb-autocomplete wb-condition-value-wrap">';
-                echo '<input type="text" class="wb-input wb-autocomplete__input wb-condition-value-display" placeholder="' . esc_attr__('Value…', 'ffl-funnels-addons') . '" value="' . esc_attr($c_label) . '" autocomplete="off">';
+                echo '<input type="text" class="wb-input wb-autocomplete__input wb-condition-value-display" placeholder="' . esc_attr__('Search…', 'ffl-funnels-addons') . '" value="' . esc_attr($c_label) . '" autocomplete="off">';
                 echo '<input type="hidden" name="' . esc_attr($field_prefix . '[value]') . '" class="wb-condition-value-hidden" value="' . esc_attr($c_val) . '">';
                 echo '<div class="wb-autocomplete__dropdown"></div>';
                 $chips_display = 'specific_product' === $c_type ? '' : 'display:none;';
                 echo '<div class="wb-condition-product-chips wb-chips" style="' . esc_attr($chips_display) . '"></div>';
                 echo '</div>';
 
-                echo '<span class="wb-condition-store-all-hint">' . esc_html__('Applies to every product. Use exclusions below if you need to narrow it.', 'ffl-funnels-addons') . '</span>';
+                echo '<span class="wb-condition-store-all-hint">' . esc_html__('Applies to every product. Use Exceptions below to leave some out.', 'ffl-funnels-addons') . '</span>';
 
                 // Include children.
                 echo '<label class="wb-checkbox wb-condition-children-label" style="display:none;">';
                 echo '<input type="checkbox" name="' . esc_attr($field_prefix . '[include_children]') . '" value="1"' . checked($c_inc, 1, false) . '> ';
-                echo esc_html__('+ Children', 'ffl-funnels-addons');
+                echo esc_html__('Include subcategories', 'ffl-funnels-addons');
                 echo '</label>';
 
                 // Min quantity.
-                echo '<input type="number" name="' . esc_attr($field_prefix . '[min_quantity]') . '" value="' . esc_attr($c_min_qty) . '" min="1" class="wb-input wb-input--sm wb-input--w60" title="' . esc_attr__('Min cart qty (coupon rules only)', 'ffl-funnels-addons') . '" placeholder="Qty">';
+                // Only used by Apply Coupon rules; the script hides it otherwise.
+                echo '<label class="wb-min-qty" title="' . esc_attr__('Apply Coupon rules: how many matching items the cart needs.', 'ffl-funnels-addons') . '">';
+                echo '<span class="wb-min-qty__label">' . esc_html__('Min. in cart', 'ffl-funnels-addons') . '</span>';
+                echo '<input type="number" name="' . esc_attr($field_prefix . '[min_quantity]') . '" value="' . esc_attr($c_min_qty) . '" min="1" class="wb-input wb-input--sm wb-input--w60">';
+                echo '</label>';
 
                 // Remove button.
                 if ($cond_index > 0 || count($conditions) > 1) {
@@ -277,7 +292,7 @@ class WooBooster_Rule_Form
 
                 echo '<div class="wb-cond-exclusion-panel wb-sub-panel">';
                 echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-cond-exclusions">';
-                echo ($cex_has ? '&#9660;' : '&#9654;') . ' ' . esc_html__('Condition Exclusions', 'ffl-funnels-addons');
+                echo ($cex_has ? '&#9660;' : '&#9654;') . ' ' . esc_html__('Exceptions', 'ffl-funnels-addons');
                 echo '</button>';
 
                 $cex_body_display = $cex_has ? '' : 'display:none;';
@@ -319,7 +334,7 @@ class WooBooster_Rule_Form
             }
 
             echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--sm wb-add-condition">';
-            echo '+ ' . esc_html__('AND Condition', 'ffl-funnels-addons');
+            echo '+ ' . esc_html__('Add condition (AND)', 'ffl-funnels-addons');
             echo '</button>';
 
             echo '</div>'; // .wb-condition-group
@@ -329,7 +344,7 @@ class WooBooster_Rule_Form
         echo '</div>'; // #wb-condition-groups
 
         echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--sm" id="wb-add-group">';
-        echo '+ ' . esc_html__('OR Group', 'ffl-funnels-addons');
+        echo '+ ' . esc_html__('Add another group (OR)', 'ffl-funnels-addons');
         echo '</button>';
 
         echo '</div>'; // .wb-card__section
@@ -337,8 +352,8 @@ class WooBooster_Rule_Form
         // ── Action ──────────────────────────────────────────────────────────
 
         echo '<div class="wb-card__section" id="wb-actions-section">';
-        echo '<h3>' . esc_html__('Actions', 'ffl-funnels-addons') . '</h3>';
-        echo '<p class="wb-section-desc">' . esc_html__('Groups are combined with OR. Actions within a group are combined with AND.', 'ffl-funnels-addons') . '</p>';
+        echo '<h3>' . esc_html__('…recommend these products', 'ffl-funnels-addons') . ' <span class="wb-section-eyebrow">' . esc_html__('Actions', 'ffl-funnels-addons') . '</span></h3>';
+        echo '<p class="wb-section-desc">' . esc_html__('Pick what to show and how many. Products from every group are shown together. “Narrow down” inside a group keeps only products that match all of its sources, for example Bought Together that are also Holsters. Choose Apply Coupon to apply a coupon to the cart instead.', 'ffl-funnels-addons') . '</p>';
 
         $action_groups = $rule_id ? WooBooster_Rule::get_actions($rule_id) : array();
         if (empty($action_groups)) {
@@ -370,7 +385,7 @@ class WooBooster_Rule_Form
 
             echo '<div class="wb-action-group" data-group="' . esc_attr($a_group_index) . '">';
             echo '<div class="wb-action-group__header">';
-            echo '<span class="wb-action-group__label">' . esc_html__('Action Group', 'ffl-funnels-addons') . ' ' . ($a_group_index + 1) . '</span>';
+            echo '<span class="wb-action-group__label">' . esc_html__('Group', 'ffl-funnels-addons') . ' ' . ($a_group_index + 1) . '</span>';
             if ($a_group_index > 0) {
                 echo '<button type="button" class="wb-btn wb-btn--danger wb-btn--xs wb-remove-action-group" title="' . esc_attr__('Remove Group', 'ffl-funnels-addons') . '">&times;</button>';
             }
@@ -451,7 +466,7 @@ class WooBooster_Rule_Form
 
                 // Value Autocomplete.
                 echo '<div class="wb-autocomplete wb-action-value-wrap">';
-                echo '<input type="text" class="wb-input wb-autocomplete__input wb-action-value-display" placeholder="' . esc_attr__('Value…', 'ffl-funnels-addons') . '" value="' . esc_attr($a_label) . '" autocomplete="off">';
+                echo '<input type="text" class="wb-input wb-autocomplete__input wb-action-value-display" placeholder="' . esc_attr__('Search…', 'ffl-funnels-addons') . '" value="' . esc_attr($a_label) . '" autocomplete="off">';
                 echo '<input type="hidden" name="' . esc_attr($prefix . '[action_value]') . '" class="wb-action-value-hidden" value="' . esc_attr($a_value) . '">';
                 echo '<div class="wb-autocomplete__dropdown"></div>';
                 echo '</div>';
@@ -460,19 +475,19 @@ class WooBooster_Rule_Form
                 $display_inc = 'category' === $a_source ? '' : 'display:none;';
                 echo '<label class="wb-checkbox wb-action-children-label" style="' . esc_attr($display_inc) . '">';
                 echo '<input type="checkbox" name="' . esc_attr($prefix . '[include_children]') . '" value="1"' . checked($a_inc, 1, false) . '> ';
-                echo esc_html__('+ Children', 'ffl-funnels-addons');
+                echo esc_html__('Include subcategories', 'ffl-funnels-addons');
                 echo '</label>';
 
                 // Order By (hidden for apply_coupon actions).
                 $display_order_limit = 'apply_coupon' === $a_source ? 'display:none;' : '';
-                echo '<select name="' . esc_attr($prefix . '[action_orderby]') . '" class="wb-select wb-select--inline" style="' . esc_attr($display_order_limit) . '" title="' . esc_attr__('Order By', 'ffl-funnels-addons') . '">';
+                echo '<select name="' . esc_attr($prefix . '[action_orderby]') . '" class="wb-select wb-select--inline" style="' . esc_attr($display_order_limit) . '" title="' . esc_attr__('Order By', 'ffl-funnels-addons') . '" aria-label="' . esc_attr__('Sort order', 'ffl-funnels-addons') . '">';
                 $orderbys = array(
-                    'rand' => __('Random', 'ffl-funnels-addons'),
-                    'date' => __('Newest', 'ffl-funnels-addons'),
-                    'price' => __('Price (Low to High)', 'ffl-funnels-addons'),
-                    'price_desc' => __('Price (High to Low)', 'ffl-funnels-addons'),
-                    'bestselling' => __('Bestselling', 'ffl-funnels-addons'),
-                    'rating' => __('Rating', 'ffl-funnels-addons'),
+                    'rand' => __('Random order', 'ffl-funnels-addons'),
+                    'date' => __('Newest first', 'ffl-funnels-addons'),
+                    'price' => __('Lowest price first', 'ffl-funnels-addons'),
+                    'price_desc' => __('Highest price first', 'ffl-funnels-addons'),
+                    'bestselling' => __('Best sellers first', 'ffl-funnels-addons'),
+                    'rating' => __('Top rated first', 'ffl-funnels-addons'),
                 );
                 foreach ($orderbys as $key => $label) {
                     echo '<option value="' . esc_attr($key) . '"' . selected($a_orderby, $key, false) . '>' . esc_html($label) . '</option>';
@@ -480,7 +495,10 @@ class WooBooster_Rule_Form
                 echo '</select>';
 
                 // Limit (hidden for apply_coupon actions).
-                echo '<input type="number" name="' . esc_attr($prefix . '[action_limit]') . '" value="' . esc_attr($a_limit) . '" min="1" class="wb-input wb-input--sm wb-input--w70" style="' . esc_attr($display_order_limit) . '" title="' . esc_attr__('Limit', 'ffl-funnels-addons') . '">';
+                echo '<span class="wb-action-limit">';
+                echo '<input type="number" name="' . esc_attr($prefix . '[action_limit]') . '" value="' . esc_attr($a_limit) . '" min="1" class="wb-input wb-input--sm wb-input--w70" style="' . esc_attr($display_order_limit) . '" title="' . esc_attr__('Limit', 'ffl-funnels-addons') . '" aria-label="' . esc_attr__('Number of products', 'ffl-funnels-addons') . '">';
+                echo '<span class="wb-action-limit-unit" style="' . esc_attr($display_order_limit) . '">' . esc_html__('products', 'ffl-funnels-addons') . '</span>';
+                echo '</span>';
 
                 // Remove Button.
                 if ($a_index > 0 || count($actions) > 1) {
@@ -534,7 +552,7 @@ class WooBooster_Rule_Form
 
                 echo '<div class="wb-exclusion-panel wb-sub-panel">';
                 echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-exclusions">';
-                echo ($has_exclusions ? '&#9660;' : '&#9654;') . ' ' . esc_html__('Action Exclusions', 'ffl-funnels-addons');
+                echo ($has_exclusions ? '&#9660;' : '&#9654;') . ' ' . esc_html__('Exceptions', 'ffl-funnels-addons');
                 echo '</button>';
 
                 $ex_body_display = $has_exclusions ? '' : 'display:none;';
@@ -577,7 +595,7 @@ class WooBooster_Rule_Form
             }
 
             echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--sm wb-add-action">';
-            echo '+ ' . esc_html__('AND Action', 'ffl-funnels-addons');
+            echo '+ ' . esc_html__('Narrow down (AND)', 'ffl-funnels-addons');
             echo '</button>';
 
             echo '</div>'; // .wb-action-group
@@ -587,13 +605,21 @@ class WooBooster_Rule_Form
         echo '</div>'; // #wb-action-groups
 
         echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--sm" id="wb-add-action-group">';
-        echo '+ ' . esc_html__('OR Group', 'ffl-funnels-addons');
+        echo '+ ' . esc_html__('Add another group (OR)', 'ffl-funnels-addons');
         echo '</button>';
 
         // Out-of-stock products follow the global WB Settings toggle (or the
         // Bricks loop's own checkbox). The old per-rule toggle was never
         // applied, so it is no longer shown; saved values are left alone.
-        echo '<p class="wb-field__desc wb-global-setting">' . esc_html__('Out-of-stock products follow the "Exclude Out of Stock" setting in WB Settings (Bricks loops have their own checkbox).', 'ffl-funnels-addons') . '</p>';
+        if (WooBooster_Admin::is_store_context()) {
+            echo '<p class="wb-field__desc wb-global-setting">' . sprintf(
+                /* translators: %s: link to the Settings tab */
+                esc_html__('Out-of-stock products are left out while “Hide out-of-stock products” is on in %s.', 'ffl-funnels-addons'),
+                '<a href="' . esc_url(WooBooster_Admin::url('settings')) . '">' . esc_html__('Settings', 'ffl-funnels-addons') . '</a>'
+            ) . '</p>';
+        } else {
+            echo '<p class="wb-field__desc wb-global-setting">' . esc_html__('Out-of-stock products follow the "Exclude Out of Stock" setting in WB Settings (Bricks loops have their own checkbox).', 'ffl-funnels-addons') . '</p>';
+        }
 
         echo '</div>'; // .wb-card__section
 

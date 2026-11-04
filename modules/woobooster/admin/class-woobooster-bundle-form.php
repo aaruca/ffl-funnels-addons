@@ -65,6 +65,15 @@ class WooBooster_Bundle_Form
             echo '<input type="hidden" name="bundle_id" value="' . esc_attr($bundle_id) . '">';
         }
 
+        // What a bundle is, in one sentence and one example.
+        echo '<div class="wb-card__section wb-form-intro">';
+        echo '<p class="wb-form-intro__lead">' . wp_kses(
+            __('A bundle is a set of products sold together at a better price. Shoppers see it on the product pages you pick under <strong>Show on these product pages</strong>, tick the items they want and add them to the cart in one click.', 'ffl-funnels-addons'),
+            array('strong' => array())
+        ) . '</p>';
+        echo '<p class="wb-form-intro__example">' . esc_html__('Example: “Range Day Kit”: a rifle, a scope and 2 boxes of ammo, 10% off, shown on every rifle in Rifles.', 'ffl-funnels-addons') . '</p>';
+        echo '</div>';
+
         // ── Basic Settings ──────────────────────────────────────────────
         echo '<div class="wb-card__section">';
         echo '<h3>' . esc_html__('Basic Settings', 'ffl-funnels-addons') . '</h3>';
@@ -73,7 +82,8 @@ class WooBooster_Bundle_Form
         echo '<div class="wb-field">';
         echo '<label class="wb-field__label" for="wb-bundle-name">' . esc_html__('Bundle Name', 'ffl-funnels-addons') . '</label>';
         echo '<div class="wb-field__control">';
-        echo '<input type="text" id="wb-bundle-name" name="bundle_name" value="' . esc_attr($name) . '" class="wb-input" required>';
+        echo '<input type="text" id="wb-bundle-name" name="bundle_name" value="' . esc_attr($name) . '" class="wb-input" required placeholder="' . esc_attr__('e.g. Range Day Kit', 'ffl-funnels-addons') . '">';
+        echo '<p class="wb-field__desc">' . esc_html__('Shoppers see this name on the product page and in the cart.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
         // Bundle Image (replaces representative product thumbnail in cart).
@@ -88,7 +98,7 @@ class WooBooster_Bundle_Form
         echo '<button type="button" class="button wb-bundle-image-select">' . esc_html__('Select image', 'ffl-funnels-addons') . '</button> ';
         echo '<button type="button" class="button wb-bundle-image-remove"' . ($image_id ? '' : ' style="display:none;"') . '>' . esc_html__('Remove', 'ffl-funnels-addons') . '</button>';
         echo '</div></div>';
-        echo '<p class="wb-field__desc">' . esc_html__('Shown in cart and checkout in place of the first product\'s thumbnail. Optional.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('Optional. Shown in the cart and at checkout instead of the first product’s photo.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
         // Priority.
@@ -96,17 +106,18 @@ class WooBooster_Bundle_Form
         echo '<label class="wb-field__label" for="wb-bundle-priority">' . esc_html__('Priority', 'ffl-funnels-addons') . '</label>';
         echo '<div class="wb-field__control">';
         echo '<input type="number" id="wb-bundle-priority" name="bundle_priority" value="' . esc_attr($priority) . '" min="1" max="999" class="wb-input wb-input--sm">';
-        echo '<p class="wb-field__desc">' . esc_html__('Lower number = higher priority. Used when multiple bundles match the same product.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('Only matters when two bundles fit the same product: the lower number is shown. Leave 10 if unsure.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
         // Status.
         echo '<div class="wb-field">';
-        echo '<label class="wb-field__label">' . esc_html__('Status', 'ffl-funnels-addons') . '</label>';
+        echo '<label class="wb-field__label" for="wb-bundle-status">' . esc_html__('Active', 'ffl-funnels-addons') . '</label>';
         echo '<div class="wb-field__control">';
         echo '<label class="wb-toggle">';
-        echo '<input type="checkbox" name="bundle_status" value="1"' . checked($status, 1, false) . '>';
+        echo '<input type="checkbox" id="wb-bundle-status" name="bundle_status" value="1"' . checked($status, 1, false) . '>';
         echo '<span class="wb-toggle__slider"></span>';
         echo '</label>';
+        echo '<p class="wb-field__desc">' . esc_html__('When off, the bundle is saved but shoppers do not see it.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
         // Schedule.
@@ -144,7 +155,7 @@ class WooBooster_Bundle_Form
         echo '<option value="discount"' . selected($bundle_price_type, 'discount', false) . '>' . esc_html__('Discount on items', 'ffl-funnels-addons') . '</option>';
         echo '<option value="fixed"' . selected($bundle_price_type, 'fixed', false) . '>' . esc_html__('Fixed bundle price', 'ffl-funnels-addons') . '</option>';
         echo '</select>';
-        echo '<p class="wb-field__desc">' . esc_html__('“Discount on items” reduces each item’s price. “Fixed bundle price” sells the whole set for one total, split pro-rata across items.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('“Discount on items” lowers the price of each item. “Fixed bundle price” sells the whole set for one total you choose.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
         // Discount fields (mode = discount).
@@ -166,7 +177,7 @@ class WooBooster_Bundle_Form
         echo '<label class="wb-field__label">' . esc_html__('Discount Value', 'ffl-funnels-addons') . '</label>';
         echo '<div class="wb-field__control">';
         echo '<input type="number" name="bundle_discount_value" value="' . esc_attr($discount_value) . '" min="0" step="0.01" class="wb-input wb-input--sm">';
-        echo '<p class="wb-field__desc">' . esc_html__('Percentage: taken off each item. Fixed Amount: taken off the whole bundle (every item at its quantity), split across the items by price. The bundle\'s cart line is priced at the discounted total.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('Percentage: taken off every item, e.g. 10. Fixed amount: taken off the whole set once, e.g. 25 for $25 off the bundle.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
         echo '</div>'; // .wb-price-discount-fields
@@ -177,15 +188,15 @@ class WooBooster_Bundle_Form
         echo '<label class="wb-field__label">' . esc_html__('Bundle Price', 'ffl-funnels-addons') . '</label>';
         echo '<div class="wb-field__control">';
         echo '<input type="number" name="bundle_price" value="' . esc_attr($bundle_price) . '" min="0" step="0.01" class="wb-input wb-input--sm">';
-        echo '<p class="wb-field__desc">' . esc_html__('Total price for the whole bundle, item quantities included. Split across items pro-rata by their original price. A value at or above the items’ combined price applies no discount.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('What the shopper pays for the whole set, quantities included. A price at or above the items’ normal total gives no discount.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
         echo '</div>'; // .wb-card__section
 
         // ── Bundle Items (Static) ───────────────────────────────────────
         echo '<div class="wb-card__section" id="wb-bundle-items-section">';
-        echo '<h3>' . esc_html__('Bundle Items (Manual)', 'ffl-funnels-addons') . '</h3>';
-        echo '<p class="wb-section-desc">' . esc_html__('Add specific products to this bundle. They are always included unless marked Optional; shoppers can untick optional items and dynamic items.', 'ffl-funnels-addons') . '</p>';
+        echo '<h3>' . esc_html__('Products in the bundle', 'ffl-funnels-addons') . '</h3>';
+        echo '<p class="wb-section-desc">' . esc_html__('Search and add products. Each one is included unless you mark it Optional; shoppers can untick optional items. Qty is how many of that item come in one bundle.', 'ffl-funnels-addons') . '</p>';
 
         $items = $bundle_id ? WooBooster_Bundle::get_items($bundle_id) : array();
 
@@ -226,8 +237,8 @@ class WooBooster_Bundle_Form
 
         // ── Bundle Items (Dynamic/AI) ───────────────────────────────────
         echo '<div class="wb-card__section" id="wb-bundle-actions-section">';
-        echo '<h3>' . esc_html__('Bundle Items (Dynamic)', 'ffl-funnels-addons') . '</h3>';
-        echo '<p class="wb-section-desc">' . esc_html__('Add dynamic product sources (AI, trending, category, etc). Groups are combined with OR, actions within a group with AND.', 'ffl-funnels-addons') . '</p>';
+        echo '<h3>' . esc_html__('Products picked automatically (optional)', 'ffl-funnels-addons') . '</h3>';
+        echo '<p class="wb-section-desc">' . esc_html__('Let the bundle fill itself for the product being viewed, for example 2 best sellers from Ammo or items often bought together. Shoppers can untick these.', 'ffl-funnels-addons') . '</p>';
 
         $action_groups = $bundle_id ? WooBooster_Bundle::get_actions($bundle_id) : array();
 
@@ -247,15 +258,20 @@ class WooBooster_Bundle_Form
         echo '</div>'; // #wb-bundle-action-groups
 
         echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--sm" id="wb-add-bundle-action-group">';
-        echo '+ ' . esc_html__('Add Dynamic Source Group', 'ffl-funnels-addons');
+        echo '+ ' . esc_html__('Add automatic pick', 'ffl-funnels-addons');
         echo '</button>';
 
         echo '</div>'; // .wb-card__section
 
         // ── Conditions ──────────────────────────────────────────────────
         echo '<div class="wb-card__section" id="wb-bundle-conditions-section">';
-        echo '<h3>' . esc_html__('Conditions', 'ffl-funnels-addons') . '</h3>';
-        echo '<p class="wb-section-desc">' . esc_html__('Define which products this bundle appears on. Leave empty for manual-only bundles (use "Specific Bundle" in Bricks). Groups = OR, within group = AND. Use “Entire store” to match every product.', 'ffl-funnels-addons') . '</p>';
+        echo '<h3>' . esc_html__('Show on these product pages', 'ffl-funnels-addons') . ' <span class="wb-section-eyebrow">' . esc_html__('Conditions', 'ffl-funnels-addons') . '</span></h3>';
+        if (WooBooster_Admin::is_store_context()) {
+            $conditions_desc = __('Pick where the bundle appears: a category, a tag, an attribute such as a brand, specific products or every product. Every condition in a group must match; another group adds more pages. Leave empty to show the bundle only where your FFL Funnels team placed it.', 'ffl-funnels-addons');
+        } else {
+            $conditions_desc = __('Pick where the bundle appears. Every condition in a group must match; another group adds more pages (OR). Leave empty for a bundle you only show by pinning it ("Specific Bundle" in Bricks). “Entire store” matches every product.', 'ffl-funnels-addons');
+        }
+        echo '<p class="wb-section-desc">' . esc_html($conditions_desc) . '</p>';
 
         $condition_groups = $bundle_id ? WooBooster_Bundle::get_conditions($bundle_id) : array();
 
@@ -275,7 +291,7 @@ class WooBooster_Bundle_Form
         echo '</div>'; // #wb-bundle-condition-groups
 
         echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--sm" id="wb-add-bundle-condition-group">';
-        echo '+ ' . esc_html__('Add Condition Group', 'ffl-funnels-addons');
+        echo '+ ' . esc_html__('Add where to show it', 'ffl-funnels-addons');
         echo '</button>';
 
         echo '</div>'; // .wb-card__section
@@ -299,7 +315,7 @@ class WooBooster_Bundle_Form
     {
         echo '<div class="wb-condition-group" data-group="' . esc_attr($group_index) . '">';
         echo '<div class="wb-condition-group__header">';
-        echo '<span class="wb-condition-group__label">' . esc_html__('Condition Group', 'ffl-funnels-addons') . ' ' . ($group_index + 1) . '</span>';
+        echo '<span class="wb-condition-group__label">' . esc_html__('Group', 'ffl-funnels-addons') . ' ' . ($group_index + 1) . '</span>';
         if ($group_index > 0) {
             echo '<button type="button" class="wb-btn wb-btn--danger wb-btn--xs wb-remove-bundle-cond-group" title="' . esc_attr__('Remove Group', 'ffl-funnels-addons') . '">&times;</button>';
         }
@@ -400,7 +416,7 @@ class WooBooster_Bundle_Form
 
             // Value autocomplete.
             echo '<div class="wb-autocomplete wb-condition-value-wrap">';
-            echo '<input type="text" class="wb-input wb-autocomplete__input wb-condition-value-display" placeholder="' . esc_attr__('Value…', 'ffl-funnels-addons') . '" value="' . esc_attr($c_label) . '" autocomplete="off">';
+            echo '<input type="text" class="wb-input wb-autocomplete__input wb-condition-value-display" placeholder="' . esc_attr__('Search…', 'ffl-funnels-addons') . '" value="' . esc_attr($c_label) . '" autocomplete="off">';
             echo '<input type="hidden" name="' . esc_attr($field_prefix . '[value]') . '" class="wb-condition-value-hidden" value="' . esc_attr($c_val) . '">';
             echo '<div class="wb-autocomplete__dropdown"></div>';
             $chips_display = 'specific_product' === $c_type ? '' : 'display:none;';
@@ -412,7 +428,7 @@ class WooBooster_Bundle_Form
             // Include children.
             echo '<label class="wb-checkbox wb-condition-children-label" style="display:none;">';
             echo '<input type="checkbox" name="' . esc_attr($field_prefix . '[include_children]') . '" value="1"' . checked($c_inc, 1, false) . '> ';
-            echo esc_html__('+ Children', 'ffl-funnels-addons');
+            echo esc_html__('Include subcategories', 'ffl-funnels-addons');
             echo '</label>';
 
             // Remove.
@@ -425,7 +441,7 @@ class WooBooster_Bundle_Form
         }
 
         echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--sm wb-add-bundle-condition">';
-        echo '+ ' . esc_html__('AND Condition', 'ffl-funnels-addons');
+        echo '+ ' . esc_html__('Add condition (AND)', 'ffl-funnels-addons');
         echo '</button>';
 
         echo '</div>'; // .wb-condition-group
@@ -438,7 +454,7 @@ class WooBooster_Bundle_Form
     {
         echo '<div class="wb-action-group" data-group="' . esc_attr($a_group_index) . '">';
         echo '<div class="wb-action-group__header">';
-        echo '<span class="wb-action-group__label">' . esc_html__('Source Group', 'ffl-funnels-addons') . ' ' . ($a_group_index + 1) . '</span>';
+        echo '<span class="wb-action-group__label">' . esc_html__('Group', 'ffl-funnels-addons') . ' ' . ($a_group_index + 1) . '</span>';
         if ($a_group_index > 0) {
             echo '<button type="button" class="wb-btn wb-btn--danger wb-btn--xs wb-remove-bundle-action-group" title="' . esc_attr__('Remove Group', 'ffl-funnels-addons') . '">&times;</button>';
         }
@@ -511,7 +527,7 @@ class WooBooster_Bundle_Form
 
             // Value Autocomplete.
             echo '<div class="wb-autocomplete wb-action-value-wrap">';
-            echo '<input type="text" class="wb-input wb-autocomplete__input wb-action-value-display" placeholder="' . esc_attr__('Value…', 'ffl-funnels-addons') . '" value="' . esc_attr($a_label) . '" autocomplete="off">';
+            echo '<input type="text" class="wb-input wb-autocomplete__input wb-action-value-display" placeholder="' . esc_attr__('Search…', 'ffl-funnels-addons') . '" value="' . esc_attr($a_label) . '" autocomplete="off">';
             echo '<input type="hidden" name="' . esc_attr($prefix . '[action_value]') . '" class="wb-action-value-hidden" value="' . esc_attr($a_value) . '">';
             echo '<div class="wb-autocomplete__dropdown"></div>';
             echo '</div>';
@@ -520,18 +536,18 @@ class WooBooster_Bundle_Form
             $display_inc = 'category' === $a_source ? '' : 'display:none;';
             echo '<label class="wb-checkbox wb-action-children-label" style="' . esc_attr($display_inc) . '">';
             echo '<input type="checkbox" name="' . esc_attr($prefix . '[include_children]') . '" value="1"' . checked($a_inc, 1, false) . '> ';
-            echo esc_html__('+ Children', 'ffl-funnels-addons');
+            echo esc_html__('Include subcategories', 'ffl-funnels-addons');
             echo '</label>';
 
             // Order By.
             echo '<select name="' . esc_attr($prefix . '[action_orderby]') . '" class="wb-select wb-select--inline" title="' . esc_attr__('Order By', 'ffl-funnels-addons') . '">';
             $orderbys = array(
-                'rand'        => __('Random', 'ffl-funnels-addons'),
-                'date'        => __('Newest', 'ffl-funnels-addons'),
-                'price'       => __('Price (Low to High)', 'ffl-funnels-addons'),
-                'price_desc'  => __('Price (High to Low)', 'ffl-funnels-addons'),
-                'bestselling' => __('Bestselling', 'ffl-funnels-addons'),
-                'rating'      => __('Rating', 'ffl-funnels-addons'),
+                'rand'        => __('Random order', 'ffl-funnels-addons'),
+                'date'        => __('Newest first', 'ffl-funnels-addons'),
+                'price'       => __('Lowest price first', 'ffl-funnels-addons'),
+                'price_desc'  => __('Highest price first', 'ffl-funnels-addons'),
+                'bestselling' => __('Best sellers first', 'ffl-funnels-addons'),
+                'rating'      => __('Top rated first', 'ffl-funnels-addons'),
             );
             foreach ($orderbys as $key => $label) {
                 echo '<option value="' . esc_attr($key) . '"' . selected($a_orderby, $key, false) . '>' . esc_html($label) . '</option>';
@@ -539,7 +555,10 @@ class WooBooster_Bundle_Form
             echo '</select>';
 
             // Limit.
-            echo '<input type="number" name="' . esc_attr($prefix . '[action_limit]') . '" value="' . esc_attr($a_limit) . '" min="1" class="wb-input wb-input--sm wb-input--w70" title="' . esc_attr__('Limit', 'ffl-funnels-addons') . '">';
+            echo '<span class="wb-action-limit">';
+            echo '<input type="number" name="' . esc_attr($prefix . '[action_limit]') . '" value="' . esc_attr($a_limit) . '" min="1" class="wb-input wb-input--sm wb-input--w70" title="' . esc_attr__('Limit', 'ffl-funnels-addons') . '" aria-label="' . esc_attr__('Number of products', 'ffl-funnels-addons') . '">';
+            echo '<span class="wb-action-limit-unit">' . esc_html__('products', 'ffl-funnels-addons') . '</span>';
+            echo '</span>';
 
             // Remove.
             if ($a_index > 0 || count($actions) > 1) {
@@ -569,7 +588,7 @@ class WooBooster_Bundle_Form
 
             echo '<div class="wb-exclusion-panel wb-sub-panel">';
             echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-exclusions">';
-            echo ($has_ex ? '&#9660;' : '&#9654;') . ' ' . esc_html__('Exclusions', 'ffl-funnels-addons');
+            echo ($has_ex ? '&#9660;' : '&#9654;') . ' ' . esc_html__('Exceptions', 'ffl-funnels-addons');
             echo '</button>';
 
             $ex_body_display = $has_ex ? '' : 'display:none;';
@@ -608,7 +627,7 @@ class WooBooster_Bundle_Form
         }
 
         echo '<button type="button" class="wb-btn wb-btn--subtle wb-btn--sm wb-add-bundle-action">';
-        echo '+ ' . esc_html__('AND Source', 'ffl-funnels-addons');
+        echo '+ ' . esc_html__('Narrow down (AND)', 'ffl-funnels-addons');
         echo '</button>';
 
         echo '</div>'; // .wb-action-group

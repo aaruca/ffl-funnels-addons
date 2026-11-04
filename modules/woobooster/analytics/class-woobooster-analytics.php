@@ -86,6 +86,11 @@ class WooBooster_Analytics
             'total' => $data['daily']['total'],
             'wb' => $data['daily']['wb'],
             'currency' => function_exists('get_woocommerce_currency_symbol') ? html_entity_decode(get_woocommerce_currency_symbol()) : '$',
+            'i18n' => array(
+                'wb'    => __('From recommendations', 'ffl-funnels-addons'),
+                'other' => __('Other sales', 'ffl-funnels-addons'),
+                'noRuleData' => __('No sales from rules yet', 'ffl-funnels-addons'),
+            ),
             'donut' => $donut,
             'funnel' => array(
                 'impressions' => $data['conversion']['add_to_cart'],
@@ -453,6 +458,38 @@ class WooBooster_Analytics
                 color: var(--wb-color-neutral-foreground-1);
             }
 
+            .wba-stat__hint {
+                margin: 8px auto 0;
+                max-width: 26ch;
+                font-size: 12px;
+                line-height: 1.4;
+                color: var(--wb-color-neutral-foreground-3);
+            }
+
+            .wba-stat__vs {
+                font-weight: 400;
+                color: var(--wb-color-neutral-foreground-3);
+            }
+
+            .wba-funnel__icon {
+                color: var(--wb-color-brand-foreground, #0f6cbd);
+            }
+
+            @media (max-width: 600px) {
+                .wba-grid-4 {
+                    grid-template-columns: 1fr 1fr;
+                    gap: 10px;
+                }
+
+                .wba-stat {
+                    padding: 14px 10px;
+                }
+
+                .wba-stat__value {
+                    font-size: var(--wb-font-size-lg);
+                }
+            }
+
             .wba-stat__trend {
                 font-size: 12px;
                 margin-top: 4px;
@@ -630,7 +667,7 @@ class WooBooster_Analytics
         <div class="wba-grid-2">
             <div class="wb-card">
                 <div class="wb-card__header">
-                    <h2><?php esc_html_e('Revenue Overview', 'ffl-funnels-addons'); ?></h2>
+                    <h2><?php esc_html_e('Sales per day', 'ffl-funnels-addons'); ?></h2>
                 </div>
                 <div class="wb-card__body">
                     <div style="position:relative; height:300px; width:100%;">
@@ -640,7 +677,7 @@ class WooBooster_Analytics
             </div>
             <div class="wb-card">
                 <div class="wb-card__header">
-                    <h2><?php esc_html_e('Revenue by Rule', 'ffl-funnels-addons'); ?></h2>
+                    <h2><?php esc_html_e('Revenue by rule', 'ffl-funnels-addons'); ?></h2>
                 </div>
                 <div class="wb-card__body">
                     <div
@@ -674,18 +711,18 @@ class WooBooster_Analytics
         ?>
         <div class="wba-grid-4">
             <?php
-            $this->render_card(__('WB Net Revenue', 'ffl-funnels-addons'), wc_price($stats['net_revenue']), $stats['net_revenue'], $prev_stats['net_revenue']);
-            $this->render_card(__('Tax Generated', 'ffl-funnels-addons'), wc_price($stats['tax_revenue']), $stats['tax_revenue'], $prev_stats['tax_revenue']);
-            $this->render_card(__('Items Sold', 'ffl-funnels-addons'), $this->format_quantity($stats['items_sold']), $stats['items_sold'], $prev_stats['items_sold']);
-            $this->render_card(__('% of Total Revenue', 'ffl-funnels-addons'), $pct . '%', null, null);
+            $this->render_card(__('Revenue from recommendations', 'ffl-funnels-addons'), wc_price($stats['net_revenue']), $stats['net_revenue'], $prev_stats['net_revenue'], __('Price of recommended items customers bought, before tax.', 'ffl-funnels-addons'));
+            $this->render_card(__('Tax on those items', 'ffl-funnels-addons'), wc_price($stats['tax_revenue']), $stats['tax_revenue'], $prev_stats['tax_revenue'], __('Sales tax charged on the recommended items.', 'ffl-funnels-addons'));
+            $this->render_card(__('Recommended items sold', 'ffl-funnels-addons'), $this->format_quantity($stats['items_sold']), $stats['items_sold'], $prev_stats['items_sold'], __('Units bought after being recommended.', 'ffl-funnels-addons'));
+            $this->render_card(__('Share of all sales', 'ffl-funnels-addons'), $pct . '%', null, null, __('Revenue from recommendations out of all product sales in these days.', 'ffl-funnels-addons'));
             ?>
         </div>
         <div class="wba-grid-4">
             <?php
-            $this->render_card(__('WB Orders', 'ffl-funnels-addons'), number_format_i18n($stats['wb_orders']), $stats['wb_orders'], $prev_stats['wb_orders']);
-            $this->render_card(__('Avg Order Value', 'ffl-funnels-addons'), wc_price($aov), $aov, $prev_aov);
-            $this->render_card(__('Add-to-Cart', 'ffl-funnels-addons'), number_format_i18n($conversion['add_to_cart']), $conversion['add_to_cart'], $prev_conversion['add_to_cart']);
-            $this->render_card(__('Conversion Rate', 'ffl-funnels-addons'), $conversion['rate'] . '%', $conversion['rate'], $prev_conversion['rate']);
+            $this->render_card(__('Orders with recommendations', 'ffl-funnels-addons'), number_format_i18n($stats['wb_orders']), $stats['wb_orders'], $prev_stats['wb_orders'], __('Orders that include at least one recommended item.', 'ffl-funnels-addons'));
+            $this->render_card(__('Recommended revenue per order', 'ffl-funnels-addons'), wc_price($aov), $aov, $prev_aov, __('Revenue from recommendations divided by those orders.', 'ffl-funnels-addons'));
+            $this->render_card(__('Added to cart', 'ffl-funnels-addons'), number_format_i18n($conversion['add_to_cart']), $conversion['add_to_cart'], $prev_conversion['add_to_cart'], __('Times shoppers added a recommended product to the cart.', 'ffl-funnels-addons'));
+            $this->render_card(__('Bought after adding', 'ffl-funnels-addons'), $conversion['rate'] . '%', $conversion['rate'], $prev_conversion['rate'], __('Recommended items bought, out of the times they were added to the cart.', 'ffl-funnels-addons'));
             ?>
         </div>
         <?php
@@ -704,21 +741,21 @@ class WooBooster_Analytics
     /**
      * Render a single stat card with optional trend indicator.
      */
-    private function render_card($label, $value, $current = null, $previous = null)
+    private function render_card($label, $value, $current = null, $previous = null, $hint = '')
     {
         $trend_html = '';
         if ($current !== null && $previous !== null) {
             if ($previous > 0) {
                 $change = round((($current - $previous) / $previous) * 100, 1);
                 if ($change > 0) {
-                    $trend_html = '<div class="wba-stat__trend wba-trend--up">↑ ' . $change . '%</div>';
+                    $trend_html = '<div class="wba-stat__trend wba-trend--up">↑ ' . $change . '% <span class="wba-stat__vs">' . esc_html__('vs. the days before', 'ffl-funnels-addons') . '</span></div>';
                 } elseif ($change < 0) {
-                    $trend_html = '<div class="wba-stat__trend wba-trend--down">↓ ' . abs($change) . '%</div>';
+                    $trend_html = '<div class="wba-stat__trend wba-trend--down">↓ ' . abs($change) . '% <span class="wba-stat__vs">' . esc_html__('vs. the days before', 'ffl-funnels-addons') . '</span></div>';
                 } else {
-                    $trend_html = '<div class="wba-stat__trend wba-trend--neutral">— 0%</div>';
+                    $trend_html = '<div class="wba-stat__trend wba-trend--neutral">— 0% <span class="wba-stat__vs">' . esc_html__('vs. the days before', 'ffl-funnels-addons') . '</span></div>';
                 }
             } elseif ($current > 0) {
-                $trend_html = '<div class="wba-stat__trend wba-trend--up">↑ New</div>';
+                $trend_html = '<div class="wba-stat__trend wba-trend--up">↑ ' . esc_html__('New', 'ffl-funnels-addons') . '</div>';
             }
         }
         ?>
@@ -727,6 +764,9 @@ class WooBooster_Analytics
                 <div class="wba-stat__label"><?php echo esc_html($label); ?></div>
                 <div class="wba-stat__value"><?php echo wp_kses_post($value); ?></div>
                 <?php echo wp_kses_post($trend_html); ?>
+                <?php if ('' !== $hint) : ?>
+                    <p class="wba-stat__hint"><?php echo esc_html($hint); ?></p>
+                <?php endif; ?>
             </div>
         </div>
         <?php
@@ -741,27 +781,27 @@ class WooBooster_Analytics
         ?>
         <div class="wb-card" style="margin-bottom:20px;">
             <div class="wb-card__header">
-                <h2><?php esc_html_e('Conversion Funnel', 'ffl-funnels-addons'); ?></h2>
+                <h2><?php esc_html_e('From cart to purchase', 'ffl-funnels-addons'); ?></h2>
             </div>
             <div class="wb-card__body">
                 <div class="wba-funnel">
                     <div class="wba-funnel__step">
-                        <div class="wba-funnel__icon">🛒</div>
+                        <div class="wba-funnel__icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.7 12.2a1 1 0 001 .8h9.6a1 1 0 001-.8L21 7H6"/></svg></div>
                         <div class="wba-funnel__count"><?php echo esc_html(number_format_i18n($conversion['add_to_cart'])); ?>
                         </div>
-                        <div class="wba-funnel__label"><?php esc_html_e('Add-to-Cart', 'ffl-funnels-addons'); ?></div>
+                        <div class="wba-funnel__label"><?php esc_html_e('Added to cart', 'ffl-funnels-addons'); ?></div>
                     </div>
                     <div class="wba-funnel__step">
-                        <div class="wba-funnel__icon">✅</div>
+                        <div class="wba-funnel__icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg></div>
                         <div class="wba-funnel__count"><?php echo esc_html($this->format_quantity($conversion['purchased'])); ?>
                         </div>
-                        <div class="wba-funnel__label"><?php esc_html_e('Purchased Items', 'ffl-funnels-addons'); ?></div>
+                        <div class="wba-funnel__label"><?php esc_html_e('Bought', 'ffl-funnels-addons'); ?></div>
                     </div>
                     <div class="wba-funnel__step">
-                        <div class="wba-funnel__icon">📈</div>
-                        <div class="wba-funnel__count" style="color:#0f6cbd;"><?php echo esc_html($conversion['rate']); ?>%
+                        <div class="wba-funnel__icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg></div>
+                        <div class="wba-funnel__count" style="color:var(--wb-color-brand-foreground, #0f6cbd);"><?php echo esc_html($conversion['rate']); ?>%
                         </div>
-                        <div class="wba-funnel__label"><?php esc_html_e('Conversion Rate', 'ffl-funnels-addons'); ?></div>
+                        <div class="wba-funnel__label"><?php esc_html_e('Bought after adding', 'ffl-funnels-addons'); ?></div>
                     </div>
                 </div>
             </div>
@@ -793,7 +833,7 @@ class WooBooster_Analytics
             <div class="wb-card__body wb-card__body--table">
                 <?php if (empty($rules)): ?>
                     <p style="padding:16px; color:var(--wb-color-neutral-foreground-3);">
-                        <?php esc_html_e('No data yet. Recommendations need to generate sales to appear here.', 'ffl-funnels-addons'); ?>
+                        <?php esc_html_e('Nothing yet. Rules show up here once shoppers buy products they recommended.', 'ffl-funnels-addons'); ?>
                     </p>
                 <?php else: ?>
                     <table class="wb-table">
@@ -830,7 +870,7 @@ class WooBooster_Analytics
             <div class="wb-card__body wb-card__body--table">
                 <?php if (empty($products)): ?>
                     <p style="padding:16px; color:var(--wb-color-neutral-foreground-3);">
-                        <?php esc_html_e('No data yet. Recommendations need to generate sales to appear here.', 'ffl-funnels-addons'); ?>
+                        <?php esc_html_e('Nothing yet. Products show up here once shoppers buy them from a recommendation.', 'ffl-funnels-addons'); ?>
                     </p>
                 <?php else: ?>
                     <table class="wb-table">

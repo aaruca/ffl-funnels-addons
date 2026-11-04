@@ -70,6 +70,8 @@ Below the settings: **Rebuild Now** runs the enabled builds immediately (always 
 
 Not on the client page, only in FFL Funnels: **Generate with AI** and the AI keys, MCP, Debug Mode, Delete Data on Uninstall, Similar key attributes, Days to Analyze, Max Relations, Index Diagnostics, **Rebuild Now**, **Clear All Data**, rule **Export**, **Import** and **Delete All**, **WB Diagnostics** and **WB Docs**. The page prints its own AJAX nonce (`woobooster_store`), which the searches, the product name lookup and the rule and bundle on/off switches accept; import, export, delete all, rebuild, purge, the rule tester and the AI refuse it (HTTP 403).
 
+Layout: a header with **Recommendations on/off** (links to Settings) and **Get help** when a support link is set under **White Label → Dashboard**; tabs with icons and the number of bundles and rules (a 2 × 2 grid on phones); a **How … work** guide per tab in plain language, with where shoppers see the result, open while the tab is empty; empty states with an example and a first action; row actions always visible, with text labels on wide screens. On Settings, **Bought together** and **Trending** show when they last updated or that the first update is pending.
+
 Links, redirects after a save, delete or duplicate, the rule search and the analytics date filter stay on the tab they came from, on the client page as on FFL Funnels. The client page renders the tab before WordPress prints the admin header, so its saves and deletes redirect even where PHP does not buffer output.
 
 ## How it works
@@ -77,35 +79,35 @@ Links, redirects after a save, delete or duplicate, the rule search and the anal
 ### Rule matching
 
 - Candidate rules come from a lookup index. Only active rules inside their **Schedule** are checked, lowest **Priority** number first (the oldest rule first when priorities are equal); the first rule whose conditions match is used. Schedule times are entered and shown in the store's time zone.
-- Condition groups are joined with OR, conditions inside a group with AND. Action groups work the same way: OR groups are merged and de-duplicated, an AND group returns only products matching every action in it.
+- Condition groups are joined with OR (**+ Add another group (OR)**), conditions inside a group with AND (**+ Add condition (AND)**). Action groups work the same way: OR groups are merged and de-duplicated, and an AND group (**+ Narrow down (AND)**) returns only products matching every action in it.
 - Each action has its own **Limit**. A Bricks **Max Products (override)** or the shortcode `limit` replaces every action's limit and caps the total.
 
 | Condition type | Matches the viewed product when it… |
 |---|---|
 | Entire store (all products) | is any product (default for a new rule). |
-| Category / Tag | has that term; **+ Children** on categories also matches subcategories. |
+| Category / Tag | has that term; **Include subcategories** on categories also matches subcategories. |
 | Attribute | has that attribute term (pick the attribute, then the value). |
 | Specific Product | is one of the chosen products. |
 
-Each condition is **is** or **is not**. **Condition Exclusions** (**Exclude Categories**, **Exclude Products**, **Price Range Filter**): an excluded product, or one priced outside the range, does not satisfy the condition.
+Each condition is **is** or **is not**. Its **Exceptions** (**Exclude Categories**, **Exclude Products**, **Price Range Filter**): an excluded product, or one priced outside the range, does not satisfy the condition.
 
 | Action source | Recommends |
 |---|---|
-| Category / Tag | Products in that term; **+ Children** on categories includes subcategories. |
+| Category / Tag | Products in that term; **Include subcategories** on categories includes subcategories. |
 | Attribute | Products with a chosen attribute term, e.g. Caliber = 9mm. |
 | Same Attribute | Products that share the viewed product's value of the chosen attribute (pick the attribute, e.g. Caliber: a 9mm product gets other 9mm products). Nothing when the product has no value for it. |
 | Bought Together, Trending, Recently Viewed, Similar Products | See [Smart strategies](#smart-strategies). |
 | Specific Products | Hand-picked products, in the order chosen. |
 | Apply Coupon | No products; applies a coupon to the cart (below). |
 
-- **Order By:** Random, Newest, Price (Low to High), Price (High to Low), Bestselling, Rating. *Random* picks at random among the best sellers of the matching set (a pool of at least 40), not the whole catalog.
-- **Action Exclusions:** **Exclude Categories** and **Exclude Products** remove products; **Price Range Filter** keeps only products inside the range.
+- **Sort order:** Random order, Newest first, Lowest price first, Highest price first, Best sellers first, Top rated first, next to the number of **products** to show. *Random order* picks at random among the best sellers of the matching set (a pool of at least 40), not the whole catalog.
+- **Exceptions** (on an action): **Exclude Categories** and **Exclude Products** remove products; **Price Range Filter** keeps only products inside the range.
 - Out-of-stock products follow the global **Exclude Out of Stock** setting, or the Bricks loop's own checkbox. (The old per-rule toggle never had an effect and is no longer shown.)
 
 ### Apply Coupon rules
 
 - Pick an existing coupon (**Marketing → Coupons**) and optionally a **Custom Cart Message**, shown when the coupon is applied (default: "Coupon "CODE" has been automatically applied based on your cart!"). These rules are checked against the cart on every totals calculation, not against the product page.
-- For each condition, the quantities of matching, non-excluded cart items are added up and must reach the small **Qty** box beside it ("Min cart qty"), e.g. 3 boxes of ammo. Every matching rule applies its coupon; priority does not pick one winner. A coupon WooBooster applied is removed when the cart stops matching.
+- For each condition, the quantities of matching, non-excluded cart items are added up and must reach the **Min. in cart** box beside it, e.g. 3 boxes of ammo. The box only shows while the rule has an Apply Coupon action, because product-page matching ignores it. Every matching rule applies its coupon; priority does not pick one winner. A coupon WooBooster applied is removed when the cart stops matching.
 - With **Entire store**, every cart item counts (minus condition exclusions), so "any 3 items" works. Unpublished, expired or used-up coupons are skipped, and WooCommerce's own coupon checks still run.
 
 ### Smart strategies
@@ -120,8 +122,8 @@ Each condition is **is** or **is not**. **Condition Exclusions** (**Exclude Cate
 
 | Field | Behaviour |
 |---|---|
-| Bundle Items (Manual) | Products in the bundle; the picker hides out-of-stock products. **Qty** sets units per item; the widget shows "2 × Name" and its totals, like the cart, count every unit. Items not marked **Optional** are required: their box is ticked and locked, and the cart refuses the bundle without them. |
-| Bundle Items (Dynamic) | Same sources as rule actions except Apply Coupon, resolved for the product being viewed. The shopper may untick them. |
+| Products in the bundle | The bundle's own products; the picker hides out-of-stock products. **Qty** sets units per item; the widget shows "2 × Name" and its totals, like the cart, count every unit. Items not marked **Optional** are required: their box is ticked and locked, and the cart refuses the bundle without them. |
+| Products picked automatically | Optional. Same sources as rule actions except Apply Coupon, resolved for the product being viewed. The shopper may untick them. |
 | Conditions | Which product pages show the bundle: the rule condition types plus **User Role** (Guest or any WordPress role). Leave empty for a bundle you only show by pinning it in Bricks. |
 | Pricing Mode | **Discount on items**: *Percentage* off each item, or *Fixed Amount* off the whole set (every unit), split across items by price. **Fixed bundle price**: one total for the whole set, quantities included, split across items by price; a total at or above the set's combined price gives no discount. Prices are rounded per unit, so totals can differ by a cent. |
 | Bundle Image | Replaces the first product's thumbnail in the cart and checkout. |
@@ -141,7 +143,7 @@ Each condition is **is** or **is not**. **Condition Exclusions** (**Exclude Cate
 
 - Rule and Smart results are cached for 1 hour (including "no rule matched"), Similar Products for 6 hours. Without Redis or Memcached they are also stored as transients so the cache outlives the request. Results that use Recently Viewed are never cached, and neither are pinned bundles with a Recently Viewed source.
 - Saving, switching or deleting a rule or bundle, saving settings and **Clear All Data** clear the cache at once. Product edits (stock, price, categories) do not: results catch up within the cache time.
-- A **+ Children** condition indexes up to 500 child terms. Bought Together and Trending work with HPOS and posts order storage, using WooCommerce's analytics lookup table when present and order item meta otherwise.
+- An **Include subcategories** condition indexes up to 500 child terms. Bought Together and Trending work with HPOS and posts order storage, using WooCommerce's analytics lookup table when present and order item meta otherwise.
 
 ### Analytics attribution
 
@@ -159,7 +161,7 @@ Each condition is **is** or **is not**. **Condition Exclusions** (**Exclude Cate
 | **… → WB Rules** | Rule list: search, sort, edit, duplicate (copies start inactive), activate/deactivate, delete, and the same as bulk actions. **Export** (every rule), **Import** (adds to existing rules; up to 500 per file, 2 MB), **Delete All** (rules only), **Generate with AI**. |
 | **… → Products Bundles** | Bundle list and form, **Generate with AI**. |
 | **… → WB Diagnostics** | Rule Tester for a product ID or SKU: matched rule with its condition groups, what each action found, the final recommendations, time taken and condition keys. |
-| **… → WB Analytics** | Completed and processing orders in a date range (default last 30 days, with presets): WB revenue, tax, items, share of revenue, WB orders, average order, add-to-carts and conversion rate, with trends against the previous period; revenue charts; top 10 rules and products. |
+| **… → WB Analytics** | Completed and processing orders in a date range (default last 30 days, with presets): revenue from recommendations, tax on those items, recommended items sold, share of all sales, orders with recommendations, recommended revenue per order, added to cart and bought after adding, each with a one-line explanation and the trend against the days before; revenue charts; top 10 rules and products. |
 | **… → WB Docs** | Short in-admin guide. |
 | **WooCommerce → Bundles & Recommendations** | The [client page](#client-page): Bundles, Recommendation rules, Settings and Analytics tabs. |
 | Classic product template | Replaces WooCommerce's related products on `woocommerce_after_single_product_summary` with `<section class="woobooster-related products">` using the theme's product cards. With no match, WooCommerce's related products (4, random). |
@@ -219,7 +221,7 @@ Each condition is **is** or **is not**. **Condition Exclusions** (**Exclude Cate
 | `woobooster_similar_brand_taxonomies` | `string[]` (`product_brand`, `pa_brand`, `pa_manufacturer`) | Taxonomies treated as brand. |
 | `woobooster_similar_key_attributes` | `string[]` (setting or auto-detect) | Key attribute taxonomies. |
 | `woobooster_similar_ignored_taxonomies` | `string[]` (`product_type`, `product_visibility`, `product_shipping_class`) | Ignored when finding candidates. |
-| `woobooster_max_index_children` | `int` (500) | Child terms indexed per **+ Children** rule condition. |
+| `woobooster_max_index_children` | `int` (500) | Child terms indexed per **Include subcategories** rule condition. |
 | `woobooster_ai_max_turns` | `int` (5) | Model calls per assistant message. |
 | `woobooster_ai_reasoning_effort` | `string` (`low`), `string` model | Sent to OpenAI `gpt-5*` models; return `''` to omit. |
 

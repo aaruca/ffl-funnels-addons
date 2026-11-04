@@ -760,7 +760,36 @@ form.wb-form > .wb-field + .wb-field {
 }
 
 .ffla-admin .wp-list-table tr:last-child td { border-bottom: none; }
-.ffla-admin .wp-list-table tr:hover td { background-color: var(--wb-color-neutral-background-subtle); }
+
+/* One background per row. The checkbox cell is a <td> in the header but a
+   <th> in the body, and WordPress stripes odd rows on the <tr>, so the
+   checkbox column and the first row used to show a different grey. Header
+   and footer cells share one colour; body rows are white with dividers and
+   a hover tint across every cell. */
+.ffla-admin .wp-list-table thead th,
+.ffla-admin .wp-list-table thead td,
+.ffla-admin .wp-list-table tfoot th,
+.ffla-admin .wp-list-table tfoot td,
+.ffla-admin .wp-list-table thead td.check-column,
+.ffla-admin .wp-list-table tfoot td.check-column {
+  background: var(--wb-color-neutral-background-2);
+  border-bottom: 1px solid var(--wb-color-neutral-stroke-1);
+}
+
+.ffla-admin .wp-list-table.striped > tbody > tr,
+.ffla-admin .wp-list-table tbody th,
+.ffla-admin .wp-list-table tbody td {
+  background-color: var(--wb-color-neutral-background-1);
+}
+
+.ffla-admin .wp-list-table tbody th {
+  border-bottom-color: var(--wb-color-neutral-stroke-2);
+}
+
+.ffla-admin .wp-list-table tbody tr:hover > th,
+.ffla-admin .wp-list-table tbody tr:hover > td {
+  background-color: var(--wb-color-neutral-background-subtle);
+}
 
 .wb-link--strong {
   color: var(--wb-color-neutral-foreground-1);
@@ -783,9 +812,18 @@ form.wb-form > .wb-field + .wb-field {
   transition: all var(--wb-duration-fast) ease-out;
 }
 
-.wp-list-table tr:hover .wb-row-actions {
+.wp-list-table tr:hover .wb-row-actions,
+.wp-list-table tr:focus-within .wb-row-actions {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* Touch screens have no hover: keep row actions visible there. */
+@media (hover: none) {
+  .wb-row-actions {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .wb-text--muted {
