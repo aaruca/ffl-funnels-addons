@@ -106,6 +106,8 @@ jobs:
           php tests/smoke/woobooster-attribution-smoke.php
           php tests/smoke/woobooster-store-page-smoke.php
           php tests/smoke/woobooster-ai-admin-smoke.php
+          php tests/smoke/woobooster-smart-smoke.php
+          php tests/smoke/woobooster-smart-build-smoke.php
 
       - name: Validate customer and order management before publishing
         if: ${{ steps.tag.outputs.skip != 'true' }}

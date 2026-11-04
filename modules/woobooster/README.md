@@ -57,7 +57,7 @@ Product recommendations, product bundles and cart coupon rules for WooCommerce. 
 
 Similar Products needs no index or tracking, so it is always available (it has no switch). Classic product templates always use the WooCommerce-hook output and Bricks templates use the query loops, so there is no rendering-method setting.
 
-Below the settings: **Rebuild Now** runs the enabled builds immediately (always a full rebuild, and it says why a build came back empty); **Clear All Data** deletes the co-purchase lists, trending lists, build stats and cached recommendation results.
+Below the settings: **Rebuild Now** runs the enabled builds immediately (always a full rebuild, and it says why a build came back empty or stopped); **Clear All Data** deletes the co-purchase lists, trending lists, build stats and cached recommendation results.
 
 ### Client page
 
@@ -153,7 +153,8 @@ Each condition is **is** or **is not**. Its **Exceptions** (**Exclude Categories
 
 - Rule and Smart results are cached for 1 hour (including "no rule matched"), Similar Products for 6 hours. Without Redis or Memcached they are also stored as transients so the cache outlives the request. Results that use Recently Viewed are never cached, and neither are pinned bundles with a Recently Viewed source.
 - Saving, switching or deleting a rule or bundle, saving settings and **Clear All Data** clear the cache at once. Product edits (stock, price, categories) do not: results catch up within the cache time.
-- An **Include subcategories** condition indexes up to 500 child terms. Bought Together and Trending work with HPOS and posts order storage, using WooCommerce's analytics lookup table when present and order item meta otherwise.
+- An **Include subcategories** condition indexes up to 500 child terms. Creating, moving, re-slugging or deleting a product category (or another hierarchical product taxonomy) rebuilds the rule and bundle lookup index in the background a minute later, and once a day as a safety net, so subcategories added later by a distributor feed match too.
+- Bought Together and Trending builds read orders in batches with the in-memory object cache released between them, aggregate in SQL where possible, raise the PHP time limit and take a lock so two builds never run at once. A build that reaches 85% of the PHP memory limit stops before writing and keeps the previous index; **Rebuild Now** and the status line under it say why. On synthetic data, 100,000 orders peak at about 131 MB (was 343 MB), and Trending holds one row per product instead of one per product and day. Bought Together and Trending work with HPOS and posts order storage, using WooCommerce's analytics lookup table when present and order item meta otherwise.
 
 ### Analytics attribution
 
@@ -191,11 +192,11 @@ Each condition is **is** or **is not**. Its **Exceptions** (**Exclude Categories
 | Data | Contents |
 |---|---|
 | Tables | `{prefix}woobooster_rules`, `_rule_conditions`, `_rule_actions`, `_rule_index`; `{prefix}woobooster_bundles`, `_bundle_items`, `_bundle_actions`, `_bundle_conditions`, `_bundle_index`. |
-| Options | `woobooster_settings` (not autoloaded; may hold API keys; also holds the `rule_dates_gmt` migration flag), `woobooster_version`, `woobooster_db_version` (`1.10.0`), `woobooster_last_build`, `woobooster_atc_counter` (add-to-carts per rule per day; older versions wrote per month), `woobooster_cache_version`. |
+| Options | `woobooster_settings` (not autoloaded; may hold API keys; also holds the `rule_dates_gmt` migration flag), `woobooster_version`, `woobooster_db_version` (`1.10.0`), `woobooster_last_build` (build stats, with `memory_peak` and, after a stopped run, `stopped`, `stopped_reason`, `stopped_at`), `woobooster_build_lock_*` (running builds), `woobooster_schema_flags`, `woobooster_atc_counter` (add-to-carts per rule per day; older versions wrote per month), `woobooster_cache_version`. |
 | Meta | Product: `_woobooster_copurchased`. Order item: `_wb_source_rule`, `_wb_attribution_quantities`, `_woobooster_bundle_id`, `_woobooster_bundle_hash`, **Bundle** (older orders: **Bundle contents**). User: `woobooster_ai_usage` (today's AI message count). |
 | Transients | `wbrc_*` (cached results), `wb_trending_cat_{term_id}` and `wb_trending_global` (2 days), `wb_ai_*` (15 minutes), `wb_analytics_*` (analytics periods, 10 minutes). |
 | Session, cookie, browser | WooCommerce session keys `woobooster_recommendations`, `woobooster_auto_coupons` and `woobooster_coupon_skips` (refused or shopper-removed automatic coupons); cookie `woobooster_recently_viewed`; localStorage `wb_ai_chat_history`, `wb_ai_bundle_history`. |
-| Cron | `woobooster_copurchase_event` (daily) and `woobooster_trending_event` (schedule `woobooster_6hours`), added or removed to match the Smart toggles. |
+| Cron | `woobooster_copurchase_event` (daily) and `woobooster_trending_event` (schedule `woobooster_6hours`), added or removed to match the Smart toggles; `woobooster_rebuild_rule_index` (one-off, after category changes) and `woobooster_rule_index_daily`. |
 
 - Switching the module off only unschedules the cron events. Schema updates run when it is switched on and on the next admin page load after an update; missing tables are recreated when a WooBooster screen is opened. Rule schedules saved by older versions (stored as typed and read as UTC) are converted to GMT once, on the first admin page load, so they now mean store time.
 - Deleting the plugin cleans up WooBooster only if the module is on at that moment. The cron events are always cleared. With **Delete Data on Uninstall** on, it also drops the nine tables and deletes the options above, the `_woobooster_copurchased` meta and two legacy update transients. Order item meta stays; the other transients expire on their own.
@@ -233,6 +234,12 @@ Each condition is **is** or **is not**. Its **Exceptions** (**Exclude Categories
 | `woobooster_similar_key_attributes` | `string[]` (setting or auto-detect) | Key attribute taxonomies. |
 | `woobooster_similar_ignored_taxonomies` | `string[]` (`product_type`, `product_visibility`, `product_shipping_class`) | Ignored when finding candidates. |
 | `woobooster_max_index_children` | `int` (500) | Child terms indexed per **Include subcategories** rule condition. |
+| `woobooster_rule_index_rebuild_delay` | `int` seconds (60) | Delay of the background index rebuild after a category change. |
+| `woobooster_copurchase_batch_size`, `woobooster_copurchase_write_batch_size`, `woobooster_trending_chunk_size` | `int` | Batch sizes of the Smart builds. |
+| `woobooster_smart_build_time_limit`, `woobooster_smart_build_memory_ratio` (0.85), `woobooster_smart_build_memory_limit`, `woobooster_smart_build_lock_timeout` (600 s) | | Smart build guards. |
+| `woobooster_ai_daily_limit` | `int` (setting, 30), `int` user ID | AI assistant messages per user per day; 0 = no limit. |
+| `woobooster_openrouter_provider` | `array` (`data_collection` deny, `require_parameters`, optional `only`), `string` model | OpenRouter routing sent with each request. |
+| `woobooster_is_agency_user` | `bool`, `int` user ID | Who may use the MCP abilities. |
 | `woobooster_ai_max_turns` | `int` (5) | Model calls per assistant message. |
 | `woobooster_ai_reasoning_effort` | `string` (`low`), `string` model | Sent to OpenAI `gpt-5*` models; return `''` to omit. |
 
@@ -268,4 +275,4 @@ AI and MCP rule fields: `condition_attribute` is `product_cat`, `product_tag`, `
 
 **Constants:** `FFLA_WOOBOOSTER_AI_KEY` and `FFLA_WOOBOOSTER_TAVILY_KEY` in `wp-config.php` take priority over the saved keys. Compatibility constants: `WOOBOOSTER_VERSION` (= `FFLA_VERSION`), `WOOBOOSTER_DB_VERSION`, `WOOBOOSTER_PATH`, `WOOBOOSTER_URL`, `WOOBOOSTER_FILE`, `WOOBOOSTER_BASENAME`.
 
-**Tests:** `php tests/smoke/woobooster-bundle-cart-smoke.php` (one line per item, FFL item as its own line, add-to-cart validation and rollback, conditions and roles, signed list, variations, coupons on bundle lines, old carts), `php tests/smoke/woobooster-coupon-engine-smoke.php` (silent validation, remembered refusals, shopper's coupons kept, checkout email), `php tests/smoke/woobooster-matcher-filters-smoke.php` (coupon-only rules skipped, Smart exclusions, hidden products), `php tests/smoke/woobooster-ai-admin-smoke.php` (OpenRouter, daily cap, chat history limits, keys not printed, MCP agency-only, import coupons, Delete All), `php tests/smoke/woobooster-store-page-smoke.php` (client page: not blocked by White Label while FFL Funnels pages are, links and redirects per context, the client nonce, settings saving only client keys, analytics previous period), `php tests/smoke/woobooster-smart-smoke.php` (Bought Together and Trending scoring), `php tests/smoke/woobooster-bundle-pricing-smoke.php` (bundle pricing with quantities) and `tests/unit/BundleDiscountMathTest.php` (PHPUnit, bundle discount math).
+**Tests:** `php tests/smoke/woobooster-bundle-cart-smoke.php` (one line per item, FFL item as its own line, add-to-cart validation and rollback, conditions and roles, signed list, variations, coupons on bundle lines, old carts), `php tests/smoke/woobooster-coupon-engine-smoke.php` (silent validation, remembered refusals, shopper's coupons kept, checkout email), `php tests/smoke/woobooster-matcher-filters-smoke.php` (coupon-only rules skipped, Smart exclusions, hidden products), `php tests/smoke/woobooster-ai-admin-smoke.php` (OpenRouter, daily cap, chat history limits, keys not printed, MCP agency-only, import coupons, Delete All), `php tests/smoke/woobooster-smart-build-smoke.php` (Bought Together and Trending identical to the previous algorithm on HPOS and posts storage, cache released per batch, lock, memory guard, index rebuild after category changes), `php tests/smoke/woobooster-store-page-smoke.php` (client page: not blocked by White Label while FFL Funnels pages are, links and redirects per context, the client nonce, settings saving only client keys, analytics previous period), `php tests/smoke/woobooster-smart-smoke.php` (Bought Together and Trending scoring), `php tests/smoke/woobooster-bundle-pricing-smoke.php` (bundle pricing with quantities) and `tests/unit/BundleDiscountMathTest.php` (PHPUnit, bundle discount math).

@@ -32,6 +32,7 @@ jobs:
           php tests/smoke/woobooster-coupon-engine-smoke.php
           php tests/smoke/woobooster-matcher-filters-smoke.php
           php tests/smoke/woobooster-ai-admin-smoke.php
+          php tests/smoke/woobooster-smart-build-smoke.php
 
   pickup-shipping-php:
     name: Pickup & Shipping (PHP ${{ matrix.php }})
@@ -116,6 +117,7 @@ jobs:
           php tests/smoke/woobooster-coupon-engine-smoke.php
           php tests/smoke/woobooster-matcher-filters-smoke.php
           php tests/smoke/woobooster-ai-admin-smoke.php
+          php tests/smoke/woobooster-smart-build-smoke.php
           php tests/smoke/loadout-cart-smoke.php
           php tests/smoke/wishlist-ajax-smoke.php
 

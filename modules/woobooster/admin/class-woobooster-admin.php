@@ -896,6 +896,16 @@ class WooBooster_Admin
                                     esc_html($tr['date'])
                                 );
                             }
+                            foreach (array('copurchase' => __('Co-purchase', 'ffl-funnels-addons'), 'trending' => __('Trending', 'ffl-funnels-addons')) as $build_key => $build_label) {
+                                if (!empty($last_build[$build_key]['stopped_reason'])) {
+                                    $parts[] = sprintf(
+                                        /* translators: 1: build name, 2: reason */
+                                        __('%1$s: last run stopped (%2$s); the previous index is kept', 'ffl-funnels-addons'),
+                                        $build_label,
+                                        (string) $last_build[$build_key]['stopped_reason']
+                                    );
+                                }
+                            }
                             if (!empty($parts)) {
                                 echo esc_html(implode(' · ', $parts));
                             }
@@ -1454,20 +1464,19 @@ class WooBooster_Admin
             wp_send_json_error(array('message' => __('Permission denied.', 'ffl-funnels-addons')));
         }
 
-        $cron = new WooBooster_Cron();
-        $results = array();
-        $options = get_option('woobooster_settings', array());
-
-        if (!empty($options['smart_copurchase'])) {
-            $results['copurchase'] = $cron->run_copurchase(true);
-        }
-
-        if (!empty($options['smart_trending'])) {
-            $results['trending'] = $cron->run_trending();
-        }
+        // Both builds with their lock, time limit and memory guard.
+        $results = WooBooster_Cron::run_builds(true);
 
         $parts = array();
         $reasons = array();
+
+        // A build stopped by its lock (another build running) or the memory
+        // guard keeps the previous index; say why.
+        foreach (array('copurchase' => __('Co-purchase', 'ffl-funnels-addons'), 'trending' => __('Trending', 'ffl-funnels-addons')) as $key => $label) {
+            if (!empty($results[$key]['stopped'])) {
+                $reasons[] = $label . ': ' . (!empty($results[$key]['reason']) ? $results[$key]['reason'] : __('stopped; the previous index is kept.', 'ffl-funnels-addons'));
+            }
+        }
 
         if (!empty($results['copurchase'])) {
             $cp = $results['copurchase'];
