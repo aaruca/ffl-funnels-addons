@@ -93,7 +93,7 @@ class WooBooster_Bundle_List extends WP_List_Table
 
     protected function column_name($item)
     {
-        $edit_url = admin_url('admin.php?page=ffla-woobooster-bundles&action=edit&bundle_id=' . $item->id);
+        $edit_url = WooBooster_Admin::url('bundles', array('action' => 'edit', 'bundle_id' => $item->id));
         return '<a href="' . esc_url($edit_url) . '" class="wb-link--strong">' . esc_html($item->name) . '</a>';
     }
 
@@ -173,13 +173,13 @@ class WooBooster_Bundle_List extends WP_List_Table
 
     protected function column_actions($item)
     {
-        $edit_url = admin_url('admin.php?page=ffla-woobooster-bundles&action=edit&bundle_id=' . $item->id);
+        $edit_url = WooBooster_Admin::url('bundles', array('action' => 'edit', 'bundle_id' => $item->id));
         $duplicate_url = wp_nonce_url(
-            admin_url('admin.php?page=ffla-woobooster-bundles&action=duplicate&bundle_id=' . $item->id),
+            WooBooster_Admin::url('bundles', array('action' => 'duplicate', 'bundle_id' => $item->id)),
             'woobooster_duplicate_bundle_' . $item->id
         );
         $delete_url = wp_nonce_url(
-            admin_url('admin.php?page=ffla-woobooster-bundles&action=delete&bundle_id=' . $item->id),
+            WooBooster_Admin::url('bundles', array('action' => 'delete', 'bundle_id' => $item->id)),
             'woobooster_delete_bundle_' . $item->id
         );
 
@@ -225,7 +225,7 @@ class WooBooster_Bundle_List extends WP_List_Table
             $bundle_id = isset($_GET['bundle_id']) ? absint($_GET['bundle_id']) : 0;
             if ($bundle_id && check_admin_referer('woobooster_delete_bundle_' . $bundle_id)) {
                 WooBooster_Bundle::delete($bundle_id);
-                wp_safe_redirect(admin_url('admin.php?page=ffla-woobooster-bundles'));
+                wp_safe_redirect(WooBooster_Admin::url('bundles'));
                 exit;
             }
         }
@@ -236,8 +236,8 @@ class WooBooster_Bundle_List extends WP_List_Table
             if ($bundle_id && check_admin_referer('woobooster_duplicate_bundle_' . $bundle_id)) {
                 $new_id = WooBooster_Bundle::duplicate($bundle_id);
                 $redirect = $new_id
-                    ? admin_url('admin.php?page=ffla-woobooster-bundles&action=edit&bundle_id=' . $new_id)
-                    : admin_url('admin.php?page=ffla-woobooster-bundles');
+                    ? WooBooster_Admin::url('bundles', array('action' => 'edit', 'bundle_id' => $new_id))
+                    : WooBooster_Admin::url('bundles');
                 wp_safe_redirect($redirect);
                 exit;
             }
@@ -265,7 +265,7 @@ class WooBooster_Bundle_List extends WP_List_Table
                 }
             }
 
-            wp_safe_redirect(admin_url('admin.php?page=ffla-woobooster-bundles'));
+            wp_safe_redirect(WooBooster_Admin::url('bundles'));
             exit;
         }
     }
@@ -275,7 +275,7 @@ class WooBooster_Bundle_List extends WP_List_Table
         echo '<div class="wb-empty-state">';
         echo WooBooster_Icons::get('rules'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
         echo '<p>' . esc_html__('No bundles created yet.', 'ffl-funnels-addons') . '</p>';
-        $add_url = admin_url('admin.php?page=ffla-woobooster-bundles&action=add');
+        $add_url = WooBooster_Admin::url('bundles', array('action' => 'add'));
         echo '<a href="' . esc_url($add_url) . '" class="wb-btn wb-btn--primary">' . esc_html__('Create Your First Bundle', 'ffl-funnels-addons') . '</a>';
         echo '</div>';
     }

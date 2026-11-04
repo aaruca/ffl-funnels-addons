@@ -13,6 +13,7 @@ Product recommendations, product bundles and cart coupon rules for WooCommerce. 
 - **MCP abilities:** your own AI client (Claude, ChatGPT, Cursor) can search the catalog and manage rules.
 - **Analytics:** revenue, items, orders and add-to-carts attributed to the rule that recommended them.
 - **Tools:** Rule Tester, index diagnostics, JSON export and import of rules.
+- **Client page:** **WooCommerce → Bundles & Recommendations** lets store owners manage bundles, rules, the basic settings and analytics. White Label blocks every FFL Funnels page for client logins, so this is where clients work; the agency tools stay in FFL Funnels.
 
 ## Setup
 
@@ -26,6 +27,7 @@ Product recommendations, product bundles and cart coupon rules for WooCommerce. 
    - **Bricks:** in the single product template, add a Query Loop with type **WooBooster Recommendations** or **WooBooster Smart Recommendations**.
    - **Anywhere else:** use `[woobooster]`.
 7. Optional: **Products Bundles → Add Bundle**, then add the **WooBooster Bundle** element to the Bricks product template.
+8. Tell the store owner about **WooCommerce → Bundles & Recommendations** ([Client page](#client-page)).
 
 ## Settings
 
@@ -54,6 +56,21 @@ Product recommendations, product bundles and cart coupon rules for WooCommerce. 
 Similar Products needs no index or tracking, so it is always available (it has no switch). Classic product templates always use the WooCommerce-hook output and Bricks templates use the query loops, so there is no rendering-method setting.
 
 Below the settings: **Rebuild Now** runs the enabled builds immediately (always a full rebuild, and it says why a build came back empty); **Clear All Data** deletes the co-purchase lists, trending lists, build stats and cached recommendation results.
+
+### Client page
+
+**WooCommerce → Bundles & Recommendations** (`admin.php?page=ffla-woobooster-store`, needs `manage_woocommerce`). It is registered under WooCommerce, not FFL Funnels, so White Label restrictions do not block it; tick it under **White Label → Restrictions** to hide it from clients.
+
+| Tab | What clients can do |
+|---|---|
+| Bundles | The bundle list and form: add, edit, duplicate, turn on/off, delete, bulk actions. |
+| Recommendation rules | The rule list and form, Apply Coupon rules included: add, edit, duplicate, turn on/off, delete, bulk actions, search. |
+| Settings | **Show recommendations**, **Section title**, **Hide out-of-stock products**, and the **Bought together**, **Trending** and **Recently viewed** switches. Saving changes only these; every other setting is kept. |
+| Analytics | The **WB Analytics** dashboard. |
+
+Not on the client page, only in FFL Funnels: **Generate with AI** and the AI keys, MCP, Debug Mode, Delete Data on Uninstall, Similar key attributes, Days to Analyze, Max Relations, Index Diagnostics, **Rebuild Now**, **Clear All Data**, rule **Export**, **Import** and **Delete All**, **WB Diagnostics** and **WB Docs**. The page prints its own AJAX nonce (`woobooster_store`), which the searches, the product name lookup and the rule and bundle on/off switches accept; import, export, delete all, rebuild, purge, the rule tester and the AI refuse it (HTTP 403).
+
+Links, redirects after a save, delete or duplicate, the rule search and the analytics date filter stay on the tab they came from, on the client page as on FFL Funnels. The client page renders the tab before WordPress prints the admin header, so its saves and deletes redirect even where PHP does not buffer output.
 
 ## How it works
 
@@ -131,7 +148,7 @@ Each condition is **is** or **is not**. **Condition Exclusions** (**Exclude Cate
 - Products shown by a rule (or a Smart loop) are remembered in the shopper's WooCommerce session, up to 500. When one of them is added to the cart later in that session, from any page, that successful add is counted in that day's add-to-carts. This is session-based exposure attribution, not click tracking.
 - Attribution is attached **after** WooCommerce chooses the cart line, so analytics never change cart-item identity. Identical ordinary/recommended adds merge; variations, bundle unique keys and fulfillment options still participate in identity normally. `_wb_attribution_quantities` records attributed units per rule (`-1` = Smart); organic units are the remainder. `_wb_source_rule` is retained as a compatibility tag naming the rule with the most attributed units, not the source of truth for new orders.
 - Cart quantity reductions scale credits proportionally (units are fungible); manual increases are organic. This can produce fractional attribution credits, kept to four decimals and shown with one decimal in **WB Analytics** when not whole. Removing/undoing a cart line preserves its snapshot. Subsequent successful recommended adds receive fresh credits. Add-to-cart counters remain event counts, not quantities.
-- **WB Analytics** credits only attributed quantities and their proportional line subtotal/tax in completed and processing orders, scanning at most 5,000 orders per period. Historic orders with only `_wb_source_rule` still credit the full line; a new quantity map takes precedence, even if empty. Bundle widgets do not register recommendations.
+- **WB Analytics** credits only attributed quantities and their proportional line subtotal/tax in completed, processing and Ready for Pickup orders, scanning at most 5,000 orders per period, 200 at a time with WordPress's in-memory object cache released between pages. Each period's figures are cached for 10 minutes (transient `wb_analytics_*`). Trends compare with the same number of days right before the range. Historic orders with only `_wb_source_rule` still credit the full line; a new quantity map takes precedence, even if empty. Bundle widgets do not register recommendations.
 - Existing split cart keys and historic orders are not automatically consolidated or rewritten. Test with a fresh cart after updating; customers with pre-update split lines can remove and re-add them.
 
 ## Where it shows up
@@ -144,6 +161,7 @@ Each condition is **is** or **is not**. **Condition Exclusions** (**Exclude Cate
 | **… → WB Diagnostics** | Rule Tester for a product ID or SKU: matched rule with its condition groups, what each action found, the final recommendations, time taken and condition keys. |
 | **… → WB Analytics** | Completed and processing orders in a date range (default last 30 days, with presets): WB revenue, tax, items, share of revenue, WB orders, average order, add-to-carts and conversion rate, with trends against the previous period; revenue charts; top 10 rules and products. |
 | **… → WB Docs** | Short in-admin guide. |
+| **WooCommerce → Bundles & Recommendations** | The [client page](#client-page): Bundles, Recommendation rules, Settings and Analytics tabs. |
 | Classic product template | Replaces WooCommerce's related products on `woocommerce_after_single_product_summary` with `<section class="woobooster-related products">` using the theme's product cards. With no match, WooCommerce's related products (4, random). |
 | Bricks Query Loop | **WooBooster Recommendations**, **WooBooster Smart Recommendations**, **WooBooster Bundles**. Their settings appear on Container, Block and Div elements. |
 | Bricks element | **WooBooster Bundle** (category *FFL Funnels*): checkbox widget with totals, savings and **Add Selected to Cart**. |
@@ -163,7 +181,7 @@ Each condition is **is** or **is not**. **Condition Exclusions** (**Exclude Cate
 | Tables | `{prefix}woobooster_rules`, `_rule_conditions`, `_rule_actions`, `_rule_index`; `{prefix}woobooster_bundles`, `_bundle_items`, `_bundle_actions`, `_bundle_conditions`, `_bundle_index`. |
 | Options | `woobooster_settings` (not autoloaded; may hold API keys; also holds the `rule_dates_gmt` migration flag), `woobooster_version`, `woobooster_db_version` (`1.10.0`), `woobooster_last_build`, `woobooster_atc_counter` (add-to-carts per rule per day; older versions wrote per month), `woobooster_cache_version`. |
 | Meta | Product: `_woobooster_copurchased`. Order item: `_wb_source_rule`, `_wb_attribution_quantities`, `_woobooster_bundle_id`, **Bundle contents**. |
-| Transients | `wbrc_*` (cached results), `wb_trending_cat_{term_id}` and `wb_trending_global` (2 days), `wb_ai_*` (15 minutes). |
+| Transients | `wbrc_*` (cached results), `wb_trending_cat_{term_id}` and `wb_trending_global` (2 days), `wb_ai_*` (15 minutes), `wb_analytics_*` (analytics periods, 10 minutes). |
 | Session, cookie, browser | WooCommerce session keys `woobooster_recommendations` and `woobooster_auto_coupons`; cookie `woobooster_recently_viewed`; localStorage `wb_ai_chat_history`, `wb_ai_bundle_history`. |
 | Cron | `woobooster_copurchase_event` (daily) and `woobooster_trending_event` (schedule `woobooster_6hours`), added or removed to match the Smart toggles. |
 
@@ -218,7 +236,7 @@ No public actions, WP-CLI commands or REST routes of its own. The cron hooks can
 
 **AJAX** (`admin-ajax.php`)
 
-- Admin, `woobooster_admin` nonce and `manage_woocommerce`: `woobooster_export_rules`, `woobooster_import_rules`, `woobooster_delete_all_rules`, `woobooster_rebuild_index`, `woobooster_purge_index`, `woobooster_ai_generate`, `woobooster_ai_create_rule`, `woobooster_ai_create_bundle`, `woobooster_search_terms`, `woobooster_search_products` (`context=bundle` hides out-of-stock products), `woobooster_search_coupons`, `woobooster_resolve_product_names`, `woobooster_toggle_rule`, `woobooster_toggle_bundle`, `woobooster_test_rule`.
+- Admin, `manage_woocommerce`. `woobooster_search_terms`, `woobooster_search_products`, `woobooster_search_coupons`, `woobooster_resolve_product_names`, `woobooster_toggle_rule` and `woobooster_toggle_bundle` accept the `woobooster_admin` or the client page's `woobooster_store` nonce; the others accept only `woobooster_admin`. All: `woobooster_export_rules`, `woobooster_import_rules`, `woobooster_delete_all_rules`, `woobooster_rebuild_index`, `woobooster_purge_index`, `woobooster_ai_generate`, `woobooster_ai_create_rule`, `woobooster_ai_create_bundle`, `woobooster_search_terms`, `woobooster_search_products` (`context=bundle` hides out-of-stock products), `woobooster_search_coupons`, `woobooster_resolve_product_names`, `woobooster_toggle_rule`, `woobooster_toggle_bundle`, `woobooster_test_rule`.
 - Storefront (guests and logged-in), `woobooster_bundle_cart` nonce: `woobooster_add_bundle_to_cart` with `bundle_id`, `source_product_id`, `product_ids[]`.
 
 **MCP abilities** (WordPress 6.9+, category `woobooster`, `manage_woocommerce`, marked public for MCP)
@@ -237,4 +255,4 @@ AI and MCP rule fields: `condition_attribute` is `product_cat`, `product_tag`, `
 
 **Constants:** `FFLA_WOOBOOSTER_AI_KEY` and `FFLA_WOOBOOSTER_TAVILY_KEY` in `wp-config.php` take priority over the saved keys. Compatibility constants: `WOOBOOSTER_VERSION` (= `FFLA_VERSION`), `WOOBOOSTER_DB_VERSION`, `WOOBOOSTER_PATH`, `WOOBOOSTER_URL`, `WOOBOOSTER_FILE`, `WOOBOOSTER_BASENAME`.
 
-**Tests:** `php tests/smoke/woobooster-smart-smoke.php` (Bought Together and Trending scoring), `php tests/smoke/woobooster-bundle-pricing-smoke.php` (bundle pricing with quantities) and `tests/unit/BundleDiscountMathTest.php` (PHPUnit, bundle discount math).
+**Tests:** `php tests/smoke/woobooster-store-page-smoke.php` (client page: not blocked by White Label while FFL Funnels pages are, links and redirects per context, the client nonce, settings saving only client keys, analytics previous period), `php tests/smoke/woobooster-smart-smoke.php` (Bought Together and Trending scoring), `php tests/smoke/woobooster-bundle-pricing-smoke.php` (bundle pricing with quantities) and `tests/unit/BundleDiscountMathTest.php` (PHPUnit, bundle discount math).

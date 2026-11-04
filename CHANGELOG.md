@@ -4,6 +4,21 @@ All notable changes to FFL Funnels Addons are documented in this file.
 
 ## [Unreleased]
 
+## [1.57.0] - 2026-11-04
+
+### Added
+- **WooBooster:** client page **WooCommerce → Bundles & Recommendations**. White Label blocks every FFL Funnels page for client logins, so store owners had no way to manage bundles or recommendations. The page has four tabs: **Bundles** and **Recommendation rules** (the same lists and forms as FFL Funnels, Apply Coupon rules included), **Settings** (show recommendations, section title, hide out-of-stock products, and the Bought together, Trending and Recently viewed switches) and **Analytics**. Saving the client settings changes only those values; the AI provider and keys, Debug Mode, Delete Data on Uninstall and the Smart tuning are kept. The AI assistant, rule export/import/delete all, the index rebuild and purge, diagnostics and docs stay in FFL Funnels. The page prints its own AJAX nonce, which only the searches and the rule and bundle on/off switches accept, so a client cannot call the AI on the agency key or the bulk tools. It can be hidden from clients under **White Label → Restrictions**.
+
+### Fixed
+- **WooBooster:** **WB Analytics** loaded up to 5,000 orders per period as full WooCommerce orders and WordPress kept them all in memory, for the range and the previous period, the same pattern as the dashboard crash fixed in 1.56.3. Orders are now read 200 at a time with the in-memory object cache released between pages, and each period's figures are cached for 10 minutes. On a 3,000-order test store the scan went from about 100 MB of extra memory to none measurable.
+- **WooBooster:** the analytics trend compared the range with a period one day shorter (a 7-day range with the 6 days before), which inflated every trend. Both periods now have the same length.
+- **WooBooster:** WB Analytics counts **Ready for Pickup** orders, like the White Label dashboard.
+- **WooBooster:** the help text of the rule and bundle **Schedule** fields overlapped the date inputs.
+
+### Changed
+- **WooBooster:** admin links and redirects come from `WooBooster_Admin::url()`, so they stay on the page they came from (FFL Funnels or the client page). The client page renders before the admin header, so its saves and deletes redirect even where PHP does not buffer output.
+- New check `tests/smoke/woobooster-store-page-smoke.php` (60 checks), in CI on PHP 7.4 and 8.3.
+
 ## [1.56.3] - 2026-11-04
 
 ### Fixed

@@ -39,7 +39,7 @@ class WooBooster_Bundle_Form
         $bundle_price_type = $bundle && isset($bundle->bundle_price_type) ? $bundle->bundle_price_type : 'discount';
         $bundle_price      = $bundle && isset($bundle->bundle_price) && null !== $bundle->bundle_price ? $bundle->bundle_price : '';
 
-        $back_url = admin_url('admin.php?page=ffla-woobooster-bundles');
+        $back_url = WooBooster_Admin::url('bundles');
 
         echo '<div class="wb-card">';
         echo '<div class="wb-card__header">';
@@ -115,15 +115,19 @@ class WooBooster_Bundle_Form
 
         echo '<div class="wb-field">';
         echo '<label class="wb-field__label">' . esc_html__('Schedule', 'ffl-funnels-addons') . '</label>';
-        echo '<div class="wb-field__control wb-schedule-row">';
+        // The description sits in the control column; as a third flex item of
+        // .wb-field it overlapped the date inputs.
+        echo '<div class="wb-field__control">';
+        echo '<div class="wb-schedule-row">';
         echo '<label class="wb-schedule-label">' . esc_html__('From', 'ffl-funnels-addons');
         echo '<input type="datetime-local" name="bundle_start_date" value="' . esc_attr($start_date ? get_date_from_gmt($start_date, 'Y-m-d\TH:i') : '') . '" class="wb-input wb-input--sm wb-input--auto">';
         echo '</label>';
         echo '<label class="wb-schedule-label">' . esc_html__('Until', 'ffl-funnels-addons');
         echo '<input type="datetime-local" name="bundle_end_date" value="' . esc_attr($end_date ? get_date_from_gmt($end_date, 'Y-m-d\TH:i') : '') . '" class="wb-input wb-input--sm wb-input--auto">';
         echo '</label>';
-        echo '</div>';
+        echo '</div>'; // .wb-schedule-row
         echo '<p class="wb-field__desc">' . esc_html__('Optional, in the store\'s time zone. Leave empty to keep the bundle always active.', 'ffl-funnels-addons') . '</p>';
+        echo '</div>'; // .wb-field__control
         echo '</div>';
 
         echo '</div>'; // .wb-card__section
@@ -733,7 +737,7 @@ class WooBooster_Bundle_Form
 
         WooBooster_Bundle::save_conditions($bundle_id, $condition_groups);
 
-        wp_safe_redirect(admin_url('admin.php?page=ffla-woobooster-bundles&action=edit&bundle_id=' . $bundle_id . '&saved=1'));
+        wp_safe_redirect(WooBooster_Admin::url('bundles', array('action' => 'edit', 'bundle_id' => $bundle_id, 'saved' => 1)));
         exit;
     }
 }

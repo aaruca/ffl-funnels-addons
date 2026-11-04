@@ -160,7 +160,8 @@ function checkout_item($tracker, $key, $price = 36.21, $tax = 0) {
 }
 function analytics($items) {
     $GLOBALS['orders'] = array(new AttributionOrder($items));
-    $method = new ReflectionMethod('WooBooster_Analytics', 'compute_all_data');
+    // The uncached scan: compute_all_data() caches each period for 10 minutes.
+    $method = new ReflectionMethod('WooBooster_Analytics', 'scan_orders');
     $method->setAccessible(true);
     return $method->invoke(new WooBooster_Analytics(), '2026-10-06', '2026-10-06');
 }

@@ -27,6 +27,15 @@ class WooBooster_Analytics
      */
     const MAX_ORDERS_SCANNED = 5000;
 
+    /** Orders loaded per page; the object cache is released between pages. */
+    const PAGE_SIZE = 200;
+
+    /** Computed periods are cached this long (transient wb_analytics_*). */
+    const CACHE_TTL = 600;
+
+    /** Bump to drop cached periods after a change in how they are computed. */
+    const CACHE_VERSION = '2';
+
     /**
      * Render the analytics dashboard.
      */
@@ -35,8 +44,10 @@ class WooBooster_Analytics
         $range = $this->get_date_range();
         $data = $this->compute_all_data($range['from'], $range['to']);
 
-        // Previous period for trend comparison.
-        $days_span = max(1, (strtotime($range['to']) - strtotime($range['from'])) / 86400);
+        // Previous period for trend comparison: the same number of days
+        // (both ends included) right before the range. It used to be one day
+        // shorter, which inflated every trend.
+        $days_span = max(1, (int) round((strtotime($range['to']) - strtotime($range['from'])) / 86400) + 1);
         $prev_from = gmdate('Y-m-d', strtotime($range['from'] . " -{$days_span} days"));
         $prev_to = gmdate('Y-m-d', strtotime($range['from'] . ' -1 day'));
         $prev_data = $this->compute_all_data($prev_from, $prev_to);
@@ -134,6 +145,27 @@ class WooBooster_Analytics
      */
     private function compute_all_data($date_from, $date_to)
     {
+        // A period is scanned at most once every 10 minutes: opening the page
+        // or switching tabs does not rescan thousands of orders.
+        $cache_key = 'wb_analytics_' . md5(self::CACHE_VERSION . '|' . $date_from . '|' . $date_to);
+        $cached    = get_transient($cache_key);
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        $data = $this->scan_orders($date_from, $date_to);
+        set_transient($cache_key, $data, self::CACHE_TTL);
+
+        return $data;
+    }
+
+    /**
+     * @param string $date_from Y-m-d.
+     * @param string $date_to   Y-m-d.
+     * @return array
+     */
+    private function scan_orders($date_from, $date_to)
+    {
         // Initialize accumulators.
         $stats = array(
             'net_revenue' => 0,
@@ -164,13 +196,15 @@ class WooBooster_Analytics
 
         // Paginated query — completed/processing orders in range, up to the cap.
         $offset = 0;
-        $page_size = 500;
+        $page_size = self::PAGE_SIZE;
         $all_processed = false;
         $truncated = false;
 
         while (!$all_processed) {
             $orders = wc_get_orders(array(
-                'status' => array('wc-completed', 'wc-processing'),
+                // Ready for Pickup orders are paid (they only get there from
+                // Processing), as on the White Label dashboard.
+                'status' => array('wc-completed', 'wc-processing', 'wc-ffla-ready'),
                 'date_created' => $date_from . '...' . $date_to . ' 23:59:59',
                 'limit' => $page_size,
                 'offset' => $offset,
@@ -240,12 +274,24 @@ class WooBooster_Analytics
             }
         }
 
+            $page_count = count($orders);
+            unset($orders, $order, $item);
             $offset += $page_size;
 
             if ($stats['total_orders'] >= self::MAX_ORDERS_SCANNED) {
                 $truncated = true;
                 break;
             }
+
+            if ($page_count < $page_size) {
+                break;
+            }
+
+            // WordPress keeps every order, item and meta row it loaded in its
+            // in-memory object cache until the request ends, so paging alone
+            // does not bound memory (the cause of the v1.56.3 dashboard
+            // crash). A persistent object cache keeps its data.
+            self::release_memory();
         } // end while
 
         // Build daily arrays.
@@ -280,6 +326,13 @@ class WooBooster_Analytics
         $conversion = $this->get_conversion_rate($date_from, $date_to, $stats['items_sold']);
 
         return compact('stats', 'daily', 'top_rules', 'top_products', 'conversion', 'truncated');
+    }
+
+    private static function release_memory(): void
+    {
+        if (function_exists('wp_cache_supports') && function_exists('wp_cache_flush_runtime') && wp_cache_supports('flush_runtime')) {
+            wp_cache_flush_runtime();
+        }
     }
 
     /**
@@ -514,7 +567,7 @@ class WooBooster_Analytics
             <div class="wb-card__body" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
                 <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>"
                     style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0;">
-                    <input type="hidden" name="page" value="ffla-woobooster-analytics">
+                    <?php echo WooBooster_Admin::view_hidden_fields('analytics'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in view_hidden_fields(). ?>
                     <label class="wb-field__label" style="margin:0;"><?php esc_html_e('From', 'ffl-funnels-addons'); ?></label>
                     <input type="date" name="wb_from" value="<?php echo esc_attr($range['from']); ?>"
                         class="wb-input wb-input--sm" style="width:160px;">
@@ -556,7 +609,7 @@ class WooBooster_Analytics
                             $preset_to = wp_date('Y-m-d');
                         }
 
-                        $url = add_query_arg(array('page' => 'ffla-woobooster-analytics', 'wb_from' => $preset_from, 'wb_to' => $preset_to), admin_url('admin.php'));
+                        $url = WooBooster_Admin::url('analytics', array('wb_from' => $preset_from, 'wb_to' => $preset_to));
                         $active = ($range['from'] === $preset_from && $range['to'] === $preset_to) ? ' wb-btn--primary' : ' wb-btn--subtle';
                         echo '<a href="' . esc_url($url) . '" class="wb-btn wb-btn--sm' . esc_attr($active) . '">' . esc_html($label) . '</a>';
                     }

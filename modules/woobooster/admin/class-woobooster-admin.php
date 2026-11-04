@@ -40,6 +40,84 @@ class WooBooster_Admin
         ),
     );
 
+    /** Client page under WooCommerce (WooBooster_Store_Page); not under FFL Funnels. */
+    const STORE_SLUG = 'ffla-woobooster-store';
+
+    /**
+     * Nonce printed on the client page. It only unlocks the AJAX calls the
+     * client page needs (searches, name lookup, rule/bundle on-off), never
+     * import, delete all, index rebuild/purge, the rule tester or the AI.
+     */
+    const STORE_NONCE = 'woobooster_store';
+
+    /** FFL Funnels page for each view. */
+    private static $view_pages = array(
+        'settings'    => 'ffla-woobooster',
+        'rules'       => 'ffla-woobooster-rules',
+        'bundles'     => 'ffla-woobooster-bundles',
+        'diagnostics' => 'ffla-woobooster-diagnostics',
+        'analytics'   => 'ffla-woobooster-analytics',
+    );
+
+    /**
+     * Whether this request is the client page (WooCommerce → Bundles &
+     * Recommendations). White Label blocks every FFL Funnels page for client
+     * logins, so links, redirects and forms there must stay on it.
+     */
+    public static function is_store_context(): bool
+    {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        return isset($_GET['page']) && self::STORE_SLUG === sanitize_key(wp_unslash($_GET['page']));
+    }
+
+    /**
+     * Admin URL of a WooBooster view ('rules', 'bundles', 'settings',
+     * 'analytics', 'diagnostics'): the client page's tab from the client
+     * page, the FFL Funnels page otherwise.
+     *
+     * @param array<string, scalar> $args Extra query args (action, rule_id, …).
+     */
+    public static function url(string $view, array $args = array()): string
+    {
+        if (self::is_store_context()) {
+            $query = array('page' => self::STORE_SLUG, 'tab' => $view);
+        } else {
+            $query = array('page' => isset(self::$view_pages[$view]) ? self::$view_pages[$view] : 'ffla-woobooster');
+        }
+
+        return add_query_arg(array_merge($query, $args), admin_url('admin.php'));
+    }
+
+    /**
+     * Verify the AJAX nonce. Agency endpoints accept only the FFL Funnels
+     * nonce; $client_allowed endpoints also accept the client page's.
+     */
+    public static function check_ajax_nonce(bool $client_allowed = false): void
+    {
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+        $nonce = isset($_REQUEST['nonce']) ? sanitize_key(wp_unslash($_REQUEST['nonce'])) : '';
+
+        if (wp_verify_nonce($nonce, 'woobooster_admin') || ($client_allowed && wp_verify_nonce($nonce, self::STORE_NONCE))) {
+            return;
+        }
+
+        wp_die('-1', 403); // As check_ajax_referer().
+    }
+
+    /**
+     * Hidden fields that keep a GET form (search, date filter) on the same view.
+     */
+    public static function view_hidden_fields(string $view): string
+    {
+        if (self::is_store_context()) {
+            return '<input type="hidden" name="page" value="' . esc_attr(self::STORE_SLUG) . '" />'
+                . '<input type="hidden" name="tab" value="' . esc_attr($view) . '" />';
+        }
+
+        $page = isset(self::$view_pages[$view]) ? self::$view_pages[$view] : 'ffla-woobooster';
+        return '<input type="hidden" name="page" value="' . esc_attr($page) . '" />';
+    }
+
     /**
      * Initialize admin hooks.
      */
@@ -71,8 +149,11 @@ class WooBooster_Admin
             return;
         }
 
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : '';
+
         // The bundle form needs the WordPress media library for the image picker.
-        if ('ffla-woobooster-bundles' === $page) {
+        if ('ffla-woobooster-bundles' === $page || (self::STORE_SLUG === $page && 'bundles' === $tab)) {
             wp_enqueue_media();
         }
 
@@ -94,7 +175,7 @@ class WooBooster_Admin
         // Localize the module script (enqueued by FFLA_Admin).
         wp_localize_script('woobooster-module', 'wooboosterAdmin', array(
             'ajaxUrl' => admin_url('admin-ajax.php'),
-            'nonce' => wp_create_nonce('woobooster_admin'),
+            'nonce' => wp_create_nonce(self::STORE_SLUG === $page ? self::STORE_NONCE : 'woobooster_admin'),
             'attributeTaxonomies' => (object) $attribute_taxonomies,
             'userRoles' => (object) $user_roles,
             'i18n' => array(
@@ -152,6 +233,11 @@ class WooBooster_Admin
                 'entityBundleLower'    => __('bundle', 'ffl-funnels-addons'),
             ),
         ));
+
+        // The AI assistant is agency-only: the client page has no AI button.
+        if (self::STORE_SLUG === $page) {
+            return;
+        }
 
         // Enqueue the AI Chat script
         wp_enqueue_script(
@@ -649,14 +735,16 @@ class WooBooster_Admin
                 echo '<div class="wb-card">';
                 echo '<div class="wb-card__header">';
                 echo '<h2>' . esc_html__('Bundles', 'ffl-funnels-addons') . '</h2>';
-                $add_url = admin_url('admin.php?page=ffla-woobooster-bundles&action=add');
+                $add_url = WooBooster_Admin::url('bundles', array('action' => 'add'));
                 echo '<div class="wb-card__actions">';
 
-                // AI Generator Button.
-                echo '<button type="button" id="wb-open-ai-modal" class="wb-btn wb-btn--sm" style="margin-right: 8px; background: linear-gradient(135deg, #a855f7, #7e22ce); color: white; border: none;">';
-                echo '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>';
-                echo esc_html__('Generate with AI', 'ffl-funnels-addons');
-                echo '</button>';
+                // AI Generator Button (agency only).
+                if (!self::is_store_context()) {
+                    echo '<button type="button" id="wb-open-ai-modal" class="wb-btn wb-btn--sm" style="margin-right: 8px; background: linear-gradient(135deg, #a855f7, #7e22ce); color: white; border: none;">';
+                    echo '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>';
+                    echo esc_html__('Generate with AI', 'ffl-funnels-addons');
+                    echo '</button>';
+                }
 
                 echo '<a href="' . esc_url($add_url) . '" class="wb-btn wb-btn--primary wb-btn--sm">' . esc_html__('Add Bundle', 'ffl-funnels-addons') . '</a>';
                 echo '</div>';
@@ -669,7 +757,9 @@ class WooBooster_Admin
                 echo '</div>';
 
                 // Render AI Modal.
-                $this->render_ai_chat_modal('bundle');
+                if (!self::is_store_context()) {
+                    $this->render_ai_chat_modal('bundle');
+                }
                 break;
         }
     }
@@ -692,18 +782,21 @@ class WooBooster_Admin
                 echo '<div class="wb-card">';
                 echo '<div class="wb-card__header">';
                 echo '<h2>' . esc_html__('Rules', 'ffl-funnels-addons') . '</h2>';
-                $add_url = admin_url('admin.php?page=ffla-woobooster-rules&action=add');
+                $add_url = WooBooster_Admin::url('rules', array('action' => 'add'));
                 echo '<div class="wb-card__actions">';
-                echo '<button type="button" id="wb-export-rules" class="wb-btn wb-btn--subtle wb-btn--sm" style="margin-right: 8px;">' . esc_html__('Export', 'ffl-funnels-addons') . '</button>';
-                echo '<button type="button" id="wb-import-rules-btn" class="wb-btn wb-btn--subtle wb-btn--sm" style="margin-right: 8px;">' . esc_html__('Import', 'ffl-funnels-addons') . '</button>';
-                echo '<button type="button" id="wb-delete-all-rules" class="wb-btn wb-btn--subtle wb-btn--sm wb-btn--danger" style="margin-right: 8px;">' . esc_html__('Delete All', 'ffl-funnels-addons') . '</button>';
-                echo '<input type="file" id="wb-import-file" style="display:none;" accept=".json">';
+                // Bulk tools and the AI assistant are agency only.
+                if (!self::is_store_context()) {
+                    echo '<button type="button" id="wb-export-rules" class="wb-btn wb-btn--subtle wb-btn--sm" style="margin-right: 8px;">' . esc_html__('Export', 'ffl-funnels-addons') . '</button>';
+                    echo '<button type="button" id="wb-import-rules-btn" class="wb-btn wb-btn--subtle wb-btn--sm" style="margin-right: 8px;">' . esc_html__('Import', 'ffl-funnels-addons') . '</button>';
+                    echo '<button type="button" id="wb-delete-all-rules" class="wb-btn wb-btn--subtle wb-btn--sm wb-btn--danger" style="margin-right: 8px;">' . esc_html__('Delete All', 'ffl-funnels-addons') . '</button>';
+                    echo '<input type="file" id="wb-import-file" style="display:none;" accept=".json">';
 
-                // AI Generator Button
-                echo '<button type="button" id="wb-open-ai-modal" class="wb-btn wb-btn--sm" style="margin-right: 8px; background: linear-gradient(135deg, #a855f7, #7e22ce); color: white; border: none;">';
-                echo '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>';
-                echo esc_html__('Generate with AI', 'ffl-funnels-addons');
-                echo '</button>';
+                    // AI Generator Button
+                    echo '<button type="button" id="wb-open-ai-modal" class="wb-btn wb-btn--sm" style="margin-right: 8px; background: linear-gradient(135deg, #a855f7, #7e22ce); color: white; border: none;">';
+                    echo '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>';
+                    echo esc_html__('Generate with AI', 'ffl-funnels-addons');
+                    echo '</button>';
+                }
 
                 echo '<a href="' . esc_url($add_url) . '" class="wb-btn wb-btn--primary wb-btn--sm">';
                 echo WooBooster_Icons::get('plus'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
@@ -713,14 +806,16 @@ class WooBooster_Admin
                 echo '</div>';
                 echo '<div class="wb-card__body wb-card__body--table">';
                 echo '<form method="get">';
-                echo '<input type="hidden" name="page" value="ffla-woobooster-rules" />';
+                echo self::view_hidden_fields('rules'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in view_hidden_fields().
                 $list->search_box(__('Search Rules', 'ffl-funnels-addons'), 'rule');
                 $list->display();
                 echo '</form>';
                 echo '</div></div>';
 
                 // Render AI Modal Structure
-                $this->render_ai_chat_modal('rule');
+                if (!self::is_store_context()) {
+                    $this->render_ai_chat_modal('rule');
+                }
                 break;
         }
     }
@@ -2041,7 +2136,7 @@ Common product types: firearms (handguns, rifles, shotguns), ammunition, holster
             ));
         }
 
-        $edit_url = admin_url('admin.php?page=ffla-woobooster-bundles&action=edit&bundle_id=' . $bundle_id);
+        $edit_url = WooBooster_Admin::url('bundles', array('action' => 'edit', 'bundle_id' => $bundle_id));
 
         return array(
             'success' => true,

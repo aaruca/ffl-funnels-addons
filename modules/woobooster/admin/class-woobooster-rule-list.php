@@ -124,7 +124,7 @@ class WooBooster_Rule_List extends WP_List_Table
      */
     protected function column_name($item)
     {
-        $edit_url = admin_url('admin.php?page=ffla-woobooster-rules&action=edit&rule_id=' . $item->id);
+        $edit_url = WooBooster_Admin::url('rules', array('action' => 'edit', 'rule_id' => $item->id));
         return '<a href="' . esc_url($edit_url) . '" class="wb-link--strong">' . esc_html($item->name) . '</a>';
     }
 
@@ -353,13 +353,13 @@ class WooBooster_Rule_List extends WP_List_Table
      */
     protected function column_actions($item)
     {
-        $edit_url = admin_url('admin.php?page=ffla-woobooster-rules&action=edit&rule_id=' . $item->id);
+        $edit_url = WooBooster_Admin::url('rules', array('action' => 'edit', 'rule_id' => $item->id));
         $duplicate_url = wp_nonce_url(
-            admin_url('admin.php?page=ffla-woobooster-rules&action=duplicate&rule_id=' . $item->id),
+            WooBooster_Admin::url('rules', array('action' => 'duplicate', 'rule_id' => $item->id)),
             'woobooster_duplicate_rule_' . $item->id
         );
         $delete_url = wp_nonce_url(
-            admin_url('admin.php?page=ffla-woobooster-rules&action=delete&rule_id=' . $item->id),
+            WooBooster_Admin::url('rules', array('action' => 'delete', 'rule_id' => $item->id)),
             'woobooster_delete_rule_' . $item->id
         );
 
@@ -414,7 +414,7 @@ class WooBooster_Rule_List extends WP_List_Table
             $rule_id = isset($_GET['rule_id']) ? absint($_GET['rule_id']) : 0;
             if ($rule_id && check_admin_referer('woobooster_delete_rule_' . $rule_id)) {
                 WooBooster_Rule::delete($rule_id);
-                wp_safe_redirect(admin_url('admin.php?page=ffla-woobooster-rules'));
+                wp_safe_redirect(WooBooster_Admin::url('rules'));
                 exit;
             }
         }
@@ -426,8 +426,8 @@ class WooBooster_Rule_List extends WP_List_Table
             if ($rule_id && check_admin_referer('woobooster_duplicate_rule_' . $rule_id)) {
                 $new_id = WooBooster_Rule::duplicate($rule_id);
                 $redirect = $new_id
-                    ? admin_url('admin.php?page=ffla-woobooster-rules&action=edit&rule_id=' . $new_id)
-                    : admin_url('admin.php?page=ffla-woobooster-rules');
+                    ? WooBooster_Admin::url('rules', array('action' => 'edit', 'rule_id' => $new_id))
+                    : WooBooster_Admin::url('rules');
                 wp_safe_redirect($redirect);
                 exit;
             }
@@ -461,7 +461,7 @@ class WooBooster_Rule_List extends WP_List_Table
                 }
             }
 
-            wp_safe_redirect(admin_url('admin.php?page=ffla-woobooster-rules'));
+            wp_safe_redirect(WooBooster_Admin::url('rules'));
             exit;
         }
     }
@@ -474,7 +474,7 @@ class WooBooster_Rule_List extends WP_List_Table
         echo '<div class="wb-empty-state">';
         echo WooBooster_Icons::get('rules'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
         echo '<p>' . esc_html__('No rules created yet.', 'ffl-funnels-addons') . '</p>';
-        $add_url = admin_url('admin.php?page=ffla-woobooster-rules&action=add');
+        $add_url = WooBooster_Admin::url('rules', array('action' => 'add'));
         echo '<a href="' . esc_url($add_url) . '" class="wb-btn wb-btn--primary">' . esc_html__('Create Your First Rule', 'ffl-funnels-addons') . '</a>';
         echo '</div>';
     }
