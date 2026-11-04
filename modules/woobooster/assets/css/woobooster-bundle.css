@@ -225,3 +225,38 @@
     opacity: 0.75;
     font-size: 0.9em;
 }
+
+/* The product being viewed, when it is one of the bundle's own items. */
+.wb-bundle-item__anchor-label {
+    display: inline-block;
+    align-self: center;
+    padding: 1px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    opacity: 0.75;
+}
+
+.wb-bundle-items--vertical .wb-bundle-item__anchor-label {
+    align-self: flex-start;
+}
+
+/* Variation added for a variable product (its default attributes). */
+.wb-bundle-item__variation {
+    font-size: 0.85em;
+    opacity: 0.75;
+}
+
+/* Optional bundle image above the heading ("Show Bundle Image"). */
+.wb-bundle-cover {
+    margin: 0 0 12px;
+}
+
+.wb-bundle-cover__img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}

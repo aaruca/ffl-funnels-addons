@@ -86,7 +86,7 @@ class WooBooster_Bundle_Form
         echo '<p class="wb-field__desc">' . esc_html__('Shoppers see this name on the product page and in the cart.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
-        // Bundle Image (replaces representative product thumbnail in cart).
+        // Bundle Image (shown by the Bundle element when "Show Bundle Image" is on).
         $image_url = $image_id ? wp_get_attachment_image_url($image_id, 'thumbnail') : '';
         echo '<div class="wb-field wb-bundle-image-field">';
         echo '<label class="wb-field__label">' . esc_html__('Bundle Image', 'ffl-funnels-addons') . '</label>';
@@ -98,7 +98,7 @@ class WooBooster_Bundle_Form
         echo '<button type="button" class="button wb-bundle-image-select">' . esc_html__('Select image', 'ffl-funnels-addons') . '</button> ';
         echo '<button type="button" class="button wb-bundle-image-remove"' . ($image_id ? '' : ' style="display:none;"') . '>' . esc_html__('Remove', 'ffl-funnels-addons') . '</button>';
         echo '</div></div>';
-        echo '<p class="wb-field__desc">' . esc_html__('Optional. Shown in the cart and at checkout instead of the first product’s photo.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('Optional. Shown at the top of the bundle on the product page when the bundle element’s “Show Bundle Image” option is on. In the cart, each product shows its own photo.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
         // Priority.
@@ -177,7 +177,7 @@ class WooBooster_Bundle_Form
         echo '<label class="wb-field__label">' . esc_html__('Discount Value', 'ffl-funnels-addons') . '</label>';
         echo '<div class="wb-field__control">';
         echo '<input type="number" name="bundle_discount_value" value="' . esc_attr($discount_value) . '" min="0" step="0.01" class="wb-input wb-input--sm">';
-        echo '<p class="wb-field__desc">' . esc_html__('Percentage: taken off every item, e.g. 10. Fixed amount: taken off the whole set once, e.g. 25 for $25 off the bundle.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-field__desc">' . esc_html__('Percentage: taken off every item, from 0 to 100, e.g. 10. Fixed amount: taken off the whole set once, e.g. 25 for $25 off the bundle; it never makes the bundle cost less than $0.', 'ffl-funnels-addons') . '</p>';
         echo '</div></div>';
 
         echo '</div>'; // .wb-price-discount-fields
@@ -196,7 +196,7 @@ class WooBooster_Bundle_Form
         // ── Bundle Items (Static) ───────────────────────────────────────
         echo '<div class="wb-card__section" id="wb-bundle-items-section">';
         echo '<h3>' . esc_html__('Products in the bundle', 'ffl-funnels-addons') . '</h3>';
-        echo '<p class="wb-section-desc">' . esc_html__('Search and add products. Each one is included unless you mark it Optional; shoppers can untick optional items. Qty is how many of that item come in one bundle.', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-section-desc">' . esc_html__('Search and add products. Each one is included unless you mark it Optional; shoppers can untick optional items. Qty is how many of that item come in one bundle. On the page of a product listed here, that product is part of the bundle too: it is shown first as “This item” and gets the bundle price.', 'ffl-funnels-addons') . '</p>';
 
         $items = $bundle_id ? WooBooster_Bundle::get_items($bundle_id) : array();
 
@@ -267,9 +267,9 @@ class WooBooster_Bundle_Form
         echo '<div class="wb-card__section" id="wb-bundle-conditions-section">';
         echo '<h3>' . esc_html__('Show on these product pages', 'ffl-funnels-addons') . ' <span class="wb-section-eyebrow">' . esc_html__('Conditions', 'ffl-funnels-addons') . '</span></h3>';
         if (WooBooster_Admin::is_store_context()) {
-            $conditions_desc = __('Pick where the bundle appears: a category, a tag, an attribute such as a brand, specific products or every product. Every condition in a group must match; another group adds more pages. Leave empty to show the bundle only where your FFL Funnels team placed it.', 'ffl-funnels-addons');
+            $conditions_desc = __('Pick where the bundle appears: a category, a tag, an attribute such as a brand, specific products or every product. Every condition in a group must match; another group adds more pages. Leave empty to show the bundle only where your FFL Funnels team placed it. A bundle with conditions is only shown, and only sold, where they match.', 'ffl-funnels-addons');
         } else {
-            $conditions_desc = __('Pick where the bundle appears. Every condition in a group must match; another group adds more pages (OR). Leave empty for a bundle you only show by pinning it ("Specific Bundle" in Bricks). “Entire store” matches every product.', 'ffl-funnels-addons');
+            $conditions_desc = __('Pick where the bundle appears. Every condition in a group must match; another group adds more pages (OR). Leave empty for a bundle you only show by pinning it ("Specific Bundle" in Bricks). A pinned bundle with conditions is only shown, and only sold, where they match; without a product (Product Source “None”) only User Role and “Entire store” conditions can match. “Entire store” matches every product.', 'ffl-funnels-addons');
         }
         echo '<p class="wb-section-desc">' . esc_html($conditions_desc) . '</p>';
 

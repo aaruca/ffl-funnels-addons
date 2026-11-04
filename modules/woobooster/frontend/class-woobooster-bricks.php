@@ -466,6 +466,11 @@ class WooBooster_Bricks
 
         if ($specific_bundle_id) {
             $bundle = $matcher->get_bundle_by_id($specific_bundle_id, $product_id);
+            // A pinned bundle with Conditions only lists items where they
+            // match (product and User Role), like the Bundle element.
+            if ($bundle && !$this->is_bricks_builder() && !$matcher->bundle_matches_product($bundle, $product_id)) {
+                $bundle = null;
+            }
             if ($bundle && !empty($bundle->resolved_items)) {
                 $product_ids = $bundle->resolved_items;
             }
@@ -475,6 +480,12 @@ class WooBooster_Bricks
                 // Use the first matching bundle's items.
                 $product_ids = $bundles[0]->resolved_items;
             }
+        }
+
+        // The bundle keeps the viewed product when it is one of its own items;
+        // the loop lists the other items, as before.
+        if ($product_id) {
+            $product_ids = array_values(array_diff(array_map('absint', $product_ids), array((int) $product_id)));
         }
 
         if (empty($product_ids)) {
