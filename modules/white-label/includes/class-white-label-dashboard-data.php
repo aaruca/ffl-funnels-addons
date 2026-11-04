@@ -2,7 +2,9 @@
 /**
  * White Label — dashboard data.
  *
- * WooCommerce business metrics are loaded with bounded-memory pagination.
+ * WooCommerce sales are summed by the database (HPOS or legacy post storage)
+ * without loading order objects; other order data stores use paginated
+ * wc_get_orders() calls with the object cache released between pages.
  * Analytics providers are fetched separately so the dashboard can lazy-load
  * only the selected MonsterInsights or SnapFind tab.
  *
@@ -27,8 +29,8 @@ class White_Label_Dashboard_Data
      */
     public static function get(string $from, string $to, bool $force = false): array
     {
-        // v4: the window and daily buckets are in the site's time zone.
-        $key = self::cache_key('v4|woo|' . $from . '|' . $to);
+        // v5: totals are aggregated in SQL and include Ready for Pickup orders.
+        $key = self::cache_key('v5|woo|' . $from . '|' . $to);
 
         if (!$force) {
             $cached = get_transient($key);
@@ -103,8 +105,8 @@ class White_Label_Dashboard_Data
 
         try {
             // $from / $to are site-local dates; order days are bucketed in the
-            // site's time zone too (woo_period()), so the window, the daily
-            // series and the totals all describe the same calendar days.
+            // site's time zone too, so the window, the daily series and the
+            // totals all describe the same calendar days.
             $tz    = wp_timezone();
             $start = new DateTimeImmutable($from . ' 00:00:00', $tz);
             $end   = new DateTimeImmutable($to . ' 23:59:59', $tz);
@@ -112,26 +114,37 @@ class White_Label_Dashboard_Data
                 return null;
             }
 
-            $current = self::woo_period($start->getTimestamp(), $end->getTimestamp());
-
             // Previous period: the same number of calendar days right before.
-            $days     = (int) $start->diff($end)->days + 1;
-            $previous = self::woo_period(
-                $start->modify('-' . $days . ' days')->getTimestamp(),
-                $start->getTimestamp() - 1
-            );
+            // One aggregation covers both periods.
+            $days           = (int) $start->diff($end)->days + 1;
+            $previous_start = $start->modify('-' . $days . ' days');
+            $daily          = self::woo_daily($previous_start, $end);
 
-            $series = [];
-            for ($cursor = $start; $cursor <= $end; $cursor = $cursor->modify('+1 day')) {
-                $day      = $cursor->format('Y-m-d');
-                $series[] = ['date' => $day, 'value' => (float) round($current['daily'][$day] ?? 0, 2)];
+            $current  = ['sales' => 0.0, 'orders' => 0];
+            $previous = ['sales' => 0.0, 'orders' => 0];
+            $series   = [];
+            for ($cursor = $previous_start; $cursor <= $end; $cursor = $cursor->modify('+1 day')) {
+                $day    = $cursor->format('Y-m-d');
+                $bucket = $daily[$day] ?? ['sales' => 0.0, 'orders' => 0];
+
+                if ($cursor < $start) {
+                    $previous['sales']  += $bucket['sales'];
+                    $previous['orders'] += $bucket['orders'];
+                    continue;
+                }
+
+                $current['sales']  += $bucket['sales'];
+                $current['orders'] += $bucket['orders'];
+                $series[] = ['date' => $day, 'value' => (float) round($bucket['sales'], 2)];
             }
 
+            $sales = (float) round($current['sales'], 2);
+
             return [
-                'sales'               => $current['sales'],
+                'sales'               => $sales,
                 'orders'              => $current['orders'],
-                'average_order_value' => $current['orders'] > 0 ? round($current['sales'] / $current['orders'], 2) : 0.0,
-                'sales_delta'         => self::delta($current['sales'], $previous['sales']),
+                'average_order_value' => $current['orders'] > 0 ? round($sales / $current['orders'], 2) : 0.0,
+                'sales_delta'         => self::delta($sales, (float) round($previous['sales'], 2)),
                 'orders_delta'        => self::delta((float) $current['orders'], (float) $previous['orders']),
                 'series'              => $series,
             ];
@@ -141,15 +154,175 @@ class White_Label_Dashboard_Data
     }
 
     /**
-     * Sum paid orders in fixed-size pages so large stores cannot exhaust PHP
-     * memory by materialising every order object at once.
+     * Paid orders per site-local day between two site-local times.
      *
-     * @return array{sales: float, orders: int, daily: array<string, float>}
+     * Sales are stored order totals (tax and shipping included, refunds not
+     * subtracted) of shop orders created in the window, in the statuses from
+     * self::order_statuses(). On HPOS and on WooCommerce's own post storage
+     * the database sums them, so memory does not grow with the number of
+     * orders. Any other order data store goes through wc_get_orders().
+     *
+     * @return array<string, array{sales: float, orders: int}> Keyed by Y-m-d.
      */
-    private static function woo_period(int $from_ts, int $to_ts): array
+    private static function woo_daily(DateTimeImmutable $from, DateTimeImmutable $to): array
     {
-        $sales     = 0.0;
-        $count     = 0;
+        $statuses = self::order_statuses();
+        if ($to < $from || empty($statuses)) {
+            return [];
+        }
+
+        switch (self::order_storage()) {
+            case 'hpos':
+                return self::woo_daily_hpos($from, $to, $statuses);
+            case 'posts':
+                return self::woo_daily_posts($from, $to, $statuses);
+            default:
+                return self::woo_daily_api($from, $to, $statuses);
+        }
+    }
+
+    /**
+     * Where WooCommerce reads orders from: 'hpos', 'posts' (its own legacy
+     * post data store) or 'api' (another data store, read through the API).
+     */
+    private static function order_storage(): string
+    {
+        if (class_exists('\\Automattic\\WooCommerce\\Utilities\\OrderUtil')
+            && \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled()) {
+            return 'hpos';
+        }
+
+        if (class_exists('WC_Data_Store')) {
+            try {
+                // A subclass or a replacement may keep totals elsewhere, so
+                // only WooCommerce's own post data store is read directly.
+                if ('WC_Order_Data_Store_CPT' === \WC_Data_Store::load('order')->get_current_class_name()) {
+                    return 'posts';
+                }
+            } catch (\Throwable $e) {
+                return 'api';
+            }
+        }
+
+        return 'api';
+    }
+
+    /**
+     * Paid order statuses, with the wc- prefix the database stores.
+     *
+     * WooCommerce's paid statuses (filter woocommerce_order_is_paid_statuses)
+     * plus Ready for Pickup: an order only gets there from Processing, so it
+     * is paid and waiting at the counter. Filter
+     * ffla_wl_dashboard_order_statuses changes the list.
+     *
+     * @return string[]
+     */
+    private static function order_statuses(): array
+    {
+        $statuses = function_exists('wc_get_is_paid_statuses') ? (array) wc_get_is_paid_statuses() : ['processing', 'completed'];
+        $statuses[] = 'ffla-ready';
+        $statuses = (array) apply_filters('ffla_wl_dashboard_order_statuses', $statuses);
+
+        $prefixed = [];
+        foreach ($statuses as $status) {
+            $status = is_string($status) ? trim($status) : '';
+            if ('' === $status) {
+                continue;
+            }
+            $prefixed[] = 0 === strpos($status, 'wc-') ? $status : 'wc-' . $status;
+        }
+
+        return array_values(array_unique($prefixed));
+    }
+
+    /**
+     * HPOS: one GROUP BY over wc_orders, no order objects or meta.
+     *
+     * @param string[] $statuses
+     * @return array<string, array{sales: float, orders: int}>
+     */
+    private static function woo_daily_hpos(DateTimeImmutable $from, DateTimeImmutable $to, array $statuses): array
+    {
+        global $wpdb;
+
+        $table = method_exists('\\Automattic\\WooCommerce\\Utilities\\OrderUtil', 'get_table_for_orders')
+            ? \Automattic\WooCommerce\Utilities\OrderUtil::get_table_for_orders()
+            : $wpdb->prefix . 'wc_orders';
+
+        [$day_sql, $day_args] = self::day_case('o.date_created_gmt', $from, $to);
+        $in = implode(', ', array_fill(0, count($statuses), '%s'));
+
+        // The (type, status, date_created_gmt) index covers the WHERE clause.
+        $sql = "SELECT {$day_sql} AS order_day, COUNT(*) AS order_count, COALESCE(SUM(o.total_amount), 0) AS sales
+            FROM %i AS o
+            WHERE o.type = 'shop_order' AND o.status IN ({$in})
+              AND o.date_created_gmt >= %s AND o.date_created_gmt <= %s
+            GROUP BY order_day";
+
+        return self::daily_rows($sql, array_merge(
+            $day_args,
+            [$table],
+            $statuses,
+            [self::gmt($from), self::gmt($to)]
+        ));
+    }
+
+    /**
+     * Legacy post storage: one GROUP BY over shop_order posts and their
+     * _order_total, no order objects.
+     *
+     * The order total is the first _order_total row, as get_post_meta(…, true)
+     * and therefore WC_Order::get_total() read it. Orders without one count
+     * with a total of 0, as get_total() returns.
+     *
+     * @param string[] $statuses
+     * @return array<string, array{sales: float, orders: int}>
+     */
+    private static function woo_daily_posts(DateTimeImmutable $from, DateTimeImmutable $to, array $statuses): array
+    {
+        global $wpdb;
+
+        [$day_sql, $day_args] = self::day_case('p.post_date_gmt', $from, $to);
+        $in = implode(', ', array_fill(0, count($statuses), '%s'));
+
+        // post_date_gmt decides, as in wc_get_orders(). The wider post_date
+        // range (local time, never more than 14 hours from UTC) only lets
+        // MySQL use the (post_type, post_status, post_date) index.
+        $sql = "SELECT order_day, COUNT(*) AS order_count, COALESCE(SUM(order_total), 0) AS sales
+            FROM (
+                SELECT {$day_sql} AS order_day,
+                    (SELECT CAST(m.meta_value AS DECIMAL(26,8)) FROM %i AS m
+                     WHERE m.post_id = p.ID AND m.meta_key = '_order_total'
+                     ORDER BY m.meta_id LIMIT 1) AS order_total
+                FROM %i AS p
+                WHERE p.post_type = 'shop_order' AND p.post_status IN ({$in})
+                  AND p.post_date_gmt >= %s AND p.post_date_gmt <= %s
+                  AND p.post_date >= %s AND p.post_date <= %s
+            ) AS paid_orders
+            GROUP BY order_day";
+
+        return self::daily_rows($sql, array_merge(
+            $day_args,
+            [$wpdb->postmeta, $wpdb->posts],
+            $statuses,
+            [
+                self::gmt($from),
+                self::gmt($to),
+                self::gmt($from->modify('-1 day')),
+                self::gmt($to->modify('+1 day')),
+            ]
+        ));
+    }
+
+    /**
+     * Other order data stores: wc_get_orders() in pages, releasing WordPress's
+     * in-memory object cache between pages so memory stays bounded.
+     *
+     * @param string[] $statuses
+     * @return array<string, array{sales: float, orders: int}>
+     */
+    private static function woo_daily_api(DateTimeImmutable $from, DateTimeImmutable $to, array $statuses): array
+    {
         $daily     = [];
         $page      = 1;
         $max_pages = 1;
@@ -160,18 +333,22 @@ class White_Label_Dashboard_Data
                 'paged'        => $page,
                 'paginate'     => true,
                 'type'         => 'shop_order',
-                'status'       => wc_get_is_paid_statuses(),
-                'date_created' => $from_ts . '...' . $to_ts,
+                'status'       => $statuses,
+                'date_created' => $from->getTimestamp() . '...' . $to->getTimestamp(),
+                // Oldest first: orders placed while paging land on the last
+                // page instead of shifting earlier pages.
+                'orderby'      => 'ID',
+                'order'        => 'ASC',
                 'return'       => 'objects',
             ]);
 
             if (is_object($result) && isset($result->orders) && is_array($result->orders)) {
-                $orders     = $result->orders;
+                $orders    = $result->orders;
                 $max_pages = max(1, (int) ($result->max_num_pages ?? 1));
             } else {
                 // Compatibility fallback for stores whose order data store does
                 // not return the standard paginated result object.
-                $orders     = is_array($result) ? $result : [];
+                $orders    = is_array($result) ? $result : [];
                 $max_pages = count($orders) === self::ORDER_PAGE_SIZE ? $page + 1 : $page;
             }
 
@@ -180,22 +357,100 @@ class White_Label_Dashboard_Data
                     continue;
                 }
 
-                $total  = (float) $order->get_total();
-                $sales += $total;
-                $count++;
-
                 $created = method_exists($order, 'get_date_created') ? $order->get_date_created() : null;
-                if ($created) {
-                    $day         = wp_date('Y-m-d', $created->getTimestamp()); // Site-local day.
-                    $daily[$day] = ($daily[$day] ?? 0) + $total;
+                if (!$created) {
+                    continue;
                 }
+
+                $day = wp_date('Y-m-d', $created->getTimestamp()); // Site-local day.
+                $daily[$day] = $daily[$day] ?? ['sales' => 0.0, 'orders' => 0];
+                $daily[$day]['sales'] += (float) $order->get_total();
+                $daily[$day]['orders']++;
             }
 
             unset($orders, $result);
             $page++;
+
+            if ($page <= $max_pages) {
+                self::release_memory();
+            }
         } while ($page <= $max_pages);
 
-        return ['sales' => $sales, 'orders' => $count, 'daily' => $daily];
+        return $daily;
+    }
+
+    /**
+     * A CASE expression that turns a UTC datetime column into its site-local
+     * day. Each boundary is a local midnight computed in PHP, so 23- and
+     * 25-hour DST days are right and MySQL needs no time zone tables.
+     *
+     * @return array{0: string, 1: string[]} SQL and its prepare() arguments.
+     */
+    private static function day_case(string $column, DateTimeImmutable $from, DateTimeImmutable $to): array
+    {
+        $cases  = [];
+        $args   = [];
+        $cursor = $from->setTime(0, 0);
+
+        while ($cursor <= $to) {
+            // setTime() again: where a DST change skips midnight, modify()
+            // lands on 01:00 and later days would keep that hour.
+            $next    = $cursor->modify('+1 day')->setTime(0, 0);
+            $cases[] = "WHEN {$column} < %s THEN %s";
+            $args[]  = self::gmt($next);
+            $args[]  = $cursor->format('Y-m-d');
+            $cursor  = $next;
+        }
+
+        return ['CASE ' . implode(' ', $cases) . ' END', $args];
+    }
+
+    /**
+     * Run a per-day aggregation. A failed query throws, so woocommerce()
+     * returns null and the failure is never cached as a zero-sales result.
+     *
+     * @param array<int, string> $args
+     * @return array<string, array{sales: float, orders: int}>
+     */
+    private static function daily_rows(string $sql, array $args): array
+    {
+        global $wpdb;
+
+        $prepared = $wpdb->prepare($sql, $args);
+        $rows     = $prepared ? $wpdb->get_results($prepared, ARRAY_A) : null;
+
+        if (!is_array($rows) || '' !== (string) $wpdb->last_error) {
+            throw new \RuntimeException('Unable to aggregate dashboard order totals.');
+        }
+
+        $daily = [];
+        foreach ($rows as $row) {
+            if (empty($row['order_day'])) {
+                continue;
+            }
+            $daily[(string) $row['order_day']] = [
+                'sales'  => (float) $row['sales'],
+                'orders' => (int) $row['order_count'],
+            ];
+        }
+
+        return $daily;
+    }
+
+    private static function gmt(DateTimeImmutable $time): string
+    {
+        return gmdate('Y-m-d H:i:s', $time->getTimestamp());
+    }
+
+    /**
+     * Drop the orders, items and meta the last page put in WordPress's
+     * in-memory object cache. A persistent object cache keeps its data.
+     */
+    private static function release_memory(): void
+    {
+        if (function_exists('wp_cache_supports') && function_exists('wp_cache_flush_runtime') && wp_cache_supports('flush_runtime')) {
+            wp_cache_flush_runtime();
+        }
     }
 
     /* =====================================================================

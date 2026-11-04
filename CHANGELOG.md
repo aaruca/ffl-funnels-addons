@@ -4,6 +4,16 @@ All notable changes to FFL Funnels Addons are documented in this file.
 
 ## [Unreleased]
 
+## [1.56.3] - 2026-11-04
+
+### Fixed
+- **White Label:** on a store with many orders the client dashboard could end in "There has been a critical error on this website" (PHP out of memory). To show 30-day sales it loaded every paid order of the last 60 days as a full WooCommerce order, and WordPress kept each one in its in-memory object cache until the page finished, so paging did not limit memory. The database now adds up the totals per day, with HPOS (`wc_orders`) and with legacy order storage (`shop_order` posts and their `_order_total`), so no order is loaded and memory no longer grows with the number of orders. One query covers the 30 days and the previous 30. A failed query shows "Sales data is unavailable." and is not cached. Another order data store is still read through `wc_get_orders()`, 200 orders at a time, oldest first, with the per-request object cache released between pages. The HPOS query builds on #40.
+- **White Label:** where a DST change skips midnight (for example Chile), every later day of the sales chart started at 01:00. Each day now starts at local midnight. US time zones were not affected.
+
+### Changed
+- **White Label:** dashboard sales, orders and average order value include **Ready for Pickup** orders. An order only reaches that status from Processing, so it is paid; before, its sale disappeared from the dashboard until the order was completed. New filter `ffla_wl_dashboard_order_statuses` for the statuses counted. Figures are otherwise unchanged: full order totals, by creation date, refunds not subtracted.
+- `tests/smoke/white-label-smoke.php` runs the HPOS and legacy order SQL for real on SQLite and checks that both match `wc_get_orders()`, that refunds, subscriptions and unpaid orders are left out, the first and last second of each period, orders on both sides of a DST change, a failed query, and paging with the object cache released.
+
 ## [1.56.2] - 2026-11-02
 
 ### Fixed
