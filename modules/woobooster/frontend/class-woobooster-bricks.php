@@ -706,6 +706,14 @@ class WooBooster_Bricks
                     'posts_per_page' => $limit,
                     'post__not_in' => array($product_id),
                     'fields' => 'ids',
+                    // Never products hidden from the catalog (transfer fees, LE-only items).
+                    'tax_query' => array(array(
+                        'taxonomy' => 'product_visibility',
+                        'field'    => 'name',
+                        'terms'    => array('exclude-from-catalog'),
+                        'operator' => 'NOT IN',
+                    )),
+                    'no_found_rows' => true,
                     'orderby' => 'date',
                     'order' => 'DESC',
                 ));
@@ -718,6 +726,14 @@ class WooBooster_Bricks
                     'posts_per_page' => $limit,
                     'post__not_in' => array($product_id),
                     'fields' => 'ids',
+                    // Never products hidden from the catalog (transfer fees, LE-only items).
+                    'tax_query' => array(array(
+                        'taxonomy' => 'product_visibility',
+                        'field'    => 'name',
+                        'terms'    => array('exclude-from-catalog'),
+                        'operator' => 'NOT IN',
+                    )),
+                    'no_found_rows' => true,
                     'meta_key' => 'total_sales',
                     'orderby' => 'meta_value_num',
                     'order' => 'DESC',
