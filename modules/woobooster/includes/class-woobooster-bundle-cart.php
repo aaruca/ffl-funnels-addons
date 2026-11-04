@@ -57,7 +57,7 @@ class WooBooster_Bundle_Cart
     /**
      * How long a signed item list from the widget is honoured (12 hours).
      */
-    const TOKEN_TTL = 43200;
+    const TOKEN_TTL = 604800; // 7 days: page caches keep HTML that long. Any edit of the bundle invalidates it (bundle_fingerprint()).
 
     /**
      * Most bundles carried by one "Add to cart".
@@ -240,9 +240,71 @@ class WooBooster_Bundle_Cart
         sort($sorted, SORT_NUMERIC);
 
         $message = 'woobooster_bundle_snapshot|' . absint($bundle_id) . '|' . absint($source_product_id)
-            . '|' . implode(',', $sorted) . '|' . (int) $expires;
+            . '|' . implode(',', $sorted) . '|' . (int) $expires . '|' . self::bundle_fingerprint($bundle_id);
 
         return hash_hmac('sha256', $message, wp_salt('nonce'));
+    }
+
+    /** @var array<int, string> Per-request fingerprints. */
+    private static $fingerprints = array();
+
+    /**
+     * Hash of everything that decides what a bundle sells and for how much:
+     * status, schedule, pricing, items (quantities, Optional), automatic
+     * picks and conditions. A signed list made before an edit no longer
+     * verifies, so a long-lived token cannot sell yesterday's items or price.
+     */
+    public static function bundle_fingerprint($bundle_id)
+    {
+        $bundle_id = absint($bundle_id);
+        if (isset(self::$fingerprints[$bundle_id])) {
+            return self::$fingerprints[$bundle_id];
+        }
+
+        $bundle = WooBooster_Bundle::get($bundle_id);
+        $fields = array();
+        if ($bundle) {
+            foreach (array('status', 'start_date', 'end_date', 'discount_type', 'discount_value', 'bundle_price_type', 'bundle_price') as $field) {
+                $fields[$field] = isset($bundle->$field) ? (string) $bundle->$field : '';
+            }
+        }
+
+        $data = array(
+            'bundle'     => $fields,
+            'items'      => self::rows_for_fingerprint(WooBooster_Bundle::get_items($bundle_id)),
+            'actions'    => self::rows_for_fingerprint(WooBooster_Bundle::get_actions($bundle_id)),
+            'conditions' => self::rows_for_fingerprint(WooBooster_Bundle::get_conditions($bundle_id)),
+        );
+
+        return self::$fingerprints[$bundle_id] = md5((string) wp_json_encode($data));
+    }
+
+    /**
+     * Rows (objects or nested groups of objects) as plain arrays without
+     * row IDs or timestamps, which change without changing the offer.
+     *
+     * @param mixed $rows
+     * @return mixed
+     */
+    private static function rows_for_fingerprint($rows)
+    {
+        if (is_object($rows)) {
+            $rows = get_object_vars($rows);
+            unset($rows['id'], $rows['created_at'], $rows['updated_at']);
+        }
+        if (is_array($rows)) {
+            foreach ($rows as $key => $value) {
+                $rows[$key] = self::rows_for_fingerprint($value);
+            }
+        }
+
+        return $rows;
+    }
+
+    /** Forget cached fingerprints (after a bundle is saved in this request). */
+    public static function flush_fingerprints()
+    {
+        self::$fingerprints = array();
     }
 
     /* ── Add to cart ──────────────────────────────────────────────── */
@@ -345,8 +407,14 @@ class WooBooster_Bundle_Cart
                 return self::fail($not_here);
             }
         }
+        // With a valid signed item list our own widget showed exactly these
+        // items here (pinned bundles included), so only the viewer conditions
+        // are checked again. Without one, the product conditions must match.
         $matcher = new WooBooster_Bundle_Matcher();
-        if (!$matcher->bundle_matches_product($bundle, $source_product_id)) {
+        $allowed = null !== $snapshot_ids
+            ? $matcher->bundle_allows_viewer($bundle)
+            : $matcher->bundle_matches_product($bundle, $source_product_id);
+        if (!$allowed) {
             return self::fail($not_here);
         }
 

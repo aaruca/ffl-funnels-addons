@@ -904,7 +904,23 @@ scenario('source product must match the conditions', function () {
     check(!$r->success && 0 === count($cart->get_cart()), 'a rifles bundle is refused with a handgun as source');
     $r = post_bundle(array('bundle_id' => 1, 'source_product_id' => 0, 'product_ids' => array(103, 101, 102)));
     check(!$r->success && 0 === count($cart->get_cart()), 'a bundle with product conditions is refused without a source');
-    check('' === trim(render_widget(1, 104)), 'the pinned rifles bundle is not shown on a handgun page');
+    // A pinned bundle still shows where it is placed (landing pages, other
+    // products); its signed list then lets that exact set be added.
+    $html = render_widget(1, 104);
+    check('' !== trim($html), 'a pinned rifles bundle still shows where it is placed, e.g. a handgun page');
+    $r = post_bundle(array('bundle_id' => 1, 'source_product_id' => 104, 'product_ids' => array(103, 101, 102), 'token' => widget_token($html)));
+    check($r->success && 3 === count($cart->get_cart()), 'the pinned bundle is added with its signed list');
+
+    // Editing the bundle invalidates lists signed before the edit.
+    $cart = fresh_cart();
+    $token = widget_token(render_widget(1, 104));
+    $GLOBALS['wb_bundles'][1]->discount_value = (float) $GLOBALS['wb_bundles'][1]->discount_value + 5;
+    WooBooster_Bundle_Cart::flush_fingerprints();
+    check(null === WooBooster_Bundle_Cart::verify_snapshot_token($token, 1, 104), 'a list signed before an edit of the bundle no longer verifies');
+    $r = post_bundle(array('bundle_id' => 1, 'source_product_id' => 104, 'product_ids' => array(103, 101, 102), 'token' => $token));
+    check(!$r->success && 0 === count($cart->get_cart()), 'and the request falls back to the product conditions (refused here)');
+    $GLOBALS['wb_bundles'][1]->discount_value = (float) $GLOBALS['wb_bundles'][1]->discount_value - 5;
+    WooBooster_Bundle_Cart::flush_fingerprints();
 });
 
 scenario('source 0 keeps every item', function () {

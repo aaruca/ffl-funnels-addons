@@ -354,6 +354,31 @@ class WooBooster_Bundle_Matcher
     }
 
     /**
+     * Whether the bundle's User Role conditions allow the current viewer,
+     * ignoring the conditions about products. Used where the bundle is
+     * pinned (Bricks "Specific Bundle", landing pages) and for add-to-cart
+     * requests that carry a valid signed item list: the product conditions
+     * then only decide where the bundle shows by itself, while an LE-only or
+     * wholesale bundle still never reaches other shoppers.
+     *
+     * @param object $bundle Bundle row.
+     * @return bool
+     */
+    public function bundle_allows_viewer($bundle)
+    {
+        if (!$bundle || empty($bundle->id)) {
+            return false;
+        }
+
+        $groups = WooBooster_Bundle::get_conditions($bundle->id);
+        if (empty($groups)) {
+            return true;
+        }
+
+        return $this->condition_groups_match($groups, array_flip($this->build_condition_keys(0, array())), array(), 0, true);
+    }
+
+    /**
      * Condition keys describing a product and the current viewer.
      *
      * @param int   $product_id Product ID (0 = no product).
@@ -389,7 +414,7 @@ class WooBooster_Bundle_Matcher
      * @param int   $product_id       Product ID (0 = no product).
      * @return bool
      */
-    private function condition_groups_match(array $groups, array $product_keys_set, array $terms, $product_id)
+    private function condition_groups_match(array $groups, array $product_keys_set, array $terms, $product_id, $roles_only = false)
     {
         foreach ($groups as $conditions) {
             $group_satisfied = true;
@@ -397,6 +422,11 @@ class WooBooster_Bundle_Matcher
             foreach ((array) $conditions as $cond) {
                 $operator = isset($cond->condition_operator) ? $cond->condition_operator : 'equals';
                 $attr     = sanitize_key($cond->condition_attribute);
+
+                // Viewer check only: conditions about the product count as met.
+                if ($roles_only && 'user_role' !== $attr) {
+                    continue;
+                }
 
                 if ('__store_all' === $attr && '1' === sanitize_text_field($cond->condition_value)) {
                     if ('not_equals' === $operator) {

@@ -719,10 +719,11 @@ class WooBooster_Bundle_Element extends \Bricks\Element
             // ($product_id may be 0 on homepage / standalone pages).
             $bundle = $matcher->get_bundle_by_id($specific_bundle_id, $product_id);
 
-            // A pinned bundle that has Conditions only shows where they match
-            // (product and User Role): the cart refuses it anywhere else.
-            // In the builder it always previews.
-            if ($bundle && !$this->is_builder_context() && !$matcher->bundle_matches_product($bundle, $product_id)) {
+            // A pinned bundle shows wherever it is placed, as before, but its
+            // User Role conditions still apply (an LE-only bundle never shows
+            // to other shoppers). Its product conditions only decide where it
+            // shows by itself. In the builder it always previews.
+            if ($bundle && !$this->is_builder_context() && !$matcher->bundle_allows_viewer($bundle)) {
                 $bundle = null;
             }
         } elseif ($product_id) {
