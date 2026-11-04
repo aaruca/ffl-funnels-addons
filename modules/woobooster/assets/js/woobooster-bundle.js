@@ -94,7 +94,7 @@
     $total.html(html);
   }
 
-  function showError($bundle, message) {
+  function showError($bundle, message, timeout) {
     var $err = $bundle.find('.wb-bundle-error');
     if (!$err.length) {
       $err = $('<div class="wb-bundle-error" role="alert" aria-live="polite"></div>').appendTo($bundle);
@@ -102,7 +102,66 @@
     $err.text(message).prop('hidden', false);
     setTimeout(function () {
       $err.prop('hidden', true).text('');
-    }, 5000);
+    }, timeout || 5000);
+  }
+
+  // The page (and its nonce) may come from a page cache. A fresh nonce comes
+  // from admin-ajax, which is never cached.
+  function refreshNonce() {
+    return $.post(cfg.ajaxUrl, { action: 'woobooster_bundle_nonce' }).then(function (response) {
+      if (response && response.success && response.data && response.data.nonce) {
+        cfg.nonce = response.data.nonce;
+        return cfg.nonce;
+      }
+      return $.Deferred().reject().promise();
+    });
+  }
+
+  function isNonceFailure(xhr, response) {
+    if (response && response.data && response.data.code === 'invalid_nonce') {
+      return true;
+    }
+    if (xhr && xhr.status === 403) {
+      var body = xhr.responseJSON;
+      return !body || !body.data || !body.data.code || body.data.code === 'invalid_nonce';
+    }
+    return false;
+  }
+
+  function postBundle(payload, retried) {
+    var deferred = $.Deferred();
+    payload.nonce = cfg.nonce;
+
+    $.post(cfg.ajaxUrl, payload)
+      .done(function (response) {
+        if (!retried && response && !response.success && isNonceFailure(null, response)) {
+          refreshNonce().then(function () {
+            postBundle(payload, true).then(deferred.resolve, deferred.reject);
+          }, function () {
+            deferred.resolve(response);
+          });
+          return;
+        }
+        deferred.resolve(response);
+      })
+      .fail(function (xhr) {
+        if (!retried && isNonceFailure(xhr, null)) {
+          refreshNonce().then(function () {
+            postBundle(payload, true).then(deferred.resolve, deferred.reject);
+          }, function () {
+            deferred.reject(xhr);
+          });
+          return;
+        }
+        // A JSON error with a message (e.g. a refused item) is still an answer.
+        if (xhr && xhr.responseJSON && xhr.responseJSON.data) {
+          deferred.resolve(xhr.responseJSON);
+          return;
+        }
+        deferred.reject(xhr);
+      });
+
+    return deferred.promise();
   }
 
   function clearError($bundle) {
@@ -153,15 +212,15 @@
       var originalText = $btn.text();
       $btn.prop('disabled', true).text(cfg.i18n ? cfg.i18n.adding : 'Adding...');
 
-      $.post(cfg.ajaxUrl, {
+      postBundle({
         action: 'woobooster_add_bundle_to_cart',
-        nonce: cfg.nonce,
         bundle_id: bundleId,
         source_product_id: $bundle.data('sourceProductId') || 0,
+        token: $bundle.attr('data-bundle-token') || '',
         product_ids: productIds
       })
         .done(function (response) {
-          if (response.success) {
+          if (response && response.success) {
             $btn.text(cfg.i18n ? cfg.i18n.added : 'Added to Cart!');
 
             // Update WC cart fragments.
@@ -174,11 +233,17 @@
             // Trigger WC added_to_cart event.
             $(document.body).trigger('added_to_cart', [response.data.fragments, response.data.cart_hash, $btn]);
 
+            // Optional items that could not be added.
+            if (response.data && response.data.errors && response.data.errors.length) {
+              var partial = (cfg.i18n && cfg.i18n.partial) || 'Some items could not be added:';
+              showError($bundle, partial + ' ' + response.data.errors.join(' '), 8000);
+            }
+
             setTimeout(function () {
               $btn.prop('disabled', false).text(originalText);
             }, 2000);
           } else {
-            var msg = (response.data && response.data.message) || (cfg.i18n ? cfg.i18n.error : 'Error adding to cart.');
+            var msg = (response && response.data && response.data.message) || (cfg.i18n ? cfg.i18n.error : 'Error adding to cart.');
             $btn.prop('disabled', false).text(originalText);
             showError($bundle, msg);
           }
