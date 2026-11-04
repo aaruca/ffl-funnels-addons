@@ -94,6 +94,19 @@ jobs:
           php tests/smoke/tax-resolver-units-smoke.php
           php tests/smoke/tax-report-fixes-smoke.php
 
+      - name: Validate WooBooster (bundle cart, coupons, matching) before publishing
+        if: ${{ steps.tag.outputs.skip != 'true' }}
+        run: |
+          set -e
+          find modules/woobooster -name '*.php' ! -path '*/lib/*' -print0 | xargs -0 -n1 php -l
+          php tests/smoke/woobooster-bundle-pricing-smoke.php
+          php tests/smoke/woobooster-bundle-cart-smoke.php
+          php tests/smoke/woobooster-coupon-engine-smoke.php
+          php tests/smoke/woobooster-matcher-filters-smoke.php
+          php tests/smoke/woobooster-attribution-smoke.php
+          php tests/smoke/woobooster-store-page-smoke.php
+          php tests/smoke/woobooster-ai-admin-smoke.php
+
       - name: Validate customer and order management before publishing
         if: ${{ steps.tag.outputs.skip != 'true' }}
         run: |
