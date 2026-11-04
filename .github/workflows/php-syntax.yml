@@ -23,8 +23,16 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           coverage: none
-      - name: Check cart consolidation and purchase attribution
-        run: php tests/smoke/woobooster-attribution-smoke.php
+      - name: WooBooster attribution, client page, bundle cart, coupons, matching and AI
+        run: |
+          set -e
+          php tests/smoke/woobooster-attribution-smoke.php
+          php tests/smoke/woobooster-store-page-smoke.php
+          php tests/smoke/woobooster-bundle-cart-smoke.php
+          php tests/smoke/woobooster-coupon-engine-smoke.php
+          php tests/smoke/woobooster-matcher-filters-smoke.php
+          php tests/smoke/woobooster-ai-admin-smoke.php
+          php tests/smoke/woobooster-smart-build-smoke.php
 
   pickup-shipping-php:
     name: Pickup & Shipping (PHP ${{ matrix.php }})
@@ -104,6 +112,12 @@ jobs:
           set -e
           php tests/smoke/woobooster-smart-smoke.php
           php tests/smoke/woobooster-bundle-pricing-smoke.php
+          php tests/smoke/woobooster-store-page-smoke.php
+          php tests/smoke/woobooster-bundle-cart-smoke.php
+          php tests/smoke/woobooster-coupon-engine-smoke.php
+          php tests/smoke/woobooster-matcher-filters-smoke.php
+          php tests/smoke/woobooster-ai-admin-smoke.php
+          php tests/smoke/woobooster-smart-build-smoke.php
           php tests/smoke/loadout-cart-smoke.php
           php tests/smoke/wishlist-ajax-smoke.php
 

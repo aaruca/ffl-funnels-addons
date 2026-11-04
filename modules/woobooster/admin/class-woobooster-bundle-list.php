@@ -93,7 +93,7 @@ class WooBooster_Bundle_List extends WP_List_Table
 
     protected function column_name($item)
     {
-        $edit_url = admin_url('admin.php?page=ffla-woobooster-bundles&action=edit&bundle_id=' . $item->id);
+        $edit_url = WooBooster_Admin::url('bundles', array('action' => 'edit', 'bundle_id' => $item->id));
         return '<a href="' . esc_url($edit_url) . '" class="wb-link--strong">' . esc_html($item->name) . '</a>';
     }
 
@@ -113,12 +113,12 @@ class WooBooster_Bundle_List extends WP_List_Table
             foreach ($action_groups as $group) {
                 $action_count += count($group);
             }
-            $parts[] = $action_count . ' ' . _n('dynamic source', 'dynamic sources', $action_count, 'ffl-funnels-addons');
+            $parts[] = $action_count . ' ' . _n('automatic pick', 'automatic picks', $action_count, 'ffl-funnels-addons');
         }
 
         return !empty($parts)
             ? implode(' + ', $parts)
-            : '<span class="wb-text--muted">' . esc_html__('None', 'ffl-funnels-addons') . '</span>';
+            : '<span class="wb-text--muted">' . esc_html__('No products yet', 'ffl-funnels-addons') . '</span>';
     }
 
     protected function column_discount($item)
@@ -128,10 +128,13 @@ class WooBooster_Bundle_List extends WP_List_Table
         }
 
         if ('percentage' === $item->discount_type) {
-            return '<span class="wb-badge wb-badge--success">' . esc_html($item->discount_value) . '%</span>';
+            /* translators: %s: percentage */
+            return '<span class="wb-badge wb-badge--success">' . esc_html(sprintf(__('%s%% off', 'ffl-funnels-addons'), $item->discount_value)) . '</span>';
         }
 
-        return '<span class="wb-badge wb-badge--success">$' . esc_html(number_format((float) $item->discount_value, 2)) . '</span>';
+        $amount = function_exists('wc_price') ? wp_strip_all_tags(wc_price((float) $item->discount_value)) : '$' . number_format((float) $item->discount_value, 2);
+        /* translators: %s: discount amount with currency */
+        return '<span class="wb-badge wb-badge--success">' . esc_html(sprintf(__('%s off', 'ffl-funnels-addons'), html_entity_decode($amount))) . '</span>';
     }
 
     protected function column_priority($item)
@@ -173,32 +176,38 @@ class WooBooster_Bundle_List extends WP_List_Table
 
     protected function column_actions($item)
     {
-        $edit_url = admin_url('admin.php?page=ffla-woobooster-bundles&action=edit&bundle_id=' . $item->id);
+        $edit_url = WooBooster_Admin::url('bundles', array('action' => 'edit', 'bundle_id' => $item->id));
         $duplicate_url = wp_nonce_url(
-            admin_url('admin.php?page=ffla-woobooster-bundles&action=duplicate&bundle_id=' . $item->id),
+            WooBooster_Admin::url('bundles', array('action' => 'duplicate', 'bundle_id' => $item->id)),
             'woobooster_duplicate_bundle_' . $item->id
         );
         $delete_url = wp_nonce_url(
-            admin_url('admin.php?page=ffla-woobooster-bundles&action=delete&bundle_id=' . $item->id),
+            WooBooster_Admin::url('bundles', array('action' => 'delete', 'bundle_id' => $item->id)),
             'woobooster_delete_bundle_' . $item->id
         );
 
         $toggle_label = $item->status
-            ? __('Deactivate', 'ffl-funnels-addons')
-            : __('Activate', 'ffl-funnels-addons');
+            ? __('Turn off', 'ffl-funnels-addons')
+            : __('Turn on', 'ffl-funnels-addons');
+
+        // Icons only on FFL Funnels; icon + text on the client page.
+        $labelled = WooBooster_Admin::is_store_context();
+        $label    = static function ($text) use ($labelled) {
+            return $labelled ? '<span class="wb-row-action__label">' . esc_html($text) . '</span>' : '';
+        };
 
         $html = '<div class="wb-row-actions">';
-        $html .= '<a href="' . esc_url($edit_url) . '" class="wb-btn wb-btn--subtle wb-btn--xs" title="' . esc_attr__('Edit', 'ffl-funnels-addons') . '">';
-        $html .= WooBooster_Icons::get('edit');
+        $html .= '<a href="' . esc_url($edit_url) . '" class="wb-btn wb-btn--subtle wb-btn--xs" title="' . esc_attr__('Edit', 'ffl-funnels-addons') . '" aria-label="' . esc_attr__('Edit', 'ffl-funnels-addons') . ' ' . esc_attr($item->name) . '">';
+        $html .= WooBooster_Icons::get('edit') . $label(__('Edit', 'ffl-funnels-addons'));
         $html .= '</a>';
-        $html .= '<a href="' . esc_url($duplicate_url) . '" class="wb-btn wb-btn--subtle wb-btn--xs" title="' . esc_attr__('Duplicate', 'ffl-funnels-addons') . '">';
-        $html .= WooBooster_Icons::get('duplicate');
+        $html .= '<a href="' . esc_url($duplicate_url) . '" class="wb-btn wb-btn--subtle wb-btn--xs" title="' . esc_attr__('Duplicate', 'ffl-funnels-addons') . '" aria-label="' . esc_attr__('Duplicate', 'ffl-funnels-addons') . ' ' . esc_attr($item->name) . '">';
+        $html .= WooBooster_Icons::get('duplicate') . $label(__('Duplicate', 'ffl-funnels-addons'));
         $html .= '</a>';
-        $html .= '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-bundle" data-bundle-id="' . esc_attr($item->id) . '" title="' . esc_attr($toggle_label) . '">';
-        $html .= WooBooster_Icons::get('toggle');
+        $html .= '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-bundle" data-bundle-id="' . esc_attr($item->id) . '" title="' . esc_attr($toggle_label) . '" aria-label="' . esc_attr($toggle_label . ' ' . $item->name) . '">';
+        $html .= WooBooster_Icons::get('toggle') . $label($toggle_label);
         $html .= '</button>';
-        $html .= '<a href="' . esc_url($delete_url) . '" class="wb-btn wb-btn--subtle wb-btn--xs wb-btn--danger wb-delete-bundle" title="' . esc_attr__('Delete', 'ffl-funnels-addons') . '">';
-        $html .= WooBooster_Icons::get('delete');
+        $html .= '<a href="' . esc_url($delete_url) . '" class="wb-btn wb-btn--subtle wb-btn--xs wb-btn--danger wb-delete-bundle" title="' . esc_attr__('Delete', 'ffl-funnels-addons') . '" aria-label="' . esc_attr__('Delete', 'ffl-funnels-addons') . ' ' . esc_attr($item->name) . '">';
+        $html .= WooBooster_Icons::get('delete') . $label(__('Delete', 'ffl-funnels-addons'));
         $html .= '</a>';
         $html .= '</div>';
 
@@ -209,8 +218,8 @@ class WooBooster_Bundle_List extends WP_List_Table
     {
         return array(
             'bulk_delete'     => __('Delete', 'ffl-funnels-addons'),
-            'bulk_activate'   => __('Activate', 'ffl-funnels-addons'),
-            'bulk_deactivate' => __('Deactivate', 'ffl-funnels-addons'),
+            'bulk_activate'   => __('Turn on', 'ffl-funnels-addons'),
+            'bulk_deactivate' => __('Turn off', 'ffl-funnels-addons'),
         );
     }
 
@@ -225,7 +234,7 @@ class WooBooster_Bundle_List extends WP_List_Table
             $bundle_id = isset($_GET['bundle_id']) ? absint($_GET['bundle_id']) : 0;
             if ($bundle_id && check_admin_referer('woobooster_delete_bundle_' . $bundle_id)) {
                 WooBooster_Bundle::delete($bundle_id);
-                wp_safe_redirect(admin_url('admin.php?page=ffla-woobooster-bundles'));
+                wp_safe_redirect(WooBooster_Admin::url('bundles'));
                 exit;
             }
         }
@@ -236,8 +245,8 @@ class WooBooster_Bundle_List extends WP_List_Table
             if ($bundle_id && check_admin_referer('woobooster_duplicate_bundle_' . $bundle_id)) {
                 $new_id = WooBooster_Bundle::duplicate($bundle_id);
                 $redirect = $new_id
-                    ? admin_url('admin.php?page=ffla-woobooster-bundles&action=edit&bundle_id=' . $new_id)
-                    : admin_url('admin.php?page=ffla-woobooster-bundles');
+                    ? WooBooster_Admin::url('bundles', array('action' => 'edit', 'bundle_id' => $new_id))
+                    : WooBooster_Admin::url('bundles');
                 wp_safe_redirect($redirect);
                 exit;
             }
@@ -265,7 +274,7 @@ class WooBooster_Bundle_List extends WP_List_Table
                 }
             }
 
-            wp_safe_redirect(admin_url('admin.php?page=ffla-woobooster-bundles'));
+            wp_safe_redirect(WooBooster_Admin::url('bundles'));
             exit;
         }
     }
@@ -273,10 +282,11 @@ class WooBooster_Bundle_List extends WP_List_Table
     public function no_items()
     {
         echo '<div class="wb-empty-state">';
-        echo WooBooster_Icons::get('rules'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-        echo '<p>' . esc_html__('No bundles created yet.', 'ffl-funnels-addons') . '</p>';
-        $add_url = admin_url('admin.php?page=ffla-woobooster-bundles&action=add');
-        echo '<a href="' . esc_url($add_url) . '" class="wb-btn wb-btn--primary">' . esc_html__('Create Your First Bundle', 'ffl-funnels-addons') . '</a>';
+        echo class_exists('WooBooster_Store_Page') ? WooBooster_Store_Page::icon('package', 40) : WooBooster_Icons::get('rules'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static SVG.
+        echo '<p class="wb-empty-state__title">' . esc_html__('No bundles yet', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-empty-state__text">' . esc_html__('Offer products that go together at a better price, like a rifle with a scope and two boxes of ammo. Shoppers add the whole set from the product page in one click.', 'ffl-funnels-addons') . '</p>';
+        $add_url = WooBooster_Admin::url('bundles', array('action' => 'add'));
+        echo '<a href="' . esc_url($add_url) . '" class="wb-btn wb-btn--primary">' . esc_html__('Create your first bundle', 'ffl-funnels-addons') . '</a>';
         echo '</div>';
     }
 }

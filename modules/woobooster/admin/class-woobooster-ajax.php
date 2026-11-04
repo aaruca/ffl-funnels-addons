@@ -20,7 +20,7 @@ class WooBooster_Ajax
 
     public function search_terms()
     {
-        check_ajax_referer('woobooster_admin', 'nonce');
+        WooBooster_Admin::check_ajax_nonce(true);
         if (!current_user_can('manage_woocommerce')) {
             wp_send_json_error(array('message' => 'Permission denied.'));
         }
@@ -65,7 +65,7 @@ class WooBooster_Ajax
 
     public function toggle_rule()
     {
-        check_ajax_referer('woobooster_admin', 'nonce');
+        WooBooster_Admin::check_ajax_nonce(true);
         if (!current_user_can('manage_woocommerce')) {
             wp_send_json_error(array('message' => 'Permission denied.'));
         }
@@ -116,7 +116,7 @@ class WooBooster_Ajax
      */
     public function search_products()
     {
-        check_ajax_referer('woobooster_admin', 'nonce');
+        WooBooster_Admin::check_ajax_nonce(true);
         if (!current_user_can('manage_woocommerce')) {
             wp_send_json_error(array('message' => 'Permission denied.'));
         }
@@ -180,7 +180,7 @@ class WooBooster_Ajax
      */
     public function search_coupons()
     {
-        check_ajax_referer('woobooster_admin', 'nonce');
+        WooBooster_Admin::check_ajax_nonce(true);
         if (!current_user_can('manage_woocommerce')) {
             wp_send_json_error(array('message' => 'Permission denied.'));
         }
@@ -222,7 +222,7 @@ class WooBooster_Ajax
      */
     public function toggle_bundle()
     {
-        check_ajax_referer('woobooster_admin', 'nonce');
+        WooBooster_Admin::check_ajax_nonce(true);
         if (!current_user_can('manage_woocommerce')) {
             wp_send_json_error(array('message' => 'Permission denied.'));
         }
@@ -246,7 +246,7 @@ class WooBooster_Ajax
      */
     public function resolve_product_names()
     {
-        check_ajax_referer('woobooster_admin', 'nonce');
+        WooBooster_Admin::check_ajax_nonce(true);
         if (!current_user_can('manage_woocommerce')) {
             wp_send_json_error(array('message' => 'Permission denied.'));
         }

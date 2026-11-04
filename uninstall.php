@@ -46,6 +46,9 @@ if (in_array('woobooster', $ffla_active_modules, true) || (is_array($wb_settings
         delete_option('woobooster_last_build');
         delete_option('woobooster_atc_counter');   // WooBooster_Tracker::COUNTER_OPTION
         delete_option('woobooster_cache_version'); // WooBooster_Matcher::CACHE_VERSION
+        delete_option('woobooster_schema_flags');
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE 'woobooster\\_build\\_lock\\_%'");
+        $wpdb->query("DELETE FROM {$wpdb->usermeta} WHERE meta_key = 'woobooster_ai_usage'");
 
         // Delete transients.
         delete_transient('woobooster_github_release');
@@ -55,7 +58,7 @@ if (in_array('woobooster', $ffla_active_modules, true) || (is_array($wb_settings
         $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key = '_woobooster_copurchased'");
 
         // Cached recommendation results, trending lists and AI lookups.
-        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_wbrc\\_%' OR option_name LIKE '\\_transient\\_timeout\\_wbrc\\_%' OR option_name LIKE '\\_transient\\_wb\\_trending\\_%' OR option_name LIKE '\\_transient\\_timeout\\_wb\\_trending\\_%' OR option_name LIKE '\\_transient\\_wb\\_ai\\_%' OR option_name LIKE '\\_transient\\_timeout\\_wb\\_ai\\_%'");
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_wbrc\\_%' OR option_name LIKE '\\_transient\\_timeout\\_wbrc\\_%' OR option_name LIKE '\\_transient\\_wb\\_trending\\_%' OR option_name LIKE '\\_transient\\_timeout\\_wb\\_trending\\_%' OR option_name LIKE '\\_transient\\_wb\\_ai\\_%' OR option_name LIKE '\\_transient\\_timeout\\_wb\\_ai\\_%' OR option_name LIKE '\\_transient\\_wb\\_analytics\\_%' OR option_name LIKE '\\_transient\\_timeout\\_wb\\_analytics\\_%'");
     }
 
     // Cron events are cleared on deactivate(), but uninstall can run without a
@@ -63,6 +66,8 @@ if (in_array('woobooster', $ffla_active_modules, true) || (is_array($wb_settings
     // the delete-data opt-in.
     wp_clear_scheduled_hook('woobooster_copurchase_event');
     wp_clear_scheduled_hook('woobooster_trending_event');
+    wp_clear_scheduled_hook('woobooster_rebuild_rule_index');
+    wp_clear_scheduled_hook('woobooster_rule_index_daily');
 }
 
 // ── Wishlist cleanup (opt-in) ───────────────────────────────────────

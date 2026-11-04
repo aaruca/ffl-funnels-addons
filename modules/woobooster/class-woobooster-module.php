@@ -74,6 +74,7 @@ class WooBooster_Module extends FFLA_Module
             require_once $path . 'admin/class-woobooster-rule-tester.php';
             require_once $path . 'admin/class-woobooster-bundle-form.php';
             require_once $path . 'admin/class-woobooster-bundle-list.php';
+            require_once $path . 'admin/class-woobooster-store-page.php';
 
             // The analytics dashboard is only ever rendered from render_admin_page().
             // It was previously required on every front-end request too.
@@ -81,6 +82,11 @@ class WooBooster_Module extends FFLA_Module
 
             $this->admin = new WooBooster_Admin();
             $this->admin->init();
+
+            // WooCommerce → Bundles & Recommendations, for store owners who
+            // cannot open FFL Funnels pages (White Label restrictions).
+            $store_page = new WooBooster_Store_Page($this->admin);
+            $store_page->init();
 
             $ajax = new WooBooster_Ajax();
             $ajax->init();

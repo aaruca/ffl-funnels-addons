@@ -252,7 +252,7 @@
       group.dataset.group = groupIdx;
 
       group.innerHTML = '<div class="wb-action-group__header">' +
-        '<span class="wb-action-group__label">Action Group ' + (groupIdx + 1) + '</span>' +
+        '<span class="wb-action-group__label">Group ' + (groupIdx + 1) + '</span>' +
         '<button type="button" class="wb-btn wb-btn--danger wb-btn--xs wb-remove-action-group" title="Remove Group">&times;</button>' +
         '</div>';
 
@@ -263,7 +263,7 @@
       var addBtn = document.createElement('button');
       addBtn.type = 'button';
       addBtn.className = 'wb-btn wb-btn--subtle wb-btn--sm wb-add-action';
-      addBtn.textContent = '+ AND Action';
+      addBtn.textContent = '+ Narrow down (AND)';
       group.appendChild(addBtn);
 
       bindActionRow(actionRow);
@@ -320,28 +320,31 @@
 
         // Value Autocomplete
         '<div class="wb-autocomplete wb-action-value-wrap">' +
-        '<input type="text" class="wb-input wb-autocomplete__input wb-action-value-display" placeholder="Value\u2026" autocomplete="off">' +
+        '<input type="text" class="wb-input wb-autocomplete__input wb-action-value-display" placeholder="Search\u2026" autocomplete="off">' +
         '<input type="hidden" name="' + prefix + '[action_value]" class="wb-action-value-hidden">' +
         '<div class="wb-autocomplete__dropdown"></div>' +
         '</div>' +
 
         // Include Children
         '<label class="wb-checkbox wb-action-children-label" style="display:none;">' +
-        '<input type="checkbox" name="' + prefix + '[include_children]" value="1"> + Children' +
+        '<input type="checkbox" name="' + prefix + '[include_children]" value="1"> Include subcategories' +
         '</label>' +
 
         // Order By
         '<select name="' + prefix + '[action_orderby]" class="wb-select wb-select--inline" title="Order By">' +
-        '<option value="rand">Random</option>' +
-        '<option value="date">Newest</option>' +
-        '<option value="price">Price (Low to High)</option>' +
-        '<option value="price_desc">Price (High to Low)</option>' +
-        '<option value="bestselling">Bestselling</option>' +
-        '<option value="rating">Rating</option>' +
+        '<option value="rand">Random order</option>' +
+        '<option value="date">Newest first</option>' +
+        '<option value="price">Lowest price first</option>' +
+        '<option value="price_desc">Highest price first</option>' +
+        '<option value="bestselling">Best sellers first</option>' +
+        '<option value="rating">Top rated first</option>' +
         '</select>' +
 
         // Limit
-        '<input type="number" name="' + prefix + '[action_limit]" value="4" min="1" class="wb-input wb-input--sm wb-input--w70" title="Limit">' +
+        '<span class="wb-action-limit">' +
+        '<input type="number" name="' + prefix + '[action_limit]" value="4" min="1" class="wb-input wb-input--sm wb-input--w70" title="Limit" aria-label="Number of products">' +
+        '<span class="wb-action-limit-unit">products</span>' +
+        '</span>' +
 
         // Remove
         '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-remove-action" title="Remove">&times;</button>';
@@ -381,7 +384,7 @@
       var exclusionPanel = document.createElement('div');
       exclusionPanel.className = 'wb-exclusion-panel wb-sub-panel';
       exclusionPanel.innerHTML =
-        '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-exclusions">\u25b6 Action Exclusions</button>' +
+        '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-exclusions">\u25b6 Exceptions</button>' +
         '<div class="wb-exclusion-body" style="display:none;">' +
         '<div class="wb-field">' +
         '<label class="wb-field__label">Exclude Categories</label>' +
@@ -426,7 +429,7 @@
       container.querySelectorAll('.wb-action-group').forEach(function (group, gIdx) {
         group.dataset.group = gIdx;
         var label = group.querySelector('.wb-action-group__label');
-        if (label) label.textContent = 'Action Group ' + (gIdx + 1);
+        if (label) label.textContent = 'Group ' + (gIdx + 1);
 
         group.querySelectorAll('.wb-action-row').forEach(function (row, aIdx) {
           row.dataset.index = aIdx;
@@ -489,6 +492,8 @@
         }
         if (limitInput) {
           limitInput.style.display = source.value === 'apply_coupon' ? 'none' : '';
+          var limitUnit = row.querySelector('.wb-action-limit-unit');
+          if (limitUnit) limitUnit.style.display = limitInput.style.display;
         }
         if (productsPanel) {
           productsPanel.style.display = source.value === 'specific_products' ? '' : 'none';
@@ -730,7 +735,7 @@
         toggleBtn.addEventListener('click', function () {
           var isOpen = body.style.display !== 'none';
           body.style.display = isOpen ? 'none' : '';
-          toggleBtn.textContent = (isOpen ? '\u25b6' : '\u25bc') + ' Action Exclusions';
+          toggleBtn.textContent = (isOpen ? '\u25b6' : '\u25bc') + ' Exceptions';
         });
       }
 
@@ -931,7 +936,7 @@
       toggleBtn.addEventListener('click', function () {
         var isOpen = body.style.display !== 'none';
         body.style.display = isOpen ? 'none' : '';
-        toggleBtn.textContent = (isOpen ? '\u25b6' : '\u25bc') + ' Condition Exclusions';
+        toggleBtn.textContent = (isOpen ? '\u25b6' : '\u25bc') + ' Exceptions';
       });
     }
 
@@ -1068,7 +1073,7 @@
       group.dataset.group = groupIdx;
 
       group.innerHTML = '<div class="wb-condition-group__header">' +
-        '<span class="wb-condition-group__label">Condition Group ' + (groupIdx + 1) + '</span>' +
+        '<span class="wb-condition-group__label">Group ' + (groupIdx + 1) + '</span>' +
         '<button type="button" class="wb-btn wb-btn--danger wb-btn--xs wb-remove-group">&times;</button>' +
         '</div>';
 
@@ -1078,7 +1083,7 @@
       var addBtn = document.createElement('button');
       addBtn.type = 'button';
       addBtn.className = 'wb-btn wb-btn--subtle wb-btn--sm wb-add-condition';
-      addBtn.textContent = '+ AND Condition';
+      addBtn.textContent = '+ Add condition (AND)';
       group.appendChild(addBtn);
 
       return group;
@@ -1120,23 +1125,26 @@
         '<option value="not_equals">is not</option>' +
         '</select>' +
         '<div class="wb-autocomplete wb-condition-value-wrap">' +
-        '<input type="text" class="wb-input wb-autocomplete__input wb-condition-value-display" placeholder="Value\u2026" autocomplete="off">' +
+        '<input type="text" class="wb-input wb-autocomplete__input wb-condition-value-display" placeholder="Search\u2026" autocomplete="off">' +
         '<input type="hidden" name="' + prefix + '[value]" class="wb-condition-value-hidden" value="1">' +
         '<div class="wb-autocomplete__dropdown"></div>' +
         '<div class="wb-condition-product-chips wb-chips" style="display:none;"></div>' +
         '</div>' +
-        '<span class="wb-condition-store-all-hint">Applies to every product. Use exclusions below if you need to narrow it.</span>' +
+        '<span class="wb-condition-store-all-hint">Applies to every product. Use Exceptions below to leave some out.</span>' +
         '<label class="wb-checkbox wb-condition-children-label" style="display:none;">' +
-        '<input type="checkbox" name="' + prefix + '[include_children]" value="1"> + Children' +
+        '<input type="checkbox" name="' + prefix + '[include_children]" value="1"> Include subcategories' +
         '</label>' +
-        '<input type="number" name="' + prefix + '[min_quantity]" value="1" min="1" class="wb-input wb-input--sm wb-input--w60" title="Min cart qty (coupon rules only)" placeholder="Qty">' +
+        '<label class="wb-min-qty" title="Apply Coupon rules: how many matching items the cart needs.">' +
+        '<span class="wb-min-qty__label">Min. in cart</span>' +
+        '<input type="number" name="' + prefix + '[min_quantity]" value="1" min="1" class="wb-input wb-input--sm wb-input--w60">' +
+        '</label>' +
         '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-remove-condition">&times;</button>';
 
       // Condition exclusion panel.
       var condExPanel = document.createElement('div');
       condExPanel.className = 'wb-cond-exclusion-panel wb-sub-panel';
       condExPanel.innerHTML =
-        '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-cond-exclusions">\u25b6 Condition Exclusions</button>' +
+        '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-cond-exclusions">\u25b6 Exceptions</button>' +
         '<div class="wb-cond-exclusion-body" style="display:none;">' +
         '<div class="wb-field">' +
         '<label class="wb-field__label">Exclude Categories</label>' +
@@ -1856,7 +1864,7 @@
 
       group.innerHTML =
         '<div class="wb-condition-group__header">' +
-          '<span class="wb-condition-group__label">Condition Group ' + (groupIdx + 1) + '</span>' +
+          '<span class="wb-condition-group__label">Group ' + (groupIdx + 1) + '</span>' +
           '<button type="button" class="wb-btn wb-btn--danger wb-btn--xs wb-remove-bundle-cond-group" title="Remove Group">&times;</button>' +
         '</div>';
 
@@ -1866,7 +1874,7 @@
       var addBtn = document.createElement('button');
       addBtn.type = 'button';
       addBtn.className = 'wb-btn wb-btn--subtle wb-btn--sm wb-add-bundle-condition';
-      addBtn.textContent = '+ AND Condition';
+      addBtn.textContent = '+ Add condition (AND)';
       group.appendChild(addBtn);
     });
 
@@ -1927,14 +1935,14 @@
           '<option value="not_equals">is not</option>' +
         '</select>' +
         '<div class="wb-autocomplete wb-condition-value-wrap">' +
-          '<input type="text" class="wb-input wb-autocomplete__input wb-condition-value-display" placeholder="Value\u2026" autocomplete="off">' +
+          '<input type="text" class="wb-input wb-autocomplete__input wb-condition-value-display" placeholder="Search\u2026" autocomplete="off">' +
           '<input type="hidden" name="' + prefix + '[value]" class="wb-condition-value-hidden" value="1">' +
           '<div class="wb-autocomplete__dropdown"></div>' +
           '<div class="wb-condition-product-chips wb-chips" style="display:none;"></div>' +
         '</div>' +
         '<span class="wb-condition-store-all-hint">Applies to every product. Add an AND condition (for example Category is not \u2026) if this bundle should not appear everywhere.</span>' +
         '<label class="wb-checkbox wb-condition-children-label" style="display:none;">' +
-          '<input type="checkbox" name="' + prefix + '[include_children]" value="1"> + Children' +
+          '<input type="checkbox" name="' + prefix + '[include_children]" value="1"> Include subcategories' +
         '</label>' +
         '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-remove-condition" title="Remove">&times;</button>';
 
@@ -2129,7 +2137,7 @@
         if (body) {
           var visible = body.style.display !== 'none';
           body.style.display = visible ? 'none' : '';
-          btn.innerHTML = (visible ? '&#9654;' : '&#9660;') + ' Exclusions';
+          btn.innerHTML = (visible ? '&#9654;' : '&#9660;') + ' Exceptions';
         }
       });
     });
@@ -2148,7 +2156,7 @@
 
       group.innerHTML =
         '<div class="wb-action-group__header">' +
-          '<span class="wb-action-group__label">Source Group ' + (groupIdx + 1) + '</span>' +
+          '<span class="wb-action-group__label">Group ' + (groupIdx + 1) + '</span>' +
           '<button type="button" class="wb-btn wb-btn--danger wb-btn--xs wb-remove-bundle-action-group" title="Remove Group">&times;</button>' +
         '</div>';
 
@@ -2158,7 +2166,7 @@
       var addBtn = document.createElement('button');
       addBtn.type = 'button';
       addBtn.className = 'wb-btn wb-btn--subtle wb-btn--sm wb-add-bundle-action';
-      addBtn.textContent = '+ AND Source';
+      addBtn.textContent = '+ Narrow down (AND)';
       group.appendChild(addBtn);
     });
 
@@ -2196,7 +2204,7 @@
         if (body) {
           var vis = body.style.display !== 'none';
           body.style.display = vis ? 'none' : '';
-          e.target.innerHTML = (vis ? '&#9654;' : '&#9660;') + ' Exclusions';
+          e.target.innerHTML = (vis ? '&#9654;' : '&#9660;') + ' Exceptions';
         }
       }
     });
@@ -2236,22 +2244,25 @@
           attrTaxOptions +
         '</select>' +
         '<div class="wb-autocomplete wb-action-value-wrap">' +
-          '<input type="text" class="wb-input wb-autocomplete__input wb-action-value-display" placeholder="Value\u2026" autocomplete="off">' +
+          '<input type="text" class="wb-input wb-autocomplete__input wb-action-value-display" placeholder="Search\u2026" autocomplete="off">' +
           '<input type="hidden" name="' + prefix + '[action_value]" class="wb-action-value-hidden" value="">' +
           '<div class="wb-autocomplete__dropdown"></div>' +
         '</div>' +
         '<label class="wb-checkbox wb-action-children-label" style="display:none;">' +
-          '<input type="checkbox" name="' + prefix + '[include_children]" value="1"> + Children' +
+          '<input type="checkbox" name="' + prefix + '[include_children]" value="1"> Include subcategories' +
         '</label>' +
         '<select name="' + prefix + '[action_orderby]" class="wb-select wb-select--inline" title="Order By">' +
-          '<option value="rand">Random</option>' +
-          '<option value="date">Newest</option>' +
-          '<option value="price">Price (Low to High)</option>' +
-          '<option value="price_desc">Price (High to Low)</option>' +
-          '<option value="bestselling">Bestselling</option>' +
-          '<option value="rating">Rating</option>' +
+          '<option value="rand">Random order</option>' +
+          '<option value="date">Newest first</option>' +
+          '<option value="price">Lowest price first</option>' +
+          '<option value="price_desc">Highest price first</option>' +
+          '<option value="bestselling">Best sellers first</option>' +
+          '<option value="rating">Top rated first</option>' +
         '</select>' +
-        '<input type="number" name="' + prefix + '[action_limit]" value="4" min="1" class="wb-input wb-input--sm wb-input--w70" title="Limit">' +
+        '<span class="wb-action-limit">' +
+        '<input type="number" name="' + prefix + '[action_limit]" value="4" min="1" class="wb-input wb-input--sm wb-input--w70" title="Limit" aria-label="Number of products">' +
+        '<span class="wb-action-limit-unit">products</span>' +
+        '</span>' +
         '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-remove-action" title="Remove">&times;</button>';
 
       var addActionBtn = group.querySelector('.wb-add-bundle-action');
@@ -2275,7 +2286,7 @@
       var exPanel = document.createElement('div');
       exPanel.className = 'wb-exclusion-panel wb-sub-panel';
       exPanel.innerHTML =
-        '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-exclusions">&#9654; Exclusions</button>' +
+        '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-exclusions">&#9654; Exceptions</button>' +
         '<div class="wb-exclusion-body" style="display:none;">' +
           '<div class="wb-field">' +
             '<label class="wb-field__label">Exclude Categories</label>' +
@@ -2694,5 +2705,42 @@
     document.addEventListener('DOMContentLoaded', initBundleAdmin);
   } else {
     initBundleAdmin();
+  }
+})();
+
+/* ── Rule form: "Min. in cart" only matters for Apply Coupon rules ───── */
+(function () {
+  'use strict';
+
+  function sync() {
+    var actions = document.getElementById('wb-actions-section');
+    var conditions = document.getElementById('wb-conditions-section');
+    if (!actions || !conditions) { return; }
+    var hasCoupon = Array.prototype.some.call(actions.querySelectorAll('.wb-action-source'), function (select) {
+      return select.value === 'apply_coupon';
+    });
+    conditions.querySelectorAll('.wb-min-qty').forEach(function (field) {
+      var display = hasCoupon ? '' : 'none';
+      if (field.style.display !== display) { field.style.display = display; }
+    });
+  }
+
+  function init() {
+    var conditions = document.getElementById('wb-conditions-section');
+    if (!conditions) { return; }
+    sync();
+    document.addEventListener('change', function (event) {
+      if (event.target && event.target.classList && event.target.classList.contains('wb-action-source')) { sync(); }
+    });
+    // Condition rows and groups added later get the same state.
+    if (window.MutationObserver) {
+      new MutationObserver(sync).observe(conditions, { childList: true, subtree: true });
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
   }
 })();

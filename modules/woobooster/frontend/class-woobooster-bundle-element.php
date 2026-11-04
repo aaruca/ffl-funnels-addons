@@ -184,6 +184,15 @@ class WooBooster_Bundle_Element extends \Bricks\Element
             'default' => true,
         ];
 
+        $this->controls['wb_bundle_show_bundle_image'] = [
+            'group'       => 'wb_bundle_display',
+            'tab'         => 'content',
+            'label'       => esc_html__('Show Bundle Image', 'ffl-funnels-addons'),
+            'type'        => 'checkbox',
+            'default'     => false,
+            'description' => esc_html__('Shows the image set on the bundle above the heading.', 'ffl-funnels-addons'),
+        ];
+
         $this->controls['wb_bundle_show_title'] = [
             'group'   => 'wb_bundle_display',
             'tab'     => 'content',
@@ -682,6 +691,7 @@ class WooBooster_Bundle_Element extends \Bricks\Element
                 'adding'      => esc_html__('Adding...', 'ffl-funnels-addons'),
                 'added'       => esc_html__('Added to Cart!', 'ffl-funnels-addons'),
                 'error'       => esc_html__('Error adding to cart. Please try again.', 'ffl-funnels-addons'),
+                'partial'     => esc_html__('Some items could not be added:', 'ffl-funnels-addons'),
                 'noItems'     => esc_html__('Please select at least one product.', 'ffl-funnels-addons'),
                 /* translators: %s: amount saved */
                 'saveFormat'  => esc_html__('(Save %s)', 'ffl-funnels-addons'),
@@ -708,48 +718,28 @@ class WooBooster_Bundle_Element extends \Bricks\Element
             // Specific bundle selected — works with or without product context
             // ($product_id may be 0 on homepage / standalone pages).
             $bundle = $matcher->get_bundle_by_id($specific_bundle_id, $product_id);
+
+            // A pinned bundle shows wherever it is placed, as before, but its
+            // User Role conditions still apply (an LE-only bundle never shows
+            // to other shoppers). Its product conditions only decide where it
+            // shows by itself. In the builder it always previews.
+            if ($bundle && !$this->is_builder_context() && !$matcher->bundle_allows_viewer($bundle)) {
+                $bundle = null;
+            }
         } elseif ($product_id) {
             $bundles = $matcher->get_bundles_for_product($product_id);
             $bundle = !empty($bundles) ? $bundles[0] : null;
         }
 
-        if (!$bundle || empty($bundle->resolved_items)) {
-            // No bundle or no items — render nothing (or builder placeholder).
+        $items = $bundle && !empty($bundle->resolved_items) ? $this->build_items($bundle, $product_id) : [];
+
+        if (empty($items)) {
+            // No bundle, no items, or a required item cannot be bought —
+            // render nothing (or builder placeholder).
             if ($this->is_builder_context()) {
                 $this->render_builder_placeholder();
             }
             return;
-        }
-
-        $products = [];
-        foreach ($bundle->resolved_items as $item_product_id) {
-            $product = wc_get_product($item_product_id);
-            if (!$product) {
-                continue;
-            }
-            $products[] = $product;
-        }
-
-        if (empty($products)) {
-            return;
-        }
-
-        // Shared price math so widget + cart show/charge the same numbers,
-        // item quantities included.
-        $qty_map   = \WooBooster_Bundle::get_item_quantities($bundle->id);
-        $price_map = \WooBooster_Bundle::calculate_item_prices(
-            $bundle,
-            array_map(function ($p) { return $p->get_id(); }, $products),
-            $qty_map
-        );
-        $required  = array_flip(\WooBooster_Bundle::get_required_product_ids($bundle->id));
-
-        $items = [];
-        foreach ($products as $product) {
-            $item             = $this->prepare_item_data($product, $bundle, $price_map);
-            $item['qty']      = isset($qty_map[$item['id']]) ? max(1, (int) $qty_map[$item['id']]) : 1;
-            $item['required'] = isset($required[$item['id']]);
-            $items[]          = $item;
         }
 
         $heading       = $s['wb_bundle_heading'] ?? __('Frequently Bought Together', 'ffl-funnels-addons');
@@ -768,11 +758,30 @@ class WooBooster_Bundle_Element extends \Bricks\Element
         $show_savings  = isset($s['wb_bundle_show_savings']) ? $s['wb_bundle_show_savings'] : true;
         $savings_fmt   = $s['wb_bundle_savings_format'] ?? 'amount';
 
+        $show_cover    = !empty($s['wb_bundle_show_bundle_image']);
+
+        // Signed list of the items shown, so the cart adds exactly these
+        // (automatic picks can change between page view and click).
+        $token = \WooBooster_Bundle_Cart::create_snapshot_token(
+            $bundle->id,
+            $product_id,
+            array_map(function ($item) { return $item['id']; }, $items)
+        );
+
         $this->set_attribute('_root', 'class', 'wb-bundle');
         $this->set_attribute('_root', 'data-bundle-id', $bundle->id);
         $this->set_attribute('_root', 'data-source-product-id', $product_id);
+        $this->set_attribute('_root', 'data-bundle-token', $token);
 
         echo '<div ' . $this->render_attributes('_root') . '>';
+
+        // Bundle image (optional, set on the bundle).
+        if ($show_cover && !empty($bundle->image_id)) {
+            $cover = wp_get_attachment_image((int) $bundle->image_id, $image_size, false, ['class' => 'wb-bundle-cover__img']);
+            if ($cover) {
+                echo '<div class="wb-bundle-cover">' . $cover . '</div>';
+            }
+        }
 
         // Heading.
         if ($heading) {
@@ -786,7 +795,10 @@ class WooBooster_Bundle_Element extends \Bricks\Element
         echo '<div class="wb-bundle-items wb-bundle-items--' . esc_attr($layout) . '"' . $items_style . '>';
 
         foreach ($items as $idx => $item) {
-            echo '<div class="wb-bundle-item' . ($item['required'] ? ' wb-bundle-item--required' : '') . '" data-product-id="' . esc_attr($item['id']) . '" data-price="' . esc_attr($item['discounted_price']) . '" data-original-price="' . esc_attr($item['original_price']) . '" data-qty="' . esc_attr($item['qty']) . '">';
+            $item_classes = 'wb-bundle-item'
+                . ($item['required'] ? ' wb-bundle-item--required' : '')
+                . ($item['anchor'] ? ' wb-bundle-item--anchor' : '');
+            echo '<div class="' . esc_attr($item_classes) . '" data-product-id="' . esc_attr($item['id']) . '" data-price="' . esc_attr($item['discounted_price']) . '" data-original-price="' . esc_attr($item['original_price']) . '" data-qty="' . esc_attr($item['qty']) . '">';
 
             // Checkbox. Items not marked Optional are part of every purchase,
             // so their box is ticked and locked (the server enforces it too).
@@ -809,12 +821,19 @@ class WooBooster_Bundle_Element extends \Bricks\Element
             // Info.
             echo '<div class="wb-bundle-item__info">';
 
+            if ($item['anchor']) {
+                echo '<span class="wb-bundle-item__anchor-label">' . esc_html__('This item', 'ffl-funnels-addons') . '</span>';
+            }
+
             if ($show_title) {
                 $title = $item['qty'] > 1
                     /* translators: 1: quantity, 2: product name */
                     ? sprintf(__('%1$d × %2$s', 'ffl-funnels-addons'), $item['qty'], $item['name'])
                     : $item['name'];
                 echo '<div class="wb-bundle-item__name">' . esc_html($title) . '</div>';
+                if ('' !== $item['variation_text']) {
+                    echo '<div class="wb-bundle-item__variation">' . esc_html($item['variation_text']) . '</div>';
+                }
             }
 
             if ($show_price) {
@@ -945,11 +964,77 @@ class WooBooster_Bundle_Element extends \Bricks\Element
         return sprintf(esc_html__('(Save %s)', 'ffl-funnels-addons'), $value);
     }
 
-    private function prepare_item_data($product, $bundle, array $price_map = []): array
+    /**
+     * Items the widget shows, priced like the cart will charge them.
+     *
+     * Items that cannot be bought right now (out of stock, not purchasable,
+     * a variable product without default attributes) are left out. When a
+     * required item is one of them the bundle cannot be added, so nothing is
+     * shown (empty array).
+     *
+     * @param object $bundle     Bundle with ->resolved_items.
+     * @param int    $product_id Product being viewed (0 = none).
+     * @return array
+     */
+    private function build_items($bundle, int $product_id): array
     {
+        $qty_map  = \WooBooster_Bundle::get_item_quantities($bundle->id);
+        $required = array_flip(\WooBooster_Bundle::get_required_product_ids($bundle->id));
+
+        $lines = [];
+        foreach ($bundle->resolved_items as $item_product_id) {
+            $item_product_id = absint($item_product_id);
+            $qty             = isset($qty_map[$item_product_id]) ? max(1, (int) $qty_map[$item_product_id]) : 1;
+            $line            = \WooBooster_Bundle::prepare_line($item_product_id, $qty);
+            if ('' !== $line['error']) {
+                if (isset($required[$item_product_id])) {
+                    return [];
+                }
+                continue;
+            }
+            $lines[$item_product_id] = $line;
+        }
+
+        // A required item that is no longer published is missing from the
+        // resolved items: the cart refuses the bundle, so hide it here too.
+        if (array_diff(array_keys($required), array_keys($lines))) {
+            return [];
+        }
+
+        if (empty($lines)) {
+            return [];
+        }
+
+        // Shared price math so widget + cart show/charge the same numbers,
+        // item quantities included.
+        $price_map = \WooBooster_Bundle::calculate_item_prices($bundle, array_keys($lines), $qty_map);
+
+        $items = [];
+        foreach ($lines as $pid => $line) {
+            $item             = $this->prepare_item_data($line, $bundle, $price_map);
+            $item['qty']      = isset($qty_map[$pid]) ? max(1, (int) $qty_map[$pid]) : 1;
+            $item['required'] = isset($required[$pid]);
+            $item['anchor']   = $product_id && $pid === $product_id;
+            $items[]          = $item;
+        }
+
+        return $items;
+    }
+
+    /**
+     * Display data for one item.
+     *
+     * @param array  $line      WooBooster_Bundle::prepare_line() result.
+     * @param object $bundle    Bundle row.
+     * @param array  $price_map product_id => ['original', 'discounted'].
+     */
+    private function prepare_item_data(array $line, $bundle, array $price_map = []): array
+    {
+        $product          = $line['product'];
+        $buy              = $line['buy'] ? $line['buy'] : $product;
         $pid              = $product->get_id();
         $row              = $price_map[$pid] ?? null;
-        $original         = $row ? (float) $row['original']   : (float) $product->get_price();
+        $original         = $row ? (float) $row['original']   : (float) $buy->get_price();
         $discounted_price = $row ? (float) $row['discounted'] : $original;
         $has_discount     = $discounted_price < $original;
 
@@ -971,14 +1056,22 @@ class WooBooster_Bundle_Element extends \Bricks\Element
 
         $image_size = $this->settings['wb_bundle_image_size'] ?? 'woocommerce_thumbnail';
 
+        // A variable product is added as its default variation: name it and
+        // list any of its attributes the name does not already show.
+        $variation_text = '';
+        if ($line['variation_id'] && function_exists('wc_get_formatted_variation')) {
+            $variation_text = trim(wp_strip_all_tags((string) wc_get_formatted_variation($buy, true, true, true)));
+        }
+
         return [
             'id'               => $pid,
-            'name'             => $product->get_name(),
+            'name'             => $buy->get_name(),
+            'variation_text'   => $variation_text,
             'original_price'   => $original,
             'discounted_price' => $discounted_price,
             'has_discount'     => $has_discount,
             'badge_text'       => $badge_text,
-            'image'            => $product->get_image($image_size),
+            'image'            => $buy->get_image($image_size),
         ];
     }
 

@@ -31,14 +31,14 @@
                 labels: d.labels,
                 datasets: [
                     {
-                        label: 'WooBooster Revenue',
+                        label: (d.i18n && d.i18n.wb) || 'WooBooster Revenue',
                         data: d.wb,
                         backgroundColor: '#0f6cbd',
                         borderRadius: 4,
                         order: 2
                     },
                     {
-                        label: 'Other Revenue',
+                        label: (d.i18n && d.i18n.other) || 'Other Revenue',
                         data: otherData,
                         backgroundColor: '#e2e8f0',
                         borderRadius: 4,
@@ -151,6 +151,6 @@
         });
     } else if (donutCtx) {
         // No data — show empty state.
-        donutCtx.parentElement.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--wb-color-neutral-foreground-3);font-size:14px;">No rule data yet</div>';
+        donutCtx.parentElement.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--wb-color-neutral-foreground-3);font-size:14px;">' + ((d.i18n && d.i18n.noRuleData) || 'No rule data yet') + '</div>';
     }
 })();

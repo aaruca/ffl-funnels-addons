@@ -781,6 +781,130 @@ class WooBooster_Bundle
     }
 
     /**
+     * What actually goes into the cart for a bundle item.
+     *
+     * Simple products are added as themselves. A variable product is added as
+     * the variation its default attributes point to; without default
+     * attributes (or a matching variation) it cannot be bundled.
+     *
+     * @param WC_Product $product Bundle item product.
+     * @return array|null ['product_id' => parent or own ID, 'variation_id' => int,
+     *                    'variation' => attribute_* => value, 'product' => WC_Product to add],
+     *                    or null when no purchasable product can be chosen.
+     */
+    public static function resolve_purchasable($product)
+    {
+        if (!$product || !is_object($product)) {
+            return null;
+        }
+
+        if (!$product->is_type('variable')) {
+            return array(
+                'product_id'   => (int) $product->get_id(),
+                'variation_id' => 0,
+                'variation'    => array(),
+                'product'      => $product,
+            );
+        }
+
+        $defaults = (array) $product->get_default_attributes();
+        $defaults = array_filter($defaults, function ($value) {
+            return '' !== (string) $value;
+        });
+        if (empty($defaults)) {
+            return null;
+        }
+
+        $variation_attrs = array();
+        foreach ($defaults as $key => $value) {
+            $variation_attrs['attribute_' . $key] = $value;
+        }
+
+        $data_store   = WC_Data_Store::load('product');
+        $variation_id = (int) $data_store->find_matching_product_variation($product, $variation_attrs);
+        if (!$variation_id) {
+            return null;
+        }
+
+        $variation = wc_get_product($variation_id);
+        if (!$variation) {
+            return null;
+        }
+
+        return array(
+            'product_id'   => (int) $product->get_id(),
+            'variation_id' => $variation_id,
+            'variation'    => $variation_attrs,
+            'product'      => $variation,
+        );
+    }
+
+    /**
+     * Check one bundle item and work out what to add for it.
+     *
+     * Shared by the widget (which hides items that cannot be bought) and the
+     * add-to-cart request, so both agree on what is available.
+     *
+     * @param int $product_id Bundle item product ID.
+     * @param int $quantity   Units that would be added.
+     * @return array ['product_id', 'variation_id', 'variation', 'product' (the item),
+     *               'buy' (product added: the item or its variation), 'name', 'error'].
+     *               'error' is empty when the item can be added.
+     */
+    public static function prepare_line($product_id, $quantity = 1)
+    {
+        $product_id = absint($product_id);
+        $product    = $product_id ? wc_get_product($product_id) : null;
+
+        $line = array(
+            'product_id'   => $product_id,
+            'variation_id' => 0,
+            'variation'    => array(),
+            'product'      => $product ? $product : null,
+            'buy'          => null,
+            'name'         => $product ? $product->get_name() : '',
+            'error'        => '',
+        );
+
+        if (!$product || 'publish' !== $product->get_status()) {
+            $line['error'] = sprintf(
+                /* translators: %d: product ID */
+                __('Product #%d is not available.', 'ffl-funnels-addons'),
+                $product_id
+            );
+            return $line;
+        }
+
+        $resolved = self::resolve_purchasable($product);
+        if (!$resolved) {
+            $line['error'] = sprintf(
+                /* translators: %s: product name */
+                __('"%s" requires choosing a variation before it can be bundled.', 'ffl-funnels-addons'),
+                $product->get_name()
+            );
+            return $line;
+        }
+
+        $buy                  = $resolved['product'];
+        $line['product_id']   = $resolved['product_id'];
+        $line['variation_id'] = $resolved['variation_id'];
+        $line['variation']    = $resolved['variation'];
+        $line['buy']          = $buy;
+        $line['name']         = $buy->get_name();
+
+        $quantity = max(1, (int) $quantity);
+        if (!$buy->is_purchasable() || !$buy->is_in_stock() || !$buy->has_enough_stock($quantity)) {
+            $line['error'] = sprintf(
+                /* translators: %s: product name */
+                __('"%s" is not available right now.', 'ffl-funnels-addons'),
+                $buy->get_name()
+            );
+        }
+
+        return $line;
+    }
+
+    /**
      * Calculate per-item original and discounted unit prices for a bundle.
      *
      * Used by both the widget renderer and the AJAX add-to-cart so that
@@ -811,7 +935,11 @@ class WooBooster_Bundle
             if (!$product) {
                 continue;
             }
-            $prices[$pid] = (float) $product->get_price();
+            // A variable product is sold as its default variation, so price
+            // that variation, not the parent's cheapest-variation price.
+            $resolved     = $product->is_type('variable') ? self::resolve_purchasable($product) : null;
+            $priced       = $resolved ? $resolved['product'] : $product;
+            $prices[$pid] = (float) $priced->get_price();
         }
 
         $dec = function_exists('wc_get_price_decimals') ? wc_get_price_decimals() : 2;
@@ -912,6 +1040,8 @@ class WooBooster_Bundle
         }
 
         if ('percentage' === $type && $value > 0) {
+            // A percentage above 100 would mean paying the shopper; cap it.
+            $value  = min(100.0, $value);
             $factor = max(0.0, 1 - ($value / 100));
             foreach ($out as $pid => &$row) {
                 $row['discounted'] = round($row['original'] * $factor, $dec);
@@ -962,6 +1092,11 @@ class WooBooster_Bundle
 
         if (isset($data['discount_value'])) {
             $sanitized['discount_value'] = max(0, floatval($data['discount_value']));
+            // A percentage is 0–100. (A fixed amount larger than the set is
+            // already capped at the set's price when prices are worked out.)
+            if (isset($sanitized['discount_type']) && 'percentage' === $sanitized['discount_type']) {
+                $sanitized['discount_value'] = min(100, $sanitized['discount_value']);
+            }
         }
 
         if (isset($data['bundle_price_type'])) {

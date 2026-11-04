@@ -1,0 +1,428 @@
+/**
+ * WooCommerce → Bundles & Recommendations (client page).
+ *
+ * Everything is scoped to .ffla-wb-store and built on the FFL Funnels design
+ * tokens (ffla-admin.css), so White Label brand colours carry through.
+ */
+
+/* ── Page ─────────────────────────────────────────────────────────── */
+
+/* .ffla-admin pulls the FFL Funnels shell 20px left; this page keeps the
+   normal WordPress .wrap spacing. */
+.ffla-admin.ffla-wb-store {
+  margin: 16px 20px 0 2px;
+  max-width: 1240px;
+}
+
+.ffla-wb-store .ffla-wbs-icon {
+  flex: none;
+  vertical-align: middle;
+}
+
+.ffla-wb-store a:focus-visible,
+.ffla-wb-store button:focus-visible,
+.ffla-wb-store summary:focus-visible {
+  outline: 2px solid var(--wb-color-brand-background);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+/* ── Header ───────────────────────────────────────────────────────── */
+
+.ffla-wbs-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin: 0 0 24px;
+}
+
+.ffla-wbs-hero__icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--wb-radius-lg);
+  background: var(--wb-color-brand-soft);
+  color: var(--wb-color-brand-foreground);
+}
+
+.ffla-wbs-hero__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.ffla-wb-store .ffla-wbs-hero__title {
+  margin: 0;
+  padding: 0;
+  font-size: 24px;
+  line-height: 1.25;
+  font-weight: var(--wb-font-weight-bold);
+  letter-spacing: -0.01em;
+  color: var(--wb-color-ink-strong);
+}
+
+.ffla-wbs-hero__lead {
+  margin: 6px 0 0;
+  max-width: 64ch;
+  font-size: var(--wb-font-size-base);
+  line-height: 1.55;
+  color: var(--wb-color-neutral-foreground-2);
+}
+
+.ffla-wbs-hero__aside {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.ffla-wbs-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--wb-radius-round);
+  font-size: var(--wb-font-size-sm);
+  font-weight: var(--wb-font-weight-semibold);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.ffla-wbs-status.is-on {
+  color: var(--wb-color-success-foreground);
+  background: var(--wb-color-success-background);
+  border-color: #abefc6;
+}
+
+.ffla-wbs-status.is-off {
+  color: var(--wb-color-neutral-foreground-2);
+  background: var(--wb-color-neutral-background-3);
+  border-color: var(--wb-color-neutral-stroke-1);
+}
+
+.ffla-wbs-status:hover {
+  filter: brightness(0.97);
+}
+
+.ffla-wbs-status__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.ffla-wb-store .ffla-wbs-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────── */
+
+.ffla-wbs-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 20px;
+  border-bottom: 1px solid var(--wb-color-neutral-stroke-1);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ffla-wbs-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.ffla-wb-store .ffla-wbs-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: -1px;
+  padding: 10px 14px;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--wb-radius-md) var(--wb-radius-md) 0 0;
+  color: var(--wb-color-neutral-foreground-2);
+  font-size: var(--wb-font-size-base);
+  font-weight: var(--wb-font-weight-semibold);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color var(--wb-duration-fast), background-color var(--wb-duration-fast), border-color var(--wb-duration-fast);
+}
+
+.ffla-wb-store .ffla-wbs-tab:hover {
+  color: var(--wb-color-ink-strong);
+  background: var(--wb-color-neutral-background-3);
+}
+
+.ffla-wb-store .ffla-wbs-tab.is-active {
+  color: var(--wb-color-brand-foreground);
+  border-bottom-color: var(--wb-color-brand-background);
+}
+
+.ffla-wbs-tab__count {
+  min-width: 20px;
+  padding: 1px 7px;
+  border-radius: var(--wb-radius-round);
+  background: var(--wb-color-neutral-background-3);
+  color: var(--wb-color-neutral-foreground-2);
+  font-size: 12px;
+  font-weight: var(--wb-font-weight-semibold);
+  line-height: 18px;
+  text-align: center;
+}
+
+.ffla-wbs-tab.is-active .ffla-wbs-tab__count {
+  background: var(--wb-color-brand-soft);
+  color: var(--wb-color-brand-foreground);
+}
+
+/* ── "How it works" guide ─────────────────────────────────────────── */
+
+.ffla-wbs-guide {
+  margin: 0 0 20px;
+  background: var(--wb-color-neutral-background-1);
+  border: 1px solid var(--wb-color-neutral-stroke-1);
+  border-radius: var(--wb-radius-lg);
+  box-shadow: var(--wb-shadow-1);
+}
+
+.ffla-wbs-guide__summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border-radius: var(--wb-radius-lg);
+  color: var(--wb-color-ink-strong);
+  font-weight: var(--wb-font-weight-semibold);
+  cursor: pointer;
+  list-style: none;
+}
+
+.ffla-wbs-guide__summary::-webkit-details-marker {
+  display: none;
+}
+
+.ffla-wbs-guide__summary > .ffla-wbs-icon:first-child {
+  color: var(--wb-color-brand-foreground);
+}
+
+.ffla-wbs-guide__summary > .ffla-wbs-icon:last-child {
+  margin-left: auto;
+  color: var(--wb-color-neutral-foreground-3);
+  transition: transform var(--wb-duration-normal) var(--wb-easing-standard);
+}
+
+.ffla-wbs-guide[open] > .ffla-wbs-guide__summary > .ffla-wbs-icon:last-child {
+  transform: rotate(180deg);
+}
+
+.ffla-wbs-guide__body {
+  padding: 0 18px 18px;
+}
+
+.ffla-wb-store .ffla-wbs-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.ffla-wb-store .ffla-wbs-step {
+  display: flex;
+  gap: 12px;
+  margin: 0;
+  padding: 14px;
+  border-radius: var(--wb-radius-md);
+  background: var(--wb-color-neutral-background-2);
+}
+
+.ffla-wbs-step__num {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--wb-color-brand-background);
+  color: #fff;
+  font-size: var(--wb-font-size-sm);
+  font-weight: var(--wb-font-weight-bold);
+}
+
+.ffla-wbs-step__title {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--wb-color-ink-strong);
+}
+
+.ffla-wb-store .ffla-wbs-step__text {
+  margin: 0;
+  font-size: var(--wb-font-size-sm);
+  line-height: 1.5;
+  color: var(--wb-color-neutral-foreground-2);
+}
+
+.ffla-wb-store .ffla-wbs-example {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-left: 3px solid var(--wb-color-brand-background);
+  border-radius: 0 var(--wb-radius-md) var(--wb-radius-md) 0;
+  background: var(--wb-color-brand-soft);
+  color: var(--wb-color-ink-strong);
+  font-size: var(--wb-font-size-sm);
+}
+
+.ffla-wb-store .ffla-wbs-where {
+  display: flex;
+  gap: 10px;
+  margin: 0;
+  font-size: var(--wb-font-size-sm);
+  line-height: 1.55;
+  color: var(--wb-color-neutral-foreground-2);
+}
+
+.ffla-wbs-where .ffla-wbs-icon {
+  margin-top: 2px;
+  color: var(--wb-color-neutral-foreground-3);
+}
+
+/* ── Lists ────────────────────────────────────────────────────────── */
+
+/* Row actions are always visible here, with text labels: hover-only
+   icons are invisible on touch screens and hard to discover. */
+.ffla-wb-store .wb-row-actions {
+  flex-wrap: wrap;
+  opacity: 1;
+  transform: none;
+}
+
+/* Room for the labelled buttons on one line (list tables use a fixed
+   layout, so the other columns share the rest). Narrower screens keep the
+   buttons visible as icons; each has an accessible name. */
+.ffla-wb-store .wp-list-table .column-actions {
+  width: 400px;
+}
+
+@media (max-width: 1280px) {
+  .ffla-wb-store .wp-list-table .column-actions {
+    width: 200px;
+  }
+
+  .ffla-wb-store .wb-row-action__label {
+    display: none;
+  }
+}
+
+.ffla-wb-store .wb-row-actions .wb-btn {
+  gap: 4px;
+}
+
+.ffla-wb-store .wb-row-action__label {
+  font-size: 12px;
+  font-weight: var(--wb-font-weight-semibold);
+}
+
+.ffla-wb-store .wb-empty-state {
+  padding: 48px 24px;
+  border: 1px dashed var(--wb-color-neutral-stroke-1);
+  background: var(--wb-color-neutral-background-1);
+}
+
+.ffla-wb-store .wb-empty-state svg {
+  width: 40px;
+  height: 40px;
+  padding: 12px;
+  margin-bottom: 14px;
+  border-radius: 50%;
+  background: var(--wb-color-brand-soft);
+  color: var(--wb-color-brand-foreground);
+  opacity: 1;
+}
+
+.ffla-wb-store .wb-empty-state__title {
+  margin: 0 0 6px;
+  font-size: var(--wb-font-size-lg);
+  font-weight: var(--wb-font-weight-semibold);
+  color: var(--wb-color-ink-strong);
+}
+
+.ffla-wb-store .wb-empty-state p.wb-empty-state__text {
+  max-width: 52ch;
+  margin: 0 auto 20px;
+  font-size: var(--wb-font-size-base);
+  line-height: 1.55;
+}
+
+/* The save bar sits under the form instead of floating over the
+   WooCommerce footer. */
+.ffla-wb-store .wb-actions-bar {
+  position: static;
+}
+
+/* ── Phones and small tablets ─────────────────────────────────────── */
+
+@media (max-width: 960px) {
+  .ffla-wb-store .ffla-wbs-steps {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 782px) {
+  .ffla-admin.ffla-wb-store {
+    margin: 10px 12px 0 0;
+  }
+
+  .ffla-wbs-hero {
+    flex-wrap: wrap;
+  }
+
+  .ffla-wbs-hero__aside {
+    width: 100%;
+    padding-top: 0;
+  }
+
+  .ffla-wb-store .ffla-wbs-hero__title {
+    font-size: 21px;
+  }
+
+  /* All four tabs stay visible: a 2 × 2 grid of pills instead of a row
+     that scrolls the current tab out of view. */
+  .ffla-wbs-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    overflow: visible;
+    border-bottom: 0;
+  }
+
+  .ffla-wb-store .ffla-wbs-tab {
+    justify-content: center;
+    margin: 0;
+    padding: 9px 10px;
+    border: 1px solid var(--wb-color-neutral-stroke-1);
+    border-radius: var(--wb-radius-md);
+    background: var(--wb-color-neutral-background-1);
+    font-size: var(--wb-font-size-sm);
+  }
+
+  .ffla-wb-store .ffla-wbs-tab.is-active {
+    border-color: var(--wb-color-brand-background);
+    background: var(--wb-color-brand-soft);
+  }
+
+  /* Nested cards: less padding so fields keep their width. */
+  .ffla-wb-store .wb-card__section,
+  .ffla-wb-store .wb-card__body {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .ffla-wb-store .wb-condition-group,
+  .ffla-wb-store .wb-action-group {
+    padding: 12px;
+  }
+}

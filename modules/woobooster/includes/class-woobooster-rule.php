@@ -43,6 +43,19 @@ class WooBooster_Rule
     private static $actions_table;
 
     /**
+     * Option remembering, per `woobooster_db_version`, that the conditions
+     * and actions tables have their group_id column.
+     */
+    const SCHEMA_OPTION = 'woobooster_schema_flags';
+
+    /**
+     * group_id column checks done in this request: 'conditions'|'actions' => bool.
+     *
+     * @var array<string, bool>
+     */
+    private static $group_id_columns = array();
+
+    /**
      * Initialize table names.
      */
     private static function init_tables()
@@ -312,16 +325,7 @@ class WooBooster_Rule
         global $wpdb;
         self::init_tables();
 
-        // Check if group_id column exists (cached to avoid repeated INFORMATION_SCHEMA queries).
-        static $has_group_id_conditions = null;
-        if ($has_group_id_conditions === null) {
-            $has_group_id_conditions = (bool) $wpdb->get_results($wpdb->prepare(
-                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'group_id'",
-                DB_NAME,
-                self::$conditions_table
-            ));
-        }
-        $order_clause = $has_group_id_conditions ? 'ORDER BY group_id ASC, id ASC' : 'ORDER BY id ASC';
+        $order_clause = self::has_group_id_column('conditions') ? 'ORDER BY group_id ASC, id ASC' : 'ORDER BY id ASC';
 
         $rows = $wpdb->get_results(
             $wpdb->prepare(
@@ -361,6 +365,51 @@ class WooBooster_Rule
     }
 
     /**
+     * Whether the conditions or actions table has the group_id column.
+     *
+     * The INFORMATION_SCHEMA query used to run on every request that read a
+     * rule. A positive answer is now remembered in an autoloaded option for
+     * the current `woobooster_db_version` (migrations that add columns bump
+     * it, and no migration drops group_id); a negative answer (legacy schema,
+     * missing table) is only remembered for the request, so it is checked
+     * again once the migration has run.
+     *
+     * @param string $which 'conditions' or 'actions'.
+     */
+    private static function has_group_id_column(string $which): bool
+    {
+        global $wpdb;
+
+        if (isset(self::$group_id_columns[$which])) {
+            return self::$group_id_columns[$which];
+        }
+
+        $db_version = (string) get_option('woobooster_db_version', '');
+        $flags = get_option(self::SCHEMA_OPTION, array());
+        $flags = is_array($flags) && isset($flags['db_version']) && $flags['db_version'] === $db_version ? $flags : array('db_version' => $db_version);
+
+        if ('' !== $db_version && !empty($flags[$which])) {
+            self::$group_id_columns[$which] = true;
+            return true;
+        }
+
+        $table = 'actions' === $which ? self::$actions_table : self::$conditions_table;
+        $found = (bool) $wpdb->get_results($wpdb->prepare(
+            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'group_id'",
+            DB_NAME,
+            $table
+        ));
+
+        self::$group_id_columns[$which] = $found;
+        if ($found && '' !== $db_version) {
+            $flags[$which] = true;
+            update_option(self::SCHEMA_OPTION, $flags, true);
+        }
+
+        return $found;
+    }
+
+    /**
      * Get all actions for a rule.
      *
      * @param int $rule_id Rule ID.
@@ -371,16 +420,7 @@ class WooBooster_Rule
         global $wpdb;
         self::init_tables();
 
-        // Check if group_id column exists (cached to avoid repeated INFORMATION_SCHEMA queries).
-        static $has_group_id_actions = null;
-        if ($has_group_id_actions === null) {
-            $has_group_id_actions = (bool) $wpdb->get_results($wpdb->prepare(
-                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'group_id'",
-                DB_NAME,
-                self::$actions_table
-            ));
-        }
-        $order_clause = $has_group_id_actions ? 'ORDER BY group_id ASC, id ASC' : 'ORDER BY id ASC';
+        $order_clause = self::has_group_id_column('actions') ? 'ORDER BY group_id ASC, id ASC' : 'ORDER BY id ASC';
 
         $rows = $wpdb->get_results(
             $wpdb->prepare(
@@ -596,11 +636,24 @@ class WooBooster_Rule
             return;
         }
 
+        self::insert_index_keys(absint($id), absint($rule->priority), self::index_keys_for_rule($id));
+    }
+
+    /**
+     * Condition keys the lookup index holds for a rule: every "is" condition
+     * of every group, the children of "+ Children" terms as they are now, and
+     * a sentinel when the rule has an "is not" condition.
+     *
+     * @param int $id Rule ID.
+     * @return string[]
+     */
+    private static function index_keys_for_rule($id): array
+    {
         // Get conditions from the new table.
         $groups = self::get_conditions($id);
 
         if (empty($groups)) {
-            return;
+            return array();
         }
 
         // Collect all unique condition keys to index.
@@ -638,6 +691,10 @@ class WooBooster_Rule
                         if (!is_wp_error($child_ids)) {
                             $max_children = (int) apply_filters('woobooster_max_index_children', 500);
                             $child_ids = array_slice($child_ids, 0, $max_children);
+                            // One query for all children instead of one per child.
+                            if ($child_ids && function_exists('_prime_term_caches')) {
+                                _prime_term_caches(array_map('absint', $child_ids), false);
+                            }
                             foreach ($child_ids as $child_id) {
                                 $child_term = get_term($child_id, $attr);
                                 if ($child_term && !is_wp_error($child_term)) {
@@ -656,14 +713,25 @@ class WooBooster_Rule
             $condition_keys['__not_equals__:1'] = true;
         }
 
-        // Insert one index entry per unique condition key.
-        foreach (array_keys($condition_keys) as $condition_key) {
+        return array_map('strval', array_keys($condition_keys));
+    }
+
+    /**
+     * Insert one index entry per unique condition key.
+     *
+     * @param string[] $keys
+     */
+    private static function insert_index_keys(int $rule_id, int $priority, array $keys): void
+    {
+        global $wpdb;
+
+        foreach ($keys as $condition_key) {
             $wpdb->insert(
                 self::$index_table,
                 array(
                     'condition_key' => $condition_key,
-                    'rule_id' => absint($id),
-                    'priority' => absint($rule->priority),
+                    'rule_id' => $rule_id,
+                    'priority' => $priority,
                 ),
                 array('%s', '%d', '%d')
             );
@@ -672,21 +740,98 @@ class WooBooster_Rule
 
     /**
      * Rebuild the entire lookup index.
+     *
+     * Runs in the background after a category is created, moved, renamed or
+     * deleted, and daily (WooBooster_Cron::run_rule_index_rebuild()), so the
+     * "+ Children" expansion follows the category tree. It no longer empties
+     * the table first (matching found no rules until it finished): each
+     * active rule's entries are compared with what they should be and
+     * rewritten only when they differ, then entries of deleted or inactive
+     * rules are removed.
+     *
+     * @return array{rules:int, rules_changed:int, entries_removed:int}
      */
     public static function rebuild_full_index()
     {
         global $wpdb;
         self::init_tables();
 
-        // Truncate the index table.
-        $wpdb->query($wpdb->prepare("TRUNCATE TABLE %i", self::$index_table));
+        $rules_seen = 0;
+        $rules_changed = 0;
+        $page_size = 500;
+        $offset = 0;
 
-        // Get all active rules and rebuild using per-rule logic (handles include_children).
-        $rules = self::get_all(array('status' => 1, 'limit' => 10000));
+        do {
+            // Ordered by ID: with priority ties, LIMIT/OFFSET pages could overlap.
+            $rules = self::get_all(array('status' => 1, 'orderby' => 'id', 'limit' => $page_size, 'offset' => $offset));
+            $rules = is_array($rules) ? $rules : array();
+            foreach ($rules as $rule) {
+                $rules_seen++;
+                if (self::sync_index_for_rule($rule)) {
+                    $rules_changed++;
+                }
+            }
+            $offset += $page_size;
+        } while (count($rules) === $page_size);
 
-        foreach ($rules as $rule) {
-            self::rebuild_index_for_rule($rule->id);
+        // Entries of rules that were deleted or switched off.
+        $removed = $wpdb->query(
+            $wpdb->prepare(
+                'DELETE FROM %i WHERE rule_id NOT IN (SELECT id FROM %i WHERE status = 1)',
+                self::$index_table,
+                self::$table
+            )
+        );
+
+        return array(
+            'rules'           => $rules_seen,
+            'rules_changed'   => $rules_changed,
+            'entries_removed' => (int) $removed,
+        );
+    }
+
+    /**
+     * Bring one active rule's index entries up to date.
+     *
+     * @param object $rule Rule row.
+     * @return bool Whether its entries had to be rewritten.
+     */
+    private static function sync_index_for_rule($rule): bool
+    {
+        global $wpdb;
+
+        $rule_id = absint($rule->id);
+        $priority = absint($rule->priority);
+        $wanted = self::index_keys_for_rule($rule_id);
+
+        $rows = (array) $wpdb->get_results(
+            $wpdb->prepare('SELECT condition_key, priority FROM %i WHERE rule_id = %d', self::$index_table, $rule_id),
+            ARRAY_A
+        );
+
+        $same = count($rows) === count($wanted);
+        $current = array();
+        foreach ($rows as $row) {
+            if ((int) $row['priority'] !== $priority) {
+                $same = false;
+                break;
+            }
+            $current[] = (string) $row['condition_key'];
         }
+        if ($same) {
+            $sorted = $wanted;
+            sort($sorted, SORT_STRING);
+            sort($current, SORT_STRING);
+            $same = $sorted === $current;
+        }
+        if ($same) {
+            return false;
+        }
+
+        $wpdb->delete(self::$index_table, array('rule_id' => $rule_id), array('%d'));
+        self::insert_index_keys($rule_id, $priority, $wanted);
+
+        return true;
     }
 
     /**

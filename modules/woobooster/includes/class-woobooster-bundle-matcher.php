@@ -44,20 +44,8 @@ class WooBooster_Bundle_Matcher
         $terms          = null;
 
         if (false === $bundles) {
-            $terms = $this->get_product_terms($product_id);
-
-            $condition_keys = array();
-            foreach ($terms as $term) {
-                $condition_keys[] = $term['taxonomy'] . ':' . $term['slug'];
-            }
-            $condition_keys[] = 'specific_product:' . $product_id;
-            $condition_keys[] = '__not_equals__:1';
-            $condition_keys[] = '__store_all:1';
-
-            // User-role keys (Phase 5 context conditions).
-            foreach (self::current_user_roles() as $role) {
-                $condition_keys[] = 'user_role:' . $role;
-            }
+            $terms          = $this->get_product_terms($product_id);
+            $condition_keys = $this->build_condition_keys($product_id, $terms);
 
             $bundles = $this->find_matching_bundles($condition_keys, $terms, $product_id);
             // Cache the *match decision* only; resolved items can depend on session state.
@@ -95,8 +83,9 @@ class WooBooster_Bundle_Matcher
         // Items from a visitor-specific source (Recently Viewed) must not be
         // shared through the cache: with a persistent object cache, one
         // shopper's history used to show up in everyone's bundle.
+        // ("a2": items keep the viewed product when it is a static item.)
         $cacheable = !self::bundle_uses_visitor_data($bundle_id);
-        $cache_key = 'woobooster_bundle_v' . (int) get_option(WooBooster_Matcher::CACHE_VERSION, 0) . '_' . $bundle_id . '_' . $product_id;
+        $cache_key = 'woobooster_bundle_a2_v' . (int) get_option(WooBooster_Matcher::CACHE_VERSION, 0) . '_' . $bundle_id . '_' . $product_id;
         $cached    = $cacheable ? wp_cache_get($cache_key, WooBooster_Matcher::CACHE_GROUP) : false;
         if (false !== $cached) {
             return $cached;
@@ -147,32 +136,45 @@ class WooBooster_Bundle_Matcher
     /**
      * Resolve all items for a bundle (static + dynamic actions merged).
      *
-     * @param object $bundle     The bundle object.
-     * @param int    $product_id Source product ID.
-     * @param array  $terms      Product terms.
+     * Static items always stay in the bundle, including the product being
+     * viewed (it is listed first, as "This item"): a "rifle + scope + ammo"
+     * bundle viewed on the rifle's page still sells the rifle. Only the
+     * automatically picked (dynamic) results leave the viewed product out.
+     *
+     * @param object     $bundle     The bundle object.
+     * @param int        $product_id Source product ID (0 = no product).
+     * @param array|null $terms      Product terms; null reads them for $product_id.
      * @return array Array of product IDs.
      */
-    public function resolve_bundle_items($bundle, $product_id, $terms = array())
+    public function resolve_bundle_items($bundle, $product_id, $terms = null)
     {
-        $product_ids = array();
-
-        // 1. Static items.
-        $static_items = WooBooster_Bundle::get_items($bundle->id);
-        foreach ($static_items as $item) {
-            $product_ids[] = absint($item->product_id);
+        $product_id = absint($product_id);
+        if (!is_array($terms)) {
+            // Sources such as Same Attribute need the viewed product's terms.
+            $terms = $product_id ? $this->get_product_terms($product_id) : array();
         }
 
-        // 2. Dynamic actions (AI/algorithm-based).
+        // 1. Static items (the viewed product first when it is one of them).
+        $static_ids = array();
+        foreach (WooBooster_Bundle::get_items($bundle->id) as $item) {
+            $static_ids[] = absint($item->product_id);
+        }
+        $static_ids = array_values(array_unique(array_filter($static_ids)));
+        if ($product_id && in_array($product_id, $static_ids, true)) {
+            $static_ids = array_merge(array($product_id), array_values(array_diff($static_ids, array($product_id))));
+        }
+
+        // 2. Dynamic actions (AI/algorithm-based), never the viewed product.
+        $dynamic_ids   = array();
         $action_groups = WooBooster_Bundle::get_actions($bundle->id);
         if (!empty($action_groups)) {
-            $matcher = new WooBooster_Matcher();
+            $matcher     = new WooBooster_Matcher();
             $dynamic_ids = $this->execute_action_groups($matcher, $product_id, $action_groups, $terms);
-            $product_ids = array_merge($product_ids, $dynamic_ids);
+            $dynamic_ids = array_diff(array_map('absint', $dynamic_ids), array($product_id));
         }
 
-        // Deduplicate + remove the source product.
-        $product_ids = array_values(array_unique(array_filter($product_ids)));
-        $product_ids = array_diff($product_ids, array($product_id));
+        // Deduplicate (static entries win).
+        $product_ids = array_values(array_unique(array_filter(array_merge($static_ids, $dynamic_ids))));
 
         // Validate: only published products.
         if (!empty($product_ids)) {
@@ -309,72 +311,186 @@ class WooBooster_Bundle_Matcher
                 continue;
             }
 
-            foreach ($groups as $conditions) {
-                $group_satisfied = true;
-
-                foreach ($conditions as $cond) {
-                    $operator = isset($cond->condition_operator) ? $cond->condition_operator : 'equals';
-
-                    if ('__store_all' === sanitize_key($cond->condition_attribute) && '1' === sanitize_text_field($cond->condition_value)) {
-                        $condition_satisfied = ('not_equals' === $operator) ? false : true;
-                        if (!$condition_satisfied) {
-                            $group_satisfied = false;
-                            break;
-                        }
-                        continue;
-                    }
-
-                    $key_matched = false;
-
-                    if ('specific_product' === $cond->condition_attribute && false !== strpos($cond->condition_value, ',')) {
-                        $sp_ids = array_filter(array_map('absint', explode(',', $cond->condition_value)));
-                        foreach ($sp_ids as $sp_id) {
-                            if (isset($product_keys_set['specific_product:' . $sp_id])) {
-                                $key_matched = true;
-                                break;
-                            }
-                        }
-                    } else {
-                        $cond_key = sanitize_key($cond->condition_attribute) . ':' . sanitize_text_field($cond->condition_value);
-
-                        if (isset($product_keys_set[$cond_key])) {
-                            $key_matched = true;
-                        }
-
-                        if (!$key_matched && !empty($cond->include_children)) {
-                            $attr        = sanitize_key($cond->condition_attribute);
-                            $parent_term = get_term_by('slug', $cond->condition_value, $attr);
-
-                            if ($parent_term && !is_wp_error($parent_term)) {
-                                foreach ($terms as $term) {
-                                    if (
-                                        $term['taxonomy'] === $attr &&
-                                        term_is_ancestor_of((int) $parent_term->term_id, (int) $term['term_id'], $attr)
-                                    ) {
-                                        $key_matched = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    $condition_satisfied = ('not_equals' === $operator) ? !$key_matched : $key_matched;
-
-                    if (!$condition_satisfied) {
-                        $group_satisfied = false;
-                        break;
-                    }
-                }
-
-                if ($group_satisfied) {
-                    $matched_bundles[] = $bundle;
-                    break; // This bundle matches, move to next candidate.
-                }
+            if ($this->condition_groups_match($groups, $product_keys_set, $terms, $product_id)) {
+                $matched_bundles[] = $bundle;
             }
         }
 
         return $matched_bundles;
+    }
+
+    /**
+     * Whether a bundle's Conditions allow it for a product and the current
+     * viewer (User Role conditions included).
+     *
+     * A bundle without conditions (shown only by pinning it in Bricks) is
+     * allowed anywhere, with or without a product. With conditions and no
+     * product ($product_id = 0), only User Role and "All products" conditions
+     * can match: a condition about the product cannot be met without one.
+     *
+     * Used by the add-to-cart request, so a crafted request cannot redeem a
+     * bundle meant for other products or other roles (e.g. LE-only bundles).
+     *
+     * @param object $bundle     Bundle row.
+     * @param int    $product_id Product the bundle is shown for (0 = none).
+     * @return bool
+     */
+    public function bundle_matches_product($bundle, $product_id)
+    {
+        if (!$bundle || empty($bundle->id)) {
+            return false;
+        }
+
+        $groups = WooBooster_Bundle::get_conditions($bundle->id);
+        if (empty($groups)) {
+            return true;
+        }
+
+        $product_id = absint($product_id);
+        $terms      = $product_id ? $this->get_product_terms($product_id) : array();
+        $keys       = $this->build_condition_keys($product_id, $terms);
+
+        return $this->condition_groups_match($groups, array_flip($keys), $terms, $product_id);
+    }
+
+    /**
+     * Whether the bundle's User Role conditions allow the current viewer,
+     * ignoring the conditions about products. Used where the bundle is
+     * pinned (Bricks "Specific Bundle", landing pages) and for add-to-cart
+     * requests that carry a valid signed item list: the product conditions
+     * then only decide where the bundle shows by itself, while an LE-only or
+     * wholesale bundle still never reaches other shoppers.
+     *
+     * @param object $bundle Bundle row.
+     * @return bool
+     */
+    public function bundle_allows_viewer($bundle)
+    {
+        if (!$bundle || empty($bundle->id)) {
+            return false;
+        }
+
+        $groups = WooBooster_Bundle::get_conditions($bundle->id);
+        if (empty($groups)) {
+            return true;
+        }
+
+        return $this->condition_groups_match($groups, array_flip($this->build_condition_keys(0, array())), array(), 0, true);
+    }
+
+    /**
+     * Condition keys describing a product and the current viewer.
+     *
+     * @param int   $product_id Product ID (0 = no product).
+     * @param array $terms      The product's terms.
+     * @return string[]
+     */
+    private function build_condition_keys($product_id, array $terms)
+    {
+        $condition_keys = array();
+        foreach ($terms as $term) {
+            $condition_keys[] = $term['taxonomy'] . ':' . $term['slug'];
+        }
+        if ($product_id) {
+            $condition_keys[] = 'specific_product:' . absint($product_id);
+        }
+        $condition_keys[] = '__not_equals__:1';
+        $condition_keys[] = '__store_all:1';
+
+        // User-role keys (Phase 5 context conditions).
+        foreach (self::current_user_roles() as $role) {
+            $condition_keys[] = 'user_role:' . $role;
+        }
+
+        return $condition_keys;
+    }
+
+    /**
+     * Evaluate condition groups: OR between groups, AND inside a group.
+     *
+     * @param array $groups           group_id => condition rows.
+     * @param array $product_keys_set Condition keys of the product/viewer, as keys.
+     * @param array $terms            The product's terms (for "include children").
+     * @param int   $product_id       Product ID (0 = no product).
+     * @return bool
+     */
+    private function condition_groups_match(array $groups, array $product_keys_set, array $terms, $product_id, $roles_only = false)
+    {
+        foreach ($groups as $conditions) {
+            $group_satisfied = true;
+
+            foreach ((array) $conditions as $cond) {
+                $operator = isset($cond->condition_operator) ? $cond->condition_operator : 'equals';
+                $attr     = sanitize_key($cond->condition_attribute);
+
+                // Viewer check only: conditions about the product count as met.
+                if ($roles_only && 'user_role' !== $attr) {
+                    continue;
+                }
+
+                if ('__store_all' === $attr && '1' === sanitize_text_field($cond->condition_value)) {
+                    if ('not_equals' === $operator) {
+                        $group_satisfied = false;
+                        break;
+                    }
+                    continue;
+                }
+
+                // Without a product, a condition about the product is never
+                // met (not even "is not"), so only role conditions can pass.
+                if (!$product_id && 'user_role' !== $attr) {
+                    $group_satisfied = false;
+                    break;
+                }
+
+                $key_matched = false;
+
+                if ('specific_product' === $cond->condition_attribute && false !== strpos($cond->condition_value, ',')) {
+                    $sp_ids = array_filter(array_map('absint', explode(',', $cond->condition_value)));
+                    foreach ($sp_ids as $sp_id) {
+                        if (isset($product_keys_set['specific_product:' . $sp_id])) {
+                            $key_matched = true;
+                            break;
+                        }
+                    }
+                } else {
+                    $cond_key = $attr . ':' . sanitize_text_field($cond->condition_value);
+
+                    if (isset($product_keys_set[$cond_key])) {
+                        $key_matched = true;
+                    }
+
+                    if (!$key_matched && !empty($cond->include_children)) {
+                        $parent_term = get_term_by('slug', $cond->condition_value, $attr);
+
+                        if ($parent_term && !is_wp_error($parent_term)) {
+                            foreach ($terms as $term) {
+                                if (
+                                    $term['taxonomy'] === $attr &&
+                                    term_is_ancestor_of((int) $parent_term->term_id, (int) $term['term_id'], $attr)
+                                ) {
+                                    $key_matched = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                $condition_satisfied = ('not_equals' === $operator) ? !$key_matched : $key_matched;
+
+                if (!$condition_satisfied) {
+                    $group_satisfied = false;
+                    break;
+                }
+            }
+
+            if ($group_satisfied) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

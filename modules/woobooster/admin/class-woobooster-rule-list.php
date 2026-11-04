@@ -124,7 +124,7 @@ class WooBooster_Rule_List extends WP_List_Table
      */
     protected function column_name($item)
     {
-        $edit_url = admin_url('admin.php?page=ffla-woobooster-rules&action=edit&rule_id=' . $item->id);
+        $edit_url = WooBooster_Admin::url('rules', array('action' => 'edit', 'rule_id' => $item->id));
         return '<a href="' . esc_url($edit_url) . '" class="wb-link--strong">' . esc_html($item->name) . '</a>';
     }
 
@@ -171,6 +171,9 @@ class WooBooster_Rule_List extends WP_List_Table
                 : esc_html__('Entire store (all products)', 'ffl-funnels-addons');
         } else {
             $attr_label = isset($attr_labels[$attr]) ? $attr_labels[$attr] : $attr;
+            if (!isset($attr_labels[$attr]) && 0 === strpos($attr, 'pa_') && function_exists('wc_attribute_label')) {
+                $attr_label = wc_attribute_label($attr);
+            }
             $op_label   = ('not_equals' === $operator) ? __('is not', 'ffl-funnels-addons') : __('is', 'ffl-funnels-addons');
 
             if ('specific_product' === $attr) {
@@ -294,8 +297,22 @@ class WooBooster_Rule_List extends WP_List_Table
         // Show limit/orderby only for product-returning actions.
         $no_limit_sources = array('apply_coupon');
         if (!in_array($first->action_source, $no_limit_sources, true)) {
-            $html .= ' <span class="wb-text--muted">(' . esc_html($first->action_orderby) . ', '
-                . esc_html($first->action_limit) . ')</span>';
+            $orderby_labels = array(
+                'rand'        => __('random order', 'ffl-funnels-addons'),
+                'date'        => __('newest first', 'ffl-funnels-addons'),
+                'price'       => __('lowest price first', 'ffl-funnels-addons'),
+                'price_desc'  => __('highest price first', 'ffl-funnels-addons'),
+                'bestselling' => __('best sellers first', 'ffl-funnels-addons'),
+                'rating'      => __('top rated first', 'ffl-funnels-addons'),
+            );
+            $limit = (int) $first->action_limit;
+            $order = isset($orderby_labels[$first->action_orderby]) ? $orderby_labels[$first->action_orderby] : (string) $first->action_orderby;
+            $html .= ' <span class="wb-text--muted">· ' . esc_html(sprintf(
+                /* translators: 1: number of products, 2: sort order such as "best sellers first" */
+                _n('%1$d product, %2$s', '%1$d products, %2$s', $limit, 'ffl-funnels-addons'),
+                $limit,
+                $order
+            )) . '</span>';
         }
 
         if (count($actions) > 1) {
@@ -353,32 +370,38 @@ class WooBooster_Rule_List extends WP_List_Table
      */
     protected function column_actions($item)
     {
-        $edit_url = admin_url('admin.php?page=ffla-woobooster-rules&action=edit&rule_id=' . $item->id);
+        $edit_url = WooBooster_Admin::url('rules', array('action' => 'edit', 'rule_id' => $item->id));
         $duplicate_url = wp_nonce_url(
-            admin_url('admin.php?page=ffla-woobooster-rules&action=duplicate&rule_id=' . $item->id),
+            WooBooster_Admin::url('rules', array('action' => 'duplicate', 'rule_id' => $item->id)),
             'woobooster_duplicate_rule_' . $item->id
         );
         $delete_url = wp_nonce_url(
-            admin_url('admin.php?page=ffla-woobooster-rules&action=delete&rule_id=' . $item->id),
+            WooBooster_Admin::url('rules', array('action' => 'delete', 'rule_id' => $item->id)),
             'woobooster_delete_rule_' . $item->id
         );
 
         $toggle_label = $item->status
-            ? __('Deactivate', 'ffl-funnels-addons')
-            : __('Activate', 'ffl-funnels-addons');
+            ? __('Turn off', 'ffl-funnels-addons')
+            : __('Turn on', 'ffl-funnels-addons');
+
+        // Icons only on FFL Funnels; icon + text on the client page.
+        $labelled = WooBooster_Admin::is_store_context();
+        $label    = static function ($text) use ($labelled) {
+            return $labelled ? '<span class="wb-row-action__label">' . esc_html($text) . '</span>' : '';
+        };
 
         $html = '<div class="wb-row-actions">';
-        $html .= '<a href="' . esc_url($edit_url) . '" class="wb-btn wb-btn--subtle wb-btn--xs" title="' . esc_attr__('Edit', 'ffl-funnels-addons') . '">';
-        $html .= WooBooster_Icons::get('edit');
+        $html .= '<a href="' . esc_url($edit_url) . '" class="wb-btn wb-btn--subtle wb-btn--xs" title="' . esc_attr__('Edit', 'ffl-funnels-addons') . '" aria-label="' . esc_attr__('Edit', 'ffl-funnels-addons') . ' ' . esc_attr($item->name) . '">';
+        $html .= WooBooster_Icons::get('edit') . $label(__('Edit', 'ffl-funnels-addons'));
         $html .= '</a>';
-        $html .= '<a href="' . esc_url($duplicate_url) . '" class="wb-btn wb-btn--subtle wb-btn--xs" title="' . esc_attr__('Duplicate', 'ffl-funnels-addons') . '">';
-        $html .= WooBooster_Icons::get('duplicate');
+        $html .= '<a href="' . esc_url($duplicate_url) . '" class="wb-btn wb-btn--subtle wb-btn--xs" title="' . esc_attr__('Duplicate', 'ffl-funnels-addons') . '" aria-label="' . esc_attr__('Duplicate', 'ffl-funnels-addons') . ' ' . esc_attr($item->name) . '">';
+        $html .= WooBooster_Icons::get('duplicate') . $label(__('Duplicate', 'ffl-funnels-addons'));
         $html .= '</a>';
-        $html .= '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-rule" data-rule-id="' . esc_attr($item->id) . '" title="' . esc_attr($toggle_label) . '">';
-        $html .= WooBooster_Icons::get('toggle');
+        $html .= '<button type="button" class="wb-btn wb-btn--subtle wb-btn--xs wb-toggle-rule" data-rule-id="' . esc_attr($item->id) . '" title="' . esc_attr($toggle_label) . '" aria-label="' . esc_attr($toggle_label . ' ' . $item->name) . '">';
+        $html .= WooBooster_Icons::get('toggle') . $label($toggle_label);
         $html .= '</button>';
-        $html .= '<a href="' . esc_url($delete_url) . '" class="wb-btn wb-btn--subtle wb-btn--xs wb-btn--danger wb-delete-rule" title="' . esc_attr__('Delete', 'ffl-funnels-addons') . '">';
-        $html .= WooBooster_Icons::get('delete');
+        $html .= '<a href="' . esc_url($delete_url) . '" class="wb-btn wb-btn--subtle wb-btn--xs wb-btn--danger wb-delete-rule" title="' . esc_attr__('Delete', 'ffl-funnels-addons') . '" aria-label="' . esc_attr__('Delete', 'ffl-funnels-addons') . ' ' . esc_attr($item->name) . '">';
+        $html .= WooBooster_Icons::get('delete') . $label(__('Delete', 'ffl-funnels-addons'));
         $html .= '</a>';
         $html .= '</div>';
 
@@ -394,8 +417,8 @@ class WooBooster_Rule_List extends WP_List_Table
     {
         return array(
             'bulk_delete' => __('Delete', 'ffl-funnels-addons'),
-            'bulk_activate' => __('Activate', 'ffl-funnels-addons'),
-            'bulk_deactivate' => __('Deactivate', 'ffl-funnels-addons'),
+            'bulk_activate' => __('Turn on', 'ffl-funnels-addons'),
+            'bulk_deactivate' => __('Turn off', 'ffl-funnels-addons'),
         );
     }
 
@@ -414,7 +437,7 @@ class WooBooster_Rule_List extends WP_List_Table
             $rule_id = isset($_GET['rule_id']) ? absint($_GET['rule_id']) : 0;
             if ($rule_id && check_admin_referer('woobooster_delete_rule_' . $rule_id)) {
                 WooBooster_Rule::delete($rule_id);
-                wp_safe_redirect(admin_url('admin.php?page=ffla-woobooster-rules'));
+                wp_safe_redirect(WooBooster_Admin::url('rules'));
                 exit;
             }
         }
@@ -426,8 +449,8 @@ class WooBooster_Rule_List extends WP_List_Table
             if ($rule_id && check_admin_referer('woobooster_duplicate_rule_' . $rule_id)) {
                 $new_id = WooBooster_Rule::duplicate($rule_id);
                 $redirect = $new_id
-                    ? admin_url('admin.php?page=ffla-woobooster-rules&action=edit&rule_id=' . $new_id)
-                    : admin_url('admin.php?page=ffla-woobooster-rules');
+                    ? WooBooster_Admin::url('rules', array('action' => 'edit', 'rule_id' => $new_id))
+                    : WooBooster_Admin::url('rules');
                 wp_safe_redirect($redirect);
                 exit;
             }
@@ -461,7 +484,7 @@ class WooBooster_Rule_List extends WP_List_Table
                 }
             }
 
-            wp_safe_redirect(admin_url('admin.php?page=ffla-woobooster-rules'));
+            wp_safe_redirect(WooBooster_Admin::url('rules'));
             exit;
         }
     }
@@ -471,11 +494,18 @@ class WooBooster_Rule_List extends WP_List_Table
      */
     public function no_items()
     {
+        // A search with no hits is not an empty store.
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        if (!empty($_REQUEST['s'])) {
+            echo '<p class="wb-text--muted">' . esc_html__('No rules match your search.', 'ffl-funnels-addons') . '</p>';
+            return;
+        }
         echo '<div class="wb-empty-state">';
-        echo WooBooster_Icons::get('rules'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-        echo '<p>' . esc_html__('No rules created yet.', 'ffl-funnels-addons') . '</p>';
-        $add_url = admin_url('admin.php?page=ffla-woobooster-rules&action=add');
-        echo '<a href="' . esc_url($add_url) . '" class="wb-btn wb-btn--primary">' . esc_html__('Create Your First Rule', 'ffl-funnels-addons') . '</a>';
+        echo class_exists('WooBooster_Store_Page') ? WooBooster_Store_Page::icon('wand', 40) : WooBooster_Icons::get('rules'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static SVG.
+        echo '<p class="wb-empty-state__title">' . esc_html__('No recommendation rules yet', 'ffl-funnels-addons') . '</p>';
+        echo '<p class="wb-empty-state__text">' . esc_html__('A rule decides which products appear under “You may also like” on your product pages, for example 9mm ammo on every 9mm handgun.', 'ffl-funnels-addons') . '</p>';
+        $add_url = WooBooster_Admin::url('rules', array('action' => 'add'));
+        echo '<a href="' . esc_url($add_url) . '" class="wb-btn wb-btn--primary">' . esc_html__('Create your first rule', 'ffl-funnels-addons') . '</a>';
         echo '</div>';
     }
 }
