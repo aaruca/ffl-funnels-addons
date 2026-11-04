@@ -43,8 +43,33 @@ class WooBooster_Matcher
      */
     private static $conditions_cache = [];
 
+    /**
+     * Per-request: rule id => whether it has an action that recommends
+     * products. Filled together with $rule_row_cache (same query).
+     *
+     * @var array<int,bool>
+     */
+    private static $recommends_cache = [];
+
+    /**
+     * term_taxonomy_id of product_visibility "exclude-from-catalog"
+     * (null = not looked up yet, 0 = none).
+     *
+     * @var int|null
+     */
+    private static $hidden_tt_id = null;
+
     const CACHE_GROUP   = 'ffl-funnels-addons';
     const CACHE_VERSION = 'woobooster_cache_version';
+
+    /**
+     * Part of every result cache key. Bump it when the same rules start
+     * returning different products, so results cached by the previous
+     * version are not served. 2: coupon-only rules no longer match product
+     * pages, Smart sources honour exclusions, catalog-hidden products are
+     * left out.
+     */
+    const RESULTS_REVISION = 2;
 
     /**
      * Per-request copy of the cache version (null = not read yet).
@@ -68,6 +93,15 @@ class WooBooster_Matcher
             self::$cache_version = (int) get_option(self::CACHE_VERSION, 0);
         }
         return self::$cache_version;
+    }
+
+    /**
+     * Version segment of the result cache keys: the stored cache version
+     * (bumped by invalidate_recommendation_cache()) plus RESULTS_REVISION.
+     */
+    private static function result_version(): string
+    {
+        return self::cache_version() . 'r' . self::RESULTS_REVISION;
     }
 
     /**
@@ -174,10 +208,15 @@ class WooBooster_Matcher
         self::$term_slug_cache  = [];
         self::$rule_row_cache   = [];
         self::$conditions_cache = [];
+        self::$recommends_cache = [];
+        self::$hidden_tt_id     = null;
     }
 
     /**
      * Bulk-load active rules by id into the per-request cache.
+     *
+     * The same query counts each rule's actions, so product-page matching
+     * can skip rules that only apply a coupon without a query per candidate.
      *
      * @param int[] $ids
      */
@@ -193,13 +232,18 @@ class WooBooster_Matcher
         }
 
         global $wpdb;
-        $rules_table = $wpdb->prefix . 'woobooster_rules';
-        $placeholders = implode(',', array_fill(0, count($ids), '%d'));
+        $rules_table   = $wpdb->prefix . 'woobooster_rules';
+        $actions_table = $wpdb->prefix . 'woobooster_rule_actions';
+        $placeholders  = implode(',', array_fill(0, count($ids), '%d'));
 
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
         $rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT * FROM {$rules_table} WHERE status = 1 AND id IN ({$placeholders})",
+                "SELECT r.*,
+                    (SELECT COUNT(*) FROM {$actions_table} a WHERE a.rule_id = r.id) AS wb_action_rows,
+                    (SELECT COUNT(*) FROM {$actions_table} a WHERE a.rule_id = r.id AND a.action_source <> 'apply_coupon') AS wb_product_actions
+                FROM {$rules_table} r
+                WHERE r.status = 1 AND r.id IN ({$placeholders})",
                 ...$ids
             )
         );
@@ -209,6 +253,15 @@ class WooBooster_Matcher
         }
         if ($rows) {
             foreach ($rows as $row) {
+                $action_rows     = isset($row->wb_action_rows) ? (int) $row->wb_action_rows : 0;
+                $product_actions = isset($row->wb_product_actions) ? (int) $row->wb_product_actions : 0;
+                unset($row->wb_action_rows, $row->wb_product_actions);
+
+                // A rule without action rows uses its legacy action columns
+                // (see WooBooster_Rule::get_actions()).
+                self::$recommends_cache[(int) $row->id] = $action_rows > 0
+                    ? $product_actions > 0
+                    : 'apply_coupon' !== (string) ($row->action_source ?? '');
                 self::$rule_row_cache[(int) $row->id] = $row;
             }
         }
@@ -253,7 +306,7 @@ class WooBooster_Matcher
         }
 
         $args_hash = md5(wp_json_encode($args));
-        $cache_key = 'woobooster_rec2_v' . self::cache_version() . '_' . $product_id . '_' . $args_hash;
+        $cache_key = 'woobooster_rec2_v' . self::result_version() . '_' . $product_id . '_' . $args_hash;
         $cached = self::cache_get($cache_key);
 
         if (is_array($cached) && isset($cached['ids'])) {
@@ -343,7 +396,7 @@ class WooBooster_Matcher
         }
 
         $args_hash = md5(wp_json_encode($args));
-        $cache_key = 'woobooster_rule2_v' . self::cache_version() . '_' . $rule_id . '_' . $product_id . '_' . $args_hash;
+        $cache_key = 'woobooster_rule2_v' . self::result_version() . '_' . $rule_id . '_' . $product_id . '_' . $args_hash;
         $cached    = self::cache_get($cache_key);
 
         if (is_array($cached) && isset($cached['ids'])) {
@@ -433,7 +486,7 @@ class WooBooster_Matcher
         $cacheable = 'recently_viewed' !== $source;
 
         $args_hash = md5(wp_json_encode(array($limit, $exclude_outofstock)));
-        $cache_key = 'woobooster_smart_v' . self::cache_version() . '_' . $source . '_' . $product_id . '_' . $args_hash;
+        $cache_key = 'woobooster_smart_v' . self::result_version() . '_' . $source . '_' . $product_id . '_' . $args_hash;
         $cached    = $cacheable ? self::cache_get($cache_key) : false;
 
         if (false !== $cached) {
@@ -502,7 +555,11 @@ class WooBooster_Matcher
         $all_product_ids = array();
 
         foreach ($action_groups as $actions) {
-            $actions = array_values(array_filter((array) $actions));
+            // Apply Coupon acts on the cart (WooBooster_Coupon) and recommends
+            // nothing: inside an AND group its empty result emptied the group.
+            $actions = array_values(array_filter((array) $actions, static function ($action) {
+                return $action && (!isset($action->action_source) || 'apply_coupon' !== $action->action_source);
+            }));
             if (empty($actions)) {
                 continue;
             }
@@ -692,6 +749,15 @@ class WooBooster_Matcher
             $rule = self::$rule_row_cache[$rule_id] ?? null;
 
             if (!$rule) {
+                continue;
+            }
+
+            // A rule whose actions only apply a coupon works on the cart. On a
+            // product page it would "win" and recommend nothing, hiding every
+            // rule after it (an "Entire store → coupon" rule emptied every
+            // product page), so the next candidate is tried instead.
+            if (false === (self::$recommends_cache[$rule_id] ?? true)) {
+                $this->debug_log("Rule #{$rule_id} skipped for product pages: it only applies a coupon");
                 continue;
             }
 
@@ -921,6 +987,7 @@ class WooBooster_Matcher
         foreach ($extra_actions as $extra_action) {
             $query_args = $this->apply_exclusions($query_args, $extra_action);
         }
+        $query_args = $this->exclude_hidden($query_args);
 
         $shuffle = false;
 
@@ -1010,8 +1077,9 @@ class WooBooster_Matcher
         }
 
         $product_ids = array_filter(array_map('absint', explode(',', $action->action_products)));
-        // Remove the current product.
-        $product_ids = array_diff($product_ids, array($product_id));
+        // Remove the current product and the excluded ones (WP_Query ignores
+        // post__not_in when post__in is set).
+        $product_ids = array_values(array_diff($product_ids, array($product_id), self::excluded_product_ids($action)));
 
         if (empty($product_ids)) {
             return array();
@@ -1039,11 +1107,102 @@ class WooBooster_Matcher
             );
         }
 
-        // Apply exclusions.
+        // Apply exclusions (excluded products were removed above).
         $query_args = $this->apply_exclusions($query_args, $action);
+        unset($query_args['post__not_in']);
+        $query_args = $this->exclude_hidden($query_args);
 
         $query = new WP_Query($query_args);
         return $query->posts;
+    }
+
+    /**
+     * Product IDs an action's Exclude Products lists.
+     *
+     * @param object|null $action Action row.
+     * @return int[]
+     */
+    private static function excluded_product_ids($action): array
+    {
+        if (!$action || empty($action->exclude_products)) {
+            return array();
+        }
+
+        return array_values(array_filter(array_map('absint', explode(',', (string) $action->exclude_products))));
+    }
+
+    /**
+     * Whether an action has any exclusion (categories, products, price range).
+     *
+     * @param object|null $action Action row.
+     * @return string '' when it has none, otherwise a fingerprint for cache keys.
+     */
+    private static function exclusion_signature($action): string
+    {
+        if (!$action) {
+            return '';
+        }
+
+        $parts = array(
+            trim((string) ($action->exclude_categories ?? '')),
+            trim((string) ($action->exclude_products ?? '')),
+            (string) ($action->exclude_price_min ?? ''),
+            (string) ($action->exclude_price_max ?? ''),
+        );
+
+        return '' === implode('', $parts) ? '' : implode('|', $parts);
+    }
+
+    /**
+     * Leave out products hidden from the catalog (Catalog visibility
+     * "Hidden" or "Search results only", e.g. transfer fees): one NOT IN
+     * clause on WooCommerce's product_visibility term, so no query per
+     * product.
+     *
+     * @param array $query_args WP_Query args.
+     * @return array
+     */
+    private function exclude_hidden(array $query_args): array
+    {
+        $tt_id = self::hidden_term_taxonomy_id();
+        if ($tt_id < 1) {
+            return $query_args;
+        }
+
+        $tax_query = isset($query_args['tax_query']) && is_array($query_args['tax_query']) ? $query_args['tax_query'] : array();
+        if (isset($tax_query['relation']) && 'AND' !== strtoupper((string) $tax_query['relation'])) {
+            $tax_query = array('relation' => 'AND', $tax_query);
+        }
+
+        $tax_query[] = array(
+            'taxonomy' => 'product_visibility',
+            'field'    => 'term_taxonomy_id',
+            'terms'    => array($tt_id),
+            'operator' => 'NOT IN',
+        );
+        $query_args['tax_query'] = $tax_query;
+
+        return $query_args;
+    }
+
+    /**
+     * term_taxonomy_id of the product_visibility "exclude-from-catalog" term.
+     */
+    private static function hidden_term_taxonomy_id(): int
+    {
+        if (null === self::$hidden_tt_id) {
+            $ids = function_exists('wc_get_product_visibility_term_ids') && taxonomy_exists('product_visibility')
+                ? (array) wc_get_product_visibility_term_ids()
+                : array();
+            self::$hidden_tt_id = isset($ids['exclude-from-catalog']) ? absint($ids['exclude-from-catalog']) : 0;
+
+            if (0 === self::$hidden_tt_id && taxonomy_exists('product_visibility')) {
+                $term = get_term_by('slug', 'exclude-from-catalog', 'product_visibility');
+                self::$hidden_tt_id = $term && !is_wp_error($term) ? absint($term->term_taxonomy_id) : 0;
+            }
+        }
+
+        return self::$hidden_tt_id;
     }
 
     /**
@@ -1116,6 +1275,10 @@ class WooBooster_Matcher
     /**
      * Execute a Smart Recommendation query (copurchase, trending, recently_viewed, similar).
      *
+     * The action's exceptions (Exclude Categories with their subcategories,
+     * Exclude Products, Price Range) apply to the ranked products and to the
+     * fallback, as for the other sources.
+     *
      * @param int    $product_id        Current product ID.
      * @param object $action            The action object.
      * @param int    $limit             Max products to return.
@@ -1129,17 +1292,17 @@ class WooBooster_Matcher
             case 'copurchase':
                 $stored = get_post_meta($product_id, '_woobooster_copurchased', true);
                 $ranked = (!empty($stored) && is_array($stored)) ? array_map('absint', $stored) : array();
-                $valid  = $this->validate_candidates($ranked, $limit, $exclude_outofstock, array($product_id));
+                $valid  = $this->validate_candidates($ranked, $limit, $exclude_outofstock, array($product_id), $action);
                 if ($allow_fallback && count($valid) < $limit) {
-                    $valid = $this->fallback_fill($product_id, $valid, $limit, $exclude_outofstock, $terms);
+                    $valid = $this->fallback_fill($product_id, $valid, $limit, $exclude_outofstock, $terms, $action);
                 }
                 return $valid;
 
             case 'trending':
                 $ranked = $this->build_trending_candidates($product_id);
-                $valid  = $this->validate_candidates($ranked, $limit, $exclude_outofstock, array($product_id));
+                $valid  = $this->validate_candidates($ranked, $limit, $exclude_outofstock, array($product_id), $action);
                 if ($allow_fallback && count($valid) < $limit) {
-                    $valid = $this->fallback_fill($product_id, $valid, $limit, $exclude_outofstock, $terms);
+                    $valid = $this->fallback_fill($product_id, $valid, $limit, $exclude_outofstock, $terms, $action);
                 }
                 return $valid;
 
@@ -1149,30 +1312,41 @@ class WooBooster_Matcher
                     $raw = sanitize_text_field(wp_unslash($_COOKIE['woobooster_recently_viewed']));
                     $ranked = array_values(array_filter(array_map('absint', explode(',', $raw))));
                 }
-                $valid = $this->validate_candidates($ranked, $limit, $exclude_outofstock, array($product_id));
+                $valid = $this->validate_candidates($ranked, $limit, $exclude_outofstock, array($product_id), $action);
                 if ($allow_fallback && count($valid) < $limit) {
-                    $valid = $this->fallback_fill($product_id, $valid, $limit, $exclude_outofstock, $terms);
+                    $valid = $this->fallback_fill($product_id, $valid, $limit, $exclude_outofstock, $terms, $action);
                 }
                 return $valid;
 
             case 'similar':
-                return $this->execute_similar_query($product_id, $limit, $exclude_outofstock, $terms);
+                return $this->execute_similar_query($product_id, $limit, $exclude_outofstock, $terms, $action);
         }
 
         return array();
     }
 
     /**
-     * Validate a ranked list of product IDs: keep only published, optionally in-stock,
-     * preserve the incoming order, and cap to $limit.
+     * Validate a ranked list of product IDs: keep only published, optionally
+     * in-stock, not hidden from the catalog and allowed by the action's
+     * exceptions; preserve the incoming order, and cap to $limit.
+     *
+     * @param int[]       $ranked             Product IDs, best first.
+     * @param int         $limit              Max products.
+     * @param bool        $exclude_outofstock Exclude out-of-stock products.
+     * @param int[]       $exclude_ids        Product IDs to leave out.
+     * @param object|null $action             Action whose exceptions apply.
+     * @return int[]
      */
-    protected function validate_candidates(array $ranked, int $limit, bool $exclude_outofstock, array $exclude_ids = array()): array
+    protected function validate_candidates(array $ranked, int $limit, bool $exclude_outofstock, array $exclude_ids = array(), $action = null): array
     {
         if (empty($ranked)) {
             return array();
         }
 
-        $ranked = array_values(array_diff(array_map('absint', $ranked), array_map('absint', $exclude_ids)));
+        // Excluded products are dropped here: WP_Query ignores post__not_in
+        // when post__in is set.
+        $exclude_ids = array_merge(array_map('absint', $exclude_ids), self::excluded_product_ids($action));
+        $ranked = array_values(array_diff(array_map('absint', $ranked), $exclude_ids));
         if (empty($ranked)) {
             return array();
         }
@@ -1199,16 +1373,37 @@ class WooBooster_Matcher
             );
         }
 
+        $query_args = $this->restrict_results($query_args, $action);
+        unset($query_args['post__not_in']);
+
         $valid = (new WP_Query($query_args))->posts;
 
         return array_slice($valid, 0, $limit);
     }
 
     /**
-     * Progressive fallback: fill the recommendation slot with category bestsellers,
-     * then global trending, then the most recent products.
+     * Rules every Smart and fallback query shares: the action's exceptions
+     * (if any) and no catalog-hidden products.
+     *
+     * @param array       $query_args WP_Query args.
+     * @param object|null $action     Action whose exceptions apply.
+     * @return array
      */
-    protected function fallback_fill(int $product_id, array $existing, int $limit, bool $exclude_outofstock, array $terms): array
+    private function restrict_results(array $query_args, $action = null): array
+    {
+        if ($action && '' !== self::exclusion_signature($action)) {
+            $query_args = $this->apply_exclusions($query_args, $action);
+        }
+
+        return $this->exclude_hidden($query_args);
+    }
+
+    /**
+     * Progressive fallback: fill the recommendation slot with category bestsellers,
+     * then global trending, then the most recent products. The action's
+     * exceptions apply to every step.
+     */
+    protected function fallback_fill(int $product_id, array $existing, int $limit, bool $exclude_outofstock, array $terms, $action = null): array
     {
         $need = $limit - count($existing);
         if ($need <= 0) {
@@ -1224,7 +1419,7 @@ class WooBooster_Matcher
         }
 
         if (!empty($cat_slugs)) {
-            $bestsellers = new WP_Query(array(
+            $bestsellers = new WP_Query($this->restrict_results(array(
                 'post_type'              => 'product',
                 'post_status'            => 'publish',
                 'posts_per_page'         => $need * 2,
@@ -1246,7 +1441,7 @@ class WooBooster_Matcher
                 'meta_query'             => $exclude_outofstock
                     ? array(array('key' => '_stock_status', 'value' => 'instock', 'compare' => '='))
                     : array(),
-            ));
+            ), $action));
             $existing = array_merge($existing, array_values(array_diff($bestsellers->posts, $exclude)));
             $existing = array_values(array_unique(array_map('absint', $existing)));
             $need = $limit - count($existing);
@@ -1257,14 +1452,14 @@ class WooBooster_Matcher
             if (!empty($global) && is_array($global)) {
                 $exclude = array_merge(array($product_id), $existing);
                 $extra = array_values(array_diff(array_map('absint', $global), $exclude));
-                $existing = array_merge($existing, $this->validate_candidates($extra, $need, $exclude_outofstock, $exclude));
+                $existing = array_merge($existing, $this->validate_candidates($extra, $need, $exclude_outofstock, $exclude, $action));
                 $need = $limit - count($existing);
             }
         }
 
         if ($need > 0) {
             $exclude = array_merge(array($product_id), $existing);
-            $recent = new WP_Query(array(
+            $recent = new WP_Query($this->restrict_results(array(
                 'post_type'              => 'product',
                 'post_status'            => 'publish',
                 'posts_per_page'         => $need,
@@ -1278,7 +1473,7 @@ class WooBooster_Matcher
                 'meta_query'             => $exclude_outofstock
                     ? array(array('key' => '_stock_status', 'value' => 'instock', 'compare' => '='))
                     : array(),
-            ));
+            ), $action));
             $existing = array_merge($existing, $recent->posts);
         }
 
@@ -1356,15 +1551,23 @@ class WooBooster_Matcher
      * (wc_order_product_lookup over the configured Smart window), publish date
      * recency and shipping class. The top $limit are returned; if fewer, we fall
      * back to category bestsellers, then global trending, then recent products.
+     * The action's exceptions apply to the ranked list and the fallback, and
+     * are part of the cache key.
      *
      * Weights can be overridden via the `woobooster_similar_weights` filter.
+     *
+     * @param int         $product_id         Source product.
+     * @param int         $limit              Max products.
+     * @param bool        $exclude_outofstock Exclude out-of-stock products.
+     * @param array       $terms              Source product terms.
+     * @param object|null $action             Action whose exceptions apply.
      */
-    protected function execute_similar_query($product_id, $limit, $exclude_outofstock, $terms)
+    protected function execute_similar_query($product_id, $limit, $exclude_outofstock, $terms, $action = null)
     {
         global $wpdb;
 
-        $cache_args_hash = md5(wp_json_encode(array((int) $limit, (bool) $exclude_outofstock)));
-        $cache_key = 'wb_similar2_v' . self::cache_version() . '_' . (int) $product_id . '_' . $cache_args_hash;
+        $cache_args_hash = md5(wp_json_encode(array((int) $limit, (bool) $exclude_outofstock, self::exclusion_signature($action))));
+        $cache_key = 'wb_similar2_v' . self::result_version() . '_' . (int) $product_id . '_' . $cache_args_hash;
         $cached = self::cache_get($cache_key);
         if (false !== $cached) {
             return $cached;
@@ -1432,7 +1635,7 @@ class WooBooster_Matcher
         $tt_ids = array_values(array_unique(array_filter($tt_ids)));
 
         if (empty($tt_ids)) {
-            $fallback = $this->fallback_fill($product_id, array(), $limit, $exclude_outofstock, $terms);
+            $fallback = $this->fallback_fill($product_id, array(), $limit, $exclude_outofstock, $terms, $action);
             self::cache_set($cache_key, $fallback, 6 * HOUR_IN_SECONDS);
             return $fallback;
         }
@@ -1453,7 +1656,7 @@ class WooBooster_Matcher
 
         $candidate_ids = array_values(array_unique(array_map('absint', (array) $candidate_ids)));
         if (empty($candidate_ids)) {
-            $fallback = $this->fallback_fill($product_id, array(), $limit, $exclude_outofstock, $terms);
+            $fallback = $this->fallback_fill($product_id, array(), $limit, $exclude_outofstock, $terms, $action);
             self::cache_set($cache_key, $fallback, 6 * HOUR_IN_SECONDS);
             return $fallback;
         }
@@ -1596,10 +1799,10 @@ class WooBooster_Matcher
         arsort($scored);
         $ranked = array_map('intval', array_keys($scored));
 
-        $valid = $this->validate_candidates($ranked, $limit, $exclude_outofstock, array($product_id));
+        $valid = $this->validate_candidates($ranked, $limit, $exclude_outofstock, array($product_id), $action);
 
         if (count($valid) < $limit) {
-            $valid = $this->fallback_fill($product_id, $valid, $limit, $exclude_outofstock, $terms);
+            $valid = $this->fallback_fill($product_id, $valid, $limit, $exclude_outofstock, $terms, $action);
         }
 
         self::cache_set($cache_key, $valid, 6 * HOUR_IN_SECONDS);
