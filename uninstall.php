@@ -414,12 +414,10 @@ delete_option('ffla_coupon_cats_seeded');
 $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_ffla\\_cpn\\_%' OR option_name LIKE '\\_transient\\_timeout\\_ffla\\_cpn\\_%'");
 
 // ── Order Badges cleanup ───────────────────────────────────────────
-// Settings, backfill bookkeeping and the rename-migration flag. The tag
-// snapshots frozen on order lines (`_ffla_ob_tags`) stay with the orders as
-// order history.
+// Settings and backfill bookkeeping. The tag snapshots frozen on order
+// lines (`_ffla_ob_tags`) stay with the orders as order history.
 delete_option('ffla_order_badges_settings');
 delete_option('ffla_order_source_settings'); // Pre-rename option name.
-delete_option('ffla_order_badges_module_migrated');
 delete_option('ffla_ob_backfill_done');
 delete_option('ffla_ob_backfill_cursor');
 delete_option('ffla_ob_backfill_watermark');
@@ -451,5 +449,6 @@ $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\
 
 // ── FFLA core cleanup ──────────────────────────────────────────────
 delete_option('ffla_active_modules');
+delete_option('ffla_migrations_version');
 delete_transient('ffla_github_release');
 delete_transient('ffla_github_api_error');

@@ -42,31 +42,21 @@ class Order_Badges_Module extends FFLA_Module {
 	/** Orders-list column id. */
 	private const COLUMN = 'ffla_order_badges';
 
-	/** Line-item meta: the product's product_tag terms frozen at purchase, as a
-	 *  list of array{id:int,name:string}. Absent = not yet snapshotted. */
+	/** Line-item meta: the product's tags frozen at purchase, as [{id,name}]. */
 	private const SNAP_META = '_ffla_ob_tags';
 
-	/** Action Scheduler hook + group for the backfill of un-snapshotted items. */
+	/** Action Scheduler hook + group for backfilling lines without a snapshot. */
 	private const BACKFILL_HOOK  = 'ffla_ob_backfill_batch';
 	private const BACKFILL_GROUP = 'ffla-order-badges';
-
-	/** Option set once every existing order line has a snapshot. */
-	private const BACKFILL_DONE = 'ffla_ob_backfill_done';
-
-	/** Option: order_item_id the running backfill has reached (resume point). */
-	private const BACKFILL_CURSOR = 'ffla_ob_backfill_cursor';
-
-	/** Option: highest order_item_id known to be covered once a pass finished.
-	 *  Lines created while the module was off sit above it, so the periodic
-	 *  gap check only has to look there. */
-	private const BACKFILL_WATERMARK = 'ffla_ob_backfill_watermark';
-
-	/** Autoloaded throttle timestamps (zero-query checks on page loads). */
-	private const NEXT_QUEUE_CHECK = 'ffla_ob_next_queue_check';
-	private const NEXT_GAP_CHECK   = 'ffla_ob_next_gap_check';
-
-	/** Line items processed per backfill batch (filterable). */
 	private const BACKFILL_BATCH = 200;
+
+	/** Backfill state (options). DONE and the NEXT_* timestamps are autoloaded,
+	 *  so checking them on a page load costs no query. */
+	private const BACKFILL_DONE      = 'ffla_ob_backfill_done';
+	private const BACKFILL_CURSOR    = 'ffla_ob_backfill_cursor';    // Last order_item_id processed.
+	private const BACKFILL_WATERMARK = 'ffla_ob_backfill_watermark'; // Every line up to here is covered.
+	private const NEXT_QUEUE_CHECK   = 'ffla_ob_next_queue_check';
+	private const NEXT_GAP_CHECK     = 'ffla_ob_next_gap_check';
 
 	/** Colour of the "Mixed" total in the orders-list summary. */
 	private const MIXED_COLOR = '#b45309';
@@ -77,10 +67,7 @@ class Order_Badges_Module extends FFLA_Module {
 	/** Default colour palette used when a selected tag has no colour yet. */
 	private const PALETTE = array( '#2271b1', '#e02424', '#0f766e', '#7c3aed', '#b45309', '#be185d', '#0891b2', '#4d7c0f' );
 
-	/** Per-request memo: product_id => list of {id,name} tag snapshots. */
-	private $product_cache = array();
-
-	/** Query args of the HPOS orders list being rendered (for "This view"). */
+	/** Query args of the HPOS orders list being rendered (for "Orders shown below"). */
 	private $list_args = null;
 
 	/** Per-request memo of the parsed settings. */
@@ -103,12 +90,11 @@ class Order_Badges_Module extends FFLA_Module {
 	}
 
 	public function boot(): void {
-		// Freeze each product's tags onto its order line as the order is created.
-		// Runs everywhere orders are made (checkout, admin, POS, REST, Store API),
-		// so it must be registered outside the is_admin() gate below.
+		// Freeze tags on every new order line (checkout, admin, POS, REST), so this
+		// sits outside the is_admin() gate.
 		add_action( 'woocommerce_new_order_item', array( $this, 'snapshot_new_item' ), 10, 2 );
 
-		// One-time backfill of existing orders, via Action Scheduler.
+		// Backfill lines that have no snapshot yet.
 		add_action( self::BACKFILL_HOOK, array( $this, 'run_backfill_batch' ) );
 		$this->maybe_schedule_backfill();
 
@@ -124,10 +110,9 @@ class Order_Badges_Module extends FFLA_Module {
 		add_filter( 'manage_edit-shop_order_columns', array( $this, 'add_column' ) );
 		add_action( 'manage_shop_order_posts_custom_column', array( $this, 'render_column' ), 10, 2 );
 
-		// In Store / Online Only / Mixed totals above the Orders table: capture the
-		// list's exact query (HPOS), then print a full-width line just above the
-		// status links via WordPress's views_{screen} filter (left-aligned with the table).
-		add_filter( 'woocommerce_order_list_table_prepare_items_query_args', array( $this, 'capture_list_args' ), PHP_INT_MAX );
+		// Totals above the Orders table. The per-type filter runs last, so it sees the
+		// final list query; views_{screen} prints full-width above the status links.
+		add_filter( 'woocommerce_shop_order_list_table_prepare_items_query_args', array( $this, 'capture_list_args' ), PHP_INT_MAX );
 		add_filter( 'views_woocommerce_page_wc-orders', array( $this, 'render_summary_hpos' ) );
 		add_filter( 'views_edit-shop_order', array( $this, 'render_summary_legacy' ) );
 
@@ -140,20 +125,13 @@ class Order_Badges_Module extends FFLA_Module {
 	}
 
 	public function activate(): void {
-		// (Re-)enabling: orders may have arrived while the module was off, so
-		// re-run the backfill. It only touches lines that still lack a snapshot,
-		// so after a short outage this is a single tiny batch.
-		// Lines created while it was off sit above the high-water mark, so resume
-		// from there instead of rescanning everything (0 on a first install).
-		delete_option( self::BACKFILL_DONE );
-		update_option( self::BACKFILL_CURSOR, (int) get_option( self::BACKFILL_WATERMARK, 0 ), false );
-		update_option( self::NEXT_QUEUE_CHECK, 0, true );
+		// Stamp lines added while the module was off; they sit above the watermark.
+		$this->restart_backfill( (int) get_option( self::BACKFILL_WATERMARK, 0 ) );
 		$this->maybe_schedule_backfill();
 	}
 
 	public function deactivate(): void {
-		// Settings and the per-order snapshots are kept so re-activating restores
-		// everything. Just stop any pending backfill work.
+		// Settings and snapshots are kept; only stop pending backfill work.
 		if ( function_exists( 'as_unschedule_all_actions' ) ) {
 			as_unschedule_all_actions( self::BACKFILL_HOOK, array(), self::BACKFILL_GROUP );
 		}
@@ -286,19 +264,8 @@ class Order_Badges_Module extends FFLA_Module {
 				'fields'     => 'ids',
 			)
 		);
-		if ( ! is_array( $found ) ) {
-			return array();
-		}
-		$found = array_map( 'intval', $found );
-
-		return array_values(
-			array_filter(
-				$ids,
-				static function ( $id ) use ( $found ) {
-					return in_array( $id, $found, true );
-				}
-			)
-		);
+		// array_intersect keeps the submitted order.
+		return is_array( $found ) ? array_values( array_intersect( $ids, array_map( 'intval', $found ) ) ) : array();
 	}
 
 	/**
@@ -531,30 +498,26 @@ class Order_Badges_Module extends FFLA_Module {
 	/* =====================================================================
 	 * Orders-list summary: In Store / Online Only / Mixed totals
 	 *
-	 * Classification follows the settings only: a line is in-store when its
-	 * frozen snapshot contains ANY configured in-store tag. All lines in-store =
-	 * In Store, none = Online Only, otherwise Mixed. Counted with one SQL
-	 * aggregation over the snapshots (no orders are loaded).
+	 * Follows the settings only: a line is in-store when its snapshot holds any
+	 * configured in-store tag. All lines in-store = In Store, none = Online Only,
+	 * otherwise Mixed. Counted in SQL from the snapshots; no orders are loaded.
 	 * ================================================================== */
 
 	/**
-	 * Remember the HPOS list table's query args so "This view" counts exactly
-	 * what the table is showing (status tab, search, date, customer, channel…).
+	 * Remember the HPOS list's final query args for "Orders shown below".
 	 *
 	 * @param array<string, mixed> $args
 	 * @return array<string, mixed>
 	 */
 	public function capture_list_args( $args ) {
-		if ( is_array( $args ) && 'shop_order' === ( $args['type'] ?? 'shop_order' ) ) {
-			$this->list_args = $args;
-		}
+		$this->list_args = (array) $args;
 
 		return $args;
 	}
 
 	/**
-	 * HPOS orders screen. Hooked to the views filter purely for its position:
-	 * prints the summary just above the status links and returns $views as-is.
+	 * HPOS orders screen. Hooked to views_{screen} only for its position; returns
+	 * $views unchanged.
 	 *
 	 * @param array<string, string> $views
 	 * @return array<string, string>
@@ -564,22 +527,18 @@ class Order_Badges_Module extends FFLA_Module {
 			return $views;
 		}
 
-		$args = $this->list_args;
-		foreach ( array( 'limit', 'page', 'paginate', 'no_found_rows', 'orderby', 'order' ) as $key ) {
-			unset( $args[ $key ] );
-		}
+		$args = array_diff_key( $this->list_args, array_flip( array( 'limit', 'page', 'paginate', 'no_found_rows', 'orderby', 'order' ) ) );
 
-		$default  = $this->default_list_statuses();
 		$statuses = array_values( (array) ( $args['status'] ?? array() ) );
 		sort( $statuses );
-		$filtered = $statuses !== $default || array_diff( array_keys( $args ), array( 'type', 'status' ) );
+		$filtered = $statuses !== $this->default_list_statuses() || array_diff( array_keys( $args ), array( 'type', 'status' ) );
 
 		$view = null;
 		if ( $filtered ) {
 			$view = $this->cached_counts(
 				'view_' . md5( wp_json_encode( $args ) ),
 				function () use ( $args ) {
-					return $this->query_order_ids( $args );
+					return $this->classify_orders( $this->query_order_ids( $args ) );
 				}
 			);
 		}
@@ -590,7 +549,7 @@ class Order_Badges_Module extends FFLA_Module {
 	}
 
 	/**
-	 * Legacy (posts-based) orders screen; same views-filter placement.
+	 * Legacy (posts-based) orders screen; same placement.
 	 *
 	 * @param array<string, string> $views
 	 * @return array<string, string>
@@ -623,9 +582,9 @@ class Order_Badges_Module extends FFLA_Module {
 			);
 			$view = $this->cached_counts(
 				'view_' . md5( wp_json_encode( $vars ) ),
-				static function () use ( $vars ) {
+				function () use ( $vars ) {
 					$query = new WP_Query( $vars );
-					return array_map( 'intval', (array) $query->posts );
+					return $this->classify_orders( array_map( 'intval', (array) $query->posts ) );
 				}
 			);
 		}
@@ -636,10 +595,9 @@ class Order_Badges_Module extends FFLA_Module {
 	}
 
 	/**
-	 * Output the summary bar. Hidden until in-store tags are configured, since
-	 * the classification is undefined without them.
+	 * Print the summary. Hidden until in-store tags are configured.
 	 *
-	 * @param array{in_store:int,online:int,mixed:int}|null $view Counts for the current filtered view, or null when unfiltered.
+	 * @param array{in_store:int,online:int,mixed:int}|null $view Counts for the filtered view, or null.
 	 */
 	private function print_summary( ?array $view ): void {
 		if ( empty( $this->settings()['instore_tags'] ) ) {
@@ -649,31 +607,30 @@ class Order_Badges_Module extends FFLA_Module {
 		$overall = $this->cached_counts(
 			'overall',
 			function () {
-				return $this->query_order_ids( array( 'status' => $this->default_list_statuses() ) );
+				return $this->classify_orders( null );
 			}
 		);
 
 		echo '<div class="ffla-ob-summary">';
-		$this->print_summary_group( __( 'All orders', 'ffl-funnels-addons' ), $overall );
+		$this->print_summary_line( __( 'All orders', 'ffl-funnels-addons' ), $overall );
 		if ( null !== $view ) {
-			$this->print_summary_group( __( 'Orders shown below', 'ffl-funnels-addons' ), $view );
+			$this->print_summary_line( __( 'Orders shown below', 'ffl-funnels-addons' ), $view );
 		}
 		echo '</div>';
 	}
 
 	/**
-	 * Counts for a set of orders, cached for a few minutes. The key includes the
-	 * in-store tag settings, so changing them never serves stale numbers.
+	 * Counts cached for a few minutes; the key includes the in-store settings so
+	 * changing them never serves stale numbers.
 	 *
-	 * @param string   $key     Distinguishes overall vs. a particular filter.
-	 * @param callable $get_ids Returns the order IDs to classify (only called on a cache miss).
+	 * @param callable $count Returns the counts on a cache miss.
 	 * @return array{in_store:int,online:int,mixed:int}
 	 */
-	private function cached_counts( string $key, callable $get_ids ): array {
+	private function cached_counts( string $key, callable $count ): array {
 		$cache_key = 'ffla_ob_sum_' . md5( $key . '|' . wp_json_encode( $this->settings()['instore_tags'] ) );
 		$counts    = get_transient( $cache_key );
 		if ( ! is_array( $counts ) ) {
-			$counts = $this->classify_orders( (array) $get_ids() );
+			$counts = $count();
 			set_transient( $cache_key, $counts, 3 * MINUTE_IN_SECONDS );
 		}
 
@@ -681,33 +638,35 @@ class Order_Badges_Module extends FFLA_Module {
 	}
 
 	/**
-	 * One labelled group of the three totals.
+	 * One line, e.g. "All orders (21,239): 8 In Store, 21,230 Online Only, 1 Mixed".
 	 *
 	 * @param array{in_store:int,online:int,mixed:int} $counts
 	 */
-	private function print_summary_group( string $label, array $counts ): void {
+	private function print_summary_line( string $label, array $counts ): void {
 		$settings = $this->settings();
-		$groups   = array(
-			array( __( 'In Store', 'ffl-funnels-addons' ), $counts['in_store'], $this->color_for( (int) $settings['instore_tags'][0] ) ),
-			array( __( 'Online Only', 'ffl-funnels-addons' ), $counts['online'], $settings['online_color'] ),
-			array( __( 'Mixed', 'ffl-funnels-addons' ), $counts['mixed'], self::MIXED_COLOR ),
+		$types    = array(
+			array( $counts['in_store'], __( 'In Store', 'ffl-funnels-addons' ), $this->color_for( (int) $settings['instore_tags'][0] ) ),
+			array( $counts['online'], __( 'Online Only', 'ffl-funnels-addons' ), $settings['online_color'] ),
+			array( $counts['mixed'], __( 'Mixed', 'ffl-funnels-addons' ), self::MIXED_COLOR ),
 		);
 
 		$parts = array();
-		foreach ( $groups as $group ) {
-			$parts[] = '<mark class="ffla-ob-summary__term" style="--ffla-c:' . esc_attr( $group[2] ) . '">'
-				. esc_html( number_format_i18n( $group[1] ) . ' ' . $group[0] ) . '</mark>';
+		foreach ( $types as list( $count, $type, $color ) ) {
+			/* translators: 1: number of orders, 2: order type (In Store / Online Only / Mixed). */
+			$text    = sprintf( __( '%1$s %2$s', 'ffl-funnels-addons' ), number_format_i18n( $count ), $type );
+			$parts[] = '<mark class="ffla-ob-summary__term" style="--ffla-c:' . esc_attr( $color ) . '">' . esc_html( $text ) . '</mark>';
 		}
-		$total = $counts['in_store'] + $counts['online'] + $counts['mixed'];
 
-		echo '<p class="ffla-ob-summary__line"><span class="ffla-ob-summary__label">'
-			. esc_html( sprintf( '%s (%s):', $label, number_format_i18n( $total ) ) ) . '</span> '
+		/* translators: 1: "All orders" or "Orders shown below", 2: total number of orders. */
+		$heading = sprintf( __( '%1$s (%2$s):', 'ffl-funnels-addons' ), $label, number_format_i18n( array_sum( $counts ) ) );
+
+		echo '<p class="ffla-ob-summary__line"><span class="ffla-ob-summary__label">' . esc_html( $heading ) . '</span> '
 			. implode( ', ', $parts ) // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built from escaped parts.
 			. '</p>';
 	}
 
 	/**
-	 * The statuses WooCommerce's "All" orders view lists.
+	 * The statuses WooCommerce's "All" orders view lists, sorted.
 	 *
 	 * @return string[]
 	 */
@@ -724,7 +683,7 @@ class Order_Badges_Module extends FFLA_Module {
 	}
 
 	/**
-	 * Order IDs matching wc_get_orders() args (HPOS and legacy alike).
+	 * Order IDs matching wc_get_orders() args.
 	 *
 	 * @param array<string, mixed> $args
 	 * @return int[]
@@ -746,13 +705,15 @@ class Order_Badges_Module extends FFLA_Module {
 	}
 
 	/**
-	 * Count orders by type from their line snapshots, in chunks so the IN list
-	 * stays bounded. Lines not yet snapshotted are left out until backfilled.
+	 * Count orders by type from their line snapshots. With $order_ids = null it
+	 * counts every order in the "All" view by joining the orders table directly
+	 * (HPOS or legacy), so no ID list is loaded; otherwise it counts the given
+	 * IDs in chunks. Lines without a snapshot are left out.
 	 *
-	 * @param int[] $order_ids
+	 * @param int[]|null $order_ids
 	 * @return array{in_store:int,online:int,mixed:int}
 	 */
-	private function classify_orders( array $order_ids ): array {
+	private function classify_orders( ?array $order_ids ): array {
 		global $wpdb;
 
 		$counts  = array(
@@ -761,40 +722,56 @@ class Order_Badges_Module extends FFLA_Module {
 			'mixed'    => 0,
 		);
 		$instore = $this->settings()['instore_tags'];
-		if ( empty( $order_ids ) || empty( $instore ) ) {
+		if ( empty( $instore ) || ( null !== $order_ids && empty( $order_ids ) ) ) {
 			return $counts;
 		}
 
-		// A line is in-store when its serialized snapshot holds one of the in-store
-		// term IDs. `s:2:"id";i:<id>;` is exact: the trailing ";" stops 36 matching 360.
-		$likes  = array();
-		$params = array();
+		// A line is in-store when its serialized snapshot holds an in-store term
+		// ID. `s:2:"id";i:<id>;` is exact: the trailing ";" stops 36 matching 360.
+		$likes = array();
+		$args  = array();
 		foreach ( $instore as $term_id ) {
-			$likes[]  = 'm.meta_value LIKE %s';
-			$params[] = '%' . $wpdb->esc_like( 's:2:"id";i:' . (int) $term_id . ';' ) . '%';
+			$likes[] = 'm.meta_value LIKE %s';
+			$args[]  = '%' . $wpdb->esc_like( 's:2:"id";i:' . (int) $term_id . ';' ) . '%';
 		}
-		$is_instore = '(' . implode( ' OR ', $likes ) . ')';
+		$args[] = self::SNAP_META;
 
-		foreach ( array_chunk( $order_ids, 5000 ) as $chunk ) {
-			$in = implode( ',', array_fill( 0, count( $chunk ), '%d' ) );
-			// phpcs:disable WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- $is_instore/$in are generated placeholder tokens; every value is bound via prepare().
+		// Each batch: [JOIN clause, WHERE clause, values to bind].
+		if ( null === $order_ids ) {
+			$statuses = $this->default_list_statuses();
+			$in       = implode( ',', array_fill( 0, count( $statuses ), '%s' ) );
+			$join     = class_exists( '\Automattic\WooCommerce\Utilities\OrderUtil' ) && \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled()
+				? "INNER JOIN {$wpdb->prefix}wc_orders o ON o.id = oi.order_id AND o.type = 'shop_order' AND o.status IN ($in)"
+				: "INNER JOIN {$wpdb->posts} o ON o.ID = oi.order_id AND o.post_type = 'shop_order' AND o.post_status IN ($in)";
+			$batches  = array( array( $join, '', $statuses ) );
+		} else {
+			$batches = array();
+			foreach ( array_chunk( $order_ids, 5000 ) as $chunk ) {
+				$batches[] = array( '', 'AND oi.order_id IN (' . implode( ',', array_fill( 0, count( $chunk ), '%d' ) ) . ')', $chunk );
+			}
+		}
+
+		$is_in = '(' . implode( ' OR ', $likes ) . ')';
+		foreach ( $batches as list( $join, $where, $values ) ) {
+			// phpcs:disable WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- $is_in/$join/$where hold only generated placeholders; all values are bound by prepare().
 			$row = $wpdb->get_row(
 				$wpdb->prepare(
-					"SELECT
-						COALESCE(SUM(all_in = 1), 0) AS in_store,
+					"SELECT COALESCE(SUM(all_in = 1), 0) AS in_store,
 						COALESCE(SUM(any_in = 0), 0) AS online,
 						COALESCE(SUM(any_in = 1 AND all_in = 0), 0) AS mixed
 					FROM (
-						SELECT oi.order_id,
-							MAX(CASE WHEN $is_instore THEN 1 ELSE 0 END) AS any_in,
-							MIN(CASE WHEN $is_instore THEN 1 ELSE 0 END) AS all_in
-						FROM {$wpdb->prefix}woocommerce_order_items oi
-						INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta m
-							ON m.order_item_id = oi.order_item_id AND m.meta_key = %s
-						WHERE oi.order_item_type = 'line_item' AND oi.order_id IN ($in)
-						GROUP BY oi.order_id
-					) t",
-					array_merge( $params, $params, array( self::SNAP_META ), $chunk )
+						SELECT order_id, MAX(is_in) AS any_in, MIN(is_in) AS all_in
+						FROM (
+							SELECT oi.order_id, $is_in AS is_in
+							FROM {$wpdb->prefix}woocommerce_order_items oi
+							INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta m
+								ON m.order_item_id = oi.order_item_id AND m.meta_key = %s
+							$join
+							WHERE oi.order_item_type = 'line_item' $where
+						) AS line_flags
+						GROUP BY order_id
+					) AS order_flags",
+					array_merge( $args, $values )
 				)
 			);
 			// phpcs:enable
@@ -815,12 +792,9 @@ class Order_Badges_Module extends FFLA_Module {
 	/**
 	 * Order-level badge set in the order details panel, under the General fields.
 	 *
-	 * @param WC_Order|int $order
+	 * @param WC_Order $order
 	 */
 	public function render_order_badge( $order ): void {
-		if ( ! $order instanceof WC_Order ) {
-			$order = wc_get_order( $order );
-		}
 		if ( ! $order instanceof WC_Order ) {
 			return;
 		}
@@ -847,7 +821,10 @@ class Order_Badges_Module extends FFLA_Module {
 			return; // Skip fees, shipping, etc.
 		}
 
-		echo $this->badges_html( $this->item_badge_set( $item ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built from escaped parts.
+		$snapshot = $this->item_snapshot( $item );
+		if ( null !== $snapshot ) {
+			echo $this->badges_html( $this->badge_set_from_snapshot( $snapshot ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built from escaped parts.
+		}
 	}
 
 	/* =====================================================================
@@ -855,22 +832,8 @@ class Order_Badges_Module extends FFLA_Module {
 	 * ================================================================== */
 
 	/**
-	 * Badge set for a single order line, from its FROZEN tag snapshot (taken at
-	 * purchase). Matched badge tags + whether the line is online-only. The product
-	 * no longer needs to exist — the snapshot is self-contained.
-	 *
-	 * @param WC_Order_Item_Product $item
-	 * @return array{tags: array<int, array{name: string, color: string}>, online: bool}
-	 */
-	private function item_badge_set( WC_Order_Item_Product $item ): array {
-		return $this->badge_set_from_snapshot( $this->item_snapshot( $item ) );
-	}
-
-	/**
-	 * Turn a frozen tag snapshot (list of {id,name}) into a badge set using the
-	 * current settings. Matching and the online-only test are by term ID, so they
-	 * keep working even if a tag was later renamed or deleted; the frozen name is
-	 * what's displayed, the colour comes from settings.
+	 * Turn a frozen snapshot into a badge set with the current settings. Matching
+	 * is by term ID (survives renames/deletions); the frozen name is displayed.
 	 *
 	 * @param array<int, array{id:int,name:string}> $snapshot
 	 * @return array{tags: array<int, array{name: string, color: string}>, online: bool}
@@ -881,75 +844,61 @@ class Order_Badges_Module extends FFLA_Module {
 		$term_ids = array();
 
 		foreach ( $snapshot as $tag ) {
-			if ( ! is_array( $tag ) ) {
-				continue;
-			}
-			$id   = isset( $tag['id'] ) ? (int) $tag['id'] : 0;
-			$name = isset( $tag['name'] ) ? (string) $tag['name'] : '';
+			$id = (int) ( $tag['id'] ?? 0 );
 			if ( $id <= 0 ) {
 				continue;
 			}
 			$term_ids[] = $id;
 			if ( in_array( $id, $settings['badge_tags'], true ) ) {
 				$tags[ $id ] = array(
-					'name'  => $name,
+					'name'  => (string) ( $tag['name'] ?? '' ),
 					'color' => $this->color_for( $id ),
 				);
 			}
 		}
 
-		// Online Only only applies once in-store tags are configured.
-		$online = ! empty( $settings['instore_tags'] ) && empty( array_intersect( $term_ids, $settings['instore_tags'] ) );
-
 		return array(
 			'tags'   => $tags,
-			'online' => $online,
+			// Online Only only applies once in-store tags are configured.
+			'online' => ! empty( $settings['instore_tags'] ) && ! array_intersect( $term_ids, $settings['instore_tags'] ),
 		);
 	}
 
 	/**
-	 * Badge set for a whole order: the de-duplicated union of every badge on its
-	 * product lines — the matched badge tags, plus Online Only when ANY line lacks
-	 * a selected in-store tag.
+	 * Badge set for a whole order: the union of its lines' badges, plus Online
+	 * Only when ANY line lacks an in-store tag. Lines with unknown tags are skipped.
 	 *
 	 * @return array{tags: array<int, array{name: string, color: string}>, online: bool}
 	 */
 	private function order_badge_set( WC_Order $order ): array {
-		$tags       = array();
-		$any_online = false;
+		$set = array(
+			'tags'   => array(),
+			'online' => false,
+		);
 
 		foreach ( $order->get_items() as $item ) {
-			if ( ! $item instanceof WC_Order_Item_Product ) {
-				continue;
-			}
-			$set = $this->item_badge_set( $item );
-			foreach ( $set['tags'] as $id => $tag ) {
-				$tags[ $id ] = $tag;
-			}
-			if ( $set['online'] ) {
-				$any_online = true;
+			$snapshot = $item instanceof WC_Order_Item_Product ? $this->item_snapshot( $item ) : null;
+			if ( null !== $snapshot ) {
+				$line          = $this->badge_set_from_snapshot( $snapshot );
+				$set['tags']  += $line['tags'];
+				$set['online'] = $set['online'] || $line['online'];
 			}
 		}
 
-		return array(
-			'tags'   => $tags,
-			'online' => $any_online,
-		);
+		return $set;
 	}
 
 	/* =====================================================================
-	 * Tag snapshots (freeze at purchase, backfill, self-heal)
+	 * Tag snapshots
 	 * ================================================================== */
 
 	/**
-	 * The frozen tag snapshot for a line item. If the item has none yet (an order
-	 * created before this feature, or missed by the backfill), stamp it now from
-	 * the product's current tags and use that — so every rendered order is frozen.
+	 * A line's frozen snapshot; lines without one are stamped now (self-heal).
+	 * Null = unknown (product deleted before it was ever snapshotted).
 	 *
-	 * @param WC_Order_Item_Product $item
-	 * @return array<int, array{id:int,name:string}>
+	 * @return array<int, array{id:int,name:string}>|null
 	 */
-	private function item_snapshot( WC_Order_Item_Product $item ): array {
+	private function item_snapshot( WC_Order_Item_Product $item ): ?array {
 		if ( $item->meta_exists( self::SNAP_META ) ) {
 			$snap = $item->get_meta( self::SNAP_META );
 			return is_array( $snap ) ? $snap : array();
@@ -959,124 +908,99 @@ class Order_Badges_Module extends FFLA_Module {
 	}
 
 	/**
-	 * Freeze the product's current tags onto a line item and persist them. Returns
-	 * the snapshot. Never throws — a failure here must not break order creation or
-	 * an admin screen.
+	 * Freeze the product's current tags onto a line and return them. Returns null
+	 * (and stores nothing) when the product no longer exists, since its tags
+	 * can't be known. Never throws, so it can't break order creation or a screen.
 	 *
-	 * @param WC_Order_Item_Product $item
-	 * @return array<int, array{id:int,name:string}>
+	 * @return array<int, array{id:int,name:string}>|null
 	 */
-	private function stamp_item( WC_Order_Item_Product $item ): array {
-		// Always read the product's tags fresh here: this runs as a line is created
-		// (or self-heals), and a per-request memo could be stale if tags changed
-		// earlier in the same request (imports, CLI, POS batches).
-		$snapshot = $this->product_tag_snapshot( (int) $item->get_product_id(), false );
+	private function stamp_item( WC_Order_Item_Product $item ): ?array {
 		try {
+			$product_id = (int) $item->get_product_id();
+			if ( ! $this->product_exists( $product_id ) ) {
+				return null;
+			}
+
+			$snapshot = $this->product_tag_snapshot( $product_id );
 			$item->update_meta_data( self::SNAP_META, $snapshot );
 			$item->save_meta_data();
-		} catch ( \Throwable $e ) {
-			// Persist failed; still return the computed snapshot so rendering works.
-			$this->log( 'stamp_item failed: ' . $e->getMessage() );
-		}
 
-		return $snapshot;
+			return $snapshot;
+		} catch ( \Throwable $e ) {
+			$this->log( 'stamp_item failed: ' . $e->getMessage() );
+			return null;
+		}
 	}
 
 	/**
-	 * The product's product_tag terms as a list of {id,name}. Memoised per request
-	 * only when $memoize is true (the bulk backfill, where many lines share a
-	 * product and tags can't change mid-batch).
-	 * An empty list is a valid snapshot ("the product had no tags").
+	 * Whether a line's product still exists (line items store the parent ID).
+	 */
+	private function product_exists( int $product_id ): bool {
+		return $product_id > 0 && 'product' === get_post_type( $product_id );
+	}
+
+	/**
+	 * The product's product_tag terms as [{id,name}] ([] = no tags).
 	 *
 	 * @return array<int, array{id:int,name:string}>
 	 */
-	private function product_tag_snapshot( int $product_id, bool $memoize ): array {
-		if ( $product_id <= 0 ) {
-			return array();
-		}
-		if ( $memoize && isset( $this->product_cache[ $product_id ] ) ) {
-			return $this->product_cache[ $product_id ];
-		}
-
+	private function product_tag_snapshot( int $product_id ): array {
 		$snapshot = array();
 		$terms    = get_the_terms( $product_id, 'product_tag' );
-		if ( is_array( $terms ) ) {
-			foreach ( $terms as $term ) {
-				$snapshot[] = array(
-					'id'   => (int) $term->term_id,
-					'name' => (string) $term->name,
-				);
-			}
-		}
-
-		if ( $memoize ) {
-			$this->product_cache[ $product_id ] = $snapshot;
+		foreach ( is_array( $terms ) ? $terms : array() as $term ) {
+			$snapshot[] = array(
+				'id'   => (int) $term->term_id,
+				'name' => (string) $term->name,
+			);
 		}
 
 		return $snapshot;
 	}
 
 	/**
-	 * Freeze tags onto a line item as the order is created (any creation path:
-	 * checkout, admin, POS, REST, Store API). Products only; never throws.
+	 * Freeze tags onto a line as it is created.
 	 *
 	 * @param int           $item_id
 	 * @param WC_Order_Item $item
 	 */
 	public function snapshot_new_item( $item_id, $item ): void {
-		try {
-			if ( $item instanceof WC_Order_Item_Product && ! $item->meta_exists( self::SNAP_META ) ) {
-				$this->stamp_item( $item );
-			}
-		} catch ( \Throwable $e ) {
-			$this->log( 'snapshot_new_item failed: ' . $e->getMessage() );
+		if ( $item instanceof WC_Order_Item_Product && ! $item->meta_exists( self::SNAP_META ) ) {
+			$this->stamp_item( $item );
 		}
 	}
 
 	/* =====================================================================
-	 * Backfill of un-snapshotted order lines (Action Scheduler)
+	 * Backfill of lines without a snapshot (Action Scheduler)
 	 *
-	 * Works on order LINE ITEMS with plain SQL — the order-items tables are the
-	 * same for HPOS and the legacy store — so it never loads or re-saves whole
-	 * orders (no save hooks, cache flushes or HPOS sync). Each batch is ~4
-	 * queries for up to 200 lines, and runs in Action Scheduler's background
-	 * requests, never in a visitor's page load.
+	 * Plain SQL on the order-items tables (same for HPOS and legacy): no orders
+	 * are loaded or saved. Runs in Action Scheduler's background requests.
 	 * ================================================================== */
 
 	/**
-	 * Ensure the backfill is scheduled when there is work to do.
-	 *
-	 * Modules boot on `init` priority 0, but Action Scheduler only initialises on
-	 * `init` priority 1 — enqueueing before then is a silent no-op. So when AS
-	 * isn't ready yet, defer to `action_scheduler_init`.
+	 * Schedule the backfill if needed. Modules boot at init:0 but Action Scheduler
+	 * initialises at init:1, so defer until it is ready.
 	 */
 	private function maybe_schedule_backfill(): void {
-		if ( ! function_exists( 'as_enqueue_async_action' ) ) {
+		if ( ! function_exists( 'as_has_scheduled_action' ) ) {
 			return;
 		}
 
-		if ( class_exists( 'ActionScheduler' ) && ! ActionScheduler::is_initialized() ) {
-			if ( false === has_action( 'action_scheduler_init', array( $this, 'schedule_backfill' ) ) ) {
-				add_action( 'action_scheduler_init', array( $this, 'schedule_backfill' ) );
-			}
-			return;
+		if ( ActionScheduler::is_initialized() ) {
+			$this->schedule_backfill();
+		} elseif ( false === has_action( 'action_scheduler_init', array( $this, 'schedule_backfill' ) ) ) {
+			add_action( 'action_scheduler_init', array( $this, 'schedule_backfill' ) );
 		}
-
-		$this->schedule_backfill();
 	}
 
 	/**
-	 * Queue a backfill batch if one is needed and none is pending.
-	 *
-	 * Once a pass has finished, re-check at most twice a day whether any lines
-	 * appeared without a snapshot (e.g. orders placed while the plugin was
-	 * switched off by FTP, where no deactivate/activate hooks fire). That check
-	 * only scans lines above the high-water mark, so it is a tiny indexed query.
+	 * Queue a batch when there is work. Once a pass is done, check twice a day for
+	 * lines added above the watermark while the plugin was off without hooks
+	 * (e.g. FTP). That check looks only above the watermark and moves it up
+	 * when clean, so it stays tiny.
 	 */
 	public function schedule_backfill(): void {
-		// Throttles use AUTOLOADED timestamp options rather than transients:
-		// WordPress reads autoloaded options in its single startup query, so on
-		// an ordinary page load this whole check costs zero extra DB queries.
+		global $wpdb;
+
 		$now = time();
 
 		if ( get_option( self::BACKFILL_DONE ) ) {
@@ -1084,88 +1008,82 @@ class Order_Badges_Module extends FFLA_Module {
 				return;
 			}
 			update_option( self::NEXT_GAP_CHECK, $now + 12 * HOUR_IN_SECONDS, true );
-			if ( empty( $this->unsnapshotted_item_ids( (int) get_option( self::BACKFILL_WATERMARK, 0 ), 1 ) ) ) {
+
+			$watermark = (int) get_option( self::BACKFILL_WATERMARK, 0 );
+			if ( empty( $this->unsnapshotted_item_ids( $watermark, 1 ) ) ) {
+				update_option( self::BACKFILL_WATERMARK, (int) $wpdb->get_var( "SELECT MAX(order_item_id) FROM {$wpdb->prefix}woocommerce_order_items" ), false ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 				return;
 			}
-			// Gap found: resume from the watermark instead of the beginning.
-			delete_option( self::BACKFILL_DONE );
-			update_option( self::BACKFILL_CURSOR, (int) get_option( self::BACKFILL_WATERMARK, 0 ), false );
-			update_option( self::NEXT_QUEUE_CHECK, 0, true );
+			$this->restart_backfill( $watermark );
 		}
 
 		if ( $now < (int) get_option( self::NEXT_QUEUE_CHECK, 0 ) ) {
 			return;
 		}
-		if ( ! function_exists( 'as_has_scheduled_action' ) ) {
-			return;
-		}
 
 		if ( ! as_has_scheduled_action( self::BACKFILL_HOOK, array(), self::BACKFILL_GROUP )
 			&& ! as_enqueue_async_action( self::BACKFILL_HOOK, array(), self::BACKFILL_GROUP ) ) {
-			return; // Not queued; try again on a later request.
+			return; // Not queued; retry on a later request.
 		}
 
-		// Only throttle once an action actually exists, so a failed enqueue retries.
 		update_option( self::NEXT_QUEUE_CHECK, $now + 5 * MINUTE_IN_SECONDS, true );
 	}
 
 	/**
-	 * Stamp one batch of order lines that have no snapshot yet, then chain the
-	 * next batch. Resumable (cursor), idempotent (only lines missing a snapshot
-	 * are selected) and isolated (a failure stops this batch only; the chain is
-	 * re-queued by schedule_backfill on a later request).
+	 * Restart the backfill from an order_item_id. DONE is set to 0 (not deleted)
+	 * so it stays an autoloaded, query-free check.
+	 */
+	private function restart_backfill( int $from_item_id ): void {
+		update_option( self::BACKFILL_DONE, 0, true );
+		update_option( self::BACKFILL_CURSOR, $from_item_id, false );
+		update_option( self::NEXT_QUEUE_CHECK, 0, true );
+	}
+
+	/**
+	 * Stamp one batch, then chain the next. The cursor only advances after a
+	 * successful write, so a failed batch is retried, never skipped.
 	 */
 	public function run_backfill_batch(): void {
 		if ( get_option( self::BACKFILL_DONE ) ) {
 			return;
 		}
 
-		$limit  = max( 1, (int) apply_filters( 'ffla_ob_backfill_batch_size', self::BACKFILL_BATCH ) );
-		$cursor = (int) get_option( self::BACKFILL_CURSOR, 0 );
+		$limit    = max( 1, (int) apply_filters( 'ffla_ob_backfill_batch_size', self::BACKFILL_BATCH ) );
+		$cursor   = (int) get_option( self::BACKFILL_CURSOR, 0 );
+		$item_ids = $this->unsnapshotted_item_ids( $cursor, $limit );
 
-		try {
-			$item_ids = $this->unsnapshotted_item_ids( $cursor, $limit );
-
-			if ( empty( $item_ids ) ) {
-				$this->finish_backfill( $cursor );
-				return;
-			}
-
-			$this->stamp_items_bulk( $item_ids );
-			update_option( self::BACKFILL_CURSOR, max( $item_ids ), false );
-		} catch ( \Throwable $e ) {
-			$this->log( 'backfill batch failed after item ' . $cursor . ': ' . $e->getMessage() );
+		if ( empty( $item_ids ) ) {
+			$this->finish_backfill();
 			return;
 		}
+
+		if ( ! $this->stamp_items_bulk( $item_ids ) ) {
+			return; // Cursor unchanged; schedule_backfill re-queues it later.
+		}
+		update_option( self::BACKFILL_CURSOR, max( $item_ids ), false );
 
 		if ( count( $item_ids ) < $limit ) {
-			$this->finish_backfill( max( $item_ids ) );
-			return;
-		}
-
-		if ( function_exists( 'as_enqueue_async_action' ) ) {
+			$this->finish_backfill();
+		} else {
 			as_enqueue_async_action( self::BACKFILL_HOOK, array(), self::BACKFILL_GROUP );
 		}
 	}
 
 	/**
-	 * Mark the pass complete and remember how far it got.
+	 * Mark the pass complete. New lines are stamped at creation, so everything up
+	 * to the current newest line is covered.
 	 */
-	private function finish_backfill( int $last_item_id ): void {
+	private function finish_backfill(): void {
 		global $wpdb;
 
-		// Everything up to the newest line now has a snapshot (new lines are
-		// stamped at creation), so the watermark is the current max item ID.
-		$max = (int) $wpdb->get_var( "SELECT MAX(order_item_id) FROM {$wpdb->prefix}woocommerce_order_items" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
-		update_option( self::BACKFILL_WATERMARK, max( $max, $last_item_id ), false );
+		update_option( self::BACKFILL_WATERMARK, (int) $wpdb->get_var( "SELECT MAX(order_item_id) FROM {$wpdb->prefix}woocommerce_order_items" ), false ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 		update_option( self::BACKFILL_DONE, 1, true );
 		delete_option( self::BACKFILL_CURSOR );
 	}
 
 	/**
-	 * Product line items above $after_id that have no tag snapshot yet, oldest
-	 * first. Index-friendly: a primary-key range walk joined on the indexed
-	 * order_item_id of the item-meta table.
+	 * Product lines above $after_id with no snapshot, oldest first (primary-key
+	 * range walk + indexed join).
 	 *
 	 * @return int[]
 	 */
@@ -1194,47 +1112,50 @@ class Order_Badges_Module extends FFLA_Module {
 	}
 
 	/**
-	 * Write snapshots for many line items at once: read their product IDs in one
-	 * query, warm the tag cache in one query, then insert every snapshot with a
-	 * single multi-row INSERT. Clears each item's meta cache so a persistent
-	 * object cache can't serve the pre-backfill (empty) meta.
+	 * Snapshot many lines at once: product IDs in one query, posts + tags primed
+	 * in one call, one multi-row INSERT. Lines whose product is gone are skipped.
+	 * Returns false if the write failed.
 	 *
 	 * @param int[] $item_ids
 	 */
-	private function stamp_items_bulk( array $item_ids ): void {
+	private function stamp_items_bulk( array $item_ids ): bool {
 		global $wpdb;
 
-		// The IN (...) list and VALUES rows below are built from generated %d/%s
-		// placeholder tokens only; every value is bound through prepare().
+		// Placeholder lists below are generated %d/%s tokens; all values go through prepare().
 		// phpcs:disable WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
-		$placeholders = implode( ',', array_fill( 0, count( $item_ids ), '%d' ) );
-		$rows         = $wpdb->get_results(
+		$in         = implode( ',', array_fill( 0, count( $item_ids ), '%d' ) );
+		$product_of = $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT order_item_id, meta_value FROM {$wpdb->prefix}woocommerce_order_itemmeta
-				WHERE meta_key = '_product_id' AND order_item_id IN ($placeholders)",
+				WHERE meta_key = '_product_id' AND order_item_id IN ($in)",
 				$item_ids
-			)
+			),
+			OBJECT_K
 		);
 
-		$product_of = array();
-		foreach ( (array) $rows as $row ) {
-			$product_of[ (int) $row->order_item_id ] = (int) $row->meta_value;
-		}
-
-		$product_ids = array_values( array_unique( array_filter( $product_of ) ) );
+		$product_ids = array_unique( array_filter( array_map( 'intval', wp_list_pluck( $product_of, 'meta_value' ) ) ) );
 		if ( $product_ids ) {
-			update_object_term_cache( $product_ids, 'product' );
+			_prime_post_caches( $product_ids, true, false ); // Posts + their terms.
 		}
 
-		$values = array();
-		$args   = array();
+		$values  = array();
+		$args    = array();
+		$stamped = array();
 		foreach ( $item_ids as $item_id ) {
-			$snapshot = $this->product_tag_snapshot( $product_of[ $item_id ] ?? 0, true );
-			$values[] = '(%d, %s, %s)';
-			array_push( $args, $item_id, self::SNAP_META, maybe_serialize( $snapshot ) );
+			$product_id = isset( $product_of[ $item_id ] ) ? (int) $product_of[ $item_id ]->meta_value : 0;
+			if ( ! $this->product_exists( $product_id ) ) {
+				continue;
+			}
+			$values[]  = '(%d, %s, %s)';
+			$stamped[] = $item_id;
+			array_push( $args, $item_id, self::SNAP_META, maybe_serialize( $this->product_tag_snapshot( $product_id ) ) );
 		}
 
-		$wpdb->query(
+		if ( ! $values ) {
+			return true;
+		}
+
+		$ok = $wpdb->query(
 			$wpdb->prepare(
 				"INSERT INTO {$wpdb->prefix}woocommerce_order_itemmeta (order_item_id, meta_key, meta_value) VALUES " . implode( ',', $values ),
 				$args
@@ -1242,16 +1163,20 @@ class Order_Badges_Module extends FFLA_Module {
 		);
 		// phpcs:enable
 
-		// Same invalidation WC_Data::clear_cache() does for an order item, so a
-		// persistent object cache can't serve the pre-backfill (no snapshot) meta.
-		$has_helper = class_exists( 'WC_Cache_Helper' );
-		foreach ( $item_ids as $item_id ) {
+		if ( false === $ok ) {
+			$this->log( 'backfill insert failed: ' . $wpdb->last_error );
+			return false;
+		}
+
+		// What WC_Data::clear_cache() does, so a persistent object cache can't serve
+		// the old (no snapshot) meta.
+		foreach ( $stamped as $item_id ) {
 			wp_cache_delete( $item_id, 'order_item_meta' );
 			wp_cache_delete( 'item-' . $item_id, 'order-items' );
-			if ( $has_helper ) {
-				WC_Cache_Helper::invalidate_cache_group( 'object_' . $item_id );
-			}
+			WC_Cache_Helper::invalidate_cache_group( 'object_' . $item_id );
 		}
+
+		return true;
 	}
 
 	/**

@@ -56,8 +56,7 @@ if (!class_exists('FFL_Funnels_Addons')):
         private function __construct()
         {
             $this->includes();
-            $this->maybe_migrate_tax_reports_module();
-            $this->maybe_migrate_order_badges_module();
+            $this->maybe_run_migrations();
             $this->register_modules();
             $this->define_compat_constants();
             $this->init_hooks();
@@ -123,6 +122,23 @@ if (!class_exists('FFL_Funnels_Addons')):
         }
 
         /**
+         * Run one-time migrations behind a single autoloaded version option, so a
+         * normal request costs no query (each migration's own flag is not
+         * autoloaded). Bump the number when adding a migration.
+         */
+        private function maybe_run_migrations(): void
+        {
+            if ((int) get_option('ffla_migrations_version', 0) >= 1) {
+                return;
+            }
+
+            $this->maybe_migrate_tax_reports_module();
+            $this->maybe_migrate_order_badges_module();
+
+            update_option('ffla_migrations_version', 1, true);
+        }
+
+        /**
          * Preserve the report access existing Tax Resolver customers had before
          * reports became an independently toggleable module.
          */
@@ -150,14 +166,10 @@ if (!class_exists('FFL_Funnels_Addons')):
          * The Order Badges module was renamed from `order-source` before release.
          * Carry existing sites across: keep the module enabled under its new ID
          * and move its settings to the new option, so updating never silently
-         * switches the module off or loses its configuration. Runs once.
+         * switches the module off or loses its configuration.
          */
         private function maybe_migrate_order_badges_module(): void
         {
-            if ((string) get_option('ffla_order_badges_module_migrated', '') === '1') {
-                return;
-            }
-
             $active_ids = get_option('ffla_active_modules', false);
             if (is_array($active_ids) && in_array('order-source', $active_ids, true)) {
                 $active_ids   = array_diff($active_ids, ['order-source']);
@@ -172,8 +184,6 @@ if (!class_exists('FFL_Funnels_Addons')):
                 }
                 delete_option('ffla_order_source_settings');
             }
-
-            update_option('ffla_order_badges_module_migrated', '1', false);
         }
 
         /**
