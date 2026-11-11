@@ -57,6 +57,7 @@ if (!class_exists('FFL_Funnels_Addons')):
         {
             $this->includes();
             $this->maybe_migrate_tax_reports_module();
+            $this->maybe_migrate_order_badges_module();
             $this->register_modules();
             $this->define_compat_constants();
             $this->init_hooks();
@@ -143,6 +144,36 @@ if (!class_exists('FFL_Funnels_Addons')):
             }
 
             update_option('ffla_tax_reports_module_migrated', '1', false);
+        }
+
+        /**
+         * The Order Badges module was renamed from `order-source` before release.
+         * Carry existing sites across: keep the module enabled under its new ID
+         * and move its settings to the new option, so updating never silently
+         * switches the module off or loses its configuration. Runs once.
+         */
+        private function maybe_migrate_order_badges_module(): void
+        {
+            if ((string) get_option('ffla_order_badges_module_migrated', '') === '1') {
+                return;
+            }
+
+            $active_ids = get_option('ffla_active_modules', false);
+            if (is_array($active_ids) && in_array('order-source', $active_ids, true)) {
+                $active_ids   = array_diff($active_ids, ['order-source']);
+                $active_ids[] = 'order-badges';
+                update_option('ffla_active_modules', array_values(array_unique($active_ids)));
+            }
+
+            $legacy = get_option('ffla_order_source_settings', false);
+            if (false !== $legacy) {
+                if (false === get_option('ffla_order_badges_settings', false) && is_array($legacy)) {
+                    update_option('ffla_order_badges_settings', $legacy);
+                }
+                delete_option('ffla_order_source_settings');
+            }
+
+            update_option('ffla_order_badges_module_migrated', '1', false);
         }
 
         /**
