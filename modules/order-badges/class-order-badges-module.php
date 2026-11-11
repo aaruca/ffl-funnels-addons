@@ -653,26 +653,11 @@ class Order_Badges_Module extends FFLA_Module {
 			}
 		);
 
-		$tag_names = array();
-		foreach ( $this->settings()['instore_tags'] as $term_id ) {
-			$term = get_term( (int) $term_id, 'product_tag' );
-			if ( $term instanceof WP_Term ) {
-				$tag_names[] = $term->name;
-			}
-		}
-
 		echo '<div class="ffla-ob-summary">';
 		$this->print_summary_group( __( 'All orders', 'ffl-funnels-addons' ), $overall );
 		if ( null !== $view ) {
 			$this->print_summary_group( __( 'Orders shown below', 'ffl-funnels-addons' ), $view );
 		}
-		echo '<p class="ffla-ob-summary__hint">' . esc_html(
-			sprintf(
-				/* translators: %s: comma-separated in-store product tag names. */
-				__( 'In Store = every product in the order has an in-store tag (%s). Online Only = none do. Mixed = some do.', 'ffl-funnels-addons' ),
-				implode( ', ', $tag_names )
-			)
-		) . '</p>';
 		echo '</div>';
 	}
 
@@ -1414,9 +1399,7 @@ class Order_Badges_Module extends FFLA_Module {
 				background: color-mix(in srgb, var(--ffla-c, #777) 14%, white);
 				color: color-mix(in srgb, var(--ffla-c, #777) 72%, black);
 			}
-			.ffla-ob-summary__line,
-			.ffla-ob-summary__hint { margin: 0; }
-			.ffla-ob-summary__hint { margin-top: 2px; color: #646970; font-size: 12px; }
+			.ffla-ob-summary__line { margin: 0; }
 			.ffla-ob-order-badge .ffla-ob-order-badge__label {
 				display: block;
 				font-weight: 600;
