@@ -4,6 +4,20 @@ All notable changes to FFL Funnels Addons are documented in this file.
 
 ## [Unreleased]
 
+## [1.58.0] - 2026-11-11
+
+### Fixed
+- **Order Badges: past orders could change their badges.** Badges were worked out from each product's current tags every time an order was shown, so retagging a product re-labelled all of its past orders (an order placed as Online Only could later show In Store), and deleting a product removed its badges from old orders. Each product line now saves its product's tags (ID and name) when the line is created, on every path (checkout, admin, POS, REST and Store API), and badges are read from that saved copy: retagging or deleting a product no longer changes past orders. Which tags show as badges, which count as in-store and the colours still follow the current settings. Saving the tags can never block checkout.
+- **Order Badges: existing orders.** Lines created before this version are filled in once in the background by Action Scheduler (`ffla_ob_backfill_batch`, 200 lines per batch, plain SQL on the order-item tables, so no order is loaded or re-saved), with the tags their products have when the store updates. Tags changed before the update cannot be recovered. Lines added while the module or plugin was off are filled in when it is switched back on and by a twice-daily check; a line not filled in yet is filled in the first time its order is shown. Lines whose product was deleted before its tags were saved still show no badge.
+
+### Added
+- **Order Badges:** a summary above **WooCommerce → Orders** (HPOS and legacy) with how many orders are **In Store**, **Online Only** or **Mixed**: for all orders and, when a status tab, search or filter is active, for the orders shown below. It appears once in-store tags are set. Counts come from one database query over the saved tags and are cached for 3 minutes (the cache resets when the in-store tags change).
+
+### Changed
+- One-time upgrade steps run behind a single autoloaded option (`ffla_migrations_version`), so normal requests no longer check them. Sites that ran a pre-release build with the Order Badges module under its old ID `order-source` keep it on and keep its settings.
+- Uninstall also removes the Order Badges background options, cached counts and queued actions. The tags saved on order lines stay with the orders, like WooCommerce keeps product names and prices.
+- `order-badges-smoke.php` covers the saved tags (36 checks).
+
 ## [1.57.0] - 2026-11-04
 
 ### Added
