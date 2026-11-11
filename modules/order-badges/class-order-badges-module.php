@@ -674,7 +674,10 @@ class Order_Badges_Module extends FFLA_Module {
 	 * @return array<int, array{id:int,name:string}>
 	 */
 	private function stamp_item( WC_Order_Item_Product $item ): array {
-		$snapshot = $this->product_tag_snapshot( (int) $item->get_product_id() );
+		// Always read the product's tags fresh here: this runs as a line is created
+		// (or self-heals), and a per-request memo could be stale if tags changed
+		// earlier in the same request (imports, CLI, POS batches).
+		$snapshot = $this->product_tag_snapshot( (int) $item->get_product_id(), false );
 		try {
 			$item->update_meta_data( self::SNAP_META, $snapshot );
 			$item->save_meta_data();
@@ -687,16 +690,18 @@ class Order_Badges_Module extends FFLA_Module {
 	}
 
 	/**
-	 * The product's product_tag terms as a list of {id,name}, memoised per request.
+	 * The product's product_tag terms as a list of {id,name}. Memoised per request
+	 * only when $memoize is true (the bulk backfill, where many lines share a
+	 * product and tags can't change mid-batch).
 	 * An empty list is a valid snapshot ("the product had no tags").
 	 *
 	 * @return array<int, array{id:int,name:string}>
 	 */
-	private function product_tag_snapshot( int $product_id ): array {
+	private function product_tag_snapshot( int $product_id, bool $memoize ): array {
 		if ( $product_id <= 0 ) {
 			return array();
 		}
-		if ( isset( $this->product_cache[ $product_id ] ) ) {
+		if ( $memoize && isset( $this->product_cache[ $product_id ] ) ) {
 			return $this->product_cache[ $product_id ];
 		}
 
@@ -711,7 +716,9 @@ class Order_Badges_Module extends FFLA_Module {
 			}
 		}
 
-		$this->product_cache[ $product_id ] = $snapshot;
+		if ( $memoize ) {
+			$this->product_cache[ $product_id ] = $snapshot;
+		}
 
 		return $snapshot;
 	}
@@ -929,7 +936,7 @@ class Order_Badges_Module extends FFLA_Module {
 		$values = array();
 		$args   = array();
 		foreach ( $item_ids as $item_id ) {
-			$snapshot = $this->product_tag_snapshot( $product_of[ $item_id ] ?? 0 );
+			$snapshot = $this->product_tag_snapshot( $product_of[ $item_id ] ?? 0, true );
 			$values[] = '(%d, %s, %s)';
 			array_push( $args, $item_id, self::SNAP_META, maybe_serialize( $snapshot ) );
 		}
