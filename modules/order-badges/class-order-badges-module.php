@@ -68,6 +68,9 @@ class Order_Badges_Module extends FFLA_Module {
 	/** Line items processed per backfill batch (filterable). */
 	private const BACKFILL_BATCH = 200;
 
+	/** Colour of the "Mixed" total in the orders-list summary. */
+	private const MIXED_COLOR = '#b45309';
+
 	/** Default colour for the "Online Only" badge. */
 	private const DEFAULT_ONLINE_COLOR = '#0f766e';
 
@@ -76,6 +79,9 @@ class Order_Badges_Module extends FFLA_Module {
 
 	/** Per-request memo: product_id => list of {id,name} tag snapshots. */
 	private $product_cache = array();
+
+	/** Query args of the HPOS orders list being rendered (for "This view"). */
+	private $list_args = null;
 
 	/** Per-request memo of the parsed settings. */
 	private $settings_cache = null;
@@ -117,6 +123,13 @@ class Order_Badges_Module extends FFLA_Module {
 		add_action( 'manage_woocommerce_page_wc-orders_custom_column', array( $this, 'render_column' ), 10, 2 );
 		add_filter( 'manage_edit-shop_order_columns', array( $this, 'add_column' ) );
 		add_action( 'manage_shop_order_posts_custom_column', array( $this, 'render_column' ), 10, 2 );
+
+		// In Store / Online Only / Mixed totals above the Orders table: capture the
+		// list's exact query (HPOS), then print a full-width line just above the
+		// status links via WordPress's views_{screen} filter (left-aligned with the table).
+		add_filter( 'woocommerce_order_list_table_prepare_items_query_args', array( $this, 'capture_list_args' ), PHP_INT_MAX );
+		add_filter( 'views_woocommerce_page_wc-orders', array( $this, 'render_summary_hpos' ) );
+		add_filter( 'views_edit-shop_order', array( $this, 'render_summary_legacy' ) );
 
 		// Edit Order screen: order-level badges + a badge set on each product line.
 		add_action( 'woocommerce_admin_order_data_after_order_details', array( $this, 'render_order_badge' ) );
@@ -513,6 +526,285 @@ class Order_Badges_Module extends FFLA_Module {
 		}
 
 		echo $this->badges_html( $this->order_badge_set( $order ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built from escaped parts.
+	}
+
+	/* =====================================================================
+	 * Orders-list summary: In Store / Online Only / Mixed totals
+	 *
+	 * Classification follows the settings only: a line is in-store when its
+	 * frozen snapshot contains ANY configured in-store tag. All lines in-store =
+	 * In Store, none = Online Only, otherwise Mixed. Counted with one SQL
+	 * aggregation over the snapshots (no orders are loaded).
+	 * ================================================================== */
+
+	/**
+	 * Remember the HPOS list table's query args so "This view" counts exactly
+	 * what the table is showing (status tab, search, date, customer, channel…).
+	 *
+	 * @param array<string, mixed> $args
+	 * @return array<string, mixed>
+	 */
+	public function capture_list_args( $args ) {
+		if ( is_array( $args ) && 'shop_order' === ( $args['type'] ?? 'shop_order' ) ) {
+			$this->list_args = $args;
+		}
+
+		return $args;
+	}
+
+	/**
+	 * HPOS orders screen. Hooked to the views filter purely for its position:
+	 * prints the summary just above the status links and returns $views as-is.
+	 *
+	 * @param array<string, string> $views
+	 * @return array<string, string>
+	 */
+	public function render_summary_hpos( $views ) {
+		if ( ! is_array( $this->list_args ) ) {
+			return $views;
+		}
+
+		$args = $this->list_args;
+		foreach ( array( 'limit', 'page', 'paginate', 'no_found_rows', 'orderby', 'order' ) as $key ) {
+			unset( $args[ $key ] );
+		}
+
+		$default  = $this->default_list_statuses();
+		$statuses = array_values( (array) ( $args['status'] ?? array() ) );
+		sort( $statuses );
+		$filtered = $statuses !== $default || array_diff( array_keys( $args ), array( 'type', 'status' ) );
+
+		$view = null;
+		if ( $filtered ) {
+			$view = $this->cached_counts(
+				'view_' . md5( wp_json_encode( $args ) ),
+				function () use ( $args ) {
+					return $this->query_order_ids( $args );
+				}
+			);
+		}
+
+		$this->print_summary( $view );
+
+		return $views;
+	}
+
+	/**
+	 * Legacy (posts-based) orders screen; same views-filter placement.
+	 *
+	 * @param array<string, string> $views
+	 * @return array<string, string>
+	 */
+	public function render_summary_legacy( $views ) {
+		global $wp_query;
+
+		if ( ! $wp_query instanceof WP_Query ) {
+			return $views;
+		}
+
+		$filtered = false;
+		foreach ( array( 'post_status', 's', 'm', '_customer_user', '_created_via' ) as $key ) {
+			// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only list filters.
+			if ( ! empty( $_GET[ $key ] ) && 'all' !== $_GET[ $key ] ) {
+				$filtered = true;
+			}
+		}
+
+		$view = null;
+		if ( $filtered ) {
+			$vars = array_merge(
+				$wp_query->query_vars,
+				array(
+					'fields'         => 'ids',
+					'posts_per_page' => -1,
+					'paged'          => 1,
+					'no_found_rows'  => true,
+				)
+			);
+			$view = $this->cached_counts(
+				'view_' . md5( wp_json_encode( $vars ) ),
+				static function () use ( $vars ) {
+					$query = new WP_Query( $vars );
+					return array_map( 'intval', (array) $query->posts );
+				}
+			);
+		}
+
+		$this->print_summary( $view );
+
+		return $views;
+	}
+
+	/**
+	 * Output the summary bar. Hidden until in-store tags are configured, since
+	 * the classification is undefined without them.
+	 *
+	 * @param array{in_store:int,online:int,mixed:int}|null $view Counts for the current filtered view, or null when unfiltered.
+	 */
+	private function print_summary( ?array $view ): void {
+		if ( empty( $this->settings()['instore_tags'] ) ) {
+			return;
+		}
+
+		$overall = $this->cached_counts(
+			'overall',
+			function () {
+				return $this->query_order_ids( array( 'status' => $this->default_list_statuses() ) );
+			}
+		);
+
+		echo '<p class="ffla-ob-summary">';
+		$this->print_summary_group( __( 'Overall', 'ffl-funnels-addons' ), $overall );
+		if ( null !== $view ) {
+			echo '<span class="ffla-ob-summary__sep" aria-hidden="true"></span>';
+			$this->print_summary_group( __( 'This view', 'ffl-funnels-addons' ), $view );
+		}
+		echo '</p>';
+	}
+
+	/**
+	 * Counts for a set of orders, cached for a few minutes. The key includes the
+	 * in-store tag settings, so changing them never serves stale numbers.
+	 *
+	 * @param string   $key     Distinguishes overall vs. a particular filter.
+	 * @param callable $get_ids Returns the order IDs to classify (only called on a cache miss).
+	 * @return array{in_store:int,online:int,mixed:int}
+	 */
+	private function cached_counts( string $key, callable $get_ids ): array {
+		$cache_key = 'ffla_ob_sum_' . md5( $key . '|' . wp_json_encode( $this->settings()['instore_tags'] ) );
+		$counts    = get_transient( $cache_key );
+		if ( ! is_array( $counts ) ) {
+			$counts = $this->classify_orders( (array) $get_ids() );
+			set_transient( $cache_key, $counts, 3 * MINUTE_IN_SECONDS );
+		}
+
+		return $counts;
+	}
+
+	/**
+	 * One labelled group of the three totals.
+	 *
+	 * @param array{in_store:int,online:int,mixed:int} $counts
+	 */
+	private function print_summary_group( string $label, array $counts ): void {
+		$settings = $this->settings();
+		$groups   = array(
+			array( __( 'In Store', 'ffl-funnels-addons' ), $counts['in_store'], $this->color_for( (int) $settings['instore_tags'][0] ) ),
+			array( __( 'Online Only', 'ffl-funnels-addons' ), $counts['online'], $settings['online_color'] ),
+			array( __( 'Mixed', 'ffl-funnels-addons' ), $counts['mixed'], self::MIXED_COLOR ),
+		);
+
+		$parts = array();
+		foreach ( $groups as $group ) {
+			$parts[] = '<mark class="ffla-ob-summary__term" style="--ffla-c:' . esc_attr( $group[2] ) . '">' . esc_html( $group[0] ) . '</mark> '
+				. '<span class="ffla-ob-summary__num">' . esc_html( number_format_i18n( $group[1] ) ) . '</span>';
+		}
+
+		echo '<span class="ffla-ob-summary__group"><span class="ffla-ob-summary__label">' . esc_html( $label ) . ':</span> '
+			. implode( '<span class="ffla-ob-summary__dot" aria-hidden="true"> · </span>', $parts ) // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built from escaped parts.
+			. '</span>';
+	}
+
+	/**
+	 * The statuses WooCommerce's "All" orders view lists.
+	 *
+	 * @return string[]
+	 */
+	private function default_list_statuses(): array {
+		$statuses = array_values(
+			(array) apply_filters(
+				'woocommerce_shop_order_list_table_default_statuses',
+				array_intersect( array_keys( wc_get_order_statuses() ), get_post_stati( array( 'show_in_admin_all_list' => true ), 'names' ) )
+			)
+		);
+		sort( $statuses );
+
+		return $statuses;
+	}
+
+	/**
+	 * Order IDs matching wc_get_orders() args (HPOS and legacy alike).
+	 *
+	 * @param array<string, mixed> $args
+	 * @return int[]
+	 */
+	private function query_order_ids( array $args ): array {
+		$ids = wc_get_orders(
+			array_merge(
+				array( 'type' => 'shop_order' ),
+				$args,
+				array(
+					'limit'    => -1,
+					'paginate' => false,
+					'return'   => 'ids',
+				)
+			)
+		);
+
+		return array_map( 'intval', is_array( $ids ) ? $ids : array() );
+	}
+
+	/**
+	 * Count orders by type from their line snapshots, in chunks so the IN list
+	 * stays bounded. Lines not yet snapshotted are left out until backfilled.
+	 *
+	 * @param int[] $order_ids
+	 * @return array{in_store:int,online:int,mixed:int}
+	 */
+	private function classify_orders( array $order_ids ): array {
+		global $wpdb;
+
+		$counts  = array(
+			'in_store' => 0,
+			'online'   => 0,
+			'mixed'    => 0,
+		);
+		$instore = $this->settings()['instore_tags'];
+		if ( empty( $order_ids ) || empty( $instore ) ) {
+			return $counts;
+		}
+
+		// A line is in-store when its serialized snapshot holds one of the in-store
+		// term IDs. `s:2:"id";i:<id>;` is exact: the trailing ";" stops 36 matching 360.
+		$likes  = array();
+		$params = array();
+		foreach ( $instore as $term_id ) {
+			$likes[]  = 'm.meta_value LIKE %s';
+			$params[] = '%' . $wpdb->esc_like( 's:2:"id";i:' . (int) $term_id . ';' ) . '%';
+		}
+		$is_instore = '(' . implode( ' OR ', $likes ) . ')';
+
+		foreach ( array_chunk( $order_ids, 5000 ) as $chunk ) {
+			$in = implode( ',', array_fill( 0, count( $chunk ), '%d' ) );
+			// phpcs:disable WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- $is_instore/$in are generated placeholder tokens; every value is bound via prepare().
+			$row = $wpdb->get_row(
+				$wpdb->prepare(
+					"SELECT
+						COALESCE(SUM(all_in = 1), 0) AS in_store,
+						COALESCE(SUM(any_in = 0), 0) AS online,
+						COALESCE(SUM(any_in = 1 AND all_in = 0), 0) AS mixed
+					FROM (
+						SELECT oi.order_id,
+							MAX(CASE WHEN $is_instore THEN 1 ELSE 0 END) AS any_in,
+							MIN(CASE WHEN $is_instore THEN 1 ELSE 0 END) AS all_in
+						FROM {$wpdb->prefix}woocommerce_order_items oi
+						INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta m
+							ON m.order_item_id = oi.order_item_id AND m.meta_key = %s
+						WHERE oi.order_item_type = 'line_item' AND oi.order_id IN ($in)
+						GROUP BY oi.order_id
+					) t",
+					array_merge( $params, $params, array( self::SNAP_META ), $chunk )
+				)
+			);
+			// phpcs:enable
+			if ( $row ) {
+				$counts['in_store'] += (int) $row->in_store;
+				$counts['online']   += (int) $row->online;
+				$counts['mixed']    += (int) $row->mixed;
+			}
+		}
+
+		return $counts;
 	}
 
 	/* =====================================================================
@@ -1083,6 +1375,39 @@ class Order_Badges_Module extends FFLA_Module {
 				color: color-mix(in srgb, var(--ffla-c, #777) 72%, black);
 			}
 			td.name .ffla-ob-badges { margin-top: 4px; }
+			/* Orders-list summary: one readable, left-aligned line in a soft box. */
+			.ffla-ob-summary {
+				clear: both;
+				margin: 12px 0 8px;
+				padding: 8px 12px;
+				font-size: 13px;
+				line-height: 1.8;
+				color: #1d2327;
+				background: #fff;
+				border: 1px solid #dcdcde;
+				border-left: 4px solid var(--wp-admin-theme-color, #2271b1);
+				border-radius: 4px;
+			}
+			.ffla-ob-summary__label { font-weight: 600; }
+			.ffla-ob-summary__term {
+				padding: 1px 6px;
+				border-radius: 3px;
+				font-weight: 600;
+				background: #f0f0f1;
+				color: #1d2327;
+				background: color-mix(in srgb, var(--ffla-c, #777) 14%, white);
+				color: color-mix(in srgb, var(--ffla-c, #777) 72%, black);
+			}
+			.ffla-ob-summary__num { font-weight: 600; }
+			.ffla-ob-summary__dot { color: #8c8f94; }
+			.ffla-ob-summary__sep {
+				display: inline-block;
+				width: 1px;
+				height: 1em;
+				margin: 0 12px;
+				vertical-align: middle;
+				background: #c3c4c7;
+			}
 			.ffla-ob-order-badge .ffla-ob-order-badge__label {
 				display: block;
 				font-weight: 600;
