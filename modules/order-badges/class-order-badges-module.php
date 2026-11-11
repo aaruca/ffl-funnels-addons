@@ -46,15 +46,27 @@ class Order_Badges_Module extends FFLA_Module {
 	 *  list of array{id:int,name:string}. Absent = not yet snapshotted. */
 	private const SNAP_META = '_ffla_ob_tags';
 
-	/** Order meta flag: this order has been processed by the backfill. */
-	private const DONE_META = '_ffla_ob_snapshotted';
-
-	/** Action Scheduler hook + group for the one-time existing-orders backfill. */
+	/** Action Scheduler hook + group for the backfill of un-snapshotted items. */
 	private const BACKFILL_HOOK  = 'ffla_ob_backfill_batch';
 	private const BACKFILL_GROUP = 'ffla-order-badges';
 
-	/** Option set once the backfill has processed every existing order. */
+	/** Option set once every existing order line has a snapshot. */
 	private const BACKFILL_DONE = 'ffla_ob_backfill_done';
+
+	/** Option: order_item_id the running backfill has reached (resume point). */
+	private const BACKFILL_CURSOR = 'ffla_ob_backfill_cursor';
+
+	/** Option: highest order_item_id known to be covered once a pass finished.
+	 *  Lines created while the module was off sit above it, so the periodic
+	 *  gap check only has to look there. */
+	private const BACKFILL_WATERMARK = 'ffla_ob_backfill_watermark';
+
+	/** Autoloaded throttle timestamps (zero-query checks on page loads). */
+	private const NEXT_QUEUE_CHECK = 'ffla_ob_next_queue_check';
+	private const NEXT_GAP_CHECK   = 'ffla_ob_next_gap_check';
+
+	/** Line items processed per backfill batch (filterable). */
+	private const BACKFILL_BATCH = 200;
 
 	/** Default colour for the "Online Only" badge. */
 	private const DEFAULT_ONLINE_COLOR = '#0f766e';
@@ -115,7 +127,14 @@ class Order_Badges_Module extends FFLA_Module {
 	}
 
 	public function activate(): void {
-		// Kick off the existing-orders backfill on install/activation.
+		// (Re-)enabling: orders may have arrived while the module was off, so
+		// re-run the backfill. It only touches lines that still lack a snapshot,
+		// so after a short outage this is a single tiny batch.
+		// Lines created while it was off sit above the high-water mark, so resume
+		// from there instead of rescanning everything (0 on a first install).
+		delete_option( self::BACKFILL_DONE );
+		update_option( self::BACKFILL_CURSOR, (int) get_option( self::BACKFILL_WATERMARK, 0 ), false );
+		update_option( self::NEXT_QUEUE_CHECK, 0, true );
 		$this->maybe_schedule_backfill();
 	}
 
@@ -715,105 +734,113 @@ class Order_Badges_Module extends FFLA_Module {
 	}
 
 	/* =====================================================================
-	 * Existing-orders backfill (Action Scheduler)
+	 * Backfill of un-snapshotted order lines (Action Scheduler)
+	 *
+	 * Works on order LINE ITEMS with plain SQL — the order-items tables are the
+	 * same for HPOS and the legacy store — so it never loads or re-saves whole
+	 * orders (no save hooks, cache flushes or HPOS sync). Each batch is ~4
+	 * queries for up to 200 lines, and runs in Action Scheduler's background
+	 * requests, never in a visitor's page load.
 	 * ================================================================== */
 
 	/**
-	 * Ensure the one-time backfill is scheduled, unless it has already finished.
-	 * Throttled so the Action Scheduler lookup runs at most occasionally.
+	 * Ensure the backfill is scheduled when there is work to do.
+	 *
+	 * Modules boot on `init` priority 0, but Action Scheduler only initialises on
+	 * `init` priority 1 — enqueueing before then is a silent no-op. So when AS
+	 * isn't ready yet, defer to `action_scheduler_init`.
 	 */
 	private function maybe_schedule_backfill(): void {
-		if ( get_option( self::BACKFILL_DONE ) ) {
+		if ( ! function_exists( 'as_enqueue_async_action' ) ) {
 			return;
 		}
-		if ( ! function_exists( 'as_enqueue_async_action' ) || ! function_exists( 'as_has_scheduled_action' ) ) {
-			return;
-		}
-		if ( get_transient( 'ffla_ob_backfill_checked' ) ) {
-			return;
-		}
-		set_transient( 'ffla_ob_backfill_checked', 1, 5 * MINUTE_IN_SECONDS );
 
-		if ( ! as_has_scheduled_action( self::BACKFILL_HOOK, array(), self::BACKFILL_GROUP ) ) {
-			as_enqueue_async_action( self::BACKFILL_HOOK, array(), self::BACKFILL_GROUP );
+		if ( class_exists( 'ActionScheduler' ) && ! ActionScheduler::is_initialized() ) {
+			if ( false === has_action( 'action_scheduler_init', array( $this, 'schedule_backfill' ) ) ) {
+				add_action( 'action_scheduler_init', array( $this, 'schedule_backfill' ) );
+			}
+			return;
 		}
+
+		$this->schedule_backfill();
 	}
 
 	/**
-	 * Process one batch of un-snapshotted orders, then chain the next. Each order
-	 * is marked done so it drops out of the query (resumable + idempotent), and
-	 * each order is isolated in try/catch so one bad order can't stall the run.
+	 * Queue a backfill batch if one is needed and none is pending.
+	 *
+	 * Once a pass has finished, re-check at most twice a day whether any lines
+	 * appeared without a snapshot (e.g. orders placed while the plugin was
+	 * switched off by FTP, where no deactivate/activate hooks fire). That check
+	 * only scans lines above the high-water mark, so it is a tiny indexed query.
 	 */
-	public function run_backfill_batch(): void {
-		if ( get_option( self::BACKFILL_DONE ) || ! function_exists( 'wc_get_orders' ) ) {
-			return;
-		}
+	public function schedule_backfill(): void {
+		// Throttles use AUTOLOADED timestamp options rather than transients:
+		// WordPress reads autoloaded options in its single startup query, so on
+		// an ordinary page load this whole check costs zero extra DB queries.
+		$now = time();
 
-		$batch     = max( 1, (int) apply_filters( 'ffla_ob_backfill_batch_size', 40 ) );
-		$order_ids = $this->backfill_order_ids( $batch );
-
-		if ( empty( $order_ids ) ) {
-			update_option( self::BACKFILL_DONE, 1, true );
-			delete_option( 'ffla_ob_backfill_cursor' );
-			return;
-		}
-
-		// No-progress guard: if the same first order keeps coming back (its done
-		// flag never sticks), stop after a few tries rather than loop forever —
-		// render-time stamping still covers those orders when viewed.
-		$first  = (int) $order_ids[0];
-		$cursor = get_option(
-            'ffla_ob_backfill_cursor',
-            array(
-				'id'    => 0,
-				'stall' => 0,
-            )
-        );
-		$cursor = is_array( $cursor ) ? $cursor : array(
-			'id'    => 0,
-			'stall' => 0,
-		);
-		if ( (int) ( $cursor['id'] ?? 0 ) === $first ) {
-			if ( (int) ( $cursor['stall'] ?? 0 ) >= 3 ) {
-				update_option( self::BACKFILL_DONE, 1, true );
-				$this->log( 'backfill stalled on order ' . $first . '; stopping.' );
+		if ( get_option( self::BACKFILL_DONE ) ) {
+			if ( $now < (int) get_option( self::NEXT_GAP_CHECK, 0 ) ) {
 				return;
 			}
-			$cursor['stall'] = (int) ( $cursor['stall'] ?? 0 ) + 1;
-		} else {
-			$cursor = array(
-				'id'    => $first,
-				'stall' => 0,
-			);
-		}
-		update_option( 'ffla_ob_backfill_cursor', $cursor, false );
-
-		foreach ( $order_ids as $order_id ) {
-			$order = null;
-			try {
-				$order = wc_get_order( $order_id );
-				if ( $order instanceof WC_Order ) {
-					foreach ( $order->get_items() as $item ) {
-						if ( $item instanceof WC_Order_Item_Product && ! $item->meta_exists( self::SNAP_META ) ) {
-							$this->stamp_item( $item );
-						}
-					}
-					$order->update_meta_data( self::DONE_META, 1 );
-					$order->save();
-				}
-			} catch ( \Throwable $e ) {
-				$this->log( 'backfill order ' . (int) $order_id . ' failed: ' . $e->getMessage() );
-				// Mark done anyway so it doesn't block the run; render-time stamping
-				// remains the safety net for it.
-				try {
-					if ( $order instanceof WC_Order ) {
-						$order->update_meta_data( self::DONE_META, 1 );
-						$order->save();
-					}
-				} catch ( \Throwable $inner ) {
-					unset( $inner );
-				}
+			update_option( self::NEXT_GAP_CHECK, $now + 12 * HOUR_IN_SECONDS, true );
+			if ( empty( $this->unsnapshotted_item_ids( (int) get_option( self::BACKFILL_WATERMARK, 0 ), 1 ) ) ) {
+				return;
 			}
+			// Gap found: resume from the watermark instead of the beginning.
+			delete_option( self::BACKFILL_DONE );
+			update_option( self::BACKFILL_CURSOR, (int) get_option( self::BACKFILL_WATERMARK, 0 ), false );
+			update_option( self::NEXT_QUEUE_CHECK, 0, true );
+		}
+
+		if ( $now < (int) get_option( self::NEXT_QUEUE_CHECK, 0 ) ) {
+			return;
+		}
+		if ( ! function_exists( 'as_has_scheduled_action' ) ) {
+			return;
+		}
+
+		if ( ! as_has_scheduled_action( self::BACKFILL_HOOK, array(), self::BACKFILL_GROUP )
+			&& ! as_enqueue_async_action( self::BACKFILL_HOOK, array(), self::BACKFILL_GROUP ) ) {
+			return; // Not queued; try again on a later request.
+		}
+
+		// Only throttle once an action actually exists, so a failed enqueue retries.
+		update_option( self::NEXT_QUEUE_CHECK, $now + 5 * MINUTE_IN_SECONDS, true );
+	}
+
+	/**
+	 * Stamp one batch of order lines that have no snapshot yet, then chain the
+	 * next batch. Resumable (cursor), idempotent (only lines missing a snapshot
+	 * are selected) and isolated (a failure stops this batch only; the chain is
+	 * re-queued by schedule_backfill on a later request).
+	 */
+	public function run_backfill_batch(): void {
+		if ( get_option( self::BACKFILL_DONE ) ) {
+			return;
+		}
+
+		$limit  = max( 1, (int) apply_filters( 'ffla_ob_backfill_batch_size', self::BACKFILL_BATCH ) );
+		$cursor = (int) get_option( self::BACKFILL_CURSOR, 0 );
+
+		try {
+			$item_ids = $this->unsnapshotted_item_ids( $cursor, $limit );
+
+			if ( empty( $item_ids ) ) {
+				$this->finish_backfill( $cursor );
+				return;
+			}
+
+			$this->stamp_items_bulk( $item_ids );
+			update_option( self::BACKFILL_CURSOR, max( $item_ids ), false );
+		} catch ( \Throwable $e ) {
+			$this->log( 'backfill batch failed after item ' . $cursor . ': ' . $e->getMessage() );
+			return;
+		}
+
+		if ( count( $item_ids ) < $limit ) {
+			$this->finish_backfill( max( $item_ids ) );
+			return;
 		}
 
 		if ( function_exists( 'as_enqueue_async_action' ) ) {
@@ -822,36 +849,109 @@ class Order_Badges_Module extends FFLA_Module {
 	}
 
 	/**
-	 * The next batch of order IDs still needing a snapshot (oldest first). Uses
-	 * wc_get_orders so it works on both HPOS and the legacy store.
+	 * Mark the pass complete and remember how far it got.
+	 */
+	private function finish_backfill( int $last_item_id ): void {
+		global $wpdb;
+
+		// Everything up to the newest line now has a snapshot (new lines are
+		// stamped at creation), so the watermark is the current max item ID.
+		$max = (int) $wpdb->get_var( "SELECT MAX(order_item_id) FROM {$wpdb->prefix}woocommerce_order_items" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		update_option( self::BACKFILL_WATERMARK, max( $max, $last_item_id ), false );
+		update_option( self::BACKFILL_DONE, 1, true );
+		delete_option( self::BACKFILL_CURSOR );
+	}
+
+	/**
+	 * Product line items above $after_id that have no tag snapshot yet, oldest
+	 * first. Index-friendly: a primary-key range walk joined on the indexed
+	 * order_item_id of the item-meta table.
 	 *
-	 * @param int $batch
 	 * @return int[]
 	 */
-	private function backfill_order_ids( int $batch ): array {
-		try {
-			$ids = wc_get_orders(
-				array(
-					'type'       => 'shop_order',
-					'status'     => 'any',
-					'limit'      => $batch,
-					'orderby'    => 'ID',
-					'order'      => 'ASC',
-					'return'     => 'ids',
-					'meta_query' => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
-						array(
-							'key'     => self::DONE_META,
-							'compare' => 'NOT EXISTS',
-						),
-					),
-				)
-			);
-		} catch ( \Throwable $e ) {
-			$this->log( 'backfill query failed: ' . $e->getMessage() );
-			return array();
+	private function unsnapshotted_item_ids( int $after_id, int $limit ): array {
+		global $wpdb;
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$ids = $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT oi.order_item_id
+				FROM {$wpdb->prefix}woocommerce_order_items oi
+				LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta snap
+					ON snap.order_item_id = oi.order_item_id AND snap.meta_key = %s
+				WHERE oi.order_item_type = 'line_item'
+					AND oi.order_item_id > %d
+					AND snap.meta_id IS NULL
+				ORDER BY oi.order_item_id ASC
+				LIMIT %d",
+				self::SNAP_META,
+				$after_id,
+				$limit
+			)
+		);
+
+		return array_map( 'intval', (array) $ids );
+	}
+
+	/**
+	 * Write snapshots for many line items at once: read their product IDs in one
+	 * query, warm the tag cache in one query, then insert every snapshot with a
+	 * single multi-row INSERT. Clears each item's meta cache so a persistent
+	 * object cache can't serve the pre-backfill (empty) meta.
+	 *
+	 * @param int[] $item_ids
+	 */
+	private function stamp_items_bulk( array $item_ids ): void {
+		global $wpdb;
+
+		// The IN (...) list and VALUES rows below are built from generated %d/%s
+		// placeholder tokens only; every value is bound through prepare().
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+		$placeholders = implode( ',', array_fill( 0, count( $item_ids ), '%d' ) );
+		$rows         = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT order_item_id, meta_value FROM {$wpdb->prefix}woocommerce_order_itemmeta
+				WHERE meta_key = '_product_id' AND order_item_id IN ($placeholders)",
+				$item_ids
+			)
+		);
+
+		$product_of = array();
+		foreach ( (array) $rows as $row ) {
+			$product_of[ (int) $row->order_item_id ] = (int) $row->meta_value;
 		}
 
-		return is_array( $ids ) ? array_map( 'intval', $ids ) : array();
+		$product_ids = array_values( array_unique( array_filter( $product_of ) ) );
+		if ( $product_ids ) {
+			update_object_term_cache( $product_ids, 'product' );
+		}
+
+		$values = array();
+		$args   = array();
+		foreach ( $item_ids as $item_id ) {
+			$snapshot = $this->product_tag_snapshot( $product_of[ $item_id ] ?? 0 );
+			$values[] = '(%d, %s, %s)';
+			array_push( $args, $item_id, self::SNAP_META, maybe_serialize( $snapshot ) );
+		}
+
+		$wpdb->query(
+			$wpdb->prepare(
+				"INSERT INTO {$wpdb->prefix}woocommerce_order_itemmeta (order_item_id, meta_key, meta_value) VALUES " . implode( ',', $values ),
+				$args
+			)
+		);
+		// phpcs:enable
+
+		// Same invalidation WC_Data::clear_cache() does for an order item, so a
+		// persistent object cache can't serve the pre-backfill (no snapshot) meta.
+		$has_helper = class_exists( 'WC_Cache_Helper' );
+		foreach ( $item_ids as $item_id ) {
+			wp_cache_delete( $item_id, 'order_item_meta' );
+			wp_cache_delete( 'item-' . $item_id, 'order-items' );
+			if ( $has_helper ) {
+				WC_Cache_Helper::invalidate_cache_group( 'object_' . $item_id );
+			}
+		}
 	}
 
 	/**

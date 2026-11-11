@@ -414,9 +414,20 @@ delete_option('ffla_coupon_cats_seeded');
 $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_ffla\\_cpn\\_%' OR option_name LIKE '\\_transient\\_timeout\\_ffla\\_cpn\\_%'");
 
 // ── Order Badges cleanup ───────────────────────────────────────────
-// Badges are derived live from product tags; the only stored data is this
-// settings option, so it is removed whether or not the module is active.
+// Settings, backfill bookkeeping and the rename-migration flag. The tag
+// snapshots frozen on order lines (`_ffla_ob_tags`) stay with the orders as
+// order history.
 delete_option('ffla_order_badges_settings');
+delete_option('ffla_order_source_settings'); // Pre-rename option name.
+delete_option('ffla_order_badges_module_migrated');
+delete_option('ffla_ob_backfill_done');
+delete_option('ffla_ob_backfill_cursor');
+delete_option('ffla_ob_backfill_watermark');
+delete_option('ffla_ob_next_queue_check');
+delete_option('ffla_ob_next_gap_check');
+if (function_exists('as_unschedule_all_actions')) {
+    as_unschedule_all_actions('ffla_ob_backfill_batch', [], 'ffla-order-badges');
+}
 
 // ── Pickup & Shipping cleanup ──────────────────────────────────────
 // Settings only. Delivery details saved on orders (`_ffla_delivery` on
