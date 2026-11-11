@@ -425,6 +425,8 @@ delete_option('ffla_ob_backfill_cursor');
 delete_option('ffla_ob_backfill_watermark');
 delete_option('ffla_ob_next_queue_check');
 delete_option('ffla_ob_next_gap_check');
+// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+$wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_ffla\\_ob\\_sum\\_%' OR option_name LIKE '\\_transient\\_timeout\\_ffla\\_ob\\_sum\\_%'");
 if (function_exists('as_unschedule_all_actions')) {
     as_unschedule_all_actions('ffla_ob_backfill_batch', [], 'ffla-order-badges');
 }
