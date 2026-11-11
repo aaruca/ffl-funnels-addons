@@ -653,13 +653,27 @@ class Order_Badges_Module extends FFLA_Module {
 			}
 		);
 
-		echo '<p class="ffla-ob-summary">';
-		$this->print_summary_group( __( 'Overall', 'ffl-funnels-addons' ), $overall );
-		if ( null !== $view ) {
-			echo '<span class="ffla-ob-summary__sep" aria-hidden="true"></span>';
-			$this->print_summary_group( __( 'This view', 'ffl-funnels-addons' ), $view );
+		$tag_names = array();
+		foreach ( $this->settings()['instore_tags'] as $term_id ) {
+			$term = get_term( (int) $term_id, 'product_tag' );
+			if ( $term instanceof WP_Term ) {
+				$tag_names[] = $term->name;
+			}
 		}
-		echo '</p>';
+
+		echo '<div class="ffla-ob-summary">';
+		$this->print_summary_group( __( 'All orders', 'ffl-funnels-addons' ), $overall );
+		if ( null !== $view ) {
+			$this->print_summary_group( __( 'Orders shown below', 'ffl-funnels-addons' ), $view );
+		}
+		echo '<p class="ffla-ob-summary__hint">' . esc_html(
+			sprintf(
+				/* translators: %s: comma-separated in-store product tag names. */
+				__( 'In Store = every product in the order has an in-store tag (%s). Online Only = none do. Mixed = some do.', 'ffl-funnels-addons' ),
+				implode( ', ', $tag_names )
+			)
+		) . '</p>';
+		echo '</div>';
 	}
 
 	/**
@@ -696,13 +710,15 @@ class Order_Badges_Module extends FFLA_Module {
 
 		$parts = array();
 		foreach ( $groups as $group ) {
-			$parts[] = '<mark class="ffla-ob-summary__term" style="--ffla-c:' . esc_attr( $group[2] ) . '">' . esc_html( $group[0] ) . '</mark> '
-				. '<span class="ffla-ob-summary__num">' . esc_html( number_format_i18n( $group[1] ) ) . '</span>';
+			$parts[] = '<mark class="ffla-ob-summary__term" style="--ffla-c:' . esc_attr( $group[2] ) . '">'
+				. esc_html( number_format_i18n( $group[1] ) . ' ' . $group[0] ) . '</mark>';
 		}
+		$total = $counts['in_store'] + $counts['online'] + $counts['mixed'];
 
-		echo '<span class="ffla-ob-summary__group"><span class="ffla-ob-summary__label">' . esc_html( $label ) . ':</span> '
-			. implode( '<span class="ffla-ob-summary__dot" aria-hidden="true"> · </span>', $parts ) // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built from escaped parts.
-			. '</span>';
+		echo '<p class="ffla-ob-summary__line"><span class="ffla-ob-summary__label">'
+			. esc_html( sprintf( '%s (%s):', $label, number_format_i18n( $total ) ) ) . '</span> '
+			. implode( ', ', $parts ) // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built from escaped parts.
+			. '</p>';
 	}
 
 	/**
@@ -1398,16 +1414,9 @@ class Order_Badges_Module extends FFLA_Module {
 				background: color-mix(in srgb, var(--ffla-c, #777) 14%, white);
 				color: color-mix(in srgb, var(--ffla-c, #777) 72%, black);
 			}
-			.ffla-ob-summary__num { font-weight: 600; }
-			.ffla-ob-summary__dot { color: #8c8f94; }
-			.ffla-ob-summary__sep {
-				display: inline-block;
-				width: 1px;
-				height: 1em;
-				margin: 0 12px;
-				vertical-align: middle;
-				background: #c3c4c7;
-			}
+			.ffla-ob-summary__line,
+			.ffla-ob-summary__hint { margin: 0; }
+			.ffla-ob-summary__hint { margin-top: 2px; color: #646970; font-size: 12px; }
 			.ffla-ob-order-badge .ffla-ob-order-badge__label {
 				display: block;
 				font-weight: 600;
