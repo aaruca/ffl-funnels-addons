@@ -4,8 +4,9 @@
  *
  * Run: php tests/smoke/order-badges-smoke.php
  *
- * Covers classification (badge tags, Online Only, deleted products), the
- * label de-duplication key (multibyte, symbols, non-Latin names), the order-level
+ * Covers classification from frozen line snapshots (badge tags, Online Only,
+ * deleted products), snapshots surviving later tag changes, the label
+ * de-duplication key (multibyte, symbols, non-Latin names), the order-level
  * union, and settings-save validation against crafted input.
  */
 
@@ -52,6 +53,8 @@ class WC_Order_Item
 class WC_Order_Item_Product extends WC_Order_Item
 {
     private $product_id;
+    private $meta = [];
+    public $saves = 0;
     public function __construct(int $product_id)
     {
         $this->product_id = $product_id;
@@ -59,6 +62,22 @@ class WC_Order_Item_Product extends WC_Order_Item
     public function get_product_id()
     {
         return $this->product_id;
+    }
+    public function meta_exists($key)
+    {
+        return array_key_exists($key, $this->meta);
+    }
+    public function get_meta($key)
+    {
+        return $this->meta[$key] ?? '';
+    }
+    public function update_meta_data($key, $value)
+    {
+        $this->meta[$key] = $value;
+    }
+    public function save_meta_data()
+    {
+        $this->saves++;
     }
 }
 class WC_Order_Item_Shipping extends WC_Order_Item
@@ -163,6 +182,17 @@ function call(object $obj, string $method, ...$args)
     $ref->setAccessible(true);
     return $ref->invoke($obj, ...$args);
 }
+/** Badge set for one order line, read through its (self-healing) snapshot. */
+function line_set(WC_Order_Item_Product $item): array
+{
+    $m    = module();
+    $snap = call($m, 'item_snapshot', $item);
+    return null === $snap ? ['tags' => [], 'online' => false] : call($m, 'badge_set_from_snapshot', $snap);
+}
+function product_set(int $product_id): array
+{
+    return line_set(new WC_Order_Item_Product($product_id));
+}
 function save(array $post): array
 {
     $_POST = ['ffla_ob' => $post];
@@ -231,29 +261,56 @@ save([
     'online_color' => '#123abc',
 ]);
 
-/* ── Product classification ───────────────────────────────────────────── */
+/* ── Line classification (from the frozen snapshot) ─────────────────── */
 
-$set = call(module(), 'product_badge_set', 100);
+$set = product_set(100);
 check(['Firearm'] === array_column($set['tags'], 'name') && false === $set['online'], 'in-store product: its badge tags, not Online Only');
 
-$set = call(module(), 'product_badge_set', 101);
+$set = product_set(101);
 check(true === $set['online'], 'product without an in-store tag is Online Only');
 
-$set = call(module(), 'product_badge_set', 999);
+$set = product_set(999);
 check([] === $set['tags'] && false === $set['online'], 'deleted product gets no badges (not Online Only)');
 
-$set = call(module(), 'product_badge_set', 0);
+$set = product_set(0);
 check([] === $set['tags'] && false === $set['online'], 'product id 0 gets no badges');
+
+/* ── Snapshots: stamped once, then frozen ─────────────────────────────── */
+
+$line = new WC_Order_Item_Product(100);
+line_set($line);
+check([['id' => 10, 'name' => 'In Store'], ['id' => 11, 'name' => 'Firearm']] === $line->get_meta('_ffla_ob_tags') && 1 === $line->saves, 'a line without a snapshot is stamped on first view');
+
+$GLOBALS['products'][100] = [16]; // Product re-tagged after the order.
+$set = line_set($line);
+check(['Firearm'] === array_column($set['tags'], 'name') && false === $set['online'] && 1 === $line->saves, 'later tag changes do not alter the line (no re-stamp)');
+$GLOBALS['products'][100] = [10, 11];
+
+$gone = new WC_Order_Item_Product(999);
+line_set($gone);
+check(!$gone->meta_exists('_ffla_ob_tags'), 'nothing is stored for a product deleted before it was snapshotted');
+
+$kept = new WC_Order_Item_Product(100);
+line_set($kept);
+unset($GLOBALS['products'][100]); // Product deleted after the order.
+check(['Firearm'] === array_column(line_set($kept)['tags'], 'name'), 'a snapshotted line keeps its badges after the product is deleted');
+$GLOBALS['products'][100] = [10, 11];
+
+$new = new WC_Order_Item_Product(101);
+module()->snapshot_new_item(1, $new);
+check($new->meta_exists('_ffla_ob_tags'), 'new order lines are stamped at creation');
+module()->snapshot_new_item(2, new WC_Order_Item_Shipping());
+check(true, 'non-product lines are ignored at creation');
 
 /* ── De-duplication key ───────────────────────────────────────────────── */
 
-$html = call(module(), 'badges_html', call(module(), 'product_badge_set', 101));
+$html = call(module(), 'badges_html', product_set(101));
 check(['Firearm', '🔥 Hot', '⭐ Hot', 'Online Only'] === badges($html), 'emoji-distinct tags stay separate; Online Only appended');
 
-$html = call(module(), 'badges_html', call(module(), 'product_badge_set', 102));
+$html = call(module(), 'badges_html', product_set(102));
 check(['日本', '中国', 'Online Only'] === badges($html), 'non-Latin tag names never collapse into one badge');
 
-$html = call(module(), 'badges_html', call(module(), 'product_badge_set', 103));
+$html = call(module(), 'badges_html', product_set(103));
 check(['Online only'] === badges($html), 'an "Online only" tag and the Online Only status badge collapse into one');
 
 $k = module();
@@ -264,7 +321,6 @@ check(call($k, 'badge_key', '---') !== call($k, 'badge_key', '***'), 'different 
 
 /* ── Order-level union and output escaping ────────────────────────────── */
 
-$GLOBALS['primed_posts'] = $GLOBALS['primed_terms'] = [];
 $order = new WC_Order([
     new WC_Order_Item_Product(100),
     new WC_Order_Item_Product(101),
@@ -273,8 +329,7 @@ $order = new WC_Order([
 ]);
 $om  = module();
 $set = call($om, 'order_badge_set', $order);
-check([11, 12, 13] === array_keys($set['tags']) && true === $set['online'], 'order set is the union of its product lines');
-check([[100, 101, 999]] === $GLOBALS['primed_posts'] && [[100, 101, 999]] === $GLOBALS['primed_terms'], 'post and term caches are primed once per order');
+check([11, 12, 13] === array_keys($set['tags']) && true === $set['online'], 'order set is the union of its product lines (deleted product skipped)');
 
 ob_start();
 $om->render_column('ffla_order_badges', $order);
@@ -289,7 +344,7 @@ check('' === ob_get_clean(), 'other columns are left alone');
 $GLOBALS['tags'][19] = new WP_Term(19, '<script>alert(1)</script>');
 $GLOBALS['products'][105] = [19];
 save(['badge_tags' => ['19'], 'instore_tags' => []]);
-$html = call(module(), 'badges_html', call(module(), 'product_badge_set', 105));
+$html = call(module(), 'badges_html', product_set(105));
 check(false === strpos($html, '<script>') && false !== strpos($html, '&lt;script&gt;'), 'tag names are escaped');
 
 /* ── Settings assets ──────────────────────────────────────────────────── */
